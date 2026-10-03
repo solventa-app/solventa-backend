@@ -1,0 +1,176 @@
+# Entorno local del backend de Solventa.
+#
+#   docker compose up -d                                  # solo dependencias: Postgres, Redis, MongoDB (replica set)
+#   docker compose --profile servicios up -d --build      # + servicios y stubs
+#   docker compose --profile observabilidad up -d         # + Prometheus y Grafana
+#
+# Los puertos de host evitan chocar con los stacks de ../solventa-arquitectura (Mongo 27017/27018,
+# Prometheus 9090, Grafana 3000): aquí Mongo usa 27117/27118, Prometheus 9190 y Grafana 3100.
+# Nota: el replica set anuncia los hosts `mongo1`/`mongo2`, que solo resuelven dentro de la red de
+# compose; desde el host usa `mongosh` directo a un nodo (`directConnection=true`).
+
+x-servicio: &servicio
+  restart: "no"
+  profiles: ["servicios"]
+
+services:
+  # ---------------------------------------------------------------- datos
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-solventa-local}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./dev/postgres:/docker-entrypoint-initdb.d:ro   # crea una base por servicio (auth, payments)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mongo1:
+    image: mongo:7.0
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--oplogSize", "256"]
+    ports:
+      - "27117:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  mongo2:
+    image: mongo:7.0
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--oplogSize", "256"]
+    ports:
+      - "27118:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # Contenedor de un solo uso: inicializa el replica set (idempotente) y sale.
+  mongo-init:
+    image: mongo:7.0
+    restart: "no"
+    volumes:
+      - ./dev/mongo:/scripts:ro
+    command: ["mongosh", "--host", "mongo1:27017", "--quiet", "/scripts/init-replica-set.js"]
+    depends_on:
+      mongo1:
+        condition: service_healthy
+      mongo2:
+        condition: service_healthy
+
+  # ------------------------------------------------------------ servicios
+  bff:
+    <<: *servicio
+    build: ./services/bff
+    ports: ["8000:8000"]
+    environment:
+      AUTH_URL: http://auth:8001
+      RISK_URL: http://risk:8002
+      RATING_URL: http://rating:8003
+      PAYMENTS_URL: http://payments:8004
+
+  auth:
+    <<: *servicio
+    build: ./services/auth
+    ports: ["8001:8001"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/auth
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  risk:
+    <<: *servicio
+    build: ./services/risk
+    ports: ["8002:8002"]
+    environment:
+      MONGO_URI: mongodb://mongo1:27017,mongo2:27017/?replicaSet=rs0
+      ACL_URL: http://acl-worker:8005
+    depends_on:
+      mongo-init: { condition: service_completed_successfully }
+
+  rating:
+    <<: *servicio
+    build: ./services/rating
+    ports: ["8003:8003"]
+    environment:
+      MONGO_URI: mongodb://mongo1:27017,mongo2:27017/?replicaSet=rs0
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      mongo-init: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  payments:
+    <<: *servicio
+    build: ./services/payments
+    ports: ["8004:8004"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/payments
+      ACL_URL: http://acl-worker:8005
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  acl-worker:
+    <<: *servicio
+    build: ./services/acl-worker
+    ports: ["8005:8005"]
+    environment:
+      REDIS_URL: redis://redis:6379/1
+      OPEN_FINANCE_URL: http://stub-open-finance:8101
+      OPEN_DATA_URL: http://stub-open-data:8102
+      PASARELA_URL: http://stub-pasarela:8103
+      TIMEOUT_MS: "700"        # umbral duro de EC009/EC010
+    depends_on:
+      redis: { condition: service_healthy }
+
+  stub-open-finance:
+    <<: *servicio
+    build: ./stubs/open-finance
+    ports: ["8101:8101"]
+
+  stub-open-data:
+    <<: *servicio
+    build: ./stubs/open-data
+    ports: ["8102:8102"]
+
+  stub-pasarela:
+    <<: *servicio
+    build: ./stubs/pasarela
+    ports: ["8103:8103"]
+
+  # -------------------------------------------------------- observabilidad
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: ["observabilidad"]
+    volumes:
+      - ./observabilidad/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9190:9090"]
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    profiles: ["observabilidad"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./observabilidad/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observabilidad/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3100:3000"]
+    depends_on: [prometheus]

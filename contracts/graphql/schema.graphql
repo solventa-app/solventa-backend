@@ -1,0 +1,136 @@
+"""
+Contrato GraphQL del BFF (v0, Sprint 1: HU-W01 y HU-W05).
+
+Este archivo es la FUENTE DE VERDAD del contrato con `solventa-frontend`.
+Reglas (ver contracts/README.md): solo cambios ADITIVOS; para quitar algo se marca @deprecated
+y se retira un sprint después; todo cambio se anota en contracts/CHANGELOG.md.
+"""
+
+scalar DateTime
+
+# ---------- Consentimiento (CA-W01-01/02/08) ----------
+
+type Consentimiento {
+  id: ID!
+  finalidad: String!
+  versionTexto: String!
+  otorgadoEn: DateTime!
+  revocadoEn: DateTime
+  vigente: Boolean!
+}
+
+input ConsentimientoInput {
+  finalidad: String!
+  versionTexto: String!
+}
+
+# ---------- Oferta (CA-W01-03/04/05/06) ----------
+
+enum TipoOferta {
+  COMPLETA
+  PRELIMINAR
+}
+
+enum EstadoFuente {
+  OK
+  CACHE
+  FALLO
+}
+
+type Monto {
+  valor: String! # decimal como texto, nunca float
+  moneda: String!
+}
+
+type RangoPrima {
+  minima: Monto!
+  maxima: Monto!
+}
+
+type FactorScore {
+  nombre: String!
+  peso: Float!
+}
+
+type FuenteConsultada {
+  id: ID!
+  nombre: String!
+  origen: OrigenFuente!
+  estado: EstadoFuente!
+  capturadoEn: DateTime # presente si el dato viene de caché
+}
+
+enum OrigenFuente {
+  OPEN_FINANCE
+  OPEN_DATA
+}
+
+type Oferta {
+  id: ID!
+  tipo: TipoOferta!
+  prima: Monto # presente en la oferta COMPLETA
+  rangoPrima: RangoPrima # presente en la oferta PRELIMINAR
+  cobertura: Monto!
+  desgloseScore: [FactorScore!]!
+  fuentes: [FuenteConsultada!]!
+}
+
+type ErrorOferta {
+  mensaje: String!
+  puedeReintentar: Boolean!
+}
+
+union ResultadoOferta = Oferta | ErrorOferta # nunca un 5xx crudo al cliente (CA-W01-05)
+
+input SolicitudOfertaInput {
+  consentimientoId: ID!
+  documentoIdentidad: String!
+  valorCredito: String!
+  plazoMeses: Int!
+  direccionInmueble: String!
+}
+
+# ---------- Contacto con asesor (CA-W01-07) ----------
+
+enum CanalContacto {
+  LLAMAR
+  CHAT
+  AGENDAR
+}
+
+type ConfirmacionContacto {
+  canal: CanalContacto!
+  resumen: String!
+}
+
+# ---------- Cobros (HU-W05) ----------
+
+enum EstadoCobro {
+  COBRANDO
+  COBRADO
+  RECHAZADO
+  PENDIENTE
+}
+
+type Cobro {
+  id: ID!
+  polizaId: ID!
+  estado: EstadoCobro!
+  monto: Monto!
+  actualizadoEn: DateTime!
+}
+
+# ---------- Operaciones ----------
+
+type Query {
+  oferta(id: ID!): Oferta
+  cobros(estado: EstadoCobro): [Cobro!]!
+}
+
+type Mutation {
+  registrarConsentimiento(entrada: ConsentimientoInput!): Consentimiento!
+  revocarConsentimiento(id: ID!): Consentimiento!
+  solicitarOferta(entrada: SolicitudOfertaInput!): ResultadoOferta!
+  contactarAsesor(ofertaId: ID!, canal: CanalContacto!): ConfirmacionContacto!
+  reintentarCobro(cobroId: ID!): Cobro!
+}

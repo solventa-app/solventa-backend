@@ -1,0 +1,15 @@
+# Configuración compartida de herramientas. Los servicios NO son un paquete común:
+# cada uno tiene su propio requirements.txt y se prueba desde su carpeta (`python -m pytest`).
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]

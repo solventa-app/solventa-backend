@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/perfil.actualizado/v1",
+  "title": "perfil.actualizado",
+  "description": "RISK escribió el perfil de riesgo en la primaria (ProfileUpdated). El evento NO lleva datos personales: solo identificadores y la marca de tiempo de la escritura para la lectura causal de RATING (D-02).",
+  "type": "object",
+  "required": ["eventId", "tipo", "version", "ocurridoEn", "datos"],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "tipo": { "const": "perfil.actualizado" },
+    "version": { "const": 1 },
+    "ocurridoEn": { "type": "string", "format": "date-time" },
+    "datos": {
+      "type": "object",
+      "required": ["clienteId", "perfilVersion", "operationTime"],
+      "additionalProperties": false,
+      "properties": {
+        "clienteId": { "type": "string" },
+        "perfilVersion": { "type": "integer", "minimum": 1 },
+        "operationTime": {
+          "type": "string",
+          "description": "operationTime de MongoDB de la escritura, serializado; RATING lo usa como afterClusterTime."
+        }
+      }
+    }
+  }
+}

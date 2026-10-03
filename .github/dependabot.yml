@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # --- Python: una entrada por servicio ---
+  - { package-ecosystem: pip, directory: /services/bff, schedule: { interval: weekly } }
+  - { package-ecosystem: pip, directory: /services/auth, schedule: { interval: weekly } }
+  - { package-ecosystem: pip, directory: /services/risk, schedule: { interval: weekly } }
+  - { package-ecosystem: pip, directory: /services/rating, schedule: { interval: weekly } }
+  - { package-ecosystem: pip, directory: /services/payments, schedule: { interval: weekly } }
+  - { package-ecosystem: pip, directory: /services/acl-worker, schedule: { interval: weekly } }
+  - { package-ecosystem: pip, directory: /stubs/open-finance, schedule: { interval: weekly } }
+  - { package-ecosystem: pip, directory: /stubs/open-data, schedule: { interval: weekly } }
+  - { package-ecosystem: pip, directory: /stubs/pasarela, schedule: { interval: weekly } }
+  - { package-ecosystem: pip, directory: /, schedule: { interval: weekly } }  # requirements-dev.txt
+
+  # --- Imágenes base de Docker ---
+  - { package-ecosystem: docker, directory: /services/bff, schedule: { interval: weekly } }
+  - { package-ecosystem: docker, directory: /services/auth, schedule: { interval: weekly } }
+  - { package-ecosystem: docker, directory: /services/risk, schedule: { interval: weekly } }
+  - { package-ecosystem: docker, directory: /services/rating, schedule: { interval: weekly } }
+  - { package-ecosystem: docker, directory: /services/payments, schedule: { interval: weekly } }
+  - { package-ecosystem: docker, directory: /services/acl-worker, schedule: { interval: weekly } }
+
+  # --- Infraestructura y automatización ---
+  - { package-ecosystem: terraform, directory: /infra, schedule: { interval: monthly } }
+  - { package-ecosystem: github-actions, directory: /, schedule: { interval: monthly } }

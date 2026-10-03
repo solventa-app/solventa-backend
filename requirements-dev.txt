@@ -1,0 +1,5 @@
+# Herramientas de desarrollo y CI (no van en las imágenes de los servicios)
+pytest==8.3.4
+ruff==0.8.4
+jsonschema==4.23.0
+graphql-core==3.2.5

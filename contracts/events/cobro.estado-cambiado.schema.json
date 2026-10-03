@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/cobro.estado-cambiado/v1",
+  "title": "cobro.estado-cambiado",
+  "description": "PAYMENTS cambió el estado de un cobro. Sin datos de tarjeta (EC031).",
+  "type": "object",
+  "required": ["eventId", "tipo", "version", "ocurridoEn", "datos"],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "tipo": { "const": "cobro.estado-cambiado" },
+    "version": { "const": 1 },
+    "ocurridoEn": { "type": "string", "format": "date-time" },
+    "datos": {
+      "type": "object",
+      "required": ["cobroId", "polizaId", "estado", "claveIdempotencia"],
+      "additionalProperties": false,
+      "properties": {
+        "cobroId": { "type": "string" },
+        "polizaId": { "type": "string" },
+        "estado": { "enum": ["cobrando", "cobrado", "rechazado", "pendiente"] },
+        "claveIdempotencia": { "type": "string" }
+      }
+    }
+  }
+}
