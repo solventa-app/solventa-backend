@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/consentimiento.revocado/v1",
+  "title": "consentimiento.revocado",
+  "description": "AUTH registró la revocación de un consentimiento. Los consumidores invalidan la caché del cliente en un máximo de 5 minutos (EC023).",
+  "type": "object",
+  "required": ["eventId", "tipo", "version", "ocurridoEn", "datos"],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "tipo": { "const": "consentimiento.revocado" },
+    "version": { "const": 1 },
+    "ocurridoEn": { "type": "string", "format": "date-time" },
+    "datos": {
+      "type": "object",
+      "required": ["consentimientoId", "clienteId"],
+      "additionalProperties": false,
+      "properties": {
+        "consentimientoId": { "type": "string" },
+        "clienteId": { "type": "string" }
+      }
+    }
+  }
+}

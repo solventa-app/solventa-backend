@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/consentimiento.registrado/v1",
+  "title": "consentimiento.registrado",
+  "description": "AUTH registró un consentimiento (Habeas Data / Open Finance-Open Data). Se emite antes de consultar cualquier fuente.",
+  "type": "object",
+  "required": ["eventId", "tipo", "version", "ocurridoEn", "datos"],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "tipo": { "const": "consentimiento.registrado" },
+    "version": { "const": 1 },
+    "ocurridoEn": { "type": "string", "format": "date-time" },
+    "datos": {
+      "type": "object",
+      "required": ["consentimientoId", "clienteId", "actor", "finalidad", "versionTexto"],
+      "additionalProperties": false,
+      "properties": {
+        "consentimientoId": { "type": "string" },
+        "clienteId": { "type": "string" },
+        "actor": { "type": "string", "description": "Quién otorgó: cliente o asesor comercial en su nombre." },
+        "finalidad": { "type": "string" },
+        "versionTexto": { "type": "string" }
+      }
+    }
+  }
+}

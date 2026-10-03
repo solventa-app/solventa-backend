@@ -1,0 +1,18 @@
+# Propietarios por carpeta -> GitHub los pide como revisores automáticamente.
+# PENDIENTE: reemplazar los roles por los usuarios reales (@usuario) cuando el equipo los defina,
+# y descomentar. Mientras tanto no hay propietarios asignados (no se bloquea ningún PR).
+#
+# Rol propuesto por el plan de trabajo: Líder técnico / pruebas, Desarrollador web,
+# Desarrollador móvil, Desarrollador backend / integración.
+#
+# /services/bff/          @<desarrollador-web>        @<lider-tecnico>
+# /services/auth/         @<lider-tecnico>
+# /services/risk/         @<desarrollador-backend>
+# /services/rating/       @<desarrollador-backend>
+# /services/payments/     @<desarrollador-movil>      # el plan le asigna el reintento de cobro
+# /services/acl-worker/   @<desarrollador-backend>    @<lider-tecnico>
+# /stubs/                 @<desarrollador-backend>
+# /contracts/             @<lider-tecnico>            @<desarrollador-web>   # contrato compartido con el frontend
+# /infra/                 @<lider-tecnico>
+# /.github/               @<lider-tecnico>
+# /tests/                 @<lider-tecnico>

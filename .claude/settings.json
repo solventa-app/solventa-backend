@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest:*)",
+      "Bash(python scripts/validar_contratos.py)",
+      "Bash(ruff check:*)",
+      "Bash(ruff format --check:*)",
+      "Bash(docker compose ps:*)",
+      "Bash(docker compose logs:*)",
+      "Bash(docker compose config:*)",
+      "Bash(terraform fmt:*)",
+      "Bash(terraform validate:*)",
+      "Bash(terraform init -backend=false:*)"
+    ],
+    "ask": [
+      "Bash(terraform plan:*)",
+      "Bash(terraform apply:*)",
+      "Bash(terraform destroy:*)",
+      "Bash(gcloud:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}

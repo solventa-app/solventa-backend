@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secretos y entorno local (nunca se versionan)
+.env
+*.pem
+*-key.json
+service-account*.json
+
+# Terraform (.terraform.lock.hcl SÍ se versiona: fija los providers)
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan.*
+terraform.tfvars
+crash.log
+
+# Resultados crudos de k6 muy grandes (los resúmenes sí van en docs/evidencias/)
+tests/k6/resultados-crudos/
+
+# Editores y SO
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Claude Code: configuración local personal
+.claude/settings.local.json

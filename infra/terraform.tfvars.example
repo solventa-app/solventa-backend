@@ -1,0 +1,4 @@
+# Copiar a terraform.tfvars (ignorado por git) y completar.
+project_id = "tu-proyecto-gcp"
+region     = "us-central1"
+crear_kms  = false
