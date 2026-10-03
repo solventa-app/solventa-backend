@@ -124,7 +124,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         if: env.SONAR_TOKEN != ''
-      - uses: SonarSource/sonarqube-scan-action@v4
+      - uses: SonarSource/sonarqube-scan-action@v8
         if: env.SONAR_TOKEN != ''
         env:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
