@@ -20,7 +20,9 @@ Eres responsable de la **infraestructura como código, el CI/CD y el control de 
 - `infra/`: módulos pequeños, variables con descripción, `terraform fmt` y `validate` en verde antes de entregar. Comienza desde lo que ya existe en `infra/` y reutiliza el patrón de `../solventa-arquitectura/experimento-1-acl-kyc/infra/` (Cloud Run, Memorystore + conector VPC, Artifact Registry).
 - `.github/workflows/ci.yml` corre **solo lo que cambió** (filtro por ruta). Mantén ese principio: un cambio en un servicio no debe disparar el resto. Los minutos de Actions son limitados.
 - Dockerfiles: imagen `python:3.12-slim`, usuario no root, `PORT` por variable de entorno (Cloud Run).
-- Dependabot: una entrada por directorio de servicio (pip y docker), terraform y github-actions. Si agregas un servicio, agrégalo a `dependabot.yml` y al filtro del CI.
+- Dependabot: una entrada por directorio de servicio (pip y docker), terraform y github-actions. Si agregas un servicio, agrégalo a `.github/servicios.json` (fuente única; la usan el CI, el deploy y Terraform), a `dependabot.yml`, al filtro del CI y al compose; `python scripts/validar_servicios.py` dice qué falta.
+- **CI/CD (ADR-07):** construir una vez (imagen = SHA) → migrar (Cloud Run Job) → revisión sin tráfico → humo → promover. Migraciones nunca al arrancar la app. El pipeline cambia imagen y tráfico; Terraform define el resto y **nunca se aplica desde el pipeline**. Los workflows se validan con actionlint (`docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7`) y la lógica de matrices/selección se prueba con datos simulados antes de reportar.
+- El deploy está apagado hasta que existan las variables de `infra/README.md`, incluida `GCP_PROTECCION_GASTO=activa`: no la pongas tú; es la confirmación humana de la regla 2.
 - Documenta cada cambio de infra en `infra/README.md` (qué crea, costo aproximado, cómo destruirlo).
 
 ## Antes de reportar terminado

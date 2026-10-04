@@ -23,12 +23,14 @@ Eres responsable de **construir el código de backend** de Solventa en este repo
 - Datos personales: cifrado de campo antes de persistir; **nunca** en logs ni etiquetas de métricas; cero datos de tarjeta.
 - Configuración por variables de entorno (los nombres están en `docker-compose.yml`); sin secretos en el código.
 - Agrega dependencias a `requirements.txt` del servicio con versión fija, solo las que uses.
+- **Cambios de esquema = migración** (ADR-07), en el servicio dueño del almacén (`auth`, `payments`, `risk`; RATING no migra). Nunca crees tablas, colecciones ni índices desde el código de la aplicación. Postgres: `alembic revision -m "..." --rev-id NNNN` con `upgrade` y `downgrade` en SQL. MongoDB: módulo en `migrations/versiones/`, idempotente. Siempre compatibles hacia atrás (agregar sí; renombrar/borrar en dos despliegues).
 - Escribe pruebas junto al código (`tests/`): unitarias del dominio y pruebas de contrato de cada adaptador. Mira primero las de quien venga antes.
 
 ## Antes de reportar terminado
 
 - `cd services/<x> && python -m pytest` y `ruff check .` en verde (muestra la salida).
-- Si tocaste el compose o las imágenes: `docker compose --profile servicios up -d --build <servicio>` y comprueba `/health`.
+- Si tocaste el compose o las imágenes: `docker compose --profile servicios up -d --build --wait` y comprueba `/health`.
+- Si agregaste o cambiaste una migración: `bash scripts/verificar-migraciones.sh <servicio>` en verde (muestra la salida).
 - Verifica cada criterio de aceptación que la tarea dice cubrir; no declares cumplido lo que no probaste. Reporta lo que quedó fuera.
 - Si el código obliga a cambiar el diseño o el alcance, **actualiza `docs/arquitectura-backend.md` o `docs/sprint-1.md` en el mismo cambio**; nunca dejes la divergencia implícita.
 

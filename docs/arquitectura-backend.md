@@ -53,7 +53,16 @@ Definidos en `services/acl-worker/app/domain/puertos.py` (propuesta del Sprint 1
 |---|---|
 | `bff` | `AUTH_URL`, `RISK_URL`, `RATING_URL`, `PAYMENTS_URL` |
 | `auth`, `payments` | `DATABASE_URL` |
-| `risk` | `MONGO_URI`, `ACL_URL` |
-| `rating` | `MONGO_URI`, `REDIS_URL` |
+| `risk` | `MONGO_URI`, `MONGO_DB` (por defecto `risk`), `ACL_URL` |
+| `rating` | `MONGO_URI`, `MONGO_DB`, `REDIS_URL` |
 | `acl-worker` | `REDIS_URL`, `OPEN_FINANCE_URL`, `OPEN_DATA_URL`, `PASARELA_URL`, `TIMEOUT_MS` (700) |
 | todos | `PORT` (lo inyecta Cloud Run) |
+
+En staging, las variables sensibles (`DATABASE_URL`, `MONGO_URI`, `REDIS_URL`) vienen de Secret Manager y las URL entre servicios las
+fija Terraform desde `.github/servicios.json` (campo `llama`). `rating` usa un `MONGO_URI` distinto al de `risk`: de solo lectura.
+
+## Migraciones y despliegue
+
+Cada servicio migra solo su almacén, con la misma imagen que el servicio: `auth` y `payments` con `alembic upgrade head`, `risk` con
+`python -m migrations` (MongoDB). Orden único en local, CI y staging: **migrar → arrancar**. Detalle y principios en
+[ADR-07](adr/ADR-07-cicd-y-migraciones.md).

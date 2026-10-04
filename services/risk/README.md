@@ -18,3 +18,13 @@ Base reutilizable: `escritor-risk` del Experimento 2 (`solventa-arquitectura@11e
 - Puerto local: `8002`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.
 - Pruebas: `pip install -r requirements.txt -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta).
 - Imagen: `docker build -t solventa-risk .`
+
+## Migraciones
+
+MongoDB `risk` (este servicio es su único escritor; RATING solo lee y **no** migra). Runner propio mínimo: cada migración es un módulo
+`migrations/versiones/NNNN_descripcion.py` con `aplicar(db)`, registrado en la colección `_migraciones`.
+
+- Aplicar: `python -m migrations` (necesita `MONGO_URI`; `MONGO_DB` por defecto `risk`). En `docker compose` lo hace `migrar-risk`; en staging, el Cloud Run Job `migrar-risk`.
+- **Idempotentes** (crear un índice que ya existe no falla) y compatibles hacia atrás: se aplican mientras la revisión anterior aún atiende (ADR-07).
+- Verificar: `bash ../../scripts/verificar-migraciones.sh risk` (aplica dos veces y revisa el registro).
+- Los índices y la forma del perfil (T-W01-7) irán en la migración `0002`; hoy solo existe la base `0001`.

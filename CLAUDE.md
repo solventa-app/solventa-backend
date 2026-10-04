@@ -8,12 +8,13 @@ construye el **producto**; la evidencia de los experimentos de arquitectura vive
 Mapa del repo: [`README.md`](README.md). Alcance del sprint: [`docs/sprint-1.md`](docs/sprint-1.md).
 Arquitectura: [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md). Convenciones: [`docs/convenciones.md`](docs/convenciones.md).
 
-## Estado (2026-10-03)
+## Estado (2026-10-04)
 
-- Repo **recién estructurado**: esqueletos de servicios y stubs (solo `/health` y `/metrics`), contratos v0, entorno local con Docker Compose, CI base y agentes. **Aún no hay lógica de negocio.**
+- Repo **recién estructurado**: esqueletos de servicios y stubs (solo `/health` y `/metrics`), contratos v0, entorno local con Docker Compose, CI/CD y agentes. **Aún no hay lógica de negocio.**
+- **CI/CD y migraciones armados (ADR-07, 2026-10-04):** migraciones (Alembic en `auth`/`payments`, runner de MongoDB en `risk`), CI con migraciones contra almacén real + humo del stack + gitleaks + actionlint, `deploy-staging.yml` y `rollback-staging.yml` (apagados hasta definir el proyecto GCP) y Terraform de WIF/Cloud Run detrás de banderas. Probado en local; **lo de GCP/GitHub no se ha ejecutado nunca**.
 - Sprint 1 (tentativo): 12–25 de octubre de 2026 — HU-W01 (KAN-24, 20 pts) y HU-W05 (KAN-28, 6 pts) con 7 habilitadoras. Holgura de solo 3 h: no se sobre-construye.
 - **Decisiones pendientes de confirmar en el Planning** (recomendación del plan entre paréntesis; no las trates como cerradas): D-01 base de velocidad (recálculo 27/27/44), D-02 read-your-writes (sesión causal `afterClusterTime`), D-04 cifrado (campo + Cloud KMS), D-05 proveedores (stubs por contrato), D-06 adelantar HU-W05 al Sprint 1. D-03 (cobro antes o después de emitir) se cierra en el Sprint 2.
-- GitHub: organización `solventa-app` (`origin` = https://github.com/solventa-app/solventa-backend.git, repo vacío; aún sin commit ni push). Sin proyecto GCP definido todavía: no hay despliegue ni pipeline de deploy.
+- GitHub: organización `solventa-app` (`origin` = https://github.com/solventa-app/solventa-backend.git, repo vacío; aún sin commit ni push). Sin proyecto GCP definido todavía: el pipeline de deploy existe pero está apagado (ver `infra/README.md`); no hay nada desplegado.
 
 ## Stack y decisiones ya tomadas (ADR-01 a ADR-05 del documento de arquitectura)
 
@@ -33,6 +34,15 @@ Arquitectura: [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md). Co
 7. **Sin consentimiento vigente no se consulta ninguna fuente.** El consentimiento se registra (append-only) **antes** de consultar.
 8. **Contratos primero.** Un cambio de comportamiento que cruza servicios o llega al frontend se refleja primero en `contracts/` (solo cambios aditivos, ver `contracts/README.md`) y se anota en `contracts/CHANGELOG.md`.
 9. **Los umbrales de los escenarios son un piso, no un valor de producción:** se miden en staging con proveedores simulados.
+
+## CI/CD y migraciones (ADR-07)
+
+- **Mismo camino en local, CI y staging:** construir la imagen una vez (etiqueta = SHA) → **migrar** → arrancar. Nada de migrar al arrancar la app.
+- **Cada servicio migra solo su almacén** (escritor único): `auth`, `payments`, `risk`. RATING no migra.
+- **Migraciones compatibles hacia atrás** (expandir/contraer): corren mientras la revisión anterior aún atiende. Postgres con `downgrade` probado en CI; MongoDB idempotentes. Hacia adelante en staging, nunca bajar el esquema.
+- **`.github/servicios.json` es la fuente única de servicios.** Un servicio nuevo se agrega ahí y `python scripts/validar_servicios.py` dice qué más falta.
+- **Terraform no se aplica desde el pipeline** y el despliegue sigue apagado hasta que existan las variables de `infra/README.md` (incluida `GCP_PROTECCION_GASTO`).
+- Una migración nueva se verifica con `bash scripts/verificar-migraciones.sh <servicio>` antes de abrir el PR.
 
 ## Agentes de este repo (`.claude/agents/`)
 
