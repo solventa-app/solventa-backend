@@ -20,6 +20,11 @@ jobs:
   cambios:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # paths-filter pide a la API la lista de archivos del PR: sin pull-requests:read falla con
+    # "Resource not accessible by integration". Solo este job lo necesita.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       servicios: ${{ steps.matriz.outputs.servicios }}
       migraciones: ${{ steps.matriz.outputs.migraciones }}
