@@ -68,6 +68,7 @@ jobs:
             services/rating: ['services/rating/**']
             services/payments: ['services/payments/**']
             services/acl-worker: ['services/acl-worker/**']
+            services/consolidador-fuentes: ['services/consolidador-fuentes/**']
             stubs/open-finance: ['stubs/open-finance/**']
             stubs/open-data: ['stubs/open-data/**']
             stubs/pasarela: ['stubs/pasarela/**']

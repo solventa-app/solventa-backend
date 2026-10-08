@@ -48,7 +48,17 @@
     "url_env": "ACL_URL",
     "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela"],
     "entorno": { "TIMEOUT_MS": "700" },
-    "secretos": { "REDIS_URL": "redis-url-acl" }
+    "secretos": {
+      "REDIS_URL": "redis-url-acl",
+      "COLA_RECONCILIACION_REDIS_URL": "redis-url-cola-reconciliacion"
+    }
+  },
+  {
+    "nombre": "consolidador-fuentes",
+    "ruta": "services/consolidador-fuentes",
+    "puerto": 8006,
+    "llama": ["acl-worker"],
+    "secretos": { "REDIS_URL": "redis-url-cola-reconciliacion" }
   },
   {
     "nombre": "stub-open-finance",
