@@ -42,7 +42,7 @@ cual RISK lo escribió."""
 
 import logging
 from collections.abc import Callable
-from typing import Any, Protocol, TypeVar
+from typing import Any, Protocol
 
 from pymongo import MongoClient
 from pymongo.errors import (
@@ -61,8 +61,6 @@ logger = logging.getLogger("rating.lector")
 NOMBRE_BASE = "risk"
 COLECCION_PERFILES = "perfiles"
 
-_T = TypeVar("_T")
-
 # Errores que señalan que la secundaria no alcanzó el afterClusterTime dentro
 # de maxTimeMS, o que ni siquiera pudo encontrarse/alcanzarse una secundaria
 # utilizable a tiempo (secundaria inalcanzable, no solo atrasada — ver nota
@@ -79,11 +77,11 @@ ERRORES_FALLBACK_A_PRIMARIA: tuple[type[Exception], ...] = (
 )
 
 
-def leer_con_fallback_a_primaria(
-    leer_de_secundaria: Callable[[], _T],
-    leer_de_primaria: Callable[[], _T],
+def leer_con_fallback_a_primaria[T](
+    leer_de_secundaria: Callable[[], T],
+    leer_de_primaria: Callable[[], T],
     errores_fallback: tuple[type[Exception], ...] = ERRORES_FALLBACK_A_PRIMARIA,
-) -> tuple[_T, bool]:
+) -> tuple[T, bool]:
     """Devuelve `(resultado, de_secundaria)`. Intenta `leer_de_secundaria`
     primero; si lanza uno de `errores_fallback`, cae a `leer_de_primaria` en
     la MISMA llamada (nunca un error al llamador por ese motivo). Cualquier

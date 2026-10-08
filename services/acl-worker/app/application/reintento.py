@@ -14,14 +14,11 @@ cualquier medición de presupuesto restante.
 
 import time
 from collections.abc import Callable
-from typing import TypeVar
-
-T = TypeVar("T")
 
 MARGEN_MINIMO_S = 0.05
 
 
-def con_reintento(
+def con_reintento[T](
     accion: Callable[[float], T],
     presupuesto_s: float,
     margen_minimo_s: float = MARGEN_MINIMO_S,
