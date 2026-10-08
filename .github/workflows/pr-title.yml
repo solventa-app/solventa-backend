@@ -22,9 +22,20 @@ jobs:
       - name: Verifica formato Conventional Commits + clave de Jira
         env:
           TITULO: ${{ github.event.pull_request.title }}
+          AUTOR: ${{ github.event.pull_request.user.login }}
         run: |
-          echo "Título del PR: $TITULO"
-          PATRON='^(feat|fix|refactor|test|docs|chore|ci|infra)(\([a-zA-Z0-9_,./ -]+\))?: KAN-[0-9]+ .+'
+          echo "Título del PR: $TITULO (autor: $AUTOR)"
+          # Dependabot no abre historias de Jira para un bump de versión: sus
+          # títulos («chore(deps): bump X from Y to Z») son Conventional
+          # Commits válidos pero sin clave KAN-nn a propósito. Sin esta
+          # excepción, NINGÚN PR de Dependabot podría mergearse nunca (el
+          # check correría igual pero siempre fallaría) — sería el mismo tipo
+          # de bloqueo permanente que este workflow vino a resolver.
+          if [ "$AUTOR" = "dependabot[bot]" ]; then
+            PATRON='^(feat|fix|refactor|test|docs|chore|ci|infra)(\([a-zA-Z0-9_,./ -]+\))?: .+'
+          else
+            PATRON='^(feat|fix|refactor|test|docs|chore|ci|infra)(\([a-zA-Z0-9_,./ -]+\))?: KAN-[0-9]+ .+'
+          fi
           if ! echo "$TITULO" | grep -Eq "$PATRON"; then
             echo "::error::El título del PR debe seguir Conventional Commits con la clave de Jira (docs/convenciones.md), p. ej.: \`feat(auth): KAN-24 registra consentimiento append-only\`. Tipos válidos: feat, fix, refactor, test, docs, chore, ci, infra."
             exit 1
