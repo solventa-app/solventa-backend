@@ -22,7 +22,7 @@ terraform {
       # MONGODB_ATLAS_PRIVATE_KEY como variables de entorno del shell que corre terraform — nunca en
       # tfvars. Ver infra/README.md.
       source  = "mongodb/mongodbatlas"
-      version = "~> 1.0"
+      version = "~> 2.19"
     }
   }
 
