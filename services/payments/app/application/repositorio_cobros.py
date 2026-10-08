@@ -6,7 +6,9 @@ la tabla `cobros` (regla de arquitectura #1): este módulo es el único lugar
 del sistema que escribe ahí.
 
 **Idempotencia real a nivel de base de datos (CA-W05-04):** `clave_idempotencia`
-tiene un índice UNIQUE (ver `app/sql/001_cobros.sql`). `crear_o_obtener` hace
+tiene un índice UNIQUE (creado por la migración `0002_cobros`, ver
+`migrations/versions/0002_cobros.py` — el esquema lo crea Alembic, no esta
+clase: nada de migrar al arrancar la app, ADR-07). `crear_o_obtener` hace
 un `INSERT ... ON CONFLICT (clave_idempotencia) DO NOTHING RETURNING ...`.
 Bajo concurrencia real (dos conexiones insertando la MISMA clave al mismo
 tiempo), Postgres serializa el conflicto con el lock del índice único: la
@@ -19,12 +21,8 @@ Se usa `autocommit=True` en el pool (una sentencia = una transacción) para
 que esa garantía dependa solo del lock de Postgres, no de un manejo manual de
 transacciones en Python."""
 
-from pathlib import Path
-
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
-
-RUTA_ESQUEMA = Path(__file__).resolve().parents[1] / "sql" / "001_cobros.sql"
 
 _COLUMNAS = (
     "id, clave_idempotencia, poliza_id, monto, moneda, token_medio_pago, "
@@ -35,11 +33,6 @@ _COLUMNAS = (
 class RepositorioCobrosPostgres:
     def __init__(self, pool: ConnectionPool) -> None:
         self._pool = pool
-
-    def preparar_esquema(self) -> None:
-        esquema_sql = RUTA_ESQUEMA.read_text(encoding="utf-8")
-        with self._pool.connection() as conexion:
-            conexion.execute(esquema_sql)
 
     def crear_o_obtener(self, cobro_id: str, orden: dict) -> tuple[dict, bool]:
         with self._pool.connection() as conexion:

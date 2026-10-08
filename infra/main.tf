@@ -9,6 +9,11 @@ locals {
     "artifactregistry.googleapis.com",
     "secretmanager.googleapis.com",
     "pubsub.googleapis.com",
+    # Identidad del pipeline (WIF) y lectura del número de proyecto: no tienen costo.
+    "iam.googleapis.com",
+    "iamcredentials.googleapis.com",
+    "sts.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
   ])
   registry_host = "${var.region}-docker.pkg.dev"
 }

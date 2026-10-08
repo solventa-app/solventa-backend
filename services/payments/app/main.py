@@ -74,7 +74,6 @@ def create_app(
         else:
             pool = construir_pool(config.database_url)
             repositorio = RepositorioCobrosPostgres(pool)
-            repositorio.preparar_esquema()
             cliente_acl = ClienteAcl(config.acl_url, config.acl_timeout_segundos)
             bus = BusEventosLog()
             app.state.servicio_cobros = ServicioCobros(repositorio, cliente_acl, bus)

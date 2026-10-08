@@ -106,3 +106,12 @@ acl-worker (ServicioConsultaFuentes)        consolidador-fuentes (worker rq en h
 | `acl-worker` | `REDIS_URL`, `OPEN_FINANCE_URL`, `OPEN_DATA_URL`, `PASARELA_URL`, `TIMEOUT_MS` (700), `BREAKER_UMBRAL_FALLOS` (3), `BREAKER_TTL_SEGUNDOS` (5), `SONDA_INTERVALO_SEGUNDOS` (2), `CACHE_TTL_SEGUNDOS` (300), `COLA_RECONCILIACION_REDIS_URL` (`redis://.../2`) |
 | `consolidador-fuentes` | `REDIS_URL` (misma cola, db 2), `ACL_URL` |
 | todos | `PORT` (lo inyecta Cloud Run) |
+
+En staging, las variables sensibles (`DATABASE_URL`, `MONGO_URI`, `REDIS_URL`) vienen de Secret Manager y las URL entre servicios las
+fija Terraform desde `.github/servicios.json` (campo `llama`). `rating` usa un `MONGO_URI` distinto al de `risk`: de solo lectura.
+
+## Migraciones y despliegue
+
+Cada servicio migra solo su almacén, con la misma imagen que el servicio: `auth` y `payments` con `alembic upgrade head`, `risk` con
+`python -m migrations` (MongoDB). Orden único en local, CI y staging: **migrar → arrancar**. Detalle y principios en
+[ADR-07](adr/ADR-07-cicd-y-migraciones.md).

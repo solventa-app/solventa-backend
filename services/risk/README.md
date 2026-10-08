@@ -77,6 +77,18 @@ que nunca se construyó.
   ver "Verificación en vivo" más abajo para la prueba con el replica set real.
 - Imagen: `docker build -t solventa-risk .`
 
+## Migraciones
+
+MongoDB `risk` (este servicio es su único escritor; RATING solo lee y **no** migra). Runner propio mínimo: cada migración es un módulo
+`migrations/versiones/NNNN_descripcion.py` con `aplicar(db)`, registrado en la colección `_migraciones`.
+
+- Aplicar: `python -m migrations` (necesita `MONGO_URI`; `MONGO_DB` por defecto `risk`). En `docker compose` lo hace `migrar-risk`; en staging, el Cloud Run Job `migrar-risk`.
+- **Idempotentes** (crear un índice que ya existe no falla) y compatibles hacia atrás: se aplican mientras la revisión anterior aún atiende (ADR-07).
+- Verificar: `bash ../../scripts/verificar-migraciones.sh risk` (aplica dos veces y revisa el registro).
+- El índice compuesto que necesita RATING para `find_one({"cliente_id": ...}, sort=[("perfil_version", -1)])`
+  (T-W01-7) va en la migración `migrations/versiones/0002_perfiles.py` (`cliente_id` ascendente,
+  `perfil_version` descendente); la base es `0001`.
+
 ### Verificación en vivo (read-your-writes real, D-02/HA-LAT-003)
 
 ```bash

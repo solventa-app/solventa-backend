@@ -1,125 +1,152 @@
-name: Deploy a staging
+name: Deploy staging
 
-# ⚠️  Disparo MANUAL únicamente (workflow_dispatch) o por tag `deploy-staging-*` — NUNCA en cada push
-# a main. Publicar imágenes y actualizar Cloud Run es gasto real sobre un presupuesto compartido de
-# USD 300 / 90 días (CLAUDE.md, regla de costos): se dispara solo con confirmación explícita de
-# quien lo corre.
+# Despliega a staging lo que cambió en main, SOLO después de que CI pase (workflow_run), o a mano.
+# Flujo (ADR-07):  construir UNA vez (imagen = SHA)  ->  migrar la base (Cloud Run Job, misma imagen)
+#                  ->  revisión nueva SIN tráfico  ->  prueba de humo sobre ella  ->  promover.
+# Si algo falla antes de "promover", staging sigue sirviendo la revisión anterior.
+# Terraform NO se aplica aquí (costos y permisos): ver infra/README.md.
 #
-# PRERREQUISITOS OBLIGATORIOS antes de usar este workflow (ver infra/README.md):
-#   1. El proyecto GCP de staging ya existe y tiene facturación habilitada.
-#   2. La protección de gasto está activa en ESE proyecto (infra/presupuesto.tf aplicado con
-#      crear_presupuesto = true). Sin esto, no se despliega — regla 2 de CLAUDE.md.
-#   3. infra/ ya se aplicó A MANO al menos una vez con crear_servicios = true (y crear_redis /
-#      crear_cloud_sql / crear_mongo_atlas según corresponda) para que los 10 servicios de Cloud Run
-#      y sus recursos ya existan. Este workflow NO corre `terraform apply`: el estado de Terraform es
-#      local por ahora (ver infra/versions.tf), así que aplicar infra desde CI crearía un estado
-#      desconectado del que usa el equipo. Este workflow solo hace `gcloud run deploy` (actualiza la
-#      imagen de un servicio que ya existe), no toca el resto de la configuración de infra/.
-#   4. infra/wif.tf ya se aplicó con crear_wif = true, y los secretos WIF_PROVIDER /
-#      WIF_SERVICE_ACCOUNT de este repo ya están configurados con sus outputs
-#      (terraform output wif_provider / wif_service_account).
-#   5. Las variables de repo (Settings > Secrets and variables > Actions > Variables) GCP_PROJECT_ID,
-#      GCP_REGION y ARTIFACT_REPOSITORY ya están configuradas.
-#
-# Recomendado (fuera de este YAML, en Settings > Environments del repo): exigir un revisor humano en
-# el environment `staging` para que el job `deploy` pida aprobación manual antes de correr.
-
+# APAGADO por defecto: no hace nada hasta que existan estas variables del repositorio
+# (Settings > Secrets and variables > Actions > Variables):
+#   GCP_PROJECT_ID, GCP_WIF_PROVIDER, GCP_DEPLOY_SA   salen de `terraform output` (infra/README.md)
+#   GCP_PROTECCION_GASTO = activa                     confirma que la protección de gasto está instalada
+#   GCP_REGION (opcional, us-central1), GCP_REGISTRY_REPO (opcional, solventa-backend)
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       servicios:
-        description: "Servicios a desplegar, separados por coma (vacío = los 10)"
-        required: false
-        default: ""
-      image_tag:
-        description: "Tag de las imágenes a publicar (vacío = el SHA corto del commit)"
-        required: false
-        default: ""
-  push:
-    tags:
-      - "deploy-staging-*"
+        description: 'Servicios a desplegar separados por coma (ej. auth,risk) o "todos"'
+        required: true
+        default: todos
 
-permissions:
-  contents: read
-
+# Un solo despliegue a la vez y nunca se corta a medias (podría dejar una migración sin su código).
 concurrency:
   group: deploy-staging
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 env:
-  TODOS: >-
-    ["bff","auth","risk","rating","payments","acl-worker","consolidador-fuentes",
-     "stub-open-finance","stub-open-data","stub-pasarela"]
+  PROYECTO: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+  REPOSITORIO: ${{ vars.GCP_REGISTRY_REPO || 'solventa-backend' }}
+  # En workflow_run, github.sha es el último commit de main, no el que validó CI: se usa el de CI.
+  SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   preparar:
+    if: >-
+      vars.GCP_PROJECT_ID != '' && vars.GCP_PROTECCION_GASTO == 'activa' &&
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
-      servicios: ${{ steps.lista.outputs.servicios }}
-      tag: ${{ steps.lista.outputs.tag }}
+      servicios: ${{ steps.sel.outputs.servicios }}
+      migraciones: ${{ steps.sel.outputs.migraciones }}
     steps:
-      - name: Resolver lista de servicios y tag
-        id: lista
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+          fetch-depth: 2
+      - name: Qué servicios se despliegan
+        id: sel
+        env:
+          EVENTO: ${{ github.event_name }}
+          ENTRADA: ${{ inputs.servicios }}
         run: |
-          ENTRADA="${{ inputs.servicios }}"
-          if [ -z "$ENTRADA" ]; then
-            echo "servicios=$(echo '${{ env.TODOS }}' | jq -c .)" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [ "$EVENTO" = "workflow_dispatch" ] && [ "$ENTRADA" = "todos" ]; then
+            python scripts/seleccionar_servicios.py todos >> "$GITHUB_OUTPUT"
+          elif [ "$EVENTO" = "workflow_dispatch" ]; then
+            python scripts/seleccionar_servicios.py lista "$ENTRADA" >> "$GITHUB_OUTPUT"
           else
-            echo "servicios=$(echo "$ENTRADA" | jq -Rc 'split(",") | map(gsub("^\\s+|\\s+$";""))')" >> "$GITHUB_OUTPUT"
+            # Squash merge: el padre del commit es main antes del PR. Con otro tipo de merge, usa "Run workflow".
+            python scripts/seleccionar_servicios.py cambios "${SHA}^" "$SHA" >> "$GITHUB_OUTPUT"
           fi
+          cat "$GITHUB_OUTPUT"
 
-          TAG="${{ inputs.image_tag }}"
-          if [ -z "$TAG" ]; then
-            TAG="${GITHUB_SHA::7}"
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
-  build-y-push:
+  construir:
+    # Construir una vez: la imagen que pasó CI es la que llega a staging (etiqueta = SHA, nunca "latest").
     needs: preparar
+    if: needs.preparar.outputs.servicios != '[]'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
     permissions:
       contents: read
-      id-token: write # requerido por Workload Identity Federation (sin llave de service account)
+      id-token: write
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         servicio: ${{ fromJSON(needs.preparar.outputs.servicios) }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Resolver directorio de build
-        id: ruta
-        env:
-          SERVICIO: ${{ matrix.servicio }}
-        run: |
-          case "$SERVICIO" in
-            stub-*) echo "ruta=stubs/${SERVICIO#stub-}" >> "$GITHUB_OUTPUT" ;;
-            *) echo "ruta=services/$SERVICIO" >> "$GITHUB_OUTPUT" ;;
-          esac
-
-      - name: Autenticar contra GCP (Workload Identity Federation)
-        id: auth
-        uses: google-github-actions/auth@v3
         with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
-
-      - uses: google-github-actions/setup-gcloud@v3
-
-      - name: Configurar Docker para Artifact Registry
-        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
-
-      - name: Build y push
+          ref: ${{ env.SHA }}
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Construir y publicar la imagen (si no existe ya para este SHA)
         env:
-          IMAGEN: "${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPOSITORY }}/${{ matrix.servicio }}:${{ needs.preparar.outputs.tag }}"
+          NOMBRE: ${{ matrix.servicio }}
         run: |
-          docker build -t "$IMAGEN" "${{ steps.ruta.outputs.ruta }}"
-          docker push "$IMAGEN"
+          set -euo pipefail
+          imagen="${REGION}-docker.pkg.dev/${PROYECTO}/${REPOSITORIO}/${NOMBRE}:${SHA}"
+          if gcloud artifacts docker images describe "$imagen" >/dev/null 2>&1; then
+            echo "La imagen ya existe para este SHA: se reutiliza sin reconstruir."
+            exit 0
+          fi
+          ruta=$(jq -r --arg n "$NOMBRE" '.[] | select(.nombre == $n) | .ruta' .github/servicios.json)
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build --label "org.opencontainers.image.revision=${SHA}" -t "$imagen" "$ruta"
+          docker push "$imagen"
 
-  deploy:
-    needs: [preparar, build-y-push]
+  migrar:
+    # La base se migra ANTES de que la revisión nueva reciba tráfico, mientras la anterior sigue
+    # sirviendo: por eso toda migración debe ser compatible hacia atrás (expandir/contraer, ADR-07).
+    # Se ejecuta como Cloud Run Job con la MISMA imagen que se va a desplegar.
+    needs: [preparar, construir]
+    if: needs.preparar.outputs.migraciones != '[]'
     runs-on: ubuntu-latest
-    environment: staging # configurar revisores obligatorios en Settings > Environments (fuera de este YAML)
+    timeout-minutes: 15
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: true
+      matrix:
+        servicio: ${{ fromJSON(needs.preparar.outputs.migraciones) }}
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Migrar (Cloud Run Job)
+        env:
+          NOMBRE: ${{ matrix.servicio }}
+        run: |
+          set -euo pipefail
+          imagen="${REGION}-docker.pkg.dev/${PROYECTO}/${REPOSITORIO}/${NOMBRE}:${SHA}"
+          gcloud run jobs update "migrar-${NOMBRE}" --image "$imagen" --region "$REGION"
+          gcloud run jobs execute "migrar-${NOMBRE}" --region "$REGION" --wait
+
+  desplegar:
+    needs: [preparar, construir, migrar]
+    # `migrar` puede omitirse (ningún servicio con base cambió); si falló, no se despliega nada.
+    if: ${{ !cancelled() && needs.construir.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.migrar.result) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
     permissions:
       contents: read
       id-token: write
@@ -128,20 +155,48 @@ jobs:
       matrix:
         servicio: ${{ fromJSON(needs.preparar.outputs.servicios) }}
     steps:
-      - name: Autenticar contra GCP (Workload Identity Federation)
-        uses: google-github-actions/auth@v3
+      - uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
-
-      - uses: google-github-actions/setup-gcloud@v3
-
-      - name: gcloud run deploy (solo actualiza la imagen; no toca el resto de la config de infra/)
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Revisión nueva SIN tráfico
+        id: rev
         env:
-          IMAGEN: "${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPOSITORY }}/${{ matrix.servicio }}:${{ needs.preparar.outputs.tag }}"
+          NOMBRE: ${{ matrix.servicio }}
         run: |
-          gcloud run deploy "${{ matrix.servicio }}" \
-            --image="$IMAGEN" \
-            --project="${{ vars.GCP_PROJECT_ID }}" \
-            --region="${{ vars.GCP_REGION }}" \
-            --quiet
+          set -euo pipefail
+          imagen="${REGION}-docker.pkg.dev/${PROYECTO}/${REPOSITORIO}/${NOMBRE}:${SHA}"
+          etiqueta="sha-${SHA::7}"
+          gcloud run deploy "$NOMBRE" --image "$imagen" --region "$REGION" \
+            --no-traffic --tag "$etiqueta" --update-labels "commit-sha=${SHA}" --quiet
+          url=$(gcloud run services describe "$NOMBRE" --region "$REGION" --format=json \
+            | jq -r --arg t "$etiqueta" '.status.traffic[] | select(.tag == $t) | .url')
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      # Token de identidad para llamar a servicios privados (el audience es el nombre del servicio:
+      # Terraform lo registra como custom audience, que vale también para las URL con etiqueta).
+      - name: Token de identidad para la prueba de humo
+        id: idt
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+          token_format: id_token
+          id_token_audience: ${{ matrix.servicio }}
+          id_token_include_email: true
+      - name: Prueba de humo sobre la revisión nueva
+        env:
+          URL: ${{ steps.rev.outputs.url }}
+          TOKEN: ${{ steps.idt.outputs.id_token }}
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 5 --retry-delay 3 --retry-connrefused \
+            -H "Authorization: Bearer ${TOKEN}" "${URL}/health"
+      - name: Promover (100 % del tráfico a la revisión nueva)
+        env:
+          NOMBRE: ${{ matrix.servicio }}
+        run: gcloud run services update-traffic "$NOMBRE" --region "$REGION" --to-latest
+      - name: Resumen
+        env:
+          NOMBRE: ${{ matrix.servicio }}
+        run: echo "- **${NOMBRE}** desplegado en staging (commit \`${SHA::7}\`)" >> "$GITHUB_STEP_SUMMARY"

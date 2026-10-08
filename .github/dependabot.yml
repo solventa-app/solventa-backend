@@ -21,6 +21,9 @@ updates:
   - { package-ecosystem: docker, directory: /services/payments, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /services/acl-worker, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /services/consolidador-fuentes, schedule: { interval: weekly } }
+  - { package-ecosystem: docker, directory: /stubs/open-finance, schedule: { interval: weekly } }
+  - { package-ecosystem: docker, directory: /stubs/open-data, schedule: { interval: weekly } }
+  - { package-ecosystem: docker, directory: /stubs/pasarela, schedule: { interval: weekly } }
 
   # --- Infraestructura y automatización ---
   - { package-ecosystem: terraform, directory: /infra, schedule: { interval: monthly } }

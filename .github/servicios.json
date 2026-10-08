@@ -1,0 +1,81 @@
+[
+  {
+    "nombre": "bff",
+    "ruta": "services/bff",
+    "puerto": 8000,
+    "publico": true,
+    "llama": ["auth", "risk", "rating", "payments"]
+  },
+  {
+    "nombre": "auth",
+    "ruta": "services/auth",
+    "puerto": 8001,
+    "url_env": "AUTH_URL",
+    "migracion": ["alembic", "upgrade", "head"],
+    "secretos": { "DATABASE_URL": "database-url-auth" }
+  },
+  {
+    "nombre": "risk",
+    "ruta": "services/risk",
+    "puerto": 8002,
+    "url_env": "RISK_URL",
+    "migracion": ["python", "-m", "migrations"],
+    "llama": ["acl-worker"],
+    "entorno": { "MONGO_DB": "risk" },
+    "secretos": { "MONGO_URI": "mongo-uri-risk" }
+  },
+  {
+    "nombre": "rating",
+    "ruta": "services/rating",
+    "puerto": 8003,
+    "url_env": "RATING_URL",
+    "entorno": { "MONGO_DB": "risk" },
+    "secretos": { "MONGO_URI": "mongo-uri-rating", "REDIS_URL": "redis-url-rating" }
+  },
+  {
+    "nombre": "payments",
+    "ruta": "services/payments",
+    "puerto": 8004,
+    "url_env": "PAYMENTS_URL",
+    "migracion": ["alembic", "upgrade", "head"],
+    "llama": ["acl-worker"],
+    "secretos": { "DATABASE_URL": "database-url-payments" }
+  },
+  {
+    "nombre": "acl-worker",
+    "ruta": "services/acl-worker",
+    "puerto": 8005,
+    "url_env": "ACL_URL",
+    "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela"],
+    "entorno": { "TIMEOUT_MS": "700" },
+    "secretos": {
+      "REDIS_URL": "redis-url-acl",
+      "COLA_RECONCILIACION_REDIS_URL": "redis-url-cola-reconciliacion"
+    }
+  },
+  {
+    "nombre": "consolidador-fuentes",
+    "ruta": "services/consolidador-fuentes",
+    "puerto": 8006,
+    "llama": ["acl-worker"],
+    "secretos": { "REDIS_URL": "redis-url-cola-reconciliacion" }
+  },
+  {
+    "nombre": "stub-open-finance",
+    "ruta": "stubs/open-finance",
+    "puerto": 8101,
+    "url_env": "OPEN_FINANCE_URL"
+  },
+  {
+    "nombre": "stub-open-data",
+    "ruta": "stubs/open-data",
+    "puerto": 8102,
+    "url_env": "OPEN_DATA_URL"
+  },
+  {
+    "nombre": "stub-pasarela",
+    "ruta": "stubs/pasarela",
+    "puerto": 8103,
+    "url_env": "PASARELA_URL"
+  }
+]

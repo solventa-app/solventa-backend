@@ -109,11 +109,8 @@ resource "google_secret_manager_secret_version" "database_url_payments" {
 }
 
 # --- IAM: el runtime de Cloud Run (service account default de Compute) necesita poder conectarse
-# a Cloud SQL y leer estos secretos. Ver cloud-run.tf para el IAM de Secret Manager (compartido con Mongo).
-
-data "google_project" "actual" {
-  project_id = var.project_id
-}
+# a Cloud SQL y leer estos secretos. Ver servicios.tf para el IAM de Secret Manager (compartido con Mongo).
+# `data.google_project.actual` se declara una sola vez en servicios.tf y se reutiliza aquí y en mongo-atlas.tf.
 
 resource "google_project_iam_member" "cloud_run_sql_client" {
   count   = var.crear_cloud_sql ? 1 : 0

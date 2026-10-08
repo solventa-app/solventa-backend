@@ -1,0 +1,2 @@
+# Los scripts de shell deben conservar LF aunque se editen en Windows (si no, fallan en Linux/CI/Docker).
+*.sh text eol=lf

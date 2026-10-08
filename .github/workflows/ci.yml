@@ -1,6 +1,9 @@
 name: CI
 
 # Corre solo lo que cambió: un cambio en services/risk no dispara el resto de servicios.
+# La lista de servicios sale de .github/servicios.json (fuente única, ADR-07). Los filtros de rutas de
+# abajo no pueden leerla, así que scripts/validar_servicios.py (job `manifiesto`) falla si se desincronizan.
+# La protección de rama de `main` debe exigir SOLO el check "CI OK" (y "Título del PR").
 on:
   pull_request:
   push:
@@ -13,18 +16,23 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  TODOS: >-
-    ["services/bff","services/auth","services/risk","services/rating","services/payments",
-    "services/acl-worker","services/consolidador-fuentes","stubs/open-finance","stubs/open-data","stubs/pasarela"]
-
 jobs:
   cambios:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # paths-filter pide a la API la lista de archivos del PR: sin pull-requests:read falla con
+    # "Resource not accessible by integration". Solo este job lo necesita.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       servicios: ${{ steps.matriz.outputs.servicios }}
+      migraciones: ${{ steps.matriz.outputs.migraciones }}
+      humo: ${{ steps.matriz.outputs.humo }}
       contratos: ${{ steps.f.outputs.contratos }}
       infra: ${{ steps.f.outputs.infra }}
+      manifiesto: ${{ steps.f.outputs.manifiesto }}
+      flujos: ${{ steps.f.outputs.flujos }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -35,12 +43,25 @@ jobs:
               - 'requirements-dev.txt'
               - 'pyproject.toml'
               - '.github/workflows/ci.yml'
+            compose:
+              - 'docker-compose.yml'
+              - 'dev/**'
+              - 'scripts/verificar-migraciones.sh'
             contratos:
               - 'contracts/**'
               - 'scripts/validar_contratos.py'
               - 'requirements-dev.txt'
             infra:
               - 'infra/**'
+              - '.github/servicios.json'
+            manifiesto:
+              - '.github/**'
+              - 'docker-compose.yml'
+              - 'services/*/Dockerfile'
+              - 'stubs/*/Dockerfile'
+              - 'scripts/**'
+            flujos:
+              - '.github/**'
             services/bff: ['services/bff/**']
             services/auth: ['services/auth/**']
             services/risk: ['services/risk/**']
@@ -51,19 +72,45 @@ jobs:
             stubs/open-finance: ['stubs/open-finance/**']
             stubs/open-data: ['stubs/open-data/**']
             stubs/pasarela: ['stubs/pasarela/**']
-      - name: Matriz de servicios afectados
+      - name: Matrices de servicios afectados
         id: matriz
+        env:
+          COMUN: ${{ steps.f.outputs.comun }}
+          COMPOSE: ${{ steps.f.outputs.compose }}
+          CAMBIOS: ${{ steps.f.outputs.changes }}
+          EVENTO: ${{ github.event_name }}
         run: |
-          if [ "${{ steps.f.outputs.comun }}" = "true" ]; then
-            echo "servicios=$(echo '${{ env.TODOS }}' | jq -c .)" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [ "$COMUN" = "true" ]; then
+            servicios=$(jq -c '[.[].ruta]' .github/servicios.json)
           else
-            echo "servicios=$(echo '${{ steps.f.outputs.changes }}' | jq -c '[.[] | select(startswith("services/") or startswith("stubs/"))]')" >> "$GITHUB_OUTPUT"
+            servicios=$(echo "$CAMBIOS" | jq -c '[.[] | select(startswith("services/") or startswith("stubs/"))]')
           fi
+          # Servicios con migración de base de datos: todos si cambia lo común o el compose; si no, los afectados.
+          if [ "$COMUN" = "true" ] || [ "$COMPOSE" = "true" ]; then
+            migraciones=$(jq -c '[.[] | select(.migracion) | .nombre]' .github/servicios.json)
+          else
+            migraciones=$(jq -c --argjson sel "$servicios" \
+              '[.[] | select(.migracion) | select(.ruta as $r | $sel | index($r) != null) | .nombre]' \
+              .github/servicios.json)
+          fi
+          # Humo del stack completo: si cambia el compose, o como puerta tras el merge a main.
+          if [ "$COMPOSE" = "true" ] || { [ "$EVENTO" = "push" ] && [ "$servicios" != "[]" ]; }; then
+            humo=true
+          else
+            humo=false
+          fi
+          {
+            echo "servicios=$servicios"
+            echo "migraciones=$migraciones"
+            echo "humo=$humo"
+          } >> "$GITHUB_OUTPUT"
 
   servicio:
     needs: cambios
     if: needs.cambios.outputs.servicios != '[]'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -89,10 +136,58 @@ jobs:
       - name: Construir imagen
         run: docker build -t ${{ matrix.servicio }}:ci .
 
+  migraciones:
+    # Las migraciones corren contra el almacén REAL (Postgres / MongoDB de docker compose) y con la imagen
+    # del servicio, exactamente como en staging. Postgres: una sola cabeza, subir, bajar a base y subir.
+    needs: cambios
+    if: needs.cambios.outputs.migraciones != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        servicio: ${{ fromJSON(needs.cambios.outputs.migraciones) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verificar migraciones
+        run: bash scripts/verificar-migraciones.sh ${{ matrix.servicio }}
+      - name: Logs de los contenedores (si falló)
+        if: failure()
+        run: docker compose --profile servicios logs --no-color --tail=100
+      - name: Apagar
+        if: always()
+        run: docker compose --profile servicios down -v
+
+  humo:
+    # Puerta previa al despliegue: el stack completo migra, arranca y queda sano (healthchecks) con las
+    # mismas imágenes que se construirían para staging.
+    needs: cambios
+    if: needs.cambios.outputs.humo == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Levantar el stack (migrar -> arrancar -> sano)
+        run: docker compose --profile servicios up -d --build --wait
+      - name: /health de todos los servicios
+        run: |
+          for puerto in $(jq -r '.[].puerto' .github/servicios.json); do
+            printf 'puerto %s -> ' "$puerto"
+            curl -fsS --max-time 5 "http://localhost:${puerto}/health"
+            echo
+          done
+      - name: Logs de los contenedores (si falló)
+        if: failure()
+        run: docker compose --profile servicios logs --no-color --tail=100
+      - name: Apagar
+        if: always()
+        run: docker compose --profile servicios down -v
+
   contratos:
     needs: cambios
     if: needs.cambios.outputs.contratos == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -101,10 +196,26 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: python scripts/validar_contratos.py
 
+  manifiesto:
+    needs: cambios
+    if: needs.cambios.outputs.manifiesto == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - name: Lint de scripts (ruff)
+        run: ruff check scripts
+      - run: python scripts/validar_servicios.py
+
   infra:
     needs: cambios
     if: needs.cambios.outputs.infra == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: infra
@@ -115,42 +226,61 @@ jobs:
       - run: terraform init -backend=false
       - run: terraform validate
 
-  # Job "gate": el ruleset de `main` exige un status check llamado exactamente
-  # "CI OK" (ver `gh api repos/.../rulesets/<id>`). Antes de este job no existía
-  # ningún check con ese nombre, así que esa regla nunca se podía cumplir —
-  # cualquier PR quedaba con "CI OK" en amarillo para siempre ("Waiting for
-  # status to be reported"). `if: always()` es obligatorio: si este job
-  # heredara una condición normal y no corriera, tampoco reportaría el check y
-  # el problema persistiría igual.
-  ci-ok:
-    name: CI OK
-    if: always()
-    needs: [cambios, servicio, contratos, infra]
+  flujos:
+    # Los workflows no se pueden probar hasta que corren en GitHub: actionlint atrapa antes los errores de
+    # sintaxis, expresiones y contextos.
+    needs: cambios
+    if: needs.cambios.outputs.flujos == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Verifica que ningún job requerido falló o se canceló
+      - uses: actions/checkout@v4
+      - name: Lint de workflows (actionlint)
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color
+
+  secretos:
+    # "Nunca secretos en el repo": se revisa todo el historial, no solo el último commit.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Buscar secretos (gitleaks)
         run: |
-          for r in "${{ needs.cambios.result }}" "${{ needs.servicio.result }}" \
-                   "${{ needs.contratos.result }}" "${{ needs.infra.result }}"; do
-            echo "resultado: $r"
-            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
-              echo "::error::Un job requerido falló o se canceló ($r)."
-              exit 1
-            fi
-          done
-          echo "Todo en orden (success o skipped, ningún failure/cancelled)."
+          docker run --rm -v "$PWD:/repo" --entrypoint sh ghcr.io/gitleaks/gitleaks:v8.21.2 \
+            -c 'git config --global --add safe.directory /repo && gitleaks git /repo --no-banner --redact --verbose'
 
   sonar:
     # Se activa solo cuando el repo tiene los secretos SONAR_TOKEN y SONAR_HOST_URL.
     needs: [servicio]
     if: always() && github.event_name == 'push' && needs.servicio.result != 'failure'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         if: env.SONAR_TOKEN != ''
-      - uses: SonarSource/sonarqube-scan-action@v8
+      - uses: SonarSource/sonarqube-scan-action@v4
         if: env.SONAR_TOKEN != ''
         env:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+  ci-ok:
+    # Único check requerido por la protección de rama. La matriz de servicios es dinámica y varios jobs se
+    # omiten según lo que cambió, así que no se puede exigir cada uno por nombre: este los resume.
+    name: CI OK
+    needs: [cambios, servicio, migraciones, humo, contratos, manifiesto, infra, flujos, secretos]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ningún job requerido falló ni se canceló (los omitidos están bien)
+        env:
+          RESULTADOS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Resultados: $RESULTADOS"
+          case " $RESULTADOS " in
+            *" failure "* | *" cancelled "*) echo "::error::Hay jobs fallidos o cancelados"; exit 1 ;;
+          esac

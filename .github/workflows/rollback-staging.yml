@@ -1,0 +1,72 @@
+name: Rollback staging
+
+# Devuelve el 100 % del tráfico de UN servicio a una revisión anterior de Cloud Run (segundos, sin
+# reconstruir nada). NO revierte la base de datos: las migraciones son compatibles hacia atrás
+# (ADR-07), así que la revisión anterior sigue funcionando con el esquema nuevo. Para corregir el
+# fondo, se arregla hacia adelante con un PR.
+# Mismas variables y apagado por defecto que deploy-staging.yml.
+on:
+  workflow_dispatch:
+    inputs:
+      servicio:
+        description: "Nombre del servicio (ej. rating)"
+        required: true
+      revision:
+        description: "Revisión destino (vacío = la inmediatamente anterior a la que sirve hoy)"
+        required: false
+
+# Mismo grupo que el despliegue: nunca se solapan.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+
+jobs:
+  revertir:
+    if: >-
+      vars.GCP_PROJECT_ID != '' && vars.GCP_PROTECCION_GASTO == 'activa' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Revertir el tráfico
+        env:
+          NOMBRE: ${{ inputs.servicio }}
+          REVISION: ${{ inputs.revision }}
+        run: |
+          set -euo pipefail
+          if ! jq -e --arg n "$NOMBRE" 'any(.[]; .nombre == $n)' .github/servicios.json >/dev/null; then
+            echo "::error::'$NOMBRE' no está en .github/servicios.json"; exit 1
+          fi
+          if [ -z "$REVISION" ]; then
+            actual=$(gcloud run services describe "$NOMBRE" --region "$REGION" --format=json \
+              | jq -r '[.status.traffic[] | select(.percent == 100) | .revisionName][0] // empty')
+            if [ -z "$actual" ]; then
+              echo "::error::El tráfico está repartido; indica la revisión destino a mano."; exit 1
+            fi
+            revisiones=$(gcloud run revisions list --service "$NOMBRE" --region "$REGION" --format=json)
+            marca=$(echo "$revisiones" | jq -r --arg a "$actual" '.[] | select(.metadata.name == $a) | .metadata.creationTimestamp')
+            REVISION=$(echo "$revisiones" | jq -r --arg ts "$marca" \
+              '[.[] | select(.metadata.creationTimestamp < $ts)] | sort_by(.metadata.creationTimestamp) | last | .metadata.name // empty')
+            if [ -z "$REVISION" ]; then
+              echo "::error::No hay una revisión anterior a $actual."; exit 1
+            fi
+            echo "Sirve hoy: $actual  ->  vuelve a: $REVISION"
+          fi
+          gcloud run services update-traffic "$NOMBRE" --region "$REGION" --to-revisions "${REVISION}=100"
+          echo "- **${NOMBRE}** revertido a \`${REVISION}\`" >> "$GITHUB_STEP_SUMMARY"

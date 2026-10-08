@@ -18,7 +18,7 @@ PAYMENTS procesa el cobro de primas e indemnizaciones con **pasarela tokenizada*
 
 ### Esquema de la tabla `cobros`
 
-Un único script SQL (`app/sql/001_cobros.sql`, sin framework de migraciones — regla de "capas simples", nada de Alembic/SQLAlchemy para un único CRUD), ejecutado al arrancar la app (`RepositorioCobrosPostgres.preparar_esquema`, `CREATE TABLE IF NOT EXISTS`):
+Creada por la migración de Alembic `migrations/versions/0002_cobros.py` (`op.create_table` / `op.create_index`, ver sección "Migraciones" abajo) — ya no por la app al arrancar:
 
 ```sql
 cobros (
@@ -83,6 +83,18 @@ A diferencia de RISK, aquí **no se hashea `cobroId` ni `claveIdempotencia`** en
 - Variables de entorno: `DATABASE_URL` (ya fijada en `docker-compose.yml`), `ACL_URL` (ídem), `PAYMENTS_ACL_TIMEOUT_SEGUNDOS` (default `3.0`, timeout de PAYMENTS llamando al ACL Worker — defensa en profundidad, el presupuesto de 700 ms proveedor-abajo ya lo aplica el ACL Worker), `REINTENTO_COBRO_INTERVALO_SEGUNDOS` (default `5`), `REINTENTO_COBRO_MAX_INTENTOS` (default `10`).
 - Pruebas: `pip install -r requirements.txt -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta). Usan dobles de prueba (`tests/fakes.py`), no PostgreSQL ni ACL Worker reales — ver "Verificación en vivo" abajo para la prueba con PostgreSQL y el ACL Worker reales.
 - Imagen: `docker build -t solventa-payments .`
+
+## Migraciones
+
+PostgreSQL `payments` (este servicio es su único escritor). Alembic con SQL explícito, sin ORM; el esquema lo definen las migraciones.
+
+- Aplicar: `alembic upgrade head` (necesita `DATABASE_URL`). En `docker compose` lo hace `migrar-payments` antes de arrancar el servicio; en staging, el Cloud Run Job `migrar-payments` con la misma imagen.
+- Nueva migración: `alembic revision -m "texto" --rev-id NNNN`, escribir `upgrade` **y** `downgrade`, y verificar con `bash ../../scripts/verificar-migraciones.sh payments` (una sola cabeza; subir, bajar a base y subir).
+- Compatibles hacia atrás: agregar sí; renombrar o borrar en dos despliegues (ADR-07). Nunca edites una migración ya integrada a `main`.
+- Estados de cobro, idempotencia y balances (T-W05-3) viven en la tabla `cobros`, creada por la migración `0002`
+  (`migrations/versions/0002_cobros.py`, `down_revision = "0001"`). El esquema ya **no** lo crea la app al arrancar
+  (se quitó `RepositorioCobrosPostgres.preparar_esquema` y `app/sql/001_cobros.sql`): Alembic es la única fuente del esquema,
+  igual que en `auth` — nada de migrar al arrancar la app (principio de ADR-07).
 
 ### Verificación en vivo (idempotencia y reintento reales, T-W05-3/4)
 

@@ -1,17 +1,31 @@
 # Entorno local del backend de Solventa.
 #
 #   docker compose up -d                                  # solo dependencias: Postgres, Redis, MongoDB (replica set)
-#   docker compose --profile servicios up -d --build      # + servicios y stubs
+#   docker compose --profile servicios up -d --build --wait   # + migraciones, servicios y stubs
 #   docker compose --profile observabilidad up -d         # + Prometheus y Grafana
 #
 # Los puertos de host evitan chocar con los stacks de ../solventa-arquitectura (Mongo 27017/27018,
 # Prometheus 9090, Grafana 3000): aquí Mongo usa 27117/27118, Prometheus 9190 y Grafana 3100.
+# Si 5432 o 6379 ya están ocupados en tu máquina: `POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose up -d`.
 # Nota: el replica set anuncia los hosts `mongo1`/`mongo2`, que solo resuelven dentro de la red de
 # compose; desde el host usa `mongosh` directo a un nodo (`directConnection=true`).
 
-x-servicio: &servicio
+# Orden igual al de staging: migrar el esquema (tarea de un solo uso) -> arrancar el servicio.
+# `migrar-*` usa la MISMA imagen que el servicio (en staging, un Cloud Run Job con la imagen a desplegar).
+x-tarea: &tarea
   restart: "no"
   profiles: ["servicios"]
+  pull_policy: build   # imágenes locales: siempre construir (evita servir una imagen vieja y el intento de descarga)
+
+x-servicio: &servicio
+  <<: *tarea
+  healthcheck:
+    # Cada imagen define PORT; el servicio queda "healthy" cuando /health responde.
+    test: ["CMD", "python", "-c", "import os,urllib.request as u; u.urlopen(f'http://localhost:{os.environ[\"PORT\"]}/health', timeout=3)"]
+    interval: 5s
+    timeout: 5s
+    retries: 10
+    start_period: 5s
 
 services:
   # ---------------------------------------------------------------- datos
@@ -20,7 +34,7 @@ services:
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-solventa-local}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - ./dev/postgres:/docker-entrypoint-initdb.d:ro   # crea una base por servicio (auth, payments)
     healthcheck:
@@ -32,7 +46,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -87,24 +101,50 @@ services:
       RATING_URL: http://rating:8003
       PAYMENTS_URL: http://payments:8004
 
+  migrar-auth:
+    <<: *tarea
+    image: solventa/auth:local
+    build: ./services/auth
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/auth
+    depends_on:
+      postgres: { condition: service_healthy }
+
   auth:
     <<: *servicio
+    image: solventa/auth:local
     build: ./services/auth
     ports: ["8001:8001"]
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/auth
     depends_on:
       postgres: { condition: service_healthy }
+      migrar-auth: { condition: service_completed_successfully }
+
+  migrar-risk:
+    <<: *tarea
+    image: solventa/risk:local
+    build: ./services/risk
+    command: ["python", "-m", "migrations"]
+    environment:
+      MONGO_URI: mongodb://mongo1:27017,mongo2:27017/?replicaSet=rs0
+      MONGO_DB: risk
+    depends_on:
+      mongo-init: { condition: service_completed_successfully }
 
   risk:
     <<: *servicio
+    image: solventa/risk:local
     build: ./services/risk
     ports: ["8002:8002"]
     environment:
       MONGO_URI: mongodb://mongo1:27017,mongo2:27017/?replicaSet=rs0
+      MONGO_DB: risk
       ACL_URL: http://acl-worker:8005
     depends_on:
       mongo-init: { condition: service_completed_successfully }
+      migrar-risk: { condition: service_completed_successfully }
 
   rating:
     <<: *servicio
@@ -118,8 +158,19 @@ services:
       mongo-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
 
+  migrar-payments:
+    <<: *tarea
+    image: solventa/payments:local
+    build: ./services/payments
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/payments
+    depends_on:
+      postgres: { condition: service_healthy }
+
   payments:
     <<: *servicio
+    image: solventa/payments:local
     build: ./services/payments
     ports: ["8004:8004"]
     environment:
@@ -127,6 +178,7 @@ services:
       ACL_URL: http://acl-worker:8005
     depends_on:
       postgres: { condition: service_healthy }
+      migrar-payments: { condition: service_completed_successfully }
 
   acl-worker:
     <<: *servicio

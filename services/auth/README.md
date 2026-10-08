@@ -18,3 +18,12 @@ Eventos que emite: `consentimiento.registrado`, `consentimiento.revocado` (ver `
 - Puerto local: `8001`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.
 - Pruebas: `pip install -r requirements.txt -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta).
 - Imagen: `docker build -t solventa-auth .`
+
+## Migraciones
+
+PostgreSQL `auth` (este servicio es su único escritor). Alembic con SQL explícito, sin ORM; el esquema lo definen las migraciones.
+
+- Aplicar: `alembic upgrade head` (necesita `DATABASE_URL`). En `docker compose` lo hace `migrar-auth` antes de arrancar el servicio; en staging, el Cloud Run Job `migrar-auth` con la misma imagen.
+- Nueva migración: `alembic revision -m "texto" --rev-id 0002`, escribir `upgrade` **y** `downgrade`, y verificar con `bash ../../scripts/verificar-migraciones.sh auth` (una sola cabeza; subir, bajar a base y subir).
+- Compatibles hacia atrás: agregar sí; renombrar o borrar en dos despliegues (ADR-07). Nunca edites una migración ya integrada a `main`.
+- La tabla de consentimiento (append-only, T-W01-4) va en la migración `0002`; hoy solo existe la base `0001`.

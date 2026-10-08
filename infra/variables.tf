@@ -21,26 +21,40 @@ variable "crear_kms" {
   default     = false
 }
 
-# --------------------------------------------------------------------------------------------------
-# Cloud Run (los 10 servicios/stubs). Opt-in: por defecto no se crea nada facturable.
-# --------------------------------------------------------------------------------------------------
-
-variable "crear_servicios" {
-  description = "Crea los 10 servicios de Cloud Run (bff, auth, risk, rating, payments, acl-worker, consolidador-fuentes y los 3 stubs). Requiere que las imágenes ya existan en Artifact Registry con el tag `image_tag` (ver infra/README.md, secuencia de despliegue en 2 fases)."
+variable "crear_pipeline" {
+  description = "Crea la identidad del pipeline de despliegue: Workload Identity Federation para GitHub Actions y su service account (sin llaves). No tiene costo."
   type        = bool
   default     = false
 }
 
-variable "image_tag" {
-  description = "Tag de las imágenes de Cloud Run (debe existir ya publicado en Artifact Registry)."
-  type        = string
-  default     = "latest"
+variable "crear_servicios" {
+  description = "Crea un Cloud Run service por servicio de .github/servicios.json, un Cloud Run Job de migración por servicio con base, sus service accounts y los secretos. Escalan a cero: ~USD 0 en reposo (ver infra/README.md)."
+  type        = bool
+  default     = false
 }
 
-variable "allow_unauthenticated" {
-  description = "Si true, los 10 servicios aceptan invocaciones sin autenticación (`allUsers`). Mismo patrón ya usado en `solventa-arquitectura/experimento-1-acl-kyc` para que los servicios se llamen entre sí por HTTP simple sin minting de ID tokens (los stubs del Sprint 1 no implementan eso). Aceptable mientras no haya datos reales ni lógica de negocio; replantear antes de manejar datos personales/financieros reales (regla 6 de CLAUDE.md)."
-  type        = bool
-  default     = true
+variable "repositorio_github" {
+  description = "Repositorio de GitHub autorizado a desplegar (formato organización/repositorio)."
+  type        = string
+  default     = "solventa-app/solventa-backend"
+}
+
+variable "entorno_github" {
+  description = "Entorno de GitHub (Settings > Environments) que puede asumir la identidad de despliegue."
+  type        = string
+  default     = "staging"
+}
+
+variable "imagen_inicial" {
+  description = "Imagen con la que se crean los servicios la primera vez; el pipeline la reemplaza por la del commit (Terraform ignora el cambio de imagen)."
+  type        = string
+  default     = "us-docker.pkg.dev/cloudrun/container/hello"
+}
+
+variable "max_instancias" {
+  description = "Tope de instancias por servicio de Cloud Run: limita el gasto ante una ráfaga o un bucle de llamadas."
+  type        = number
+  default     = 2
 }
 
 # --------------------------------------------------------------------------------------------------
@@ -134,20 +148,4 @@ variable "presupuesto_correos_alerta" {
   description = "Correos que reciben la alerta de presupuesto (50/80/100%), además de los administradores de facturación por defecto de GCP."
   type        = list(string)
   default     = []
-}
-
-# --------------------------------------------------------------------------------------------------
-# Workload Identity Federation — GitHub Actions despliega sin llaves de service account.
-# --------------------------------------------------------------------------------------------------
-
-variable "crear_wif" {
-  description = "Crea el pool/provider de Workload Identity Federation y la service account que usa `.github/workflows/deploy-staging.yml` para autenticarse contra GCP sin llaves."
-  type        = bool
-  default     = false
-}
-
-variable "github_repositorio" {
-  description = "Repositorio de GitHub (owner/nombre) autorizado a asumir la identidad vía WIF. Debe coincidir exactamente con el `origin` real."
-  type        = string
-  default     = "solventa-app/solventa-backend"
 }
