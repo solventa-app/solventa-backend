@@ -1,0 +1,29 @@
+name: Nombre de rama
+
+# Las ramas siguen `tipo/KAN-N-descripcion` con tipo feat, fix o chore (ver docs/convenciones.md).
+# GitHub no aplica las reglas de nombre de rama de los rulesets en este plan (las guarda pero no bloquean),
+# así que el patrón se exige con este check, obligatorio en `main` (.github/rulesets/main.json).
+# Bloquea el merge, no la creación de la rama.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  rama:
+    name: Nombre de rama
+    # Dependabot usa sus propias ramas (dependabot/**).
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Validar patrón
+        env:
+          RAMA: ${{ github.head_ref }}
+        run: |
+          if ! printf '%s' "$RAMA" | grep -Eq '^(feat|fix|chore)/KAN-[0-9]+-[a-z0-9-]+$'; then
+            echo "::error title=Nombre de rama::Patrón esperado: tipo/KAN-N-descripcion (feat, fix o chore; descripción en minúsculas, dígitos y guiones). Ej.: feat/KAN-24-consentimiento"
+            echo "Recibido: $RAMA"
+            exit 1
+          fi

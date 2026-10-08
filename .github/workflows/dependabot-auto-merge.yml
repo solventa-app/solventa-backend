@@ -1,0 +1,37 @@
+name: Dependabot auto-merge
+
+# Los PRs de Dependabot de tipo patch o minor se aprueban y quedan en auto-merge: GitHub los integra (squash)
+# cuando los checks requeridos de `main` pasan. Los major y los que no tienen versión semántica (p. ej. imágenes
+# Docker por digest) los revisa una persona. Ver docs/convenciones.md.
+#
+# pull_request_target corre el workflow de `main`, con permisos de escritura, pero NO descarga el código del PR:
+# solo lee los metadatos del PR. No agregues un checkout aquí.
+#
+# Requiere (Settings > Actions > General): "Allow GitHub Actions to create and approve pull requests", primero en
+# la organización y luego en el repo. Mientras no esté activo, el auto-merge queda armado y alguien aprueba a mano.
+on: pull_request_target
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dependabot:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Metadatos de la actualización
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Armar auto-merge y aprobar
+        if: steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr merge --auto --squash "$PR_URL"
+          gh pr review --approve "$PR_URL" || echo "::warning title=Aprobación pendiente::Actions no puede aprobar PRs todavía (ver el encabezado de este workflow). El auto-merge queda armado: aprueba el PR a mano."

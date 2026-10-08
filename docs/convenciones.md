@@ -2,10 +2,13 @@
 
 ## Ramas y flujo
 
-- **Trunk-based.** `main` está protegida (PR obligatorio, 1 revisión, CI en verde). No hay GitFlow.
-- Ramas cortas desde `main`: `KAN-24-consentimiento`, `KAN-28-idempotencia-cobro`. Se integran en horas o pocos días.
-- Un tag por sprint al cerrarlo: `sprint-1`, `sprint-2`, `sprint-3` (el mismo nombre en `solventa-frontend`).
+- **Trunk-based.** `main` está protegida por un ruleset (`.github/rulesets/main.json`): PR obligatorio, 1 aprobación (se descarta si hay push nuevo), hilos de revisión resueltos, checks `CI OK`, `Título del PR` y `Nombre de rama` en verde, solo squash, historial lineal y sin force-push ni borrado. No hay excepciones configuradas (ni siquiera para administradores). No hay GitFlow.
+- **Ramas cortas desde `main`, con el patrón `tipo/KAN-N-descripcion`** y tipo `feat`, `fix` o `chore`: `feat/KAN-24-consentimiento`, `fix/KAN-28-idempotencia-cobro`, `chore/KAN-40-actualiza-ruff`. Lo valida el check `Nombre de rama` (`pr-rama.yml`), obligatorio en `main`: bloquea el merge, no la creación de la rama (GitHub no aplica reglas de nombre de rama en este plan). Las de Dependabot (`dependabot/**`) están exentas. Se integran en horas o pocos días y GitHub las borra al hacer merge.
+- Un tag por sprint al cerrarlo: `sprint-1`, `sprint-2`, `sprint-3` (el mismo nombre en `solventa-frontend`). Los `sprint-*` están protegidos: no se pueden mover ni borrar (`.github/rulesets/tags.json`).
 - Cada merge a `main` debe dejar el repo desplegable a staging.
+- **Dependabot:** los PRs patch y minor se aprueban y se integran solos cuando los checks pasan (`dependabot-auto-merge.yml`); los major los revisa una persona.
+- **El repo es público**, que es lo que hace gratuitos los rulesets. Por eso no se versionan secretos, datos personales ni identificadores de la nube; *secret scanning* y *push protection* están activos.
+- Los rulesets son código. Si hay que recrearlos: `gh api -X POST repos/solventa-app/solventa-backend/rulesets --input .github/rulesets/main.json` (igual con `tags.json`). Un cambio a esos archivos solo surte efecto al aplicarlo.
 
 ## Commits y PR
 
