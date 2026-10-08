@@ -16,7 +16,7 @@ permissions:
 env:
   TODOS: >-
     ["services/bff","services/auth","services/risk","services/rating","services/payments",
-    "services/acl-worker","stubs/open-finance","stubs/open-data","stubs/pasarela"]
+    "services/acl-worker","services/consolidador-fuentes","stubs/open-finance","stubs/open-data","stubs/pasarela"]
 
 jobs:
   cambios:
@@ -47,6 +47,7 @@ jobs:
             services/rating: ['services/rating/**']
             services/payments: ['services/payments/**']
             services/acl-worker: ['services/acl-worker/**']
+            services/consolidador-fuentes: ['services/consolidador-fuentes/**']
             stubs/open-finance: ['stubs/open-finance/**']
             stubs/open-data: ['stubs/open-data/**']
             stubs/pasarela: ['stubs/pasarela/**']
@@ -114,6 +115,31 @@ jobs:
       - run: terraform init -backend=false
       - run: terraform validate
 
+  # Job "gate": el ruleset de `main` exige un status check llamado exactamente
+  # "CI OK" (ver `gh api repos/.../rulesets/<id>`). Antes de este job no existía
+  # ningún check con ese nombre, así que esa regla nunca se podía cumplir —
+  # cualquier PR quedaba con "CI OK" en amarillo para siempre ("Waiting for
+  # status to be reported"). `if: always()` es obligatorio: si este job
+  # heredara una condición normal y no corriera, tampoco reportaría el check y
+  # el problema persistiría igual.
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs: [cambios, servicio, contratos, infra]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verifica que ningún job requerido falló o se canceló
+        run: |
+          for r in "${{ needs.cambios.result }}" "${{ needs.servicio.result }}" \
+                   "${{ needs.contratos.result }}" "${{ needs.infra.result }}"; do
+            echo "resultado: $r"
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "::error::Un job requerido falló o se canceló ($r)."
+              exit 1
+            fi
+          done
+          echo "Todo en orden (success o skipped, ningún failure/cancelled)."
+
   sonar:
     # Se activa solo cuando el repo tiene los secretos SONAR_TOKEN y SONAR_HOST_URL.
     needs: [servicio]
@@ -124,7 +150,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         if: env.SONAR_TOKEN != ''
-      - uses: SonarSource/sonarqube-scan-action@v4
+      - uses: SonarSource/sonarqube-scan-action@v8
         if: env.SONAR_TOKEN != ''
         env:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}

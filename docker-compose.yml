@@ -113,6 +113,7 @@ services:
     environment:
       MONGO_URI: mongodb://mongo1:27017,mongo2:27017/?replicaSet=rs0
       REDIS_URL: redis://redis:6379/0
+      RATING_MAX_TIME_MS: "150"  # D-02: cota de espera de la sesion causal sobre la secundaria antes de caer a la primaria (EC011/EC012)
     depends_on:
       mongo-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -137,8 +138,27 @@ services:
       OPEN_DATA_URL: http://stub-open-data:8102
       PASARELA_URL: http://stub-pasarela:8103
       TIMEOUT_MS: "700"        # umbral duro de EC009/EC010
+      BREAKER_UMBRAL_FALLOS: "3"       # fallos consecutivos que abren el circuito
+      BREAKER_TTL_SEGUNDOS: "5"        # tiempo abierto antes de permitir la próxima sonda
+      SONDA_INTERVALO_SEGUNDOS: "2"    # frecuencia de la sonda de recuperación (regla #5)
+      CACHE_TTL_SEGUNDOS: "300"        # <= 5 min: cota superior de CA-W01-08
+      COLA_RECONCILIACION_REDIS_URL: redis://redis:6379/2  # cola de reconciliación diferida (consolidador-fuentes)
     depends_on:
       redis: { condition: service_healthy }
+
+  # Ampliación de alcance pedida por el usuario, fuera de `docs/sprint-1.md`
+  # original (ver nota en ese archivo): consume la reconciliación diferida
+  # encolada por acl-worker cuando una fuente degrada.
+  consolidador-fuentes:
+    <<: *servicio
+    build: ./services/consolidador-fuentes
+    ports: ["8006:8006"]
+    environment:
+      ACL_URL: http://acl-worker:8005
+      REDIS_URL: redis://redis:6379/2
+    depends_on:
+      redis: { condition: service_healthy }
+      acl-worker: { condition: service_started }
 
   stub-open-finance:
     <<: *servicio

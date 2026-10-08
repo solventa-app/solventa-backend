@@ -2,6 +2,9 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
+# Sin "with": el lifespan no se ejecuta, así que /health y /metrics no
+# necesitan PostgreSQL ni el ACL Worker reales (mismo patrón de
+# acl-worker/tests/test_health.py).
 client = TestClient(app)
 
 

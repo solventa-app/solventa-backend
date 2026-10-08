@@ -17,7 +17,8 @@ se actualiza este archivo en el mismo cambio.
 | `stubs/open-finance` | 8101 | Proveedor simulado (2 fuentes) | — | 1 |
 | `stubs/open-data` | 8102 | Proveedor simulado (3 fuentes) | — | 1 |
 | `stubs/pasarela` | 8103 | Pasarela de pago simulada | — | 1 |
-| `under`, `policy`, `claims`, `consolidador` | — | Suscripción, pólizas, siniestros y sonda de recuperación del circuito | — | 2–3 |
+| `consolidador-fuentes` | 8006 | Reconciliación diferida de Open Finance/Open Data degradadas (`rq` sobre Redis) | Redis (cola, db 2) | 1 (ampliación de alcance) |
+| `under`, `policy`, `claims`, `consolidador-kyc` | — | Suscripción, pólizas, siniestros y Consolidador de KYC (Truora) | — | 2–3 |
 
 Cada servicio tiene su propia base: **nadie lee ni escribe en la base de otro**.
 
@@ -47,13 +48,61 @@ El tramo síncrono es solo lo que el usuario espera; todo efecto colateral viaja
 
 Definidos en `services/acl-worker/app/domain/puertos.py` (propuesta del Sprint 1): `PuertoFuenteFinanciera`, `PuertoFuenteAbierta`, `PuertoPasarelaPagos`. KYC y firma electrónica se agregan en el Sprint 2.
 
+Un Circuit Breaker (`purgatory`) por adaptador/proveedor (`open-finance`, `open-data`, `pasarela`),
+no por fuente individual. `purgatory` no expone un evento "el circuito lleva N segundos abierto" ni
+un método para forzar el half-open: su único mecanismo de recuperación es perezoso (la próxima vez
+que algo entra a `with breaker:` después de que vence el TTL, decide ahí mismo si reabre o cierra).
+La sonda de recuperación (regla de arquitectura #5) explota exactamente esa pereza: un bucle
+`asyncio` en segundo plano (lifespan de FastAPI) revisa cada pocos segundos qué breakers están
+abiertos y, si encuentra uno, es ELLA quien entra primero al `with breaker:` — pagando el costo de
+la llamada real al adaptador — antes de que llegue una petición de usuario. No es 100 % infalible
+(una petición de usuario podría ganarle la carrera justo en el instante en que vence el TTL entre dos
+ticks de la sonda); se mitiga con un intervalo de sonda sensiblemente menor al TTL del breaker. Ver
+`services/acl-worker/app/application/sonda.py` y `circuitos.py`.
+
+## Consolidador de fuentes (reconciliación diferida)
+
+**Ampliación de alcance pedida directamente por el usuario**, fuera de `docs/sprint-1.md`
+original (ver la nota en ese archivo) — no responde a ninguna HU/HA/CA del plan del sprint.
+Diseño TRADUCIDO (no copiado) del Consolidador KYC del Experimento 1 (`solventa-arquitectura@11e4be6`,
+Node.js/TypeScript + BullMQ) a Python + `rq` (Redis Queue), aplicado a Open Finance/Open Data —
+el Consolidador de KYC (Truora) en sí sigue diferido al Sprint 2, igual que antes.
+
+```
+acl-worker (ServicioConsultaFuentes)        consolidador-fuentes (worker rq en hilo de fondo)
+  circuito abierto o falla ──► encola job ──► cola `fuentes-reconciliacion` (Redis db 2)
+  (fire-and-forget, dedup 30s)                        │
+                                                        ▼
+                                     POST /fuentes/consultar al ACL Worker (nunca al proveedor
+                                     directo — regla de arquitectura #2)
+                                        │
+                              fresco ──► job resuelto (la caché ya quedó al día)
+                              sigue degradado ──► excepción → `rq` reintenta (backoff 10/30/60/120/300s,
+                                                   máx. 5 intentos, luego FailedJobRegistry)
+```
+
+- Productor en `acl-worker` (`app/application/reconciliacion.py`): `ProductorReconciliacion`
+  deduplica por `(fuente, cliente)` con `SET NX EX 30` en Redis y encola con `rq`, sin bloquear
+  nunca la respuesta ya resuelta al llamador (`de_cache`/`degradado`).
+- Consumidor en `services/consolidador-fuentes`: FastAPI con `/health`/`/metrics` normales +
+  `rq.SimpleWorker` corriendo en un hilo de fondo arrancado desde el lifespan (mismo patrón que
+  `SondaRecuperacion`). Sin arquitectura hexagonal (regla de arquitectura #3): es andamiaje de
+  reconciliación, no el límite anticorrupción con proveedores externos — ese límite ya lo tiene
+  `acl-worker`.
+- Detalle de implementación no evidente: `rq.SimpleWorker.work()` instala manejadores de señal de
+  proceso con `signal.signal()`, que solo funciona en el hilo principal del intérprete — al correr
+  en un hilo de fondo, el trabajador los desactiva (`_SimpleWorkerSinSenales`) y usa `max_idle_time`
+  para que `work()` retorne sola y el apagado (`detener()`) sea acotado en el tiempo. Ver
+  `services/consolidador-fuentes/app/worker.py`.
+
 ## Variables de entorno (propuesta)
 
 | Servicio | Variables |
 |---|---|
 | `bff` | `AUTH_URL`, `RISK_URL`, `RATING_URL`, `PAYMENTS_URL` |
 | `auth`, `payments` | `DATABASE_URL` |
-| `risk` | `MONGO_URI`, `ACL_URL` |
-| `rating` | `MONGO_URI`, `REDIS_URL` |
-| `acl-worker` | `REDIS_URL`, `OPEN_FINANCE_URL`, `OPEN_DATA_URL`, `PASARELA_URL`, `TIMEOUT_MS` (700) |
+| `risk` | `MONGO_URI`, `ACL_URL` (no se usa todavía: RISK recibe los datos de las fuentes ya resueltos en el cuerpo de `POST /perfiles`, no llama al ACL Worker directamente) |
+| `rating` | `MONGO_URI`, `REDIS_URL` (Cache-Aside de scores, Sprint 2), `RATING_MAX_TIME_MS` (150, D-02: cota de espera en la secundaria antes de caer a la primaria) |
+| `acl-worker` | `REDIS_URL`, `OPEN_FINANCE_URL`, `OPEN_DATA_URL`, `PASARELA_URL`, `TIMEOUT_MS` (700), `BREAKER_UMBRAL_FALLOS` (3), `BREAKER_TTL_SEGUNDOS` (5), `SONDA_INTERVALO_SEGUNDOS` (2), `CACHE_TTL_SEGUNDOS` (300), `COLA_RECONCILIACION_REDIS_URL` (`redis://.../2`) |
+| `consolidador-fuentes` | `REDIS_URL` (misma cola, db 2), `ACL_URL` |
 | todos | `PORT` (lo inyecta Cloud Run) |

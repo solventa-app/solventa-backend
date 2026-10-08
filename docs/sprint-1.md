@@ -98,3 +98,37 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
 
 - HA-SEG-001 cita EC026 (ataque a la API); el escenario de revocación es **EC023** (KAN-102) y no tiene enlace a KAN-63.
 - HU-W05: el PDF del backlog le asocia HA-SEG-003, pero Jira (KAN-28) y el documento de arquitectura usan HA-SEG-002. El plan usa la relación de Jira.
+- **Ampliación de alcance pedida directamente por el usuario (sin HU/HA/CA de este plan, sin ID de Jira):**
+  `services/consolidador-fuentes` reconcilia de forma diferida las consultas a Open Finance/Open Data que
+  `acl-worker` degradó (circuito abierto o falla), traduciendo a Python + `rq` el patrón del Consolidador
+  KYC del Experimento 1 (`solventa-arquitectura@11e4be6`). Documentado en `docs/arquitectura-backend.md`
+  (sección "Consolidador de fuentes") y en el README de ambos servicios. No cubre KYC (sigue en Sprint 2) ni
+  cambia ningún criterio de aceptación de HU-W01/HU-W05: solo evita que un dato degradado quede sin
+  reintentarse una vez que el proveedor se recupera.
+- **Corrección sobre el Experimento 2 (réplica de Riesgo):** `experimento-2-replica-riesgo` en
+  `../solventa-arquitectura` está **sin construir** (verificado directamente): solo tiene el README de
+  la estructura esperada, `escritor-risk`/`lector-rating`/`ryw.py` no existen como código en ningún lado
+  de ese repo. `services/risk` y `services/rating` (T-W01-6/7, D-02/HA-LAT-003) se construyeron desde
+  cero a partir de esta especificación, no portando código de un experimento que nunca se construyó. Los
+  README de ambos servicios tenían una afirmación de reutilización incorrecta; ya se corrigió ahí.
+- **Cifrado de campo (SEG-002/D-04/CA-W01-10) fuera de alcance en `risk`:** sin proyecto GCP no hay Cloud
+  KMS disponible, y no existe todavía ningún helper de cifrado en el repo (AUTH tampoco lo ha construido
+  para T-W01-4). `risk` persiste los datos de las fuentes sin cifrar — hueco real, documentado en
+  `services/risk/README.md`, deliberadamente no simulado con un cifrado de juguete.
+- **Hueco encontrado y CERRADO al verificar D-02 en vivo (`services/rating`):** el mecanismo de fallback a
+  la primaria (D-02) cubría de entrada el caso que la especificación describe (la secundaria responde
+  pero no alcanza el `afterClusterTime` dentro de `maxTimeMS`). Al forzar lag real pausando el contenedor
+  de la secundaria (`docker pause`), se encontró un caso relacionado pero distinto — la secundaria
+  totalmente inalcanzable, no solo atrasada — con dos causas (ambas corregidas, ver
+  `services/rating/README.md` para la evidencia con números reales de ambas rondas de verificación):
+  1. Selección de servidor bloqueada hasta `serverSelectionTimeoutMS` por defecto (30 s) antes de llegar
+     a la consulta que `maxTimeMS` acota.
+  2. Aun acotando lo anterior, la topología podía seguir creyendo que la secundaria estaba sana y
+     despachar la consulta ahí, colgándose indefinidamente en el socket (`docker pause` no cierra la
+     conexión, solo congela el proceso) — sin timeout de socket por defecto en pymongo.
+  Se resolvió con un segundo `MongoClient` dedicado a la lectura de la secundaria, con
+  `serverSelectionTimeoutMS`/`connectTimeoutMS`/`socketTimeoutMS` acotados al mismo presupuesto
+  (`RATING_MAX_TIME_MS`), y `ServerSelectionTimeoutError`/`AutoReconnect` agregados al conjunto de errores
+  que disparan el fallback. Verificado en vivo: con `mongo2` pausado, la lectura responde 200 en ~0.57s
+  (`leido_de_secundaria:false`, sin 5xx ni cuelgue) en vez de bloquear 10s+; al reanudar `mongo2`, la
+  siguiente lectura ya vuelve `leido_de_secundaria:true` sin reiniciar nada.
