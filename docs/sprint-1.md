@@ -115,6 +115,24 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   KMS disponible, y no existe todavía ningún helper de cifrado en el repo (AUTH tampoco lo ha construido
   para T-W01-4). `risk` persiste los datos de las fuentes sin cifrar — hueco real, documentado en
   `services/risk/README.md`, deliberadamente no simulado con un cifrado de juguete.
+- **Ampliación de alcance pedida directamente por el usuario (sin HU/HA/CA nuevos, sin ID de
+  Jira):** `services/rating` ya tenía el mecanismo de lectura causal (D-02/HA-LAT-003), pero el
+  cálculo real de la oferta (T-W01-6 completo: score + prima, HA-MOD-002) y el Cache-Aside de
+  scores en Redis (HA-LAT-001) estaban marcados como "fuera de alcance, Sprint 2" en su README. El
+  usuario pidió construirlos ahora, con una salvedad explícita: **no hay ninguna fórmula actuarial
+  definida en el material del curso** (se investigó el PDF del proyecto, el backlog de Jira y
+  `PlanningV1.2.xlsx`) — solo la mención genérica de un "motor de reglas actuariales". Se implementó
+  un modelo genérico e ilustrativo de la industria (scoring tipo crediticio ponderado por las 5
+  fuentes + pricing de seguro de vida hipotecario estándar), documentado como tal —no como fórmula
+  actuarial certificada— en `services/rating/README.md`, con la tabla de pesos exacta
+  (historial-crediticio 30%, cuentas-bancarias 20%, afiliación-pila 20%, cámara-comercio 15%,
+  antecedentes-judiciales 15%) y la fórmula de prima. Nuevo endpoint `POST /ofertas`; no cambia
+  ningún criterio de aceptación de HU-W01 (los cumple: CA-W01-03/04/06). El Cache-Aside cachea
+  específicamente el **score** (no la prima, que depende de `cobertura`, un dato de la solicitud) —
+  decisión de diseño documentada en el README del servicio. Verificado en vivo con números reales
+  (score=82, prima=94680.00 COP sobre una cobertura de 200.000.000 con las 5 fuentes sanas; score=76
+  y rango 81.792,00–122.688,00 con una fuente degradada) y con pruebas que fuerzan el cambio de
+  `VERSION_REGLAS` para confirmar que invalida el hit de caché.
 - **Hueco encontrado y CERRADO al verificar D-02 en vivo (`services/rating`):** el mecanismo de fallback a
   la primaria (D-02) cubría de entrada el caso que la especificación describe (la secundaria responde
   pero no alcanza el `afterClusterTime` dentro de `maxTimeMS`). Al forzar lag real pausando el contenedor

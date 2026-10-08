@@ -3,13 +3,18 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from decimal import InvalidOperation
 
+import redis
 from fastapi import FastAPI, HTTPException, Query
 from prometheus_fastapi_instrumentator import Instrumentator
+from pydantic import BaseModel
 from pymongo import MongoClient
 
+from app.application.cache_score import CacheScore
 from app.application.configuracion import Configuracion
 from app.application.lector_perfiles import LectorPerfiles, LectorPerfilesMongo
+from app.application.servicio_oferta import ServicioOferta
 
 # Timeouts acotados (mismo presupuesto que `max_time_ms`) SOLO en el cliente
 # dedicado a la secundaria — hueco real encontrado al verificar en vivo con
@@ -29,20 +34,33 @@ from app.application.lector_perfiles import LectorPerfiles, LectorPerfilesMongo
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 
+class SolicitudOferta(BaseModel):
+    cliente_id: str
+    # `operation_time`: el valor que RISK devolvió en `POST /perfiles` (D-02).
+    # `cobertura`: el monto asegurado solicitado (decimal como texto, nunca
+    # float — RISK no lo tiene, es un dato de la solicitud del cliente).
+    # Ambos se pasan hoy directo en la petición; en producción los reenviaría
+    # el BFF (mismo patrón ya documentado para `operation_time`).
+    operation_time: str
+    cobertura: str
+
+
 def create_app(
     config: Configuracion | None = None,
     lector_perfiles: LectorPerfiles | None = None,
+    servicio_oferta: ServicioOferta | None = None,
 ) -> FastAPI:
-    """`lector_perfiles` permite inyectar un doble de prueba (ver
-    `tests/fakes.py`) sin levantar un replica set real. En producción (o al
-    verificar en vivo con `docker compose`) se omite y `create_app` lo
-    construye desde `Configuracion`."""
+    """`lector_perfiles`/`servicio_oferta` permiten inyectar dobles de prueba
+    (ver `tests/fakes.py`) sin levantar un replica set ni un Redis reales. En
+    producción (o al verificar en vivo con `docker compose`) se omiten y
+    `create_app` los construye desde `Configuracion`."""
     config = config or Configuracion.desde_entorno()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         cliente_primaria: MongoClient | None = None
         cliente_secundaria: MongoClient | None = None
+        cliente_redis: redis.Redis | None = None
         if lector_perfiles is not None:
             app.state.lector_perfiles = lector_perfiles
         else:
@@ -56,6 +74,14 @@ def create_app(
             app.state.lector_perfiles = LectorPerfilesMongo(
                 cliente_primaria, cliente_secundaria, config.max_time_ms
             )
+
+        if servicio_oferta is not None:
+            app.state.servicio_oferta = servicio_oferta
+        else:
+            cliente_redis = redis.Redis.from_url(config.redis_url)
+            cache_score = CacheScore(cliente_redis, config.oferta_cache_ttl_segundos)
+            app.state.servicio_oferta = ServicioOferta(app.state.lector_perfiles, cache_score)
+
         try:
             yield
         finally:
@@ -63,6 +89,8 @@ def create_app(
                 cliente_primaria.close()
             if cliente_secundaria is not None:
                 cliente_secundaria.close()
+            if cliente_redis is not None:
+                cliente_redis.close()
 
     app = FastAPI(title="solventa-rating", version="0.1.0", lifespan=lifespan)
 
@@ -84,6 +112,26 @@ def create_app(
         if perfil is None:
             raise HTTPException(status_code=404, detail="perfil no encontrado")
         return perfil
+
+    @app.post("/ofertas", tags=["ofertas"])
+    def generar_oferta(body: SolicitudOferta) -> dict:
+        """Calcula la oferta (score + prima, T-W01-6 completo) sobre el
+        perfil leído con el mismo mecanismo causal de `GET /perfiles`
+        (reusa `LectorPerfiles`, no duplica esa lectura). Nunca un 5xx crudo
+        por una solicitud mal formada: `operation_time`/`cobertura`
+        inválidos responden 400, perfil inexistente responde 404
+        (CA-W01-05)."""
+        try:
+            oferta, _score_de_cache = app.state.servicio_oferta.generar(
+                body.cliente_id, body.operation_time, body.cobertura
+            )
+        except (ValueError, InvalidOperation) as error:
+            raise HTTPException(
+                status_code=400, detail=f"solicitud invalida: {error}"
+            ) from error
+        if oferta is None:
+            raise HTTPException(status_code=404, detail="perfil no encontrado")
+        return oferta
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app
