@@ -1,4 +1,21 @@
-# Copiar a terraform.tfvars (ignorado por git) y completar.
+# Copiar a terraform.tfvars (ignorado por git) y completar. NUNCA poner secretos reales aquí
+# (contraseñas, API keys de Atlas): esos van a Secret Manager o a variables de entorno del shell
+# que corre terraform (MONGODB_ATLAS_PUBLIC_KEY / MONGODB_ATLAS_PRIVATE_KEY), nunca a este archivo.
 project_id = "tu-proyecto-gcp"
 region     = "us-central1"
-crear_kms  = false
+
+# --- Todo lo de abajo es opt-in (default false): activar de a uno, con confirmación, nunca junto. ---
+crear_kms         = false
+crear_servicios   = false
+crear_redis       = false
+crear_cloud_sql   = false
+crear_mongo_atlas = false
+crear_presupuesto = false
+crear_wif         = false
+
+# Solo si crear_presupuesto = true:
+# billing_account_id         = "XXXXXX-XXXXXX-XXXXXX"
+# presupuesto_correos_alerta = ["equipo@example.com"]
+
+# Solo si crear_mongo_atlas = true (requiere cuenta/org de Atlas ya creada):
+# mongodb_atlas_org_id = "..."
