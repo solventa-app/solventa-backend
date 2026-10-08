@@ -22,6 +22,7 @@ service-account*.json
 tfplan.*
 terraform.tfvars
 crash.log
+infra/.builds/   # zip generado por el data source archive_file (función frenar-gasto)
 
 # Resultados crudos de k6 muy grandes (los resúmenes sí van en docs/evidencias/)
 tests/k6/resultados-crudos/
