@@ -1,29 +1,53 @@
 name: Nombre de rama
 
-# Las ramas siguen `tipo/KAN-N-descripcion` con tipo feat, fix o chore (ver docs/convenciones.md).
+# Git-flow (ADR-08, docs/convenciones.md): valida el nombre de la rama Y que apunte a la rama base correcta.
+#   feat|fix|chore/KAN-N-descripcion  ->  develop          (trabajo diario; también a otra rama de trabajo)
+#   fix|chore/KAN-N-descripcion       ->  release/sprint-N (solo correcciones durante la estabilización)
+#   release/sprint-N                  ->  main             (liberación de fin de sprint)
+#   hotfix/KAN-N-descripcion          ->  main             (corrección urgente sobre lo liberado)
+#   main                              ->  develop          (reintegración tras cada release o hotfix)
 # GitHub no aplica las reglas de nombre de rama de los rulesets en este plan (las guarda pero no bloquean),
-# así que el patrón se exige con este check, obligatorio en `main` (.github/rulesets/main.json).
+# así que se exige con este check, obligatorio en `main` y `develop` (.github/rulesets/).
 # Bloquea el merge, no la creación de la rama.
 on:
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, edited]
 
 permissions: {}
 
 jobs:
   rama:
     name: Nombre de rama
-    # Dependabot usa sus propias ramas (dependabot/**).
+    # Dependabot usa sus propias ramas (dependabot/**) y apunta a develop (dependabot.yml).
     if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Validar patrón
+      - name: Validar rama y destino
         env:
           RAMA: ${{ github.head_ref }}
+          BASE: ${{ github.base_ref }}
         run: |
-          if ! printf '%s' "$RAMA" | grep -Eq '^(feat|fix|chore)/KAN-[0-9]+-[a-z0-9-]+$'; then
-            echo "::error title=Nombre de rama::Patrón esperado: tipo/KAN-N-descripcion (feat, fix o chore; descripción en minúsculas, dígitos y guiones). Ej.: feat/KAN-24-consentimiento"
-            echo "Recibido: $RAMA"
-            exit 1
-          fi
+          trabajo='^(feat|fix|chore)/KAN-[0-9]+-[a-z0-9-]+$'
+          correccion='^(fix|chore)/KAN-[0-9]+-[a-z0-9-]+$'
+          release='^release/sprint-[0-9]+$'
+          hotfix='^hotfix/KAN-[0-9]+-[a-z0-9-]+$'
+          coincide() { printf '%s' "$RAMA" | grep -Eq "$1"; }
+
+          case "$BASE" in
+            main)
+              coincide "$release" || coincide "$hotfix" && exit 0
+              esperado="release/sprint-N o hotfix/KAN-N-descripcion (el trabajo diario va a develop)" ;;
+            develop)
+              coincide "$trabajo" || [ "$RAMA" = "main" ] && exit 0
+              esperado="feat|fix|chore/KAN-N-descripcion, o main para reintegrar un release/hotfix" ;;
+            release/*)
+              coincide "$correccion" && exit 0
+              esperado="fix|chore/KAN-N-descripcion (un release solo recibe correcciones)" ;;
+            *)
+              coincide "$trabajo" && exit 0
+              esperado="feat|fix|chore/KAN-N-descripcion" ;;
+          esac
+          echo "::error title=Nombre de rama::Hacia '$BASE' se espera $esperado. Descripción en minúsculas, dígitos y guiones. Ej.: feat/KAN-24-consentimiento -> develop"
+          echo "Recibido: $RAMA -> $BASE"
+          exit 1

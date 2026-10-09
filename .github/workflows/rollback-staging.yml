@@ -30,7 +30,7 @@ jobs:
   revertir:
     if: >-
       vars.GCP_PROJECT_ID != '' && vars.GCP_PROTECCION_GASTO == 'activa' &&
-      github.ref == 'refs/heads/main'
+      github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: staging
