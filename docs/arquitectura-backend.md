@@ -40,6 +40,11 @@ El tramo síncrono es solo lo que el usuario espera; todo efecto colateral viaja
 `POST /perfiles` de RISK (que no llama al ACL Worker); luego reenvía a RATING el `operation_time` que RISK devolvió. El BFF
 no calcula nada de negocio: solo secuencia las llamadas y traduce la degradación al contrato (`ErrorOferta` o oferta preliminar).
 
+**Autenticación entre servicios (pendiente parcial):** en Cloud Run solo el BFF es público; el resto exige un token de
+identidad con audience = nombre del servicio. El BFF ya lo envía (`services/bff/app/autenticacion_servicios.py`).
+**PAYMENTS → ACL Worker y `consolidador-fuentes` → ACL Worker todavía no**: en staging esas llamadas recibirían 403.
+Se corrige antes del primer despliegue, con el mismo patrón.
+
 ## Lo que enseñaron los experimentos (ya validado, no se re-discute)
 
 - **Experimento 1 (Circuit Breaker + Retry en el ACL):** con el proveedor caído, las solicitudes que no dependen de él variaron < 1 % (límite: +10 %), 0 fallas, y el circuito cerró solo en ~6 s. El diseño en papel hacía que *una petición de usuario* probara si el proveedor volvió, pagando timeout + reintento (> 3 s). Se corrigió: **la sonda corre fuera del camino síncrono** (Consolidador).
