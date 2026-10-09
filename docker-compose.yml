@@ -97,6 +97,7 @@ services:
     ports: ["8000:8000"]
     environment:
       AUTH_URL: http://auth:8001
+      ACL_URL: http://acl-worker:8005
       RISK_URL: http://risk:8002
       RATING_URL: http://rating:8003
       PAYMENTS_URL: http://payments:8004
