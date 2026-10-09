@@ -57,5 +57,5 @@ Arquitectura: [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md). Co
 - **Verifica en vivo antes de reportar éxito:** corre las pruebas, levanta el compose, muestra números reales.
 - **Reutiliza los experimentos copiando, no enlazando.** Anota en el README del servicio el commit de origen (`solventa-arquitectura@11e4be6`). Sin submódulos.
 - **Costos:** nunca ejecutes `terraform apply`/`destroy` ni crees recursos facturables sin confirmación explícita del usuario. La protección de gasto de `../solventa-arquitectura/proteccion-costos/` debe estar activa en el proyecto antes de desplegar.
-- **Commits y PR:** ver `docs/convenciones.md` (Conventional Commits con la clave de Jira, trunk-based, 1 revisión).
+- **Commits y PR:** ver `docs/convenciones.md` (Conventional Commits con la clave de Jira, git-flow `main → develop → feature` según ADR-08, 1 revisión). Las ramas de trabajo salen de `develop` y vuelven a `develop`; nunca abras un PR de trabajo hacia `main`.
 - **Español** en documentación, comentarios y mensajes de commit; los identificadores de código pueden ir en español (dominio) o inglés (técnico), pero consistentes dentro de un servicio.

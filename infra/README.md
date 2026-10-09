@@ -99,7 +99,7 @@ según qué historia lo necesite.
 4. `crear_pipeline = true` → `terraform apply` → copiar los outputs a GitHub (ver "Conectar GitHub con GCP").
 5. `crear_servicios = true` → `terraform apply` → **cargar el valor real de cada secreto** (ver "Cargar los secretos").
 6. Primer despliegue: Actions > *Deploy staging* > *Run workflow* con `servicios = todos` (los servicios nacen con la
-   imagen de ejemplo `imagen_inicial`; este paso pone las reales). Desde ahí, cada merge a `main` despliega solo lo que cambió.
+   imagen de ejemplo `imagen_inicial`; este paso pone las reales). Desde ahí, cada merge a `develop` despliega solo lo que cambió.
 7. Si se va a usar `crear_mongo_atlas`: crear primero la cuenta/organización de MongoDB Atlas a mano
    (no se puede automatizar sin que exista ya) y exportar `MONGODB_ATLAS_PUBLIC_KEY` /
    `MONGODB_ATLAS_PRIVATE_KEY` en el shell que corre terraform. **Nadie ha hecho esto todavía.**
@@ -107,7 +107,7 @@ según qué historia lo necesite.
 ## Conectar GitHub con GCP
 
 Con `crear_pipeline = true`, `terraform output` entrega los valores. En GitHub: Settings > Environments > **New environment
-`staging`** (aquí se pueden exigir revisores y limitar a la rama `main`), y en Settings > Secrets and variables > Actions >
+`staging`** (aquí se pueden exigir revisores y limitar a la rama `develop`), y en Settings > Secrets and variables > Actions >
 **Variables**:
 
 | Variable | Valor |
@@ -163,7 +163,7 @@ key ring de KMS (no se puede borrar) ni los secretos si ya cargaste valores real
 - `ci.yml` valida el Terraform (`fmt`, `init -backend=false`, `validate`) cuando cambia `infra/` o `.github/servicios.json`. No aplica nada.
 - `deploy-staging.yml` y `rollback-staging.yml` despliegan aplicaciones (no infraestructura): construyen la imagen (tag = SHA),
   migran y solo entonces actualizan la revisión del servicio. Se disparan **solo manualmente** (`workflow_dispatch`) o desde
-  el flujo que define `ci.yml` tras el merge a `main` — nunca aplican Terraform.
+  el flujo que define `ci.yml` tras el merge a `develop` — nunca aplican Terraform.
 
 ## Patrón de referencia
 
