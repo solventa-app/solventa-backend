@@ -1,10 +1,10 @@
 name: Dependabot auto-merge
 
 # Los PRs de Dependabot de tipo patch o minor se aprueban y quedan en auto-merge: GitHub los integra (squash)
-# cuando los checks requeridos de `main` pasan. Los major y los que no tienen versión semántica (p. ej. imágenes
+# cuando los checks requeridos de `develop` pasan. Los major y los que no tienen versión semántica (p. ej. imágenes
 # Docker por digest) los revisa una persona. Ver docs/convenciones.md.
 #
-# pull_request_target corre el workflow de `main`, con permisos de escritura, pero NO descarga el código del PR:
+# pull_request_target corre el workflow de la rama base (`develop`), con permisos de escritura, pero NO descarga el código del PR:
 # solo lee los metadatos del PR. No agregues un checkout aquí.
 #
 # Requiere (Settings > Actions > General): "Allow GitHub Actions to create and approve pull requests", primero en

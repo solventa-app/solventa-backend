@@ -15,7 +15,7 @@ Aquí vive todo lo que otro componente (o el repo `solventa-frontend`) necesita 
 2. **Retirar algo = deprecar primero** (`@deprecated(reason: "...")`) y borrarlo al menos un sprint después.
 3. **Todo cambio** se anota en `CHANGELOG.md` con fecha, la historia de Jira (KAN-nn) y si afecta al frontend.
 4. Los eventos llevan un sobre fijo (`eventId`, `tipo`, `version`, `ocurridoEn`, `datos`). Un cambio incompatible crea una `version` nueva, no edita la anterior.
-5. El frontend toma una copia versionada del esquema y su CI falla si difiere del `main` de este repo (ver `docs/adr/ADR-06-estrategia-de-repositorios.md`).
+5. El frontend toma una copia versionada del esquema y su CI falla si difiere del `main` de este repo (lo liberado; ver ADR-08) (ver `docs/adr/ADR-06-estrategia-de-repositorios.md`).
 6. El dinero se expresa como texto decimal más la moneda. Nunca `float`.
 
 ## Validación

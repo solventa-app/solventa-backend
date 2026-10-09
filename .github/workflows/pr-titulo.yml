@@ -1,6 +1,6 @@
 name: Título del PR
 
-# El título del PR es el mensaje del commit al hacer squash a main (trunk-based, 1 PR = 1 historia):
+# El título del PR es el mensaje del commit al hacer squash a develop (git-flow, 1 PR = 1 historia):
 # Conventional Commits con alcance y clave de Jira. Ver docs/convenciones.md.
 # Va en un workflow aparte para que editar el título no vuelva a correr todo el CI.
 on:
