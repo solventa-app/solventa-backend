@@ -2,6 +2,7 @@
 
 - **Estado:** propuesto; el flujo local y de CI está probado en vivo, el de despliegue a GCP **no** (no existe aún el proyecto GCP)
 - **Fecha:** 2026-10-04
+- **Nota (2026-10-08):** donde dice `main` como rama que despliega a staging, ahora es `develop` ([ADR-08](ADR-08-git-flow.md)).
 - **Continúa:** ADR-06 (trunk-based, pipelines filtrados por ruta, "cada merge a `main` deja el repo desplegable a staging")
 
 ## Contexto

@@ -56,7 +56,7 @@ Si 5432 o 6379 ya están ocupados en tu máquina: `POSTGRES_PORT=5433 REDIS_PORT
 Un solo camino, el mismo en local, CI y staging ([ADR-07](docs/adr/ADR-07-cicd-y-migraciones.md)):
 
 ```
-PR ─► CI ─► merge a main ─► construir (imagen = SHA) ─► migrar (job) ─► revisión sin tráfico ─► humo ─► promover
+PR ─► CI ─► merge a develop ─► construir (imagen = SHA) ─► migrar (job) ─► revisión sin tráfico ─► humo ─► promover
 ```
 
 - **Migraciones:** `auth` y `payments` con Alembic (`services/<x>/migrations/`), `risk` con un runner propio para MongoDB.
@@ -72,7 +72,8 @@ PR ─► CI ─► merge a main ─► construir (imagen = SHA) ─► migrar (
 - [`CLAUDE.md`](CLAUDE.md) — contexto de trabajo, decisiones cerradas y reglas (léelo antes de tocar código).
 - [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md) — servicios, almacenes y flujo del caso insignia.
 - [`docs/sprint-1.md`](docs/sprint-1.md) — alcance, habilitadoras, escenarios y decisiones abiertas del Sprint 1.
-- [`docs/convenciones.md`](docs/convenciones.md) — ramas, commits, PR y definición de hecho.
+- [`docs/convenciones.md`](docs/convenciones.md) — ramas (git-flow), commits, PR y definición de hecho.
+- [`docs/adr/ADR-08-git-flow.md`](docs/adr/ADR-08-git-flow.md) — decisión del flujo `main → develop → feature`.
 - [`docs/adr/ADR-07-cicd-y-migraciones.md`](docs/adr/ADR-07-cicd-y-migraciones.md) — CI/CD y migraciones: principios y límites de lo probado.
 - [`infra/README.md`](infra/README.md) — infraestructura y control de costos.
 
@@ -81,7 +82,7 @@ PR ─► CI ─► merge a main ─► construir (imagen = SHA) ─► migrar (
 | Dónde | Qué | Para qué |
 |---|---|---|
 | Settings → Secrets → Actions | `SONAR_TOKEN` y `SONAR_HOST_URL` | Activa el análisis de SonarQube del CI |
-| Settings → Branches | Proteger `main`: PR + 1 revisión + checks requeridos **`CI OK`** y **`Título del PR`** (solo esos dos) | ADR-06, ADR-07 y `docs/convenciones.md` |
-| Settings → Environments | Crear el entorno `staging` (revisores y rama `main` si se quiere) | Lo exigen los jobs de despliegue y la identidad de GCP |
+| Settings → Branches | Rama predeterminada `develop`; aplicar los rulesets de `main` y `develop` (`.github/rulesets/`): PR + 1 revisión + checks requeridos **`CI OK`**, **`Título del PR`** y **`Nombre de rama`** | ADR-08 y `docs/convenciones.md` |
+| Settings → Environments | Crear el entorno `staging` (revisores y rama `develop` si se quiere) | Lo exigen los jobs de despliegue y la identidad de GCP |
 | `.github/CODEOWNERS` | Reemplazar los roles por usuarios reales | Revisores automáticos |
 | Settings → Variables | `GCP_PROJECT_ID`, `GCP_WIF_PROVIDER`, `GCP_DEPLOY_SA`, `GCP_PROTECCION_GASTO=activa` | Encienden el despliegue (apagado hasta entonces); ver `infra/README.md` |

@@ -2,6 +2,7 @@
 
 - **Estado:** propuesto; organización y nombres de repos confirmados (GitHub `solventa-app`: `solventa-backend`, `solventa-frontend`)
 - **Fecha:** 2026-10-03
+- **Nota (2026-10-08):** el flujo de ramas trunk-based de este ADR lo reemplaza [ADR-08](ADR-08-git-flow.md).
 - **Continúa:** ADR-01 a ADR-05 del Documento de Arquitectura refinado
 
 ## Contexto
@@ -32,7 +33,7 @@ Dentro de `solventa-backend` es un monorepo: **un directorio por servicio, pipel
 4. El frontend arranca con **mocks** (MSW en web, mock del BFF en Flutter) hasta que el BFF real esté desplegado.
 5. Cypress corre contra **staging**, que se despliega desde el `main` de este repo.
 6. La infraestructura de hosting de la SPA vive en el Terraform de este repo; el pipeline del frontend publica el build usando los outputs.
-7. Mismas reglas de flujo en ambos repos: trunk-based, 1 revisión, clave de Jira en el título, ramas `feat|fix|chore/KAN-N-descripcion`, tag `sprint-N`. Se hacen cumplir con rulesets versionados en `.github/rulesets/` de cada repo (protección de `main` y de los tags) más checks obligatorios para el título del PR y el nombre de rama. Los rulesets exigen repos públicos: en plan gratuito, GitHub no los aplica a repos privados.
+7. Mismas reglas de flujo en ambos repos: git-flow (ADR-08; antes trunk-based), 1 revisión, clave de Jira en el título, ramas `feat|fix|chore/KAN-N-descripcion`, tag `sprint-N`. Se hacen cumplir con rulesets versionados en `.github/rulesets/` de cada repo (protección de `main` y de los tags) más checks obligatorios para el título del PR y el nombre de rama. Los rulesets exigen repos públicos: en plan gratuito, GitHub no los aplica a repos privados.
 
 ## Alternativas descartadas
 

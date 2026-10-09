@@ -3,11 +3,11 @@ name: CI
 # Corre solo lo que cambió: un cambio en services/risk no dispara el resto de servicios.
 # La lista de servicios sale de .github/servicios.json (fuente única, ADR-07). Los filtros de rutas de
 # abajo no pueden leerla, así que scripts/validar_servicios.py (job `manifiesto`) falla si se desincronizan.
-# La protección de rama de `main` debe exigir SOLO el check "CI OK" (y "Título del PR").
+# La protección de rama de `main` y `develop` debe exigir SOLO el check "CI OK" (y "Título del PR").
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, develop]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -94,7 +94,7 @@ jobs:
               '[.[] | select(.migracion) | select(.ruta as $r | $sel | index($r) != null) | .nombre]' \
               .github/servicios.json)
           fi
-          # Humo del stack completo: si cambia el compose, o como puerta tras el merge a main.
+          # Humo del stack completo: si cambia el compose, o como puerta tras el merge a develop o main.
           if [ "$COMPOSE" = "true" ] || { [ "$EVENTO" = "push" ] && [ "$servicios" != "[]" ]; }; then
             humo=true
           else
