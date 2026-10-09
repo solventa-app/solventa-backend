@@ -4,7 +4,9 @@
     "ruta": "services/bff",
     "puerto": 8000,
     "publico": true,
-    "llama": ["auth", "acl-worker", "risk", "rating", "payments"]
+    "llama": ["auth", "acl-worker", "risk", "rating", "payments"],
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token" },
+    "secretos": { "CLIENTE_ID_CLAVE": "clave-cliente-id" }
   },
   {
     "nombre": "auth",

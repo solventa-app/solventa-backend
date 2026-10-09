@@ -133,6 +133,14 @@ printf '%s' 'postgresql://USUARIO:CLAVE@/auth?host=/cloudsql/PROYECTO:REGION:INS
 Una migración con el valor marcador falla fuerte y a propósito. `mongo-uri-rating` debe ser un usuario de **solo lectura**
 (RATING nunca escribe en Riesgo) y `mongo-uri-risk` el de lectura/escritura.
 
+`clave-cliente-id` es la clave HMAC con la que el BFF deriva el `cliente_id` opaco a partir del documento de
+identidad (ver `services/bff/app/identificadores.py`). Debe ser aleatoria y **no cambiar** mientras haya datos en
+RISK (cambiarla deja huérfanos los perfiles existentes). El BFF se niega a arrancar con el valor marcador:
+
+```bash
+openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add clave-cliente-id --data-file=-
+```
+
 ## Costos y cómo destruir
 
 | Cuándo | Qué | Costo a vigilar |

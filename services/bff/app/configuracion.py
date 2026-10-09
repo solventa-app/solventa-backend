@@ -7,6 +7,8 @@ from dataclasses import dataclass
 # Solo para local/pruebas: el repo es público, así que este valor NO es secreto.
 # En Cloud Run, `CLIENTE_ID_CLAVE` llega de Secret Manager (`clave-cliente-id`).
 CLAVE_CLIENTE_ID_LOCAL = "solo-local-no-secreta"
+# Valor con el que Terraform crea cada secreto (infra/README.md, "Cargar los secretos").
+VALOR_MARCADOR = "pendiente-de-cargar"
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,9 @@ class Configuracion:
                 # En la nube nunca se cae a la clave local conocida.
                 raise ValueError("falta CLIENTE_ID_CLAVE")
             clave = CLAVE_CLIENTE_ID_LOCAL
+        if autenticacion != "ninguna" and clave in (CLAVE_CLIENTE_ID_LOCAL, VALOR_MARCADOR):
+            # Terraform crea el secreto con un marcador; sin el valor real no se arranca.
+            raise ValueError("CLIENTE_ID_CLAVE no se ha cargado en Secret Manager")
         return cls(
             auth_url=os.getenv("AUTH_URL", "http://localhost:8001"),
             acl_url=os.getenv("ACL_URL", "http://localhost:8005"),
