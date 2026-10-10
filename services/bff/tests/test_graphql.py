@@ -119,6 +119,13 @@ def test_contactar_asesor_confirma() -> None:
     assert "o-1" in confirmacion["resumen"]
 
 
+def test_errores_de_validacion_del_esquema_no_se_enmascaran() -> None:
+    with _cliente() as client:
+        cuerpo = _post(client, "{ campoInexistente }")
+
+    assert "campoInexistente" in cuerpo["errors"][0]["message"]
+
+
 def test_errores_internos_se_enmascaran(monkeypatch) -> None:
     rating = RatingFalso(error=RuntimeError("detalle interno secreto"))
     with _cliente(rating=rating) as client:

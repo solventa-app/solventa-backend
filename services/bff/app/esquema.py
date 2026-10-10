@@ -29,7 +29,11 @@ class ErrorPublico(Exception):
 
 
 def _mostrar_solo_errores_publicos(error: GraphQLError) -> bool:
-    return not isinstance(error.original_error, ErrorPublico)
+    """True = enmascarar. Solo se oculta lo que salió de una excepción inesperada
+    dentro de un resolutor. Los errores de validación del esquema (campo
+    inexistente, tipo equivocado) no tienen `original_error`, no revelan nada
+    interno y el frontend los necesita para depurar."""
+    return error.original_error is not None and not isinstance(error.original_error, ErrorPublico)
 
 
 # ---------- Tipos ----------
