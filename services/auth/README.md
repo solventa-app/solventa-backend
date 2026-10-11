@@ -13,6 +13,20 @@ AUTH es el **único escritor del almacén de identidad** (PostgreSQL, regla de e
 
 Eventos que emite: `consentimiento.registrado`, `consentimiento.revocado` (ver `contracts/events/`).
 
+## Consentimiento: MOCK en memoria (hasta T-W01-4)
+
+Los endpoints ya tienen su forma definitiva; lo que es provisional es el almacén (`app/consentimientos.py`, en memoria):
+
+| Método | Ruta | Respuesta |
+|---|---|---|
+| `POST` | `/consentimientos` `{finalidad, version_texto}` | `{id, finalidad, version_texto, otorgado_en, revocado_en, vigente}` |
+| `GET` | `/consentimientos/{id}` | el consentimiento, o `404` |
+| `POST` | `/consentimientos/{id}/revocar` | marca `revocado_en` (append-only: nunca borra); idempotente; `404` si no existe |
+
+Limitaciones del mock: el estado se pierde al reiniciar, **no se comparte entre instancias de Cloud Run**
+(`max_instancias` = 2 en staging) y no emite eventos. T-W01-4 lo reemplaza con la tabla de la migración `0002`
+sin cambiar las rutas, de modo que el BFF no se toca.
+
 ## Operación
 
 - Puerto local: `8001`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.

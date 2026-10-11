@@ -97,9 +97,17 @@ services:
     ports: ["8000:8000"]
     environment:
       AUTH_URL: http://auth:8001
+      ACL_URL: http://acl-worker:8005
       RISK_URL: http://risk:8002
       RATING_URL: http://rating:8003
       PAYMENTS_URL: http://payments:8004
+      # Solo local: el repo es público. En Cloud Run llega de Secret Manager (clave-cliente-id).
+      CLIENTE_ID_CLAVE: solo-local-no-secreta
+    depends_on:
+      auth: { condition: service_healthy }
+      acl-worker: { condition: service_healthy }
+      risk: { condition: service_healthy }
+      rating: { condition: service_healthy }
 
   migrar-auth:
     <<: *tarea

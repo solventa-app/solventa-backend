@@ -36,6 +36,15 @@ Cliente ─► BFF ─► AUTH        valida/registra consentimiento (síncrono,
 
 El tramo síncrono es solo lo que el usuario espera; todo efecto colateral viaja por eventos (`contracts/events/`).
 
+**Quién orquesta (decidido 2026-10-08):** el BFF llama al ACL Worker por cada una de las 5 fuentes y pasa los resultados tal cual a
+`POST /perfiles` de RISK (que no llama al ACL Worker); luego reenvía a RATING el `operation_time` que RISK devolvió. El BFF
+no calcula nada de negocio: solo secuencia las llamadas y traduce la degradación al contrato (`ErrorOferta` o oferta preliminar).
+
+**Autenticación entre servicios (pendiente parcial):** en Cloud Run solo el BFF es público; el resto exige un token de
+identidad con audience = nombre del servicio. El BFF ya lo envía (`services/bff/app/autenticacion_servicios.py`).
+**PAYMENTS → ACL Worker y `consolidador-fuentes` → ACL Worker todavía no**: en staging esas llamadas recibirían 403.
+Se corrige antes del primer despliegue, con el mismo patrón.
+
 ## Lo que enseñaron los experimentos (ya validado, no se re-discute)
 
 - **Experimento 1 (Circuit Breaker + Retry en el ACL):** con el proveedor caído, las solicitudes que no dependen de él variaron < 1 % (límite: +10 %), 0 fallas, y el circuito cerró solo en ~6 s. El diseño en papel hacía que *una petición de usuario* probara si el proveedor volvió, pagando timeout + reintento (> 3 s). Se corrigió: **la sonda corre fuera del camino síncrono** (Consolidador).
@@ -99,9 +108,9 @@ acl-worker (ServicioConsultaFuentes)        consolidador-fuentes (worker rq en h
 
 | Servicio | Variables |
 |---|---|
-| `bff` | `AUTH_URL`, `RISK_URL`, `RATING_URL`, `PAYMENTS_URL` |
+| `bff` | `AUTH_URL`, `ACL_URL`, `RISK_URL`, `RATING_URL`, `PAYMENTS_URL` |
 | `auth`, `payments` | `DATABASE_URL` |
-| `risk` | `MONGO_URI`, `ACL_URL` (no se usa todavía: RISK recibe los datos de las fuentes ya resueltos en el cuerpo de `POST /perfiles`, no llama al ACL Worker directamente) |
+| `risk` | `MONGO_URI`, `ACL_URL` (heredada, sin uso ni permiso en el manifiesto: RISK recibe los datos de las fuentes ya resueltos en el cuerpo de `POST /perfiles`; **quien consulta al ACL Worker es el BFF**) |
 | `rating` | `MONGO_URI`, `REDIS_URL` (Cache-Aside de scores, Sprint 2), `RATING_MAX_TIME_MS` (150, D-02: cota de espera en la secundaria antes de caer a la primaria) |
 | `acl-worker` | `REDIS_URL`, `OPEN_FINANCE_URL`, `OPEN_DATA_URL`, `PASARELA_URL`, `TIMEOUT_MS` (700), `BREAKER_UMBRAL_FALLOS` (3), `BREAKER_TTL_SEGUNDOS` (5), `SONDA_INTERVALO_SEGUNDOS` (2), `CACHE_TTL_SEGUNDOS` (300), `COLA_RECONCILIACION_REDIS_URL` (`redis://.../2`) |
 | `consolidador-fuentes` | `REDIS_URL` (misma cola, db 2), `ACL_URL` |

@@ -4,7 +4,9 @@
     "ruta": "services/bff",
     "puerto": 8000,
     "publico": true,
-    "llama": ["auth", "risk", "rating", "payments"]
+    "llama": ["auth", "acl-worker", "risk", "rating", "payments"],
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token" },
+    "secretos": { "CLIENTE_ID_CLAVE": "clave-cliente-id" }
   },
   {
     "nombre": "auth",
@@ -20,7 +22,6 @@
     "puerto": 8002,
     "url_env": "RISK_URL",
     "migracion": ["python", "-m", "migrations"],
-    "llama": ["acl-worker"],
     "entorno": { "MONGO_DB": "risk" },
     "secretos": { "MONGO_URI": "mongo-uri-risk" }
   },
