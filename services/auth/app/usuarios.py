@@ -42,13 +42,15 @@ class UsuarioDuplicado(Exception):
 
 
 def validar_alias(alias: str) -> None:
+    # Primero la regla de datos personales: quien escribe un correo debe leer que no
+    # puede usar un correo, no un mensaje genérico de formato.
+    if "@" in alias or PARECE_DOCUMENTO.search(alias):
+        raise DatoInvalido("El usuario no puede ser un correo ni un número de documento.")
     if not ALIAS_VALIDO.match(alias):
         raise DatoInvalido(
             "El usuario debe tener entre 3 y 32 caracteres: minúsculas, números, punto, "
             "guion o guion bajo."
         )
-    if "@" in alias or PARECE_DOCUMENTO.search(alias):
-        raise DatoInvalido("El usuario no puede ser un correo ni un número de documento.")
 
 
 def validar_clave(clave: str) -> None:

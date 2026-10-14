@@ -41,11 +41,14 @@ def test_alias_invalido_se_rechaza(alias: str) -> None:
         servicio.crear(alias, "clave-segura-1", "ASESOR")
 
 
-def test_alias_con_forma_de_correo_o_documento_tiene_mensaje_claro() -> None:
+@pytest.mark.parametrize(
+    "alias", ["persona@correo.com", "cliente.1020304050", "Persona@Correo.com"]
+)
+def test_alias_con_forma_de_correo_o_documento_tiene_mensaje_claro(alias: str) -> None:
     servicio, _ = _servicio()
 
     with pytest.raises(DatoInvalido, match="correo ni un número de documento"):
-        servicio.crear("cliente.1020304050", "clave-segura-1", "CLIENTE")
+        servicio.crear(alias, "clave-segura-1", "CLIENTE")
 
 
 def test_clave_corta_se_rechaza() -> None:
