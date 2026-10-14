@@ -8,18 +8,20 @@ construye el **producto**; la evidencia de los experimentos de arquitectura vive
 Mapa del repo: [`README.md`](README.md). Alcance del sprint: [`docs/sprint-1.md`](docs/sprint-1.md).
 Arquitectura: [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md). Convenciones: [`docs/convenciones.md`](docs/convenciones.md).
 
-## Estado (2026-10-04)
+## Estado (2026-10-14)
 
-- Repo **recién estructurado**: esqueletos de servicios y stubs (solo `/health` y `/metrics`), contratos v0, entorno local con Docker Compose, CI/CD y agentes. **Aún no hay lógica de negocio.**
-- **CI/CD y migraciones armados (ADR-07, 2026-10-04):** migraciones (Alembic en `auth`/`payments`, runner de MongoDB en `risk`), CI con migraciones contra almacén real + humo del stack + gitleaks + actionlint, `deploy-staging.yml` y `rollback-staging.yml` (apagados hasta definir el proyecto GCP) y Terraform de WIF/Cloud Run detrás de banderas. Probado en local; **lo de GCP/GitHub no se ha ejecutado nunca**.
+- **Código real en `develop`:** `acl-worker` (puertos, Circuit Breaker, sonda), `consolidador-fuentes`, `risk`, `rating` (oferta con Cache-Aside y lectura causal), `payments` (cobros idempotentes y reintento) y los stubs de proveedores. El **BFF** implementa el contrato GraphQL de HU-W01 (`solicitarOferta`, consentimiento) y orquesta AUTH → ACL Worker → RISK → RATING (PR #76; ver [`docs/bff-implementacion.md`](docs/bff-implementacion.md)). **AUTH** solo tiene un **mock en memoria** del consentimiento.
+- **Pendiente conocido:** consentimiento persistente en Postgres (T-W01-4), cobros en el BFF y listado/reintento en PAYMENTS (KAN-28; hoy el BFF responde «no disponible»), token de identidad de PAYMENTS y del consolidador hacia el ACL, cifrado de campo (SEG-002), k6 de EC003/EC004 (`tests/k6/` solo tiene su README) y todo el despliegue a GCP.
+- **Pruebas:** `python -m pytest` por servicio (desde su carpeta), `python scripts/humo_bff.py` contra el compose y la colección Newman de [`tests/newman/`](tests/newman/README.md).
+- **CI/CD y migraciones armados (ADR-07, 2026-10-04):** migraciones (Alembic en `auth`/`payments`, runner de MongoDB en `risk`), CI con migraciones contra almacén real + humo del stack + gitleaks + actionlint, `deploy-staging.yml` y `rollback-staging.yml` (apagados hasta definir el proyecto GCP) y Terraform de WIF/Cloud Run detrás de banderas. Probado en local; **lo de GCP no se ha ejecutado nunca** (CI, rulesets y checks de PR ya corren en GitHub).
 - Sprint 1 (tentativo): 12–25 de octubre de 2026 — HU-W01 (KAN-24, 20 pts) y HU-W05 (KAN-28, 6 pts) con 7 habilitadoras. Holgura de solo 3 h: no se sobre-construye.
 - **Decisiones pendientes de confirmar en el Planning** (recomendación del plan entre paréntesis; no las trates como cerradas): D-01 base de velocidad (recálculo 27/27/44), D-02 read-your-writes (sesión causal `afterClusterTime`), D-04 cifrado (campo + Cloud KMS), D-05 proveedores (stubs por contrato), D-06 adelantar HU-W05 al Sprint 1. D-03 (cobro antes o después de emitir) se cierra en el Sprint 2.
-- GitHub: organización `solventa-app` (`origin` = https://github.com/solventa-app/solventa-backend.git, repo vacío; aún sin commit ni push). Sin proyecto GCP definido todavía: el pipeline de deploy existe pero está apagado (ver `infra/README.md`); no hay nada desplegado.
+- GitHub: organización `solventa-app` (`origin` = https://github.com/solventa-app/solventa-backend.git, rama predeterminada `develop`, rulesets aplicados en `main` y `develop`, flujo git-flow de ADR-08). Sin proyecto GCP definido todavía: el pipeline de deploy existe pero está apagado (ver `infra/README.md`); no hay nada desplegado.
 
 ## Stack y decisiones ya tomadas (ADR-01 a ADR-05 del documento de arquitectura)
 
-- Microservicios por dominio con BFF por canal; comunicación híbrida: **síncrona solo en el camino crítico del usuario**, todo lo demás por eventos (Pub/Sub).
-- Python 3.12 + FastAPI (como los experimentos). BFF GraphQL con Strawberry (propuesta de implementación, confirmar al construirlo).
+- Microservicios por dominio con un BFF GraphQL único y una ruta por canal (`/graphql/web`, `/graphql/app`); comunicación híbrida: **síncrona solo en el camino crítico del usuario**, todo lo demás por eventos (Pub/Sub).
+- Python 3.12 + FastAPI (como los experimentos). BFF GraphQL con Strawberry (confirmado al construirlo).
 - Persistencia políglota: **PostgreSQL** (auth, payments, policy), **MongoDB** (risk, claims; réplica de lectura para rating), **Redis** (caché derivada y desechable).
 - GCP como única nube, Cloud Run por defecto. Una sola región (`us-central1`).
 
@@ -58,4 +60,6 @@ Arquitectura: [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md). Co
 - **Reutiliza los experimentos copiando, no enlazando.** Anota en el README del servicio el commit de origen (`solventa-arquitectura@11e4be6`). Sin submódulos.
 - **Costos:** nunca ejecutes `terraform apply`/`destroy` ni crees recursos facturables sin confirmación explícita del usuario. La protección de gasto de `../solventa-arquitectura/proteccion-costos/` debe estar activa en el proyecto antes de desplegar.
 - **Commits y PR:** ver `docs/convenciones.md` (Conventional Commits con la clave de Jira, git-flow `main → develop → feature` según ADR-08, 1 revisión). Las ramas de trabajo salen de `develop` y vuelven a `develop`; nunca abras un PR de trabajo hacia `main`.
+- **`main` y `develop` están protegidas:** nada llega por push directo; todo pasa por PR con revisión y checks (los rulesets no tienen excepciones). No hagas `git push` a `develop` ni a `main`, ni fuerces, ni integres PRs (`gh pr merge`): integrar es decisión de una persona.
+- **Reintegrar `main` en `develop` es un paso manual.** Nunca lo intentes: ni `git merge main`, ni `git pull origin main`, ni abrir o integrar el PR `main` → `develop`. Si el flujo lo requiere (tras un release o hotfix), avisa a la persona y detente: debe integrarse con *merge commit* y revisión humana (ADR-08), y un *squash* rompe la ascendencia. Los permisos de `.claude/settings.json` (`deny`) lo refuerzan, pero la regla vale aunque un patrón no lo atrape.
 - **Español** en documentación, comentarios y mensajes de commit; los identificadores de código pueden ir en español (dominio) o inglés (técnico), pero consistentes dentro de un servicio.

@@ -27,7 +27,7 @@ feature (feat|fix|chore/KAN-N-…) ──squash──► develop ──► relea
 
 1. `git switch -c release/sprint-N develop` y subirla. Desde ahí `develop` sigue recibiendo trabajo del sprint siguiente; el release solo recibe PRs `fix|chore/KAN-N-…` hacia `release/sprint-N`.
 2. PR `release/sprint-N` → `main` (merge commit, 1 aprobación, checks en verde). Se pone el tag `sprint-N` sobre el commit de `main`.
-3. PR `main` → `develop` (merge commit) para reintegrar las correcciones hechas en el release. **No se omite**: sin él, `develop` pierde esas correcciones.
+3. PR `main` → `develop` (merge commit) para reintegrar las correcciones hechas en el release. **No se omite**: sin él, `develop` pierde esas correcciones. **Lo hace una persona, a mano**, con revisión: los agentes de Claude Code no lo intentan (ver `CLAUDE.md`).
 4. Se borra `release/sprint-N`.
 
 **Hotfix:** `hotfix/KAN-N-…` desde `main` → PR a `main` (merge commit) → PR `main` → `develop`.

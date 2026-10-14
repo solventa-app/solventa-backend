@@ -18,6 +18,18 @@
       "Bash(terraform destroy:*)",
       "Bash(gcloud:*)",
       "Bash(git push:*)"
+    ],
+    "deny": [
+      "Bash(git push origin develop:*)",
+      "Bash(git push origin main:*)",
+      "Bash(git push origin HEAD:develop:*)",
+      "Bash(git push origin HEAD:main:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git merge main:*)",
+      "Bash(git merge origin/main:*)",
+      "Bash(git pull origin main:*)",
+      "Bash(gh pr merge:*)"
     ]
   }
 }
