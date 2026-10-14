@@ -34,6 +34,7 @@ from app.usuarios import (
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("auth.consentimientos")
+logger_usuarios = logging.getLogger("auth.usuarios")
 
 RolUsuario = Literal["CLIENTE", "ASESOR", "BACKOFFICE"]
 
@@ -177,7 +178,7 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(error)) from error
         except UsuarioDuplicado as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
-        logger.info("usuario creado id=%s rol=%s", id_opaco(usuario["id"]), usuario["rol"])
+        logger_usuarios.info("usuario creado id=%s rol=%s", id_opaco(usuario["id"]), usuario["rol"])
         return UsuarioResponse(**usuario)
 
     @app.get("/usuarios", tags=["usuarios"], response_model=list[UsuarioResponse])
@@ -202,7 +203,7 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(error)) from error
         if usuario is None:
             raise HTTPException(status_code=404, detail="usuario no encontrado")
-        logger.info("rol cambiado id=%s rol=%s", id_opaco(usuario_id), usuario["rol"])
+        logger_usuarios.info("rol cambiado id=%s rol=%s", id_opaco(usuario_id), usuario["rol"])
         return UsuarioResponse(**usuario)
 
     @app.post("/usuarios/{usuario_id}/suspender", tags=["usuarios"], response_model=UsuarioResponse)
@@ -210,7 +211,7 @@ def create_app(
         usuario = app.state.usuarios.suspender(usuario_id)
         if usuario is None:
             raise HTTPException(status_code=404, detail="usuario no encontrado")
-        logger.info("usuario suspendido id=%s", id_opaco(usuario_id))
+        logger_usuarios.info("usuario suspendido id=%s", id_opaco(usuario_id))
         return UsuarioResponse(**usuario)
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
