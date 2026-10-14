@@ -1,36 +1,50 @@
-"""Humo de punta a punta del BFF contra el stack de docker compose (HU-W01).
+"""Humo de punta a punta del BFF contra el stack de docker compose (HU-W01 y HU-M02).
 
-Recorre el flujo insignia por GraphQL, como lo haría el frontend:
-  1. registrarConsentimiento
+Recorre el flujo insignia por GraphQL, como lo haría el frontend, con usuario autenticado:
+  0. iniciarSesion como BACKOFFICE, crearUsuario ASESOR (alias único) e iniciarSesion como ASESOR
+  1. registrarConsentimiento con el token del ASESOR -> AUTH guarda al ASESOR como actor
   2. solicitarOferta con proveedores sanos             -> Oferta COMPLETA
   3. Open Finance lento (stub en modo `lento`)          -> Oferta PRELIMINAR (fuentes desde caché)
   4. revocarConsentimiento y volver a solicitar         -> ErrorOferta sin reintento
+  5. el ASESOR intenta listar usuarios                  -> sin permiso (solo BACKOFFICE)
 
-Deja el stub otra vez en `sano` y espera a que los circuitos del ACL cierren, para
-que el script se pueda repetir. Solo biblioteca estándar.
+Deja el stub otra vez en `sano` y espera a que los circuitos del ACL cierren, para que el
+script se pueda repetir (el alias del ASESOR cambia en cada corrida). Solo biblioteca estándar.
 
 Uso (con `docker compose --profile servicios up -d --build --wait`):
     python scripts/humo_bff.py
-"""
+
+Las credenciales del BACKOFFICE por defecto son las SOLO LOCALES de la tarea
+`crear-backoffice` de docker-compose (no son secretas)."""
 
 import json
 import os
+import random
+import string
 import sys
 import time
 import urllib.request
 
 BFF = os.getenv("BFF_URL", "http://localhost:8000") + "/graphql/web"
+AUTH = os.getenv("AUTH_URL", "http://localhost:8001")
 STUB_OPEN_FINANCE = os.getenv("STUB_OPEN_FINANCE_URL", "http://localhost:8101")
 ACL = os.getenv("ACL_URL", "http://localhost:8005")
+USUARIO_BACKOFFICE = os.getenv("USUARIO_BACKOFFICE", "admin.solventa")
+CLAVE_BACKOFFICE = os.getenv("CLAVE_BACKOFFICE", "admin-local-solventa")
 
-# Documento ficticio (sin datos reales).
+# Datos ficticios (sin datos reales).
 ENTRADA = {
     "documentoIdentidad": "CC-HUMO-0001",
     "valorCredito": "200000000",
     "plazoMeses": 240,
     "direccionInmueble": "Direccion de prueba",
 }
+CLAVE_ASESOR = "clave-humo-0001"
 
+INICIAR_SESION = """mutation($entrada: CredencialesInput!) { iniciarSesion(entrada: $entrada) {
+  __typename ... on Sesion { token usuario { id rol } } ... on ErrorAutenticacion { mensaje } } }"""
+CREAR_USUARIO = """mutation($entrada: CrearUsuarioInput!) { crearUsuario(entrada: $entrada) {
+  __typename ... on Usuario { id rol } ... on ErrorUsuario { mensaje } } }"""
 REGISTRAR = """mutation { registrarConsentimiento(
   entrada: {finalidad: "cotizacion-vida-hipotecario", versionTexto: "v1"}) { id vigente } }"""
 REVOCAR = "mutation($id: ID!) { revocarConsentimiento(id: $id) { id vigente } }"
@@ -41,16 +55,23 @@ SOLICITAR = """mutation($entrada: SolicitudOfertaInput!) { solicitarOferta(entra
   ... on ErrorOferta { mensaje puedeReintentar } } }"""
 
 
-def _http(url: str, cuerpo: dict | None = None) -> dict:
+def _http(url: str, cuerpo: dict | None = None, token: str | None = None) -> dict:
     datos = json.dumps(cuerpo).encode() if cuerpo is not None else None
-    peticion = urllib.request.Request(url, data=datos, headers={"Content-Type": "application/json"})
+    cabeceras = {"Content-Type": "application/json"}
+    if token:
+        cabeceras["Authorization"] = f"Bearer {token}"
+    peticion = urllib.request.Request(url, data=datos, headers=cabeceras)
     with urllib.request.urlopen(peticion, timeout=10) as respuesta:
         return json.loads(respuesta.read())
 
 
-def _graphql(query: str, variables: dict | None = None) -> dict:
+def _graphql_crudo(query: str, variables: dict | None = None, token: str | None = None) -> dict:
+    return _http(BFF, {"query": query, "variables": variables or {}}, token)
+
+
+def _graphql(query: str, variables: dict | None = None, token: str | None = None) -> dict:
     inicio = time.monotonic()
-    cuerpo = _http(BFF, {"query": query, "variables": variables or {}})
+    cuerpo = _graphql_crudo(query, variables, token)
     ms = (time.monotonic() - inicio) * 1000
     if cuerpo.get("errors"):
         _fallar(f"errores de GraphQL: {cuerpo['errors']}")
@@ -75,8 +96,18 @@ def _modo_open_finance(modo: str) -> None:
     _http(f"{STUB_OPEN_FINANCE}/control/modo", {"modo": modo})
 
 
-def _solicitar(consentimiento_id: str) -> dict:
-    respuesta = _graphql(SOLICITAR, {"entrada": {**ENTRADA, "consentimientoId": consentimiento_id}})
+def _iniciar_sesion(usuario: str, clave: str) -> dict:
+    resultado = _graphql(INICIAR_SESION, {"entrada": {"usuario": usuario, "clave": clave}})
+    sesion = resultado["iniciarSesion"]
+    if sesion["__typename"] != "Sesion":
+        _fallar(f"no se pudo iniciar sesión como {usuario}: {sesion}")
+    return sesion
+
+
+def _solicitar(consentimiento_id: str, token: str) -> dict:
+    respuesta = _graphql(
+        SOLICITAR, {"entrada": {**ENTRADA, "consentimientoId": consentimiento_id}}, token
+    )
     resultado = respuesta["solicitarOferta"]
     resumen = resultado.get("tipo") or resultado.get("mensaje")
     print(f"   -> {resultado['__typename']} {resumen} ({respuesta['_ms']} ms)")
@@ -84,13 +115,33 @@ def _solicitar(consentimiento_id: str) -> dict:
 
 
 def main() -> int:
-    print("1. registrarConsentimiento")
-    consentimiento = _graphql(REGISTRAR)["registrarConsentimiento"]
+    print("0. sesión: BACKOFFICE crea un ASESOR y el ASESOR inicia sesión")
+    token_backoffice = _iniciar_sesion(USUARIO_BACKOFFICE, CLAVE_BACKOFFICE)["token"]
+    # Sufijo de letras: un alias con 6 o más dígitos seguidos se rechaza por parecer un
+    # documento (regla de AUTH), así que no se usa un timestamp.
+    alias_asesor = "asesor.humo." + "".join(random.choices(string.ascii_lowercase, k=8))
+    creado = _graphql(
+        CREAR_USUARIO,
+        {"entrada": {"usuario": alias_asesor, "clave": CLAVE_ASESOR, "rol": "ASESOR"}},
+        token_backoffice,
+    )["crearUsuario"]
+    if creado["__typename"] != "Usuario":
+        _fallar(f"no se pudo crear el ASESOR: {creado}")
+    sesion_asesor = _iniciar_sesion(alias_asesor, CLAVE_ASESOR)
+    token = sesion_asesor["token"]
+    print(f"   -> ASESOR {alias_asesor} con sesión")
+
+    print("1. registrarConsentimiento como ASESOR")
+    consentimiento = _graphql(REGISTRAR, token=token)["registrarConsentimiento"]
     if not consentimiento["vigente"]:
         _fallar("el consentimiento recién registrado no está vigente")
+    actor = _http(f"{AUTH}/consentimientos/{consentimiento['id']}").get("actor")
+    if actor != {"rol": "ASESOR", "usuario_id": sesion_asesor["usuario"]["id"]}:
+        _fallar(f"AUTH no registró al ASESOR como actor del consentimiento: {actor}")
+    print("   -> AUTH guardó al ASESOR como actor (CA-W01-11)")
 
     print("2. solicitarOferta con proveedores sanos")
-    oferta = _solicitar(consentimiento["id"])
+    oferta = _solicitar(consentimiento["id"], token)
     if oferta["__typename"] != "Oferta" or oferta["tipo"] != "COMPLETA":
         _fallar(f"se esperaba una oferta COMPLETA: {oferta}")
     if oferta["prima"] is None or oferta["rangoPrima"] is not None:
@@ -99,7 +150,7 @@ def main() -> int:
     print("3. solicitarOferta con Open Finance lento")
     _modo_open_finance("lento")
     try:
-        oferta = _solicitar(consentimiento["id"])
+        oferta = _solicitar(consentimiento["id"], token)
     finally:
         _modo_open_finance("sano")
     if oferta["__typename"] != "Oferta" or oferta["tipo"] != "PRELIMINAR":
@@ -114,12 +165,19 @@ def main() -> int:
     )
 
     print("4. revocarConsentimiento y volver a solicitar")
-    revocado = _graphql(REVOCAR, {"id": consentimiento["id"]})["revocarConsentimiento"]
+    revocado = _graphql(REVOCAR, {"id": consentimiento["id"]}, token)["revocarConsentimiento"]
     if revocado["vigente"]:
         _fallar("el consentimiento sigue vigente tras revocarlo")
-    error = _solicitar(consentimiento["id"])
+    error = _solicitar(consentimiento["id"], token)
     if error["__typename"] != "ErrorOferta" or error["puedeReintentar"]:
         _fallar(f"se esperaba ErrorOferta sin reintento: {error}")
+
+    print("5. el ASESOR intenta listar usuarios (solo BACKOFFICE)")
+    cuerpo = _graphql_crudo("{ usuarios { id } }", token=token)
+    mensaje = (cuerpo.get("errors") or [{}])[0].get("message")
+    if mensaje != "No tienes permiso para esta operación.":
+        _fallar(f"se esperaba un rechazo por permiso: {cuerpo}")
+    print(f"   -> rechazado: {mensaje}")
 
     print("OK: humo del BFF en verde")
     return 0
