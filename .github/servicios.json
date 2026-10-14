@@ -6,7 +6,7 @@
     "publico": true,
     "llama": ["auth", "acl-worker", "risk", "rating", "payments"],
     "entorno": { "AUTENTICACION_SERVICIOS": "id_token" },
-    "secretos": { "CLIENTE_ID_CLAVE": "clave-cliente-id" }
+    "secretos": { "CLIENTE_ID_CLAVE": "clave-cliente-id", "JWT_SECRETO": "clave-jwt" }
   },
   {
     "nombre": "auth",
@@ -14,7 +14,7 @@
     "puerto": 8001,
     "url_env": "AUTH_URL",
     "migracion": ["alembic", "upgrade", "head"],
-    "secretos": { "DATABASE_URL": "database-url-auth" }
+    "secretos": { "DATABASE_URL": "database-url-auth", "JWT_SECRETO": "clave-jwt" }
   },
   {
     "nombre": "risk",
