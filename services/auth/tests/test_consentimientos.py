@@ -62,3 +62,17 @@ def test_revocar_dos_veces_conserva_la_primera_fecha() -> None:
 
 def test_revocar_inexistente_responde_404() -> None:
     assert _cliente().post("/consentimientos/no-existe/revocar").status_code == 404
+
+
+def test_registrar_con_actor_lo_guarda_y_devuelve() -> None:
+    client = _cliente()
+    actor = {"rol": "ASESOR", "usuario_id": "u-123"}
+
+    creado = client.post("/consentimientos", json={**SOLICITUD, "actor": actor}).json()
+
+    assert creado["actor"] == actor
+    assert client.get(f"/consentimientos/{creado['id']}").json()["actor"] == actor
+
+
+def test_registrar_sin_actor_lo_deja_vacio() -> None:
+    assert _cliente().post("/consentimientos", json=SOLICITUD).json()["actor"] is None
