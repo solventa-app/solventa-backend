@@ -157,3 +157,9 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   `scripts/humo_bff.py` sobre el compose: COMPLETA ~130 ms en caliente; PRELIMINAR ~730-765 ms con Open Finance lento
   (lo fija el corte de 700 ms del ACL; la oferta degradada excede el p95 de 400 ms de CA-W01-03, a medir con k6 en
   PF2-2); `ErrorOferta` sin reintento tras revocar.
+- **Autenticación de usuarios (HU-M02 simple para web, 2026-10-14, trazada a KAN-24 por CA-W01-11):** usuarios
+  `CLIENTE`/`ASESOR`/`BACKOFFICE` en Postgres (base `auth`), inicio de sesión con JWT HS256 y permisos por rol en el BFF,
+  con la bandera `AUTENTICACION_USUARIOS=opcional` para no romper al frontend. **CA-W01-11 queda cumplido en el
+  backend** (el ASESOR se autentica, usa el mismo flujo y queda como actor del consentimiento); la tarjeta visual es de
+  `solventa-frontend`. **CA-W01-02 gana el actor** que le faltaba. Móvil (biometría, refresh) y API Gateway quedan
+  documentados como pendientes en `docs/autenticacion-usuarios.md`.

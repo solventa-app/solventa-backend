@@ -169,3 +169,23 @@ Un commit por paso, con la clave de Jira:
 6. `docs(bff)` — README del BFF, trazabilidad de T-W01-7 y hueco del token entre servicios
 7. `fix(bff)` — no enmascarar los errores de validación del esquema
 8. `test(bff)` — colección de Newman y este documento
+
+## 9. Autenticación de usuarios (HU-M02, rama `feat/KAN-24-autenticacion-usuarios`)
+
+Después de integrar el BFF se agregó la identidad de quien lo usa. El detalle completo, con la matriz de permisos, las
+limitaciones y **el paso a paso con ejemplos**, está en [autenticacion-usuarios.md](autenticacion-usuarios.md). En resumen:
+
+- **AUTH** guarda usuarios en el **mismo Postgres** (base `auth`, migración `0002_usuarios`), verifica la clave
+  (argon2id) y emite un **JWT HS256** de 60 minutos. El primer BACKOFFICE lo crea la tarea `crear-backoffice`.
+- **El BFF** verifica el token en cada petición y aplica permisos por rol (`CLIENTE`, `ASESOR`, `BACKOFFICE`). Con la
+  bandera `AUTENTICACION_USUARIOS=opcional`, lo que funcionaba sin token sigue funcionando.
+- **CA-W01-11 queda cumplido en el backend**: el ASESOR se autentica, usa el mismo flujo que el cliente y AUTH lo
+  registra como actor del consentimiento. La tarjeta visual es del frontend.
+- **Pruebas**, verificadas en vivo: AUTH 47 unitarias, BFF 82 unitarias (incluida la equivalencia con el contrato),
+  migración verificada con `verificar-migraciones.sh auth`, humo autenticado y Newman con **38 peticiones y 95
+  aserciones** (antes 18 y 49), dos corridas seguidas sin fallos.
+- **Hallazgos de las pruebas en vivo**: un alias con forma de correo recibía un mensaje genérico (se corrigió el orden
+  de las validaciones), y un alias con un timestamp se rechazaba por parecer un documento (la regla es correcta; las
+  pruebas usan sufijos de letras).
+- **Limitación a tener presente**: suspender a un usuario impide nuevos inicios de sesión, pero su token vigente vale
+  hasta que vence (máx. 60 min).

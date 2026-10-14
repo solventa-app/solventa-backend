@@ -24,6 +24,14 @@ ACL Worker, RISK y RATING y traduce al contrato de `contracts/graphql/schema.gra
 | `oferta(id)` | Devuelve `null`: RATING no persiste ofertas todavía |
 | `contactarAsesor` | **MOCK**: solo confirma (no hay servicio de asesores) |
 | `cobros` / `reintentarCobro` | Error "no disponible: KAN-28" (HTTP 200) hasta que PAYMENTS exponga listado y reintento |
+| `iniciarSesion`, `yo`, `usuarios`, `crearUsuario`, `cambiarRolUsuario`, `suspenderUsuario` | Completas (HU-M02), sobre AUTH |
+
+## Autenticación y permisos (HU-M02)
+
+`app/autenticacion_usuarios.py` verifica el JWT (`Authorization: Bearer <token>`) que emite AUTH, y cada resolutor de
+`app/esquema.py` aplica su regla con `exigir_rol`. La matriz de permisos, las decisiones y el paso a paso con ejemplos
+están en [`docs/autenticacion-usuarios.md`](../../docs/autenticacion-usuarios.md). Con `AUTENTICACION_USUARIOS=opcional`
+(valor actual) las operaciones de antes siguen funcionando sin token; la gestión de usuarios y `yo` siempre lo exigen.
 
 ## Flujo de `solicitarOferta` (`app/servicio_oferta.py`)
 
@@ -46,6 +54,8 @@ ACL Worker, RISK y RATING y traduce al contrato de `contracts/graphql/schema.gra
 | `SERVICIOS_TIMEOUT_SEGUNDOS` | `2.0` | AUTH, RISK y RATING |
 | `CLIENTE_ID_CLAVE` | `solo-local-no-secreta` | En la nube, secreto `clave-cliente-id`; el BFF no arranca con el valor local ni con el marcador de Terraform |
 | `AUTENTICACION_SERVICIOS` | `ninguna` | `id_token` en Cloud Run: token de identidad del servidor de metadatos, audience = nombre del servicio |
+| `JWT_SECRETO` | `solo-local-no-secreta-jwt-solventa-0001` | El mismo que AUTH (HS256). En la nube, secreto `clave-jwt`; no arranca con el valor local, el marcador ni uno de menos de 32 bytes |
+| `AUTENTICACION_USUARIOS` | `opcional` | `opcional` u `obligatoria` (ver `docs/autenticacion-usuarios.md`) |
 
 ## Operación
 
@@ -56,5 +66,6 @@ ACL Worker, RISK y RATING y traduce al contrato de `contracts/graphql/schema.gra
   docker compose --profile servicios up -d --build --wait
   python scripts/humo_bff.py          # desde la raíz del repo
   ```
-  Recorre consentimiento → oferta COMPLETA → PRELIMINAR (Open Finance lento) → `ErrorOferta` tras revocar.
+  Inicia sesión como BACKOFFICE, crea un ASESOR y, con su token, recorre consentimiento → oferta COMPLETA →
+  PRELIMINAR (Open Finance lento) → `ErrorOferta` tras revocar; además comprueba el actor y un rechazo por rol.
 - Imagen: `docker build -t solventa-bff .`
