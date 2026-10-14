@@ -23,11 +23,25 @@ class SolicitudInvalida(Exception):
 
 
 class PuertoAuth(Protocol):
-    async def registrar_consentimiento(self, finalidad: str, version_texto: str) -> dict: ...
+    async def registrar_consentimiento(
+        self, finalidad: str, version_texto: str, actor: dict | None = None
+    ) -> dict: ...
 
     async def obtener_consentimiento(self, consentimiento_id: str) -> dict | None: ...
 
     async def revocar_consentimiento(self, consentimiento_id: str) -> dict | None: ...
+
+    async def iniciar_sesion(self, usuario: str, clave: str) -> dict | None: ...
+
+    async def obtener_usuario(self, usuario_id: str) -> dict | None: ...
+
+    async def listar_usuarios(self, rol: str | None) -> list[dict]: ...
+
+    async def crear_usuario(self, usuario: str, clave: str, rol: str) -> dict: ...
+
+    async def cambiar_rol_usuario(self, usuario_id: str, rol: str) -> dict | None: ...
+
+    async def suspender_usuario(self, usuario_id: str) -> dict | None: ...
 
 
 class PuertoAcl(Protocol):
@@ -79,12 +93,14 @@ class ClienteAuthHttp:
     def __init__(self, cliente: httpx.AsyncClient) -> None:
         self._cliente = cliente
 
-    async def registrar_consentimiento(self, finalidad: str, version_texto: str) -> dict:
+    async def registrar_consentimiento(
+        self, finalidad: str, version_texto: str, actor: dict | None = None
+    ) -> dict:
         respuesta = await _pedir(
             self._cliente,
             "POST",
             "/consentimientos",
-            {"finalidad": finalidad, "version_texto": version_texto},
+            {"finalidad": finalidad, "version_texto": version_texto, "actor": actor},
         )
         cuerpo = _json_o_none(respuesta)
         if cuerpo is None:
@@ -100,6 +116,52 @@ class ClienteAuthHttp:
         return _json_o_none(
             await _pedir(self._cliente, "POST", f"/consentimientos/{consentimiento_id}/revocar")
         )
+
+    # ---------- Sesiones y usuarios (HU-M02) ----------
+    # La clave viaja solo en el cuerpo de `POST /sesiones` y `POST /usuarios`: httpx
+    # loguea la URL, nunca el cuerpo.
+
+    async def iniciar_sesion(self, usuario: str, clave: str) -> dict | None:
+        """`None` si AUTH rechaza las credenciales (401)."""
+        respuesta = await _pedir(
+            self._cliente, "POST", "/sesiones", {"usuario": usuario, "clave": clave}
+        )
+        if respuesta.status_code == 401:
+            return None
+        return _json_o_error(respuesta)
+
+    async def obtener_usuario(self, usuario_id: str) -> dict | None:
+        return _json_o_none(await _pedir(self._cliente, "GET", f"/usuarios/{usuario_id}"))
+
+    async def listar_usuarios(self, rol: str | None) -> list[dict]:
+        ruta = "/usuarios" if rol is None else f"/usuarios?rol={rol}"
+        return _json_o_error(await _pedir(self._cliente, "GET", ruta))
+
+    async def crear_usuario(self, usuario: str, clave: str, rol: str) -> dict:
+        respuesta = await _pedir(
+            self._cliente, "POST", "/usuarios", {"usuario": usuario, "clave": clave, "rol": rol}
+        )
+        return _json_o_error(respuesta)
+
+    async def cambiar_rol_usuario(self, usuario_id: str, rol: str) -> dict | None:
+        respuesta = await _pedir(self._cliente, "POST", f"/usuarios/{usuario_id}/rol", {"rol": rol})
+        if respuesta.status_code == 404:
+            return None
+        return _json_o_error(respuesta)
+
+    async def suspender_usuario(self, usuario_id: str) -> dict | None:
+        return _json_o_none(
+            await _pedir(self._cliente, "POST", f"/usuarios/{usuario_id}/suspender")
+        )
+
+
+def _json_o_error(respuesta: httpx.Response) -> Any:
+    """400/409 de AUTH traen un mensaje pensado para el usuario: viaja en `SolicitudInvalida`."""
+    if respuesta.status_code in (400, 409):
+        raise SolicitudInvalida(respuesta.json().get("detail", "Solicitud inválida."))
+    if respuesta.is_error:
+        raise ErrorServicio(f"HTTP {respuesta.status_code}")
+    return respuesta.json()
 
 
 class ClienteAclHttp:

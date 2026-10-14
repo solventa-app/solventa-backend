@@ -8,7 +8,10 @@ Operaciones sin backend todavía (alcance del Sprint 1, KAN-24):
 - `oferta(id)` devuelve `null`: RATING no persiste ofertas aún.
 - `contactarAsesor` es un MOCK que solo confirma.
 - `cobros`/`reintentarCobro` responden un error "no disponible" hasta KAN-28.
-Ninguna produce un 5xx: los errores de GraphQL viajan con HTTP 200."""
+Ninguna produce un 5xx: los errores de GraphQL viajan con HTTP 200.
+
+Permisos (HU-M02): cada resolutor llama a `exigir_rol` con los roles que admite. La
+matriz completa está en `docs/autenticacion-usuarios.md`."""
 
 from datetime import datetime
 from enum import Enum
@@ -19,7 +22,8 @@ from graphql import GraphQLError
 from strawberry.extensions import MaskErrors
 from strawberry.types import Info
 
-from app.clientes import ErrorServicio
+from app.autenticacion_usuarios import MENSAJE_SIN_PERMISO, MENSAJE_SIN_SESION, UsuarioActual
+from app.clientes import ErrorServicio, SolicitudInvalida
 from app.servicio_oferta import ErrorOfertaDatos
 
 
@@ -34,6 +38,26 @@ def _mostrar_solo_errores_publicos(error: GraphQLError) -> bool:
     inexistente, tipo equivocado) no tienen `original_error`, no revelan nada
     interno y el frontend los necesita para depurar."""
     return error.original_error is not None and not isinstance(error.original_error, ErrorPublico)
+
+
+def exigir_rol(info: Info, *roles: str, siempre: bool = False) -> UsuarioActual | None:
+    """Aplica la autorización de una operación y devuelve el usuario (o `None`).
+
+    - Token presente pero inválido o vencido: error, en cualquier modo.
+    - Sin token: error si `siempre` o si la bandera está en `obligatoria`; si no
+      (modo `opcional`), se permite como antes y devuelve `None`.
+    - Con token: el rol debe estar en `roles`."""
+    contexto = info.context
+    if contexto["error_token"]:
+        raise ErrorPublico(contexto["error_token"])
+    usuario = contexto["usuario"]
+    if usuario is None:
+        if siempre or contexto["modo_autenticacion"] == "obligatoria":
+            raise ErrorPublico(MENSAJE_SIN_SESION)
+        return None
+    if usuario.rol not in roles:
+        raise ErrorPublico(MENSAJE_SIN_PERMISO)
+    return usuario
 
 
 # ---------- Tipos ----------
@@ -160,6 +184,67 @@ class Cobro:
     actualizado_en: datetime
 
 
+# ---------- Usuarios y sesión (HU-M02) ----------
+
+
+@strawberry.enum
+class RolUsuario(Enum):
+    CLIENTE = "CLIENTE"
+    ASESOR = "ASESOR"
+    BACKOFFICE = "BACKOFFICE"
+
+
+@strawberry.enum
+class EstadoUsuario(Enum):
+    ACTIVO = "ACTIVO"
+    SUSPENDIDO = "SUSPENDIDO"
+
+
+@strawberry.type
+class Usuario:
+    id: strawberry.ID
+    usuario: str  # alias de acceso: nunca un correo ni un documento
+    rol: RolUsuario
+    estado: EstadoUsuario
+    creado_en: datetime
+
+
+@strawberry.type
+class Sesion:
+    token: str
+    expira_en: datetime
+    usuario: Usuario
+
+
+@strawberry.type
+class ErrorAutenticacion:
+    mensaje: str
+
+
+ResultadoSesion = Annotated[Sesion | ErrorAutenticacion, strawberry.union("ResultadoSesion")]
+
+
+@strawberry.type
+class ErrorUsuario:
+    mensaje: str
+
+
+ResultadoUsuario = Annotated[Usuario | ErrorUsuario, strawberry.union("ResultadoUsuario")]
+
+
+@strawberry.input
+class CredencialesInput:
+    usuario: str
+    clave: str
+
+
+@strawberry.input
+class CrearUsuarioInput:
+    usuario: str
+    clave: str
+    rol: RolUsuario
+
+
 # ---------- Traducción desde los servicios ----------
 
 
@@ -211,19 +296,61 @@ def _oferta(datos: dict) -> Oferta:
     )
 
 
+def _usuario(datos: dict) -> Usuario:
+    return Usuario(
+        id=strawberry.ID(datos["id"]),
+        usuario=datos["usuario"],
+        rol=RolUsuario(datos["rol"]),
+        estado=EstadoUsuario(datos["estado"]),
+        creado_en=datetime.fromisoformat(datos["creado_en"]),
+    )
+
+
 # ---------- Operaciones ----------
+
+
+CLIENTE_O_ASESOR = ("CLIENTE", "ASESOR")
+SOLO_BACKOFFICE = ("BACKOFFICE",)
+MENSAJE_AUTH_NO_DISPONIBLE = "No pudimos procesar la solicitud. Intenta de nuevo."
+MENSAJE_USUARIO_NO_ENCONTRADO = "Usuario no encontrado."
+
+
+def _auth(info: Info):
+    return info.context["clientes"].auth
 
 
 @strawberry.type
 class Query:
     @strawberry.field
-    def oferta(self, id: strawberry.ID) -> Oferta | None:
+    def oferta(self, info: Info, id: strawberry.ID) -> Oferta | None:
+        exigir_rol(info, *CLIENTE_O_ASESOR)
         # RATING no persiste ofertas todavía: no hay de dónde leerla.
         return None
 
     @strawberry.field
-    def cobros(self, estado: EstadoCobro | None = strawberry.UNSET) -> list[Cobro]:
+    def cobros(self, info: Info, estado: EstadoCobro | None = strawberry.UNSET) -> list[Cobro]:
+        exigir_rol(info, *SOLO_BACKOFFICE)
         raise ErrorPublico("no disponible: KAN-28")
+
+    @strawberry.field
+    async def yo(self, info: Info) -> Usuario | None:
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True)
+        try:
+            datos = await _auth(info).obtener_usuario(usuario.id)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_AUTH_NO_DISPONIBLE) from error
+        return _usuario(datos) if datos else None
+
+    @strawberry.field
+    async def usuarios(
+        self, info: Info, rol: RolUsuario | None = strawberry.UNSET
+    ) -> list[Usuario]:
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        filtro = rol.value if isinstance(rol, RolUsuario) else None
+        try:
+            return [_usuario(u) for u in await _auth(info).listar_usuarios(filtro)]
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_AUTH_NO_DISPONIBLE) from error
 
 
 @strawberry.type
@@ -232,9 +359,13 @@ class Mutation:
     async def registrar_consentimiento(
         self, info: Info, entrada: ConsentimientoInput
     ) -> Consentimiento:
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
+        # Actor (CA-W01-02, CA-W01-11): si un ASESOR consiente, queda registrado que
+        # lo hizo en nombre del cliente. Sin sesión (modo `opcional`) va vacío.
+        actor = {"rol": usuario.rol, "usuario_id": usuario.id} if usuario else None
         try:
-            datos = await info.context["clientes"].auth.registrar_consentimiento(
-                entrada.finalidad, entrada.version_texto
+            datos = await _auth(info).registrar_consentimiento(
+                entrada.finalidad, entrada.version_texto, actor
             )
         except ErrorServicio as error:
             raise ErrorPublico(
@@ -244,8 +375,9 @@ class Mutation:
 
     @strawberry.mutation
     async def revocar_consentimiento(self, info: Info, id: strawberry.ID) -> Consentimiento:
+        exigir_rol(info, *CLIENTE_O_ASESOR)
         try:
-            datos = await info.context["clientes"].auth.revocar_consentimiento(str(id))
+            datos = await _auth(info).revocar_consentimiento(str(id))
         except ErrorServicio as error:
             raise ErrorPublico("No pudimos revocar el consentimiento. Intenta de nuevo.") from error
         if datos is None:
@@ -254,6 +386,7 @@ class Mutation:
 
     @strawberry.mutation
     async def solicitar_oferta(self, info: Info, entrada: SolicitudOfertaInput) -> ResultadoOferta:
+        exigir_rol(info, *CLIENTE_O_ASESOR)
         resultado = await info.context["servicio_oferta"].solicitar(
             str(entrada.consentimiento_id), entrada.documento_identidad, entrada.valor_credito
         )
@@ -265,8 +398,9 @@ class Mutation:
 
     @strawberry.mutation
     def contactar_asesor(
-        self, oferta_id: strawberry.ID, canal: CanalContacto
+        self, info: Info, oferta_id: strawberry.ID, canal: CanalContacto
     ) -> ConfirmacionContacto:
+        exigir_rol(info, *CLIENTE_O_ASESOR)
         # MOCK (CA-W01-07): no hay servicio de asesores todavía; solo confirma.
         return ConfirmacionContacto(
             canal=canal,
@@ -275,8 +409,65 @@ class Mutation:
         )
 
     @strawberry.mutation
-    def reintentar_cobro(self, cobro_id: strawberry.ID) -> Cobro:
+    def reintentar_cobro(self, info: Info, cobro_id: strawberry.ID) -> Cobro:
+        exigir_rol(info, *SOLO_BACKOFFICE)
         raise ErrorPublico("no disponible: KAN-28")
+
+    # ---------- Usuarios y sesión (HU-M02) ----------
+
+    @strawberry.mutation
+    async def iniciar_sesion(self, info: Info, entrada: CredencialesInput) -> ResultadoSesion:
+        """Pública: es la única operación que no exige rol. La clave nunca se loguea."""
+        try:
+            sesion = await _auth(info).iniciar_sesion(entrada.usuario, entrada.clave)
+        except ErrorServicio as error:
+            raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
+        if sesion is None:
+            return ErrorAutenticacion(mensaje="Usuario o clave incorrectos.")
+        return Sesion(
+            token=sesion["token"],
+            expira_en=datetime.fromisoformat(sesion["expira_en"]),
+            usuario=_usuario(sesion["usuario"]),
+        )
+
+    @strawberry.mutation
+    async def crear_usuario(self, info: Info, entrada: CrearUsuarioInput) -> ResultadoUsuario:
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        try:
+            datos = await _auth(info).crear_usuario(
+                entrada.usuario, entrada.clave, entrada.rol.value
+            )
+        except SolicitudInvalida as error:
+            return ErrorUsuario(mensaje=str(error))
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_AUTH_NO_DISPONIBLE) from error
+        return _usuario(datos)
+
+    @strawberry.mutation
+    async def cambiar_rol_usuario(
+        self, info: Info, id: strawberry.ID, rol: RolUsuario
+    ) -> ResultadoUsuario:
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        try:
+            datos = await _auth(info).cambiar_rol_usuario(str(id), rol.value)
+        except SolicitudInvalida as error:
+            return ErrorUsuario(mensaje=str(error))
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_AUTH_NO_DISPONIBLE) from error
+        if datos is None:
+            return ErrorUsuario(mensaje=MENSAJE_USUARIO_NO_ENCONTRADO)
+        return _usuario(datos)
+
+    @strawberry.mutation
+    async def suspender_usuario(self, info: Info, id: strawberry.ID) -> ResultadoUsuario:
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        try:
+            datos = await _auth(info).suspender_usuario(str(id))
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_AUTH_NO_DISPONIBLE) from error
+        if datos is None:
+            return ErrorUsuario(mensaje=MENSAJE_USUARIO_NO_ENCONTRADO)
+        return _usuario(datos)
 
 
 schema = strawberry.Schema(

@@ -10,10 +10,11 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from prometheus_fastapi_instrumentator import Instrumentator
 from strawberry.fastapi import GraphQLRouter
 
+from app.autenticacion_usuarios import TokenInvalido, leer_usuario
 from app.clientes import Clientes, construir_clientes
 from app.configuracion import Configuracion
 from app.esquema import schema
@@ -50,12 +51,22 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
     def health() -> dict[str, str]:
         return {"servicio": "bff", "estado": "ok"}
 
-    def contexto_para(canal: str) -> Callable[[], Coroutine[Any, Any, dict[str, Any]]]:
-        async def contexto() -> dict[str, Any]:
+    def contexto_para(canal: str) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
+        async def contexto(request: Request) -> dict[str, Any]:
+            # El token se lee aquí, una vez por petición; cada resolutor decide con
+            # `exigir_rol` (app/esquema.py) si lo exige y qué roles admite.
+            usuario, error_token = None, None
+            try:
+                usuario = leer_usuario(request.headers.get("authorization"), config.jwt_secreto)
+            except TokenInvalido as error:
+                error_token = str(error)
             return {
                 "canal": canal,
                 "clientes": app.state.clientes,
                 "servicio_oferta": app.state.servicio_oferta,
+                "usuario": usuario,
+                "error_token": error_token,
+                "modo_autenticacion": config.autenticacion_usuarios,
             }
 
         return contexto
