@@ -29,6 +29,9 @@ class Consentimiento:
     version_texto: str
     otorgado_en: str
     revocado_en: str | None = None
+    # Quién otorgó (CA-W01-02, CA-W01-11): `{"rol": ..., "usuario_id": ...}` con el id
+    # opaco del usuario autenticado, o `None` si se registró sin sesión.
+    actor: dict[str, str] | None = None
 
     @property
     def vigente(self) -> bool:
@@ -39,7 +42,9 @@ class Consentimiento:
 
 
 class AlmacenConsentimientos(Protocol):
-    def registrar(self, finalidad: str, version_texto: str) -> Consentimiento: ...
+    def registrar(
+        self, finalidad: str, version_texto: str, actor: dict[str, str] | None = None
+    ) -> Consentimiento: ...
 
     def obtener(self, consentimiento_id: str) -> Consentimiento | None: ...
 
@@ -55,8 +60,11 @@ class AlmacenConsentimientosMemoria:
         self._por_id: dict[str, Consentimiento] = {}
         self._lock = threading.Lock()
 
-    def registrar(self, finalidad: str, version_texto: str) -> Consentimiento:
+    def registrar(
+        self, finalidad: str, version_texto: str, actor: dict[str, str] | None = None
+    ) -> Consentimiento:
         consentimiento = Consentimiento(
+            actor=actor,
             id=str(uuid.uuid4()),
             finalidad=finalidad,
             version_texto=version_texto,

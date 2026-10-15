@@ -9,6 +9,11 @@ from dataclasses import dataclass
 CLAVE_CLIENTE_ID_LOCAL = "solo-local-no-secreta"
 # Valor con el que Terraform crea cada secreto (infra/README.md, "Cargar los secretos").
 VALOR_MARCADOR = "pendiente-de-cargar"
+# Mismo valor local que AUTH (services/auth/app/configuracion.py): firma y verificación
+# usan el mismo secreto (HS256). En Cloud Run llega de Secret Manager (`clave-jwt`).
+JWT_SECRETO_LOCAL = "solo-local-no-secreta-jwt-solventa-0001"
+# HS256 exige al menos 32 bytes de clave (RFC 7518, sección 3.2).
+LONGITUD_MINIMA_SECRETO = 32
 
 
 @dataclass(frozen=True)
@@ -26,6 +31,9 @@ class Configuracion:
     # "ninguna" en local; "id_token" en Cloud Run (servicios privados,
     # ver autenticacion_servicios.py).
     autenticacion_servicios: str
+    jwt_secreto: str
+    # "opcional" | "obligatoria": ver app/autenticacion_usuarios.py.
+    autenticacion_usuarios: str
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -39,6 +47,15 @@ class Configuracion:
         if autenticacion != "ninguna" and clave in (CLAVE_CLIENTE_ID_LOCAL, VALOR_MARCADOR):
             # Terraform crea el secreto con un marcador; sin el valor real no se arranca.
             raise ValueError("CLIENTE_ID_CLAVE no se ha cargado en Secret Manager")
+        jwt_secreto = os.getenv("JWT_SECRETO", JWT_SECRETO_LOCAL)
+        if autenticacion != "ninguna":
+            if jwt_secreto in (JWT_SECRETO_LOCAL, VALOR_MARCADOR):
+                raise ValueError("JWT_SECRETO no se ha cargado en Secret Manager")
+            if len(jwt_secreto.encode("utf-8")) < LONGITUD_MINIMA_SECRETO:
+                raise ValueError("JWT_SECRETO debe tener al menos 32 bytes")
+        modo = os.getenv("AUTENTICACION_USUARIOS", "opcional")
+        if modo not in ("opcional", "obligatoria"):
+            raise ValueError(f"AUTENTICACION_USUARIOS desconocida: {modo}")
         return cls(
             auth_url=os.getenv("AUTH_URL", "http://localhost:8001"),
             acl_url=os.getenv("ACL_URL", "http://localhost:8005"),
@@ -51,4 +68,6 @@ class Configuracion:
             servicios_timeout_segundos=float(os.getenv("SERVICIOS_TIMEOUT_SEGUNDOS", "2.0")),
             cliente_id_clave=clave,
             autenticacion_servicios=autenticacion,
+            jwt_secreto=jwt_secreto,
+            autenticacion_usuarios=modo,
         )

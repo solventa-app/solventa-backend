@@ -141,6 +141,33 @@ RISK (cambiarla deja huérfanos los perfiles existentes). El BFF se niega a arra
 openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add clave-cliente-id --data-file=-
 ```
 
+`clave-jwt` es el secreto HS256 con el que AUTH **firma** los JWT y el BFF los **verifica** (los dos servicios leen el
+mismo secreto; ver `docs/autenticacion-usuarios.md`). Debe tener al menos 32 bytes: AUTH y el BFF se niegan a arrancar
+con el valor marcador, con el valor local o con uno más corto. Rotarlo invalida todas las sesiones abiertas (cada
+usuario vuelve a iniciar sesión), no pierde datos:
+
+```bash
+openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add clave-jwt --data-file=-
+```
+
+**Primer usuario BACKOFFICE en staging (pendiente, manual, NO probado):** la API exige un BACKOFFICE para crear
+usuarios, así que el primero se crea con la misma imagen de AUTH, en un Cloud Run Job temporal que se borra al terminar
+(así la clave no queda guardada en la configuración del job):
+
+```bash
+IMAGEN=$(gcloud run services describe auth --region us-central1 --format='value(spec.template.spec.containers[0].image)')
+gcloud run jobs create crear-backoffice --region us-central1 --image "$IMAGEN" \
+  --service-account "rt-auth@${PROYECTO}.iam.gserviceaccount.com" \
+  --set-cloudsql-instances "${PROYECTO}:us-central1:<instancia>" \
+  --set-secrets DATABASE_URL=database-url-auth:latest \
+  --set-env-vars CLAVE_INICIAL="$CLAVE_BACKOFFICE" \
+  --command python --args=-m,app.crear_usuario,--usuario,admin.solventa,--rol,BACKOFFICE
+gcloud run jobs execute crear-backoffice --region us-central1 --wait
+gcloud run jobs delete crear-backoffice --region us-central1 --quiet
+```
+
+Nunca se ha ejecutado (no hay proyecto GCP): revisa los nombres reales con `terraform output` antes de usarlo.
+
 ## Costos y cómo destruir
 
 | Cuándo | Qué | Costo a vigilar |

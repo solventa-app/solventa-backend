@@ -120,11 +120,64 @@ type Cobro {
   actualizadoEn: DateTime!
 }
 
+# ---------- Usuarios y sesión (HU-M02, CA-W01-11) ----------
+# El token de `Sesion` viaja en la cabecera `Authorization: Bearer <token>` de las demás operaciones.
+
+enum RolUsuario {
+  CLIENTE
+  ASESOR
+  BACKOFFICE
+}
+
+enum EstadoUsuario {
+  ACTIVO
+  SUSPENDIDO
+}
+
+type Usuario {
+  id: ID!
+  usuario: String! # alias de acceso: nunca un correo ni un documento
+  rol: RolUsuario!
+  estado: EstadoUsuario!
+  creadoEn: DateTime!
+}
+
+type Sesion {
+  token: String!
+  expiraEn: DateTime!
+  usuario: Usuario!
+}
+
+type ErrorAutenticacion {
+  mensaje: String!
+}
+
+union ResultadoSesion = Sesion | ErrorAutenticacion
+
+type ErrorUsuario {
+  mensaje: String!
+}
+
+union ResultadoUsuario = Usuario | ErrorUsuario
+
+input CredencialesInput {
+  usuario: String!
+  clave: String!
+}
+
+input CrearUsuarioInput {
+  usuario: String!
+  clave: String!
+  rol: RolUsuario!
+}
+
 # ---------- Operaciones ----------
 
 type Query {
   oferta(id: ID!): Oferta
   cobros(estado: EstadoCobro): [Cobro!]!
+  yo: Usuario
+  usuarios(rol: RolUsuario): [Usuario!]!
 }
 
 type Mutation {
@@ -133,4 +186,8 @@ type Mutation {
   solicitarOferta(entrada: SolicitudOfertaInput!): ResultadoOferta!
   contactarAsesor(ofertaId: ID!, canal: CanalContacto!): ConfirmacionContacto!
   reintentarCobro(cobroId: ID!): Cobro!
+  iniciarSesion(entrada: CredencialesInput!): ResultadoSesion!
+  crearUsuario(entrada: CrearUsuarioInput!): ResultadoUsuario!
+  cambiarRolUsuario(id: ID!, rol: RolUsuario!): ResultadoUsuario!
+  suspenderUsuario(id: ID!): ResultadoUsuario!
 }

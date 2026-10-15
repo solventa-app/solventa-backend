@@ -1,6 +1,12 @@
 """Dobles de prueba del BFF: en memoria, sin levantar AUTH, ACL Worker, RISK ni RATING."""
 
-from app.clientes import Clientes, ErrorServicio
+import time
+import uuid
+
+import jwt
+
+from app.clientes import Clientes, ErrorServicio, SolicitudInvalida
+from app.configuracion import JWT_SECRETO_LOCAL
 
 CONSENTIMIENTO_VIGENTE = {
     "id": "c-1",
@@ -51,16 +57,51 @@ OFERTA_PRELIMINAR = {
 }
 
 
+def token_de_prueba(
+    rol: str,
+    usuario_id: str = "u-1",
+    secreto: str = JWT_SECRETO_LOCAL,
+    segundos: int = 3600,
+) -> str:
+    """JWT firmado como lo firma AUTH (`services/auth/app/sesiones.py`)."""
+    ahora = int(time.time())
+    return jwt.encode(
+        {"sub": usuario_id, "rol": rol, "scopes": [], "iat": ahora, "exp": ahora + segundos},
+        secreto,
+        algorithm="HS256",
+    )
+
+
+def _usuario_publico(usuario_id: str, alias: str, rol: str, estado: str = "ACTIVO") -> dict:
+    return {
+        "id": usuario_id,
+        "usuario": alias,
+        "rol": rol,
+        "estado": estado,
+        "creado_en": "2026-10-14T12:00:00+00:00",
+    }
+
+
 class AuthFalso:
     def __init__(self, consentimientos: dict | None = None, falla: bool = False) -> None:
         self.consentimientos = dict(
             {"c-1": CONSENTIMIENTO_VIGENTE} if consentimientos is None else consentimientos
         )
         self.falla = falla
+        self.actores: list[dict | None] = []
+        # Usuarios conocidos por id; `claves` guarda alias -> clave (solo en el doble).
+        self.usuarios: dict[str, dict] = {
+            "u-1": _usuario_publico("u-1", "asesor.uno", "ASESOR"),
+            "u-bo": _usuario_publico("u-bo", "admin.solventa", "BACKOFFICE"),
+        }
+        self.claves = {"asesor.uno": "clave-segura-1", "admin.solventa": "clave-segura-1"}
 
-    async def registrar_consentimiento(self, finalidad: str, version_texto: str) -> dict:
+    async def registrar_consentimiento(
+        self, finalidad: str, version_texto: str, actor: dict | None = None
+    ) -> dict:
         if self.falla:
             raise ErrorServicio("caido")
+        self.actores.append(actor)
         nuevo = {**CONSENTIMIENTO_VIGENTE, "id": "c-nuevo", "finalidad": finalidad}
         nuevo["version_texto"] = version_texto
         self.consentimientos[nuevo["id"]] = nuevo
@@ -80,6 +121,46 @@ class AuthFalso:
         revocado = {**actual, "revocado_en": "2026-10-08T13:00:00+00:00", "vigente": False}
         self.consentimientos[consentimiento_id] = revocado
         return revocado
+
+    async def iniciar_sesion(self, usuario: str, clave: str) -> dict | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        datos = next((u for u in self.usuarios.values() if u["usuario"] == usuario), None)
+        if datos is None or self.claves.get(usuario) != clave or datos["estado"] != "ACTIVO":
+            return None
+        return {
+            "token": token_de_prueba(datos["rol"], datos["id"]),
+            "expira_en": "2026-10-14T13:00:00+00:00",
+            "usuario": datos,
+        }
+
+    async def obtener_usuario(self, usuario_id: str) -> dict | None:
+        return self.usuarios.get(usuario_id)
+
+    async def listar_usuarios(self, rol: str | None) -> list[dict]:
+        return [u for u in self.usuarios.values() if rol is None or u["rol"] == rol]
+
+    async def crear_usuario(self, usuario: str, clave: str, rol: str) -> dict:
+        if "@" in usuario:
+            raise SolicitudInvalida("El usuario no puede ser un correo ni un número de documento.")
+        if any(u["usuario"] == usuario for u in self.usuarios.values()):
+            raise SolicitudInvalida("Ya existe un usuario con ese alias.")
+        nuevo = _usuario_publico(str(uuid.uuid4()), usuario, rol)
+        self.usuarios[nuevo["id"]] = nuevo
+        self.claves[usuario] = clave
+        return nuevo
+
+    async def cambiar_rol_usuario(self, usuario_id: str, rol: str) -> dict | None:
+        if usuario_id not in self.usuarios:
+            return None
+        self.usuarios[usuario_id] = {**self.usuarios[usuario_id], "rol": rol}
+        return self.usuarios[usuario_id]
+
+    async def suspender_usuario(self, usuario_id: str) -> dict | None:
+        if usuario_id not in self.usuarios:
+            return None
+        self.usuarios[usuario_id] = {**self.usuarios[usuario_id], "estado": "SUSPENDIDO"}
+        return self.usuarios[usuario_id]
 
 
 class AclFalso:

@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Solventa BFF - GraphQL (HU-W01)",
-    "description": "Pruebas de integración del BFF GraphQL de Solventa contra el stack local de docker compose.\n\nRequisitos: `docker compose --profile servicios up -d --build --wait`.\nEjecución: ver `tests/newman/README.md`.\n\nLas carpetas se ejecutan en orden y comparten variables de colección (`consentimiento_id`, `oferta_id`). Los datos son ficticios.",
+    "name": "Solventa BFF - GraphQL (HU-W01 y HU-M02)",
+    "description": "Pruebas de integración del BFF GraphQL de Solventa contra el stack local de docker compose, con autenticación y autorización por rol.\n\nRequisitos: `docker compose --profile servicios up -d --build --wait`.\nEjecución: ver `tests/newman/README.md`.\n\nLa carpeta 1 inicia sesión como BACKOFFICE, crea un ASESOR y un CLIENTE con alias únicos por corrida y guarda sus tokens. Por defecto, cada petición GraphQL usa el token del ASESOR (autenticación de la colección); las que prueban otros roles lo indican en su propia autenticación. Las carpetas se ejecutan en orden y comparten variables de colección. Los datos son ficticios.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -41,7 +41,10 @@
                 "health"
               ]
             },
-            "description": "Verifica que el BFF esté vivo antes de correr el resto de la colección."
+            "description": "Verifica que el BFF esté vivo antes de correr el resto de la colección.",
+            "auth": {
+              "type": "noauth"
+            }
           }
         },
         {
@@ -77,13 +80,584 @@
                 "metrics"
               ]
             },
-            "description": "Las métricas de Prometheus están expuestas (sin datos personales en las etiquetas)."
+            "description": "Las métricas de Prometheus están expuestas (sin datos personales en las etiquetas).",
+            "auth": {
+              "type": "noauth"
+            }
           }
         }
       ]
     },
     {
-      "name": "1. Consentimiento",
+      "name": "1. Autenticación y usuarios",
+      "item": [
+        {
+          "name": "iniciarSesion como BACKOFFICE",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Alias únicos por corrida, solo letras (6+ dígitos seguidos parecen un documento).",
+                  "const letras = 'abcdefghijklmnopqrstuvwxyz';",
+                  "let sufijo = '';",
+                  "for (let i = 0; i < 8; i++) sufijo += letras[Math.floor(Math.random() * letras.length)];",
+                  "pm.collectionVariables.set('alias_asesor', 'asesor.newman.' + sufijo);",
+                  "pm.collectionVariables.set('alias_cliente', 'cliente.newman.' + sufijo);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.iniciarSesion;",
+                  "pm.test('inicia sesión y recibe un JWT', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(r.__typename).to.eql('Sesion');",
+                  "  pm.expect(r.token.split('.')).to.have.lengthOf(3);",
+                  "  pm.expect(r.expiraEn).to.be.a('string');",
+                  "});",
+                  "pm.test('el rol es BACKOFFICE', () => pm.expect(r.usuario.rol).to.eql('BACKOFFICE'));",
+                  "pm.test('la respuesta no trae la clave ni su hash', () => {",
+                  "  pm.expect(JSON.stringify(r.usuario)).to.not.include('clave');",
+                  "});",
+                  "pm.collectionVariables.set('token_backoffice', r.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CredencialesInput!) {\\n  iniciarSesion(entrada: $entrada) {\\n    __typename\\n    ... on Sesion { token expiraEn usuario { id usuario rol estado } }\\n    ... on ErrorAutenticacion { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{usuario_backoffice}}\",\n      \"clave\": \"{{clave_backoffice}}\"\n    }\n  }\n}"
+            },
+            "description": "Inicia sesión con el BACKOFFICE que crea la tarea `crear-backoffice` del compose (credenciales solo locales) y guarda su token. También genera los alias de esta corrida, para que la colección se pueda repetir.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "yo (BACKOFFICE)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('es el BACKOFFICE activo', () => {",
+                  "  pm.expect(cuerpo.data.yo.usuario).to.eql(pm.environment.get('usuario_backoffice'));",
+                  "  pm.expect(cuerpo.data.yo.rol).to.eql('BACKOFFICE');",
+                  "  pm.expect(cuerpo.data.yo.estado).to.eql('ACTIVO');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  yo { usuario rol estado }\\n}\"\n}"
+            },
+            "description": "`yo` devuelve el usuario dueño del token.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "crearUsuario ASESOR",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.crearUsuario;",
+                  "pm.test('crea el usuario activo con el rol pedido', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(r.__typename).to.eql('Usuario');",
+                  "  pm.expect(r.rol).to.eql('ASESOR');",
+                  "  pm.expect(r.estado).to.eql('ACTIVO');",
+                  "});",
+                  "pm.collectionVariables.set('id_asesor', r.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\"\n    }\n  }\n}"
+            },
+            "description": "El BACKOFFICE crea un ASESOR.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "crearUsuario CLIENTE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.crearUsuario;",
+                  "pm.test('crea el usuario activo con el rol pedido', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(r.__typename).to.eql('Usuario');",
+                  "  pm.expect(r.rol).to.eql('CLIENTE');",
+                  "  pm.expect(r.estado).to.eql('ACTIVO');",
+                  "});",
+                  "pm.collectionVariables.set('id_cliente', r.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\"\n    }\n  }\n}"
+            },
+            "description": "El BACKOFFICE crea un CLIENTE.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "crearUsuario con alias repetido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.crearUsuario;",
+                  "pm.test('ErrorUsuario con un mensaje claro', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorUsuario');",
+                  "  pm.expect(r.mensaje).to.include('Ya existe');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\"\n    }\n  }\n}"
+            },
+            "description": "El alias es único: repetirlo devuelve ErrorUsuario (no un 5xx).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "crearUsuario con alias de correo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.crearUsuario;",
+                  "pm.test('ErrorUsuario con un mensaje claro', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorUsuario');",
+                  "  pm.expect(r.mensaje).to.include('correo');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"persona@correo.com\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\"\n    }\n  }\n}"
+            },
+            "description": "El alias no puede ser un correo ni un documento: así no se guardan datos personales.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "iniciarSesion con clave errónea",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.iniciarSesion;",
+                  "pm.test('ErrorAutenticacion con mensaje genérico', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorAutenticacion');",
+                  "  pm.expect(r.mensaje).to.eql('Usuario o clave incorrectos.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CredencialesInput!) {\\n  iniciarSesion(entrada: $entrada) {\\n    __typename\\n    ... on Sesion { token expiraEn usuario { id usuario rol estado } }\\n    ... on ErrorAutenticacion { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}\",\n      \"clave\": \"clave-incorrecta-1\"\n    }\n  }\n}"
+            },
+            "description": "Mensaje genérico: no revela si el alias existe. Va antes del login correcto del ASESOR, que reinicia el contador de intentos.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "iniciarSesion como ASESOR",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.iniciarSesion;",
+                  "pm.test('inicia sesión y recibe un JWT', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(r.__typename).to.eql('Sesion');",
+                  "  pm.expect(r.token.split('.')).to.have.lengthOf(3);",
+                  "  pm.expect(r.expiraEn).to.be.a('string');",
+                  "});",
+                  "pm.test('el rol es ASESOR', () => pm.expect(r.usuario.rol).to.eql('ASESOR'));",
+                  "pm.test('la respuesta no trae la clave ni su hash', () => {",
+                  "  pm.expect(JSON.stringify(r.usuario)).to.not.include('clave');",
+                  "});",
+                  "pm.collectionVariables.set('token_asesor', r.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CredencialesInput!) {\\n  iniciarSesion(entrada: $entrada) {\\n    __typename\\n    ... on Sesion { token expiraEn usuario { id usuario rol estado } }\\n    ... on ErrorAutenticacion { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
+            },
+            "description": "Guarda el token del ASESOR.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "iniciarSesion como CLIENTE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.iniciarSesion;",
+                  "pm.test('inicia sesión y recibe un JWT', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(r.__typename).to.eql('Sesion');",
+                  "  pm.expect(r.token.split('.')).to.have.lengthOf(3);",
+                  "  pm.expect(r.expiraEn).to.be.a('string');",
+                  "});",
+                  "pm.test('el rol es CLIENTE', () => pm.expect(r.usuario.rol).to.eql('CLIENTE'));",
+                  "pm.test('la respuesta no trae la clave ni su hash', () => {",
+                  "  pm.expect(JSON.stringify(r.usuario)).to.not.include('clave');",
+                  "});",
+                  "pm.collectionVariables.set('token_cliente', r.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CredencialesInput!) {\\n  iniciarSesion(entrada: $entrada) {\\n    __typename\\n    ... on Sesion { token expiraEn usuario { id usuario rol estado } }\\n    ... on ErrorAutenticacion { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
+            },
+            "description": "Guarda el token del CLIENTE.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "usuarios (BACKOFFICE) incluye al ASESOR nuevo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('el ASESOR creado aparece en la lista', () => {",
+                  "  const alias = cuerpo.data.usuarios.map(u => u.usuario);",
+                  "  pm.expect(alias).to.include(pm.collectionVariables.get('alias_asesor'));",
+                  "  cuerpo.data.usuarios.forEach(u => pm.expect(u.rol).to.eql('ASESOR'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  usuarios(rol: ASESOR) { id usuario rol }\\n}\"\n}"
+            },
+            "description": "El BACKOFFICE lista usuarios filtrando por rol.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Consentimiento",
       "item": [
         {
           "name": "registrarConsentimiento",
@@ -134,13 +708,51 @@
               "mode": "raw",
               "raw": "{\n  \"query\": \"mutation {\\n  registrarConsentimiento(entrada: {finalidad: \\\"cotizacion-vida-hipotecario\\\", versionTexto: \\\"v1\\\"}) {\\n    id finalidad versionTexto otorgadoEn revocadoEn vigente\\n  }\\n}\"\n}"
             },
-            "description": "Registra un consentimiento (mock en memoria de AUTH, hasta T-W01-4) y guarda su id en la variable `consentimiento_id` para el resto de la colección."
+            "description": "El ASESOR autenticado registra el consentimiento (mock en memoria de AUTH, hasta T-W01-4) y se guarda su id en `consentimiento_id` para el resto de la colección."
+          }
+        },
+        {
+          "name": "AUTH: el actor del consentimiento es el ASESOR",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// CA-W01-02 y CA-W01-11: queda registrado quién otorgó el consentimiento.",
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const actor = pm.response.json().actor;",
+                  "pm.test('el actor es el ASESOR que inició sesión', () => {",
+                  "  pm.expect(actor.rol).to.eql('ASESOR');",
+                  "  pm.expect(actor.usuario_id).to.eql(pm.collectionVariables.get('id_asesor'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": {
+              "raw": "{{auth_url}}/consentimientos/{{consentimiento_id}}",
+              "host": [
+                "{{auth_url}}"
+              ],
+              "path": [
+                "consentimientos",
+                "{{consentimiento_id}}"
+              ]
+            },
+            "description": "Consulta directa a AUTH (servicio interno; en Cloud Run es privado)."
           }
         }
       ]
     },
     {
-      "name": "2. Oferta con proveedores sanos",
+      "name": "3. Oferta con proveedores sanos",
       "item": [
         {
           "name": "solicitarOferta (canal web)",
@@ -303,7 +915,7 @@
       ]
     },
     {
-      "name": "3. Degradación con Open Finance lento (EC009 / EC010)",
+      "name": "4. Degradación con Open Finance lento (EC009 / EC010)",
       "item": [
         {
           "name": "Stub Open Finance -> modo lento",
@@ -342,6 +954,9 @@
             "body": {
               "mode": "raw",
               "raw": "{\"modo\": \"lento\"}"
+            },
+            "auth": {
+              "type": "noauth"
             }
           }
         },
@@ -452,6 +1067,9 @@
             "body": {
               "mode": "raw",
               "raw": "{\"modo\": \"sano\"}"
+            },
+            "auth": {
+              "type": "noauth"
             }
           }
         },
@@ -499,13 +1117,16 @@
                 "circuitos"
               ]
             },
-            "description": "El circuito de Open Finance abrió tras los fallos; la sonda de recuperación lo cierra sola (TTL 5 s + sonda cada 2 s). Espera 10 s para que la colección sea repetible."
+            "description": "El circuito de Open Finance abrió tras los fallos; la sonda de recuperación lo cierra sola (TTL 5 s + sonda cada 2 s). Espera 10 s para que la colección sea repetible.",
+            "auth": {
+              "type": "noauth"
+            }
           }
         }
       ]
     },
     {
-      "name": "4. Errores controlados (nunca un 5xx)",
+      "name": "5. Errores controlados (nunca un 5xx)",
       "item": [
         {
           "name": "consentimiento inexistente",
@@ -644,7 +1265,17 @@
               "mode": "raw",
               "raw": "{\n  \"query\": \"query {\\n  cobros(estado: PENDIENTE) {\\n    id estado\\n  }\\n}\"\n}"
             },
-            "description": "Los cobros todavía no están expuestos por el BFF. Debe responder un error de GraphQL con mensaje claro y HTTP 200, no un 5xx."
+            "description": "Los cobros son del BACKOFFICE. Con su token el permiso pasa, pero la operación sigue sin backend: error de GraphQL con mensaje claro y HTTP 200, no un 5xx.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
           }
         },
         {
@@ -691,7 +1322,7 @@
       ]
     },
     {
-      "name": "5. Contacto con asesor y revocación",
+      "name": "6. Contacto con asesor y revocación",
       "item": [
         {
           "name": "contactarAsesor (mock)",
@@ -878,6 +1509,501 @@
           }
         }
       ]
+    },
+    {
+      "name": "7. Autorización por rol",
+      "item": [
+        {
+          "name": "CLIENTE consulta usuarios",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('rechazado por rol', () => {",
+                  "  pm.expect(cuerpo.errors).to.have.lengthOf(1);",
+                  "  pm.expect(cuerpo.errors[0].message).to.eql('No tienes permiso para esta operación.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  usuarios { id }\\n}\"\n}"
+            },
+            "description": "La gestión de usuarios es solo del BACKOFFICE.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "CLIENTE consulta cobros",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('rechazado por rol', () => {",
+                  "  pm.expect(cuerpo.errors).to.have.lengthOf(1);",
+                  "  pm.expect(cuerpo.errors[0].message).to.eql('No tienes permiso para esta operación.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  cobros { id }\\n}\"\n}"
+            },
+            "description": "Los cobros son solo del BACKOFFICE.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "BACKOFFICE solicita una oferta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('rechazado por rol', () => {",
+                  "  pm.expect(cuerpo.errors).to.have.lengthOf(1);",
+                  "  pm.expect(cuerpo.errors[0].message).to.eql('No tienes permiso para esta operación.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) { __typename }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 240,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
+            },
+            "description": "Cotizar es de CLIENTE y ASESOR; el BACKOFFICE no cotiza.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "ASESOR crea un usuario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('rechazado por rol', () => {",
+                  "  pm.expect(cuerpo.errors).to.have.lengthOf(1);",
+                  "  pm.expect(cuerpo.errors[0].message).to.eql('No tienes permiso para esta operación.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"intruso.asesor\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"BACKOFFICE\"\n    }\n  }\n}"
+            },
+            "description": "Crear usuarios es solo del BACKOFFICE.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "token alterado",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Altera la firma del JWT (tercera parte) en su primer carácter.",
+                  "const partes = pm.collectionVariables.get('token_asesor').split('.');",
+                  "partes[2] = (partes[2][0] === 'A' ? 'B' : 'A') + partes[2].slice(1);",
+                  "pm.collectionVariables.set('token_alterado', partes.join('.'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('token rechazado', () => {",
+                  "  pm.expect(cuerpo.errors).to.have.lengthOf(1);",
+                  "  pm.expect(cuerpo.errors[0].message).to.eql('Tu sesión no es válida o venció. Inicia sesión de nuevo.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  yo { id }\\n}\"\n}"
+            },
+            "description": "Se cambia el primer carácter de la firma del token del ASESOR (el último no sirve: en base64url solo lleva bits de relleno). La firma ya no coincide y se rechaza.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_alterado}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "sin token: usuarios",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('exige iniciar sesión', () => {",
+                  "  pm.expect(cuerpo.errors).to.have.lengthOf(1);",
+                  "  pm.expect(cuerpo.errors[0].message).to.eql('Debes iniciar sesión.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  usuarios { id }\\n}\"\n}"
+            },
+            "description": "La gestión de usuarios exige sesión aunque la bandera esté en `opcional`.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Suspensión",
+      "item": [
+        {
+          "name": "suspenderUsuario CLIENTE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.suspenderUsuario;",
+                  "pm.test('queda SUSPENDIDO', () => {",
+                  "  pm.expect(r.__typename).to.eql('Usuario');",
+                  "  pm.expect(r.estado).to.eql('SUSPENDIDO');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($id: ID!) {\\n  suspenderUsuario(id: $id) {\\n    __typename\\n    ... on Usuario { id estado }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"id\": \"{{id_cliente}}\"\n  }\n}"
+            },
+            "description": "Baja lógica: el usuario se conserva, pero ya no puede iniciar sesión.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "iniciarSesion del CLIENTE suspendido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.iniciarSesion;",
+                  "pm.test('ErrorAutenticacion con mensaje genérico', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorAutenticacion');",
+                  "  pm.expect(r.mensaje).to.eql('Usuario o clave incorrectos.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CredencialesInput!) {\\n  iniciarSesion(entrada: $entrada) {\\n    __typename\\n    ... on Sesion { token expiraEn usuario { id usuario rol estado } }\\n    ... on ErrorAutenticacion { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
+            },
+            "description": "Mismo mensaje genérico que una clave errónea.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "suspenderUsuario inexistente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('ErrorUsuario: no encontrado', () => {",
+                  "  pm.expect(cuerpo.data.suspenderUsuario.mensaje).to.eql('Usuario no encontrado.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation {\\n  suspenderUsuario(id: \\\"no-existe\\\") {\\n    __typename\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\"\n}"
+            },
+            "description": "Un id que no existe devuelve ErrorUsuario, no un 5xx.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
@@ -896,6 +2022,52 @@
     {
       "key": "documento_identidad",
       "value": "CC-NEWMAN-0001"
+    },
+    {
+      "key": "clave_nuevos",
+      "value": "clave-newman-0001"
+    },
+    {
+      "key": "alias_asesor",
+      "value": ""
+    },
+    {
+      "key": "alias_cliente",
+      "value": ""
+    },
+    {
+      "key": "id_asesor",
+      "value": ""
+    },
+    {
+      "key": "id_cliente",
+      "value": ""
+    },
+    {
+      "key": "token_backoffice",
+      "value": ""
+    },
+    {
+      "key": "token_asesor",
+      "value": ""
+    },
+    {
+      "key": "token_cliente",
+      "value": ""
+    },
+    {
+      "key": "token_alterado",
+      "value": ""
     }
-  ]
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token_asesor}}",
+        "type": "string"
+      }
+    ]
+  }
 }
