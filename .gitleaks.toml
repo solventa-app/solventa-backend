@@ -1,0 +1,7 @@
+title = "Solventa backend - configuración de gitleaks"
+
+[allowlist]
+description = "Secretos falsos de fixtures de pruebas (no son credenciales reales, KAN-24)"
+regexes = [
+  '''otro-secreto-de-32-bytes-o-mas-xx''',
+]
