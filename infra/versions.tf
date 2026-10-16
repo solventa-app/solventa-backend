@@ -26,8 +26,13 @@ terraform {
     }
   }
 
-  # El estado es LOCAL por ahora (ignorado por git). Cuando el equipo defina el proyecto GCP,
-  # moverlo a un bucket de GCS con versionado: `backend "gcs" { bucket = "..." prefix = "solventa-backend" }`.
+  # Estado remoto en GCS (bucket con versionado y bloqueo de acceso público). El bucket NO lo crea Terraform
+  # (huevo y gallina): se creó a mano, ver "Estado de Terraform" en infra/README.md. El CI usa
+  # `init -backend=false`, así que no necesita acceso al bucket.
+  backend "gcs" {
+    bucket = "solventa-511815-tfstate"
+    prefix = "solventa-backend"
+  }
 }
 
 provider "google" {
