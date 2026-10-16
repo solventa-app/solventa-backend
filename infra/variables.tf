@@ -138,8 +138,19 @@ variable "billing_account_id" {
   default     = ""
 }
 
-variable "presupuesto_monto_usd" {
-  description = "Monto total del presupuesto a vigilar, en USD. Default: el crédito de USD 300 / 90 días del equipo."
+variable "presupuesto_moneda" {
+  description = "Moneda del presupuesto (ISO 4217). Debe coincidir con la moneda de la cuenta de facturación: GCP rechaza el presupuesto si no (la cuenta del equipo está en COP)."
+  type        = string
+  default     = "USD"
+
+  validation {
+    condition     = can(regex("^[A-Z]{3}$", var.presupuesto_moneda))
+    error_message = "presupuesto_moneda debe ser un código ISO 4217 de 3 letras mayúsculas (USD, COP...)."
+  }
+}
+
+variable "presupuesto_monto" {
+  description = "Monto total del presupuesto a vigilar, en presupuesto_moneda. Default: el crédito de 300 USD / 90 días del equipo; con otra moneda hay que convertirlo (ver terraform.tfvars.example)."
   type        = number
   default     = 300
 }

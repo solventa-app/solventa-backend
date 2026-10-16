@@ -57,6 +57,12 @@ del equipo (regla de costos de `CLAUDE.md`).
   desde cero para esta tarea. Ver los límites honestos documentados en los comentarios de
   `presupuesto.tf` y en el docstring de `frenar-gasto/main.py`: solo actúa sobre Cloud Run (no sobre
   Cloud SQL/Redis/Mongo, que seguirían cobrando), y no es instantáneo.
+- **El presupuesto va en la moneda de la cuenta de facturación.** La del equipo está en COP y GCP rechaza un presupuesto en
+  otra moneda, así que `presupuesto_moneda` y `presupuesto_monto` reemplazan al antiguo `presupuesto_monto_usd` (default
+  300 USD, que sirve para una cuenta en USD). Con la cuenta en COP: `presupuesto_moneda = "COP"` y
+  `presupuesto_monto = 958332` (300 USD a la TRM de 3.194,44 del 10-oct-2026). El tope es una protección, no una
+  conversión exacta: si el peso se aprecia mucho, conviene recalcularlo. La función `frenar-gasto` decide por umbral
+  relativo (50/80/100 %), así que no depende de la moneda.
 - **Acceso entre servicios por IAM, no `allUsers` global.** `servicios.tf` crea una service account
   de runtime por servicio y solo otorga `roles/run.invoker` a quien el manifiesto declara en `llama`;
   `allUsers` solo se concede a los servicios marcados `publico: true` (hoy, `bff`). Más estricto que
@@ -77,7 +83,7 @@ del equipo (regla de costos de `CLAUDE.md`).
 ```bash
 cd infra
 cp terraform.tfvars.example terraform.tfvars   # completar project_id; todo lo demás queda en false
-terraform init
+terraform init          # el lockfile trae hashes de linux_amd64 (CI) y windows_amd64: no debería modificarlo
 terraform fmt -check -recursive && terraform validate
 terraform plan          # solo lectura (necesita credenciales de un proyecto real)
 terraform apply         # CREA recursos: confirmar con el equipo antes, uno por uno
