@@ -6,8 +6,8 @@
 # nada que copiar o adaptar. Lo que sigue es un diseño propio con el patrón estándar de GCP
 # (presupuesto -> Pub/Sub -> Cloud Function), no una migración de algo ya probado.
 #
-# Qué hace: presupuesto de facturación con alertas en 50/80/100% del crédito (var.presupuesto_monto_usd,
-# default USD 300) + una Cloud Function (infra/funciones/frenar-gasto/) que, al recibir la alerta del
+# Qué hace: presupuesto de facturación con alertas en 50/80/100% del crédito (var.presupuesto_monto en
+# var.presupuesto_moneda, default 300 USD; la moneda debe ser la de la cuenta de facturación) + una Cloud Function (infra/funciones/frenar-gasto/) que, al recibir la alerta del
 # 100%, bloquea el tráfico de entrada de TODOS los servicios de Cloud Run del proyecto.
 #
 # Límites honestos de este diseño (no es una garantía absoluta, ver regla 2 de CLAUDE.md):
@@ -64,8 +64,8 @@ resource "google_billing_budget" "presupuesto" {
 
   amount {
     specified_amount {
-      currency_code = "USD"
-      units         = tostring(var.presupuesto_monto_usd)
+      currency_code = var.presupuesto_moneda
+      units         = tostring(var.presupuesto_monto)
     }
   }
 
