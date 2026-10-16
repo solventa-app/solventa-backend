@@ -4,12 +4,15 @@ name: Deploy staging
 # Flujo (ADR-07):  construir UNA vez (imagen = SHA)  ->  migrar la base (Cloud Run Job, misma imagen)
 #                  ->  revisión nueva SIN tráfico  ->  prueba de humo sobre ella  ->  promover.
 # Si algo falla antes de "promover", staging sigue sirviendo la revisión anterior.
-# Terraform NO se aplica aquí (costos y permisos): ver infra/README.md.
+# Si el merge cambió infra/ o .github/servicios.json, ANTES de construir se aplica Terraform (etapa `infra`, ADR-09):
+# plan -> guardia contra destrucciones (scripts/revisar_plan.py) -> apply. Un servicio nuevo existe antes de desplegarlo
+# y no hay carrera entre Terraform y `gcloud run deploy`. Si `infra` falla, no se despliega nada.
 #
 # APAGADO por defecto: no hace nada hasta que existan estas variables del repositorio
 # (Settings > Secrets and variables > Actions > Variables):
 #   GCP_PROJECT_ID, GCP_WIF_PROVIDER, GCP_DEPLOY_SA   salen de `terraform output` (infra/README.md)
 #   GCP_PROTECCION_GASTO = activa                     confirma que la protección de gasto está instalada
+#   GCP_TERRAFORM_SA, GCP_BILLING_ACCOUNT_ID          solo para la etapa `infra` (outputs de Terraform y cuenta de facturación)
 #   GCP_REGION (opcional, us-central1), GCP_REGISTRY_REPO (opcional, solventa-backend)
 on:
   workflow_run:
@@ -22,6 +25,14 @@ on:
         description: 'Servicios a desplegar separados por coma (ej. auth,risk) o "todos"'
         required: true
         default: todos
+      infra:
+        description: 'Aplicar también Terraform (infra/) antes de desplegar'
+        type: boolean
+        default: false
+      permitir_destruir:
+        description: 'Permitir que Terraform destruya o reemplace recursos (solo si ya revisaste el plan)'
+        type: boolean
+        default: false
 
 # Un solo despliegue a la vez y nunca se corta a medias (podría dejar una migración sin su código).
 concurrency:
@@ -49,6 +60,7 @@ jobs:
     outputs:
       servicios: ${{ steps.sel.outputs.servicios }}
       migraciones: ${{ steps.sel.outputs.migraciones }}
+      infra: ${{ steps.infra.outputs.infra }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -70,11 +82,74 @@ jobs:
             python scripts/seleccionar_servicios.py cambios "${SHA}^" "$SHA" >> "$GITHUB_OUTPUT"
           fi
           cat "$GITHUB_OUTPUT"
+      - name: ¿Hay que aplicar Terraform?
+        id: infra
+        env:
+          EVENTO: ${{ github.event_name }}
+          ENTRADA: ${{ inputs.infra }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENTO" = "workflow_dispatch" ]; then
+            echo "infra=${ENTRADA}" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "${SHA}^" "$SHA" | grep -qE '^(infra/|\.github/servicios\.json$)'; then
+            echo "infra=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "infra=false" >> "$GITHUB_OUTPUT"
+          fi
+          grep '^infra=' "$GITHUB_OUTPUT"
+
+  infra:
+    # Aplica la infraestructura (Terraform) con una identidad distinta y más potente que la de despliegue,
+    # en su propio entorno de GitHub (`infra-staging`): ahí se pueden exigir revisores antes de cada apply.
+    needs: preparar
+    if: needs.preparar.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: infra-staging
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra
+    env:
+      TF_INPUT: "0"
+      TF_IN_AUTOMATION: "1"
+      TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+      TF_VAR_billing_account_id: ${{ vars.GCP_BILLING_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_TERRAFORM_SA }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - run: terraform init
+      - name: Plan
+        run: |
+          set -euo pipefail
+          terraform plan -var-file=staging.tfvars -out=plan.bin
+          terraform show -json plan.bin > plan.json
+      - name: Revisar el plan (no se destruye nada sin decisión explícita)
+        env:
+          PERMITIR: ${{ inputs.permitir_destruir }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$PERMITIR" = "true" ]; then args+=(--permitir-destruir); fi
+          python3 ../scripts/revisar_plan.py plan.json "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Aplicar
+        run: terraform apply plan.bin
 
   construir:
     # Construir una vez: la imagen que pasó CI es la que llega a staging (etiqueta = SHA, nunca "latest").
-    needs: preparar
-    if: needs.preparar.outputs.servicios != '[]'
+    needs: [preparar, infra]
+    # `infra` se omite cuando el merge no tocó Terraform; si falló, no se construye ni se despliega nada.
+    if: ${{ !cancelled() && needs.preparar.result == 'success' && needs.preparar.outputs.servicios != '[]' && contains(fromJSON('["success","skipped"]'), needs.infra.result) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: staging
