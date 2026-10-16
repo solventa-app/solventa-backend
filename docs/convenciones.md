@@ -76,7 +76,7 @@ feature (feat|fix|chore/KAN-N-…) ──squash──► develop ──► relea
 
 - `develop` → staging automático **solo si CI pasó** y solo de lo que cambió; una imagen por commit (etiqueta = SHA). Ver `deploy-staging.yml`.
 - Un despliegue fallido antes de "promover" no afecta a staging. Para volver atrás: *Rollback staging* (no revierte la base; se corrige hacia adelante).
-- Terraform **no** se aplica desde el pipeline. Los servicios se declaran en `.github/servicios.json` y `python scripts/validar_servicios.py` debe pasar.
+- Terraform **sí** se aplica desde el pipeline (ADR-09), como primera etapa, al mergear cambios en `infra/` o `.github/servicios.json`; el PR es la aprobación y `infra/staging.tfvars` decide qué existe (activar un recurso de costo es un cambio revisado). Los servicios se declaran en `.github/servicios.json` y `python scripts/validar_servicios.py` debe pasar.
 
 ## Código
 

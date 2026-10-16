@@ -77,12 +77,11 @@ del equipo (regla de costos de `CLAUDE.md`).
   de runtime por servicio y solo otorga `roles/run.invoker` a quien el manifiesto declara en `llama`;
   `allUsers` solo se concede a los servicios marcados `publico: true` (hoy, `bff`). Más estricto que
   el patrón de `solventa-arquitectura/experimento-1-acl-kyc/infra` (que sí usa `allUsers` para todos).
-- **`deploy-staging.yml` migra antes de desplegar y no corre `terraform apply`.** El estado de
-  Terraform es local por ahora (no se ha movido a GCS, ver `versions.tf`), así que aplicarlo desde
-  GitHub Actions crearía un estado desconectado del que usa el equipo localmente. El workflow
-  construye la imagen (tag = SHA), corre el Cloud Run Job de migración y solo entonces actualiza la
-  revisión del servicio — Terraform sigue siendo la única fuente de verdad para la infraestructura en
-  sí (Redis, Cloud SQL, IAM, etc., que siguen fuera de este pipeline).
+- **`deploy-staging.yml` aplica Terraform primero, y luego migra y despliega** ([ADR-09](../docs/adr/ADR-09-terraform-desde-el-pipeline.md)).
+  Si el merge cambió `infra/` o `.github/servicios.json`, la etapa `infra` hace plan, pasa el guardia
+  (`scripts/revisar_plan.py`, que bloquea destrucciones) y aplica; solo entonces construye la imagen
+  (tag = SHA), corre el Cloud Run Job de migración y actualiza la revisión del servicio. El estado ya vive en
+  GCS, así que el pipeline y el equipo trabajan sobre el mismo.
 - **Secretos:** Cloud SQL y Mongo Atlas generan su contraseña con `random_password` (nunca un valor
   fijo en el código) y la guardan en Secret Manager; Cloud Run los lee con `value_source.secret_key_ref`, nunca
   como texto plano en una variable de entorno de la consola de Cloud Run. Ojo: esos valores generados sí quedan
@@ -100,12 +99,16 @@ del equipo (regla de costos de `CLAUDE.md`).
 
 ```bash
 cd infra
-cp terraform.tfvars.example terraform.tfvars   # completar project_id; todo lo demás queda en false
+export TF_VAR_project_id=<proyecto> TF_VAR_billing_account_id=<cuenta-de-facturacion>   # no van en el repo
 terraform init          # el lockfile trae hashes de linux_amd64 (CI) y windows_amd64: no debería modificarlo
 terraform fmt -check -recursive && terraform validate
-terraform plan          # solo lectura (necesita credenciales de un proyecto real)
-terraform apply         # CREA recursos: confirmar con el equipo antes, uno por uno
+terraform plan -var-file=staging.tfvars    # solo lectura (necesita credenciales de un proyecto real)
 ```
+
+`staging.tfvars` es la configuración que aplica el pipeline y la que se usa a mano (ver [ADR-09](../docs/adr/ADR-09-terraform-desde-el-pipeline.md)).
+Desde el arranque, los cambios en `infra/` los aplica el merge a `develop`; **no** hagas `terraform apply` a mano salvo para
+el arranque inicial o una emergencia, y siempre con el plan revisado y confirmado por el equipo.
+`terraform.tfvars.example` sigue sirviendo para quien monte un entorno propio con un `terraform.tfvars` local (ignorado por git).
 
 ## Estado de Terraform
 
@@ -161,10 +164,21 @@ Con `crear_pipeline = true`, `terraform output` entrega los valores. En GitHub: 
 | `GCP_PROJECT_ID` | tu `project_id` |
 | `GCP_WIF_PROVIDER` | `terraform output -raw wif_provider` |
 | `GCP_DEPLOY_SA` | `terraform output -raw deploy_sa` |
-| `GCP_PROTECCION_GASTO` | `activa` — solo después del paso 2 de arriba |
+| `GCP_TERRAFORM_SA` | `terraform output -raw terraform_sa` (solo para la etapa `infra`) |
+| `GCP_BILLING_ACCOUNT_ID` | ID de la cuenta de facturación (solo para la etapa `infra`; el presupuesto lo lee con `TF_VAR_billing_account_id`) |
+| `GCP_PROTECCION_GASTO` | `activa` — solo después del paso 2 de arriba, y con la función `frenar-gasto` desplegada |
 | `GCP_REGION`, `GCP_REGISTRY_REPO` | opcionales (`us-central1`, `solventa-backend`) |
 
 Hasta que las tres primeras y `GCP_PROTECCION_GASTO` existan, `deploy-staging.yml` y `rollback-staging.yml` no hacen nada.
+
+**Dos entornos de GitHub** (Settings > Environments): `staging` (despliegue de aplicaciones, identidad `GCP_DEPLOY_SA`) e
+`infra-staging` (Terraform, identidad `GCP_TERRAFORM_SA`, mucho más potente: propietario del proyecto de staging). En
+`infra-staging` se puede exigir revisores antes de cada apply y limitar a la rama `develop`. Si un entorno no existe, GitHub lo
+crea solo en el primer uso **sin reglas de protección**: créalos antes si quieres revisores o restricción de rama.
+
+**Arranque (una vez, a mano):** la cuenta de Terraform se crea con `crear_pipeline`, así que ese primer `apply` lo hace una
+persona desde su máquina con `terraform plan -var-file=staging.tfvars` revisado. Después, los cambios en `infra/` los aplica
+el merge. Localmente: `export TF_VAR_project_id=... TF_VAR_billing_account_id=...` y siempre `-var-file=staging.tfvars`.
 
 ## Cargar los secretos
 
@@ -245,9 +259,11 @@ key ring de KMS (no se puede borrar) ni los secretos si ya cargaste valores real
 ## Pipeline
 
 - `ci.yml` valida el Terraform (`fmt`, `init -backend=false`, `validate`) cuando cambia `infra/` o `.github/servicios.json`. No aplica nada.
-- `deploy-staging.yml` y `rollback-staging.yml` despliegan aplicaciones (no infraestructura): construyen la imagen (tag = SHA),
-  migran y solo entonces actualizan la revisión del servicio. Se disparan **solo manualmente** (`workflow_dispatch`) o desde
-  el flujo que define `ci.yml` tras el merge a `develop` — nunca aplican Terraform.
+- `deploy-staging.yml`, tras el CI del merge a `develop` (o a mano con `workflow_dispatch`): **`infra`** (si cambió `infra/` o el
+  manifiesto: plan → guardia → apply) → construir la imagen (tag = SHA) → migrar → desplegar sin tráfico → humo → promover. Si
+  `infra` falla o el guardia bloquea, no se despliega nada. Para permitir una destrucción revisada: *Run workflow* con
+  `permitir_destruir`.
+- `rollback-staging.yml` vuelve una revisión de aplicación a la anterior. **No** revierte infraestructura: para eso se revierte el PR.
 
 ## Patrón de referencia
 
