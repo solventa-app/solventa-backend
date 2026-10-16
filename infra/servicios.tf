@@ -6,7 +6,8 @@
 # Por eso se ignoran image, labels, client y traffic.
 #
 # Costo: Cloud Run y Cloud Run Jobs escalan a cero (~USD 0 en reposo). Secret Manager cobra ~USD 0,06/mes por
-# versión activa. Nada aquí usa VPC, Memorystore ni Cloud SQL (siguen fuera de Terraform: ver infra/README.md).
+# versión activa. Con `crear_cloud_sql`, los servicios con `database-url-*` (y sus jobs) montan el socket de Cloud SQL;
+# Memorystore y su conector VPC todavía no están conectados a los servicios (ver infra/README.md).
 
 data "google_project" "actual" {
   project_id = var.project_id
@@ -20,6 +21,14 @@ locals {
 
   con_migracion = { for n, s in local.activos : n => s if try(s.migracion, null) != null }
   publicos      = { for n, s in local.activos : n => s if try(s.publico, false) }
+
+  # Servicios que hablan con Postgres: los que declaran un secreto `database-url-*` (su URL usa el socket
+  # /cloudsql, que Cloud Run solo monta si se pide). Vale para el servicio y para su job de migración.
+  con_postgres = {
+    for n, s in local.activos : n => s
+    if var.crear_cloud_sql && anytrue([for id in values(try(s.secretos, {})) : startswith(id, "database-url-")])
+  }
+  cloud_sql_conexion = one(google_sql_database_instance.principal[*].connection_name)
 
   # URL determinista de cada servicio: evita la referencia circular entre servicios que se llaman.
   url = { for n, s in local.servicios : n => "https://${n}-${data.google_project.actual.number}.${var.region}.run.app" }
@@ -106,8 +115,26 @@ resource "google_cloud_run_v2_service" "servicio" {
       max_instance_count = var.max_instancias
     }
 
+    dynamic "volumes" {
+      for_each = contains(keys(local.con_postgres), each.key) ? [1] : []
+      content {
+        name = "cloudsql"
+        cloud_sql_instance {
+          instances = [local.cloud_sql_conexion]
+        }
+      }
+    }
+
     containers {
       image = var.imagen_inicial
+
+      dynamic "volume_mounts" {
+        for_each = contains(keys(local.con_postgres), each.key) ? [1] : []
+        content {
+          name       = "cloudsql"
+          mount_path = "/cloudsql"
+        }
+      }
 
       resources {
         limits = {
@@ -201,10 +228,28 @@ resource "google_cloud_run_v2_job" "migracion" {
       max_retries     = 0
       timeout         = "600s"
 
+      dynamic "volumes" {
+        for_each = contains(keys(local.con_postgres), each.key) ? [1] : []
+        content {
+          name = "cloudsql"
+          cloud_sql_instance {
+            instances = [local.cloud_sql_conexion]
+          }
+        }
+      }
+
       containers {
         image   = var.imagen_inicial
         command = [each.value.migracion[0]]
         args    = slice(tolist(each.value.migracion), 1, length(each.value.migracion))
+
+        dynamic "volume_mounts" {
+          for_each = contains(keys(local.con_postgres), each.key) ? [1] : []
+          content {
+            name       = "cloudsql"
+            mount_path = "/cloudsql"
+          }
+        }
 
         dynamic "env" {
           for_each = try(each.value.entorno, {})

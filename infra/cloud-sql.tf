@@ -34,6 +34,7 @@ resource "google_sql_database_instance" "principal" {
   deletion_protection = false
 
   settings {
+    edition           = "ENTERPRISE" # los niveles shared-core (db-f1-micro) solo existen en Enterprise, no en Enterprise Plus
     tier              = var.cloud_sql_tier
     availability_type = "ZONAL"
     disk_autoresize   = true
@@ -70,51 +71,34 @@ resource "google_sql_user" "postgres" {
 }
 
 # --- Secretos de conexión (Secret Manager, nunca en el repo) ---
-
-resource "google_secret_manager_secret" "database_url_auth" {
-  count     = var.crear_cloud_sql ? 1 : 0
-  project   = var.project_id
-  secret_id = "database-url-auth"
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.apis]
-}
+# El CONTENEDOR del secreto lo crea servicios.tf (único dueño: así activar crear_cloud_sql antes o después de
+# crear_servicios no choca con el mismo secret_id). Aquí solo se agrega la versión con el valor real, y solo
+# si los servicios existen. depends_on con la versión marcadora asegura que la real sea la más nueva
+# ("latest" es la que lee Cloud Run).
+# Socket unix de Cloud SQL: servicios.tf lo monta en /cloudsql en los servicios y jobs con `database-url-*`.
 
 resource "google_secret_manager_secret_version" "database_url_auth" {
-  count  = var.crear_cloud_sql ? 1 : 0
-  secret = google_secret_manager_secret.database_url_auth[0].id
-  # Socket unix de Cloud SQL montado en /cloudsql (ver cloud-run.tf: volumes + volume_mounts).
+  count      = (var.crear_cloud_sql && var.crear_servicios) ? 1 : 0
+  secret     = google_secret_manager_secret.secreto["database-url-auth"].id
+  depends_on = [google_secret_manager_secret_version.marcador]
+
   secret_data = "postgresql://postgres:${random_password.postgres[0].result}@/auth?host=/cloudsql/${google_sql_database_instance.principal[0].connection_name}"
 }
 
-resource "google_secret_manager_secret" "database_url_payments" {
-  count     = var.crear_cloud_sql ? 1 : 0
-  project   = var.project_id
-  secret_id = "database-url-payments"
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.apis]
-}
-
 resource "google_secret_manager_secret_version" "database_url_payments" {
-  count       = var.crear_cloud_sql ? 1 : 0
-  secret      = google_secret_manager_secret.database_url_payments[0].id
+  count      = (var.crear_cloud_sql && var.crear_servicios) ? 1 : 0
+  secret     = google_secret_manager_secret.secreto["database-url-payments"].id
+  depends_on = [google_secret_manager_secret_version.marcador]
+
   secret_data = "postgresql://postgres:${random_password.postgres[0].result}@/payments?host=/cloudsql/${google_sql_database_instance.principal[0].connection_name}"
 }
 
-# --- IAM: el runtime de Cloud Run (service account default de Compute) necesita poder conectarse
-# a Cloud SQL y leer estos secretos. Ver servicios.tf para el IAM de Secret Manager (compartido con Mongo).
-# `data.google_project.actual` se declara una sola vez en servicios.tf y se reutiliza aquí y en mongo-atlas.tf.
+# --- IAM: cada servicio con Postgres corre con su propia cuenta (rt-<servicio>, ver servicios.tf) y esa es la
+# que necesita conectarse a Cloud SQL. El acceso a los secretos ya se da por secreto en servicios.tf.
 
-resource "google_project_iam_member" "cloud_run_sql_client" {
-  count   = var.crear_cloud_sql ? 1 : 0
-  project = var.project_id
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${data.google_project.actual.number}-compute@developer.gserviceaccount.com"
+resource "google_project_iam_member" "cloud_sql_client" {
+  for_each = local.con_postgres
+  project  = var.project_id
+  role     = "roles/cloudsql.client"
+  member   = "serviceAccount:${google_service_account.runtime[each.key].email}"
 }
