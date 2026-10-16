@@ -20,7 +20,9 @@ def test_mapea_respuesta_exitosa() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/v1/fuentes/cuentas-bancarias/consulta"
         assert json.loads(request.content) == {"cliente_id": "c-1"}
-        return httpx.Response(200, json={"fuente": "cuentas-bancarias", "datos": {"saldo": 100}})
+        return httpx.Response(
+            200, json={"fuente": "cuentas-bancarias", "datos": {"saldo": 100}}
+        )
 
     cliente = _cliente_mock(handler)
     adaptador = AdaptadorOpenFinance("http://stub-open-finance", 0.7, cliente=cliente)

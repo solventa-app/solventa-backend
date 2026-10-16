@@ -70,7 +70,9 @@ class PuertoAlmacenClaveValorNX(Protocol):
     atómico). Protocolo separado del `PuertoAlmacenClaveValor` de `cache.py`
     (que no necesita `nx`) para no acoplar la caché de lectura a la cola."""
 
-    def set(self, nombre: str, valor: str, ex: int | None = None, nx: bool = False) -> object: ...
+    def set(
+        self, nombre: str, valor: str, ex: int | None = None, nx: bool = False
+    ) -> object: ...
 
 
 class MarcaDedupRedis:
@@ -158,7 +160,9 @@ class ProductorReconciliacion:
                     encolado_en=time.time(),
                 )
             )
-            logger.info("reconciliacion encolada fuente=%s cliente=%s", fuente, cliente_opaco)
+            logger.info(
+                "reconciliacion encolada fuente=%s cliente=%s", fuente, cliente_opaco
+            )
         except Exception as error:
             logger.warning(
                 "no se pudo encolar reconciliacion fuente=%s cliente=%s error=%s",

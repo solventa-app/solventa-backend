@@ -38,8 +38,7 @@ class ServicioConsultaFuentes:
         nombre_circuito: str,
         cache: CacheFuentes,
         presupuesto_s: float,
-        productor_reconciliacion: ProductorReconciliacion
-        | ProductorReconciliacionNulo
+        productor_reconciliacion: ProductorReconciliacion | ProductorReconciliacionNulo
         | None = None,
     ) -> None:
         self._adaptador = adaptador
