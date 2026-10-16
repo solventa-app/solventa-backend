@@ -89,6 +89,28 @@ terraform plan          # solo lectura (necesita credenciales de un proyecto rea
 terraform apply         # CREA recursos: confirmar con el equipo antes, uno por uno
 ```
 
+## Estado de Terraform
+
+El estado vive en GCS (`gs://solventa-511815-tfstate`, prefijo `solventa-backend`), no en tu máquina: así no se pierde y
+el equipo trabaja sobre el mismo. El bucket no lo crea Terraform (huevo y gallina); se creó una sola vez a mano, en
+`us-central1`, con acceso uniforme, prevención de acceso público y versionado:
+
+```bash
+gcloud storage buckets create gs://solventa-511815-tfstate --project=solventa-511815 --location=us-central1 \
+  --uniform-bucket-level-access --public-access-prevention
+gcloud storage buckets update gs://solventa-511815-tfstate --versioning
+```
+
+- Quien corra `terraform init`/`plan`/`apply` necesita credenciales de aplicación (`gcloud auth application-default login`)
+  con acceso al bucket (`roles/storage.objectUser` basta; el propietario del proyecto ya lo tiene). El CI usa
+  `init -backend=false`: no toca el bucket.
+- Terraform bloquea el estado durante un `apply`; si una corrida se corta y deja el bloqueo, se libera con
+  `terraform force-unlock <ID>` (solo si nadie más está aplicando).
+- Versionado = se puede volver a una versión anterior del estado (`gcloud storage ls --all-versions gs://solventa-511815-tfstate/**`).
+- **El estado contiene secretos:** las contraseñas generadas por `random_password` y las URLs de conexión que Terraform
+  escribe en Secret Manager (Cloud SQL, Mongo Atlas) quedan en el estado en claro. Dar acceso al bucket equivale a dar
+  acceso a esos secretos: no se amplía más allá de quien aplica Terraform.
+
 Secuencia recomendada para activar algo (nunca todo junto): `crear_kms` (si aplica) ->
 `crear_presupuesto` (SIEMPRE antes de cualquier otra cosa facturable) -> `crear_pipeline` ->
 `crear_servicios` (los servicios nacen con `imagen_inicial`, una imagen de ejemplo; el primer
@@ -101,7 +123,7 @@ según qué historia lo necesite.
 2. Activar la **protección de gasto** (`crear_presupuesto = true` en este mismo directorio — ver
    "Decisiones" arriba: es diseño nuevo, no hay nada previo en `../solventa-arquitectura/proteccion-costos/`
    que copiar, se verificó que esa carpeta no existe). Sin ella no se despliega nada más.
-3. Mover el estado a un bucket de GCS con versionado (ver `versions.tf`).
+3. Estado en un bucket de GCS con versionado: ya hecho (ver "Estado de Terraform").
 4. `crear_pipeline = true` → `terraform apply` → copiar los outputs a GitHub (ver "Conectar GitHub con GCP").
 5. `crear_servicios = true` → `terraform apply` → **cargar el valor real de cada secreto** (ver "Cargar los secretos").
 6. Primer despliegue: Actions > *Deploy staging* > *Run workflow* con `servicios = todos` (los servicios nacen con la
