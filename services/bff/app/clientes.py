@@ -60,12 +60,19 @@ class PuertoRating(Protocol):
     ) -> dict: ...
 
 
+class PuertoPayments(Protocol):
+    async def listar_cobros(self, poliza_id: str | None, estado: str | None) -> list[dict]: ...
+
+    async def reintentar_cobro(self, cobro_id: str) -> dict | None: ...
+
+
 @dataclass
 class Clientes:
     auth: PuertoAuth
     acl: PuertoAcl
     risk: PuertoRisk
     rating: PuertoRating
+    payments: PuertoPayments
 
 
 async def _pedir(
@@ -213,6 +220,35 @@ class ClienteRatingHttp:
         return respuesta.json()
 
 
+class ClientePaymentsHttp:
+    """Cobros para el back-office (KAN-28, CA-W05-01/02)."""
+
+    def __init__(self, cliente: httpx.AsyncClient) -> None:
+        self._cliente = cliente
+
+    async def listar_cobros(self, poliza_id: str | None, estado: str | None) -> list[dict]:
+        filtros = {k: v for k, v in (("poliza_id", poliza_id), ("estado", estado)) if v is not None}
+        try:
+            respuesta = await self._cliente.get("/cobros", params=filtros)
+        except httpx.HTTPError as error:
+            raise ErrorServicio(type(error).__name__) from error
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def reintentar_cobro(self, cobro_id: str) -> dict | None:
+        """`None` si no existe; 409 (p. ej. rechazado) llega como `SolicitudInvalida`
+        con el mensaje de PAYMENTS, pensado para el usuario."""
+        respuesta = await _pedir(self._cliente, "POST", f"/cobros/{cobro_id}/reintentar")
+        if respuesta.status_code == 404:
+            return None
+        if respuesta.status_code == 409:
+            raise SolicitudInvalida(respuesta.json().get("detail", "No se puede reintentar."))
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+
 def construir_clientes(config: Configuracion) -> tuple[Clientes, list[httpx.AsyncClient]]:
     """Devuelve los clientes y los `httpx.AsyncClient` abiertos, para cerrarlos al apagar."""
 
@@ -227,10 +263,12 @@ def construir_clientes(config: Configuracion) -> tuple[Clientes, list[httpx.Asyn
     acl = http(config.acl_url, "acl-worker", config.acl_timeout_segundos)
     risk = http(config.risk_url, "risk", config.servicios_timeout_segundos)
     rating = http(config.rating_url, "rating", config.servicios_timeout_segundos)
+    payments = http(config.payments_url, "payments", config.servicios_timeout_segundos)
     clientes = Clientes(
         auth=ClienteAuthHttp(auth),
         acl=ClienteAclHttp(acl),
         risk=ClienteRiskHttp(risk),
         rating=ClienteRatingHttp(rating),
+        payments=ClientePaymentsHttp(payments),
     )
-    return clientes, [auth, acl, risk, rating]
+    return clientes, [auth, acl, risk, rating, payments]

@@ -92,8 +92,7 @@ def test_matriz_de_permisos_por_rol(operacion: str, rol: str) -> None:
         cuerpo = _post(client, query, variables, token_de_prueba(rol))
 
     if MATRIZ[(operacion, rol)]:
-        # `cobros` sigue "no disponible" (KAN-28), pero ya no por falta de permiso.
-        assert _error(cuerpo) in (None, "no disponible: KAN-28")
+        assert _error(cuerpo) is None
     else:
         assert _error(cuerpo) == MENSAJE_SIN_PERMISO
 

@@ -22,8 +22,7 @@ class Configuracion:
     acl_url: str
     risk_url: str
     rating_url: str
-    # Sin uso hasta KAN-28 (cobros): hoy `cobros`/`reintentarCobro` responden
-    # "no disponible".
+    # Cobros del back-office (KAN-28): `cobros` y `reintentarCobro`.
     payments_url: str
     acl_timeout_segundos: float
     servicios_timeout_segundos: float
