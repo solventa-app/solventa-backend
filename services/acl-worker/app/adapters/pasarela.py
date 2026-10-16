@@ -40,6 +40,24 @@ class AdaptadorPasarela:
             detalle=cuerpo.get("detalle", {}),
         )
 
+    def consultar(
+        self, referencia_comercio: str, timeout_s: float | None = None
+    ) -> ResultadoCobro | None:
+        """`GET /v1/cobros/{referencia_comercio}`: 404 → `None` (no es una falla, no
+        abre el circuito); cualquier otro error se propaga para el Circuit Breaker."""
+        timeout = timeout_s if timeout_s is not None else self._timeout_s
+        respuesta = self._cliente.get(f"/v1/cobros/{referencia_comercio}", timeout=timeout)
+        if respuesta.status_code == 404:
+            return None
+        respuesta.raise_for_status()
+        cuerpo = respuesta.json()
+        return ResultadoCobro(
+            estado=cuerpo["estado"],
+            referencia=cuerpo.get("referencia"),
+            motivo=cuerpo.get("motivo"),
+            detalle=cuerpo.get("detalle", {}),
+        )
+
     def sondear(self) -> None:
         """Llama `GET /v1/estado` (obedece el modo simulado) en vez de ejecutar un
         cobro real: sondear la recuperación del circuito nunca debe crear una

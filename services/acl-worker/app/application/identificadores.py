@@ -1,5 +1,6 @@
 """Identificadores opacos para trazabilidad sin filtrar datos personales
-(regla de arquitectura #6): nunca se loguea `cliente_id` en crudo."""
+(regla de arquitectura #6): nunca se loguea `cliente_id` ni `poliza_id` en crudo
+(una póliza identifica, indirectamente, a una persona)."""
 
 import hashlib
 

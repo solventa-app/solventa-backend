@@ -77,3 +77,15 @@ def test_cobrar_con_pasarela_caida_queda_pendiente_sin_5xx() -> None:
         )
         assert r.status_code == 200
         assert r.json()["estado"] == "pendiente"
+
+
+def test_consultar_cobro_con_pasarela_caida_es_desconocido_sin_5xx() -> None:
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.get("/pagos/cobros/idem-1")
+        assert r.status_code == 200
+        assert r.json() == {
+            "resultado": "desconocido",
+            "estado": None,
+            "referencia": None,
+            "motivo": None,
+        }
