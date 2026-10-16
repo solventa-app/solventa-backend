@@ -7,6 +7,7 @@ Recorre el flujo insignia por GraphQL, como lo haría el frontend, con usuario a
   3. Open Finance lento (stub en modo `lento`)          -> Oferta PRELIMINAR (fuentes desde caché)
   4. revocarConsentimiento y volver a solicitar         -> ErrorOferta sin reintento
   5. el ASESOR intenta listar usuarios                  -> sin permiso (solo BACKOFFICE)
+  6. cobro con la pasarela lenta y reintento conciliado  -> cobrado con UNA sola referencia (KAN-28)
 
 Deja el stub otra vez en `sano` y espera a que los circuitos del ACL cierren, para que el
 script se pueda repetir (el alias del ASESOR cambia en cada corrida). Solo biblioteca estándar.
@@ -29,6 +30,8 @@ BFF = os.getenv("BFF_URL", "http://localhost:8000") + "/graphql/web"
 AUTH = os.getenv("AUTH_URL", "http://localhost:8001")
 STUB_OPEN_FINANCE = os.getenv("STUB_OPEN_FINANCE_URL", "http://localhost:8101")
 ACL = os.getenv("ACL_URL", "http://localhost:8005")
+PAYMENTS = os.getenv("PAYMENTS_URL", "http://localhost:8004")
+STUB_PASARELA = os.getenv("STUB_PASARELA_URL", "http://localhost:8103")
 USUARIO_BACKOFFICE = os.getenv("USUARIO_BACKOFFICE", "admin.solventa")
 CLAVE_BACKOFFICE = os.getenv("CLAVE_BACKOFFICE", "admin-local-solventa")
 
@@ -178,6 +181,35 @@ def main() -> int:
     if mensaje != "No tienes permiso para esta operación.":
         _fallar(f"se esperaba un rechazo por permiso: {cuerpo}")
     print(f"   -> rechazado: {mensaje}")
+
+    print("6. cobro con la pasarela lenta y reintento conciliado (back-office)")
+    clave = "cobro-humo-" + "".join(random.choices(string.ascii_lowercase, k=8))
+    _http(f"{STUB_PASARELA}/control/modo", {"modo": "lento"})
+    try:
+        cobro = _http(
+            f"{PAYMENTS}/cobros",
+            {
+                "clave_idempotencia": clave,
+                "poliza_id": "POL-HUMO-1",
+                "monto": "90000.00",
+                "moneda": "COP",
+                "token_medio_pago": "tok_humo",
+            },
+        )
+    finally:
+        _http(f"{STUB_PASARELA}/control/modo", {"modo": "sano"})
+    if cobro["estado"] != "pendiente":
+        _fallar(f"con la pasarela lenta el cobro debía quedar pendiente: {cobro}")
+    referencia_pasarela = _http(f"{STUB_PASARELA}/v1/cobros/{clave}")["referencia"]
+    reintento = _graphql(
+        "mutation($id: ID!) { reintentarCobro(cobroId: $id) { estado } }",
+        {"id": cobro["id"]},
+        token_backoffice,
+    )["reintentarCobro"]
+    final = _http(f"{PAYMENTS}/cobros/{cobro['id']}")
+    if reintento["estado"] != "COBRADO" or final["referencia"] != referencia_pasarela:
+        _fallar(f"el reintento debía conciliar con la pasarela sin cobrar de nuevo: {final}")
+    print(f"   -> cobrado con la referencia original de la pasarela ({referencia_pasarela[:11]}…)")
 
     print("OK: humo del BFF en verde")
     return 0

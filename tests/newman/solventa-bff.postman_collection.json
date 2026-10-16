@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "Solventa BFF - GraphQL (HU-W01 y HU-M02)",
+    "name": "Solventa BFF - GraphQL (HU-W01, HU-M02 y HU-W05)",
     "description": "Pruebas de integración del BFF GraphQL de Solventa contra el stack local de docker compose, con autenticación y autorización por rol.\n\nRequisitos: `docker compose --profile servicios up -d --build --wait`.\nEjecución: ver `tests/newman/README.md`.\n\nLa carpeta 1 inicia sesión como BACKOFFICE, crea un ASESOR y un CLIENTE con alias únicos por corrida y guarda sus tokens. Por defecto, cada petición GraphQL usa el token del ASESOR (autenticación de la colección); las que prueban otros roles lo indican en su propia autenticación. Las carpetas se ejecutan en orden y comparten variables de colección. Los datos son ficticios.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1225,60 +1225,6 @@
           }
         },
         {
-          "name": "consulta de cobros: no disponible hasta KAN-28",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "pm.test('error público con el mensaje esperado', () => {",
-                  "  pm.expect(cuerpo.errors).to.have.lengthOf(1);",
-                  "  pm.expect(cuerpo.errors[0].message).to.eql('no disponible: KAN-28');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{bff_url}}/graphql/web",
-              "host": [
-                "{{bff_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"query {\\n  cobros(estado: PENDIENTE) {\\n    id estado\\n  }\\n}\"\n}"
-            },
-            "description": "Los cobros son del BACKOFFICE. Con su token el permiso pasa, pero la operación sigue sin backend: error de GraphQL con mensaje claro y HTTP 200, no un 5xx.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_backoffice}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
           "name": "consulta inválida: el esquema la rechaza sin 5xx",
           "event": [
             {
@@ -2004,6 +1950,681 @@
           }
         }
       ]
+    },
+    {
+      "name": "9. Cobros y conciliación (back-office)",
+      "item": [
+        {
+          "name": "Pasarela -> modo lento",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Claves y póliza únicas por corrida, solo letras.",
+                  "const letras = 'abcdefghijklmnopqrstuvwxyz';",
+                  "let s = '';",
+                  "for (let i = 0; i < 8; i++) s += letras[Math.floor(Math.random() * letras.length)];",
+                  "pm.collectionVariables.set('clave_cobro', 'cobro-newman-' + s);",
+                  "pm.collectionVariables.set('clave_rechazo', 'rechazo-newman-' + s);",
+                  "pm.collectionVariables.set('poliza_cobro', 'POL-NEWMAN-' + s.toUpperCase());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('modo lento fijado', () => pm.expect(pm.response.json().modo).to.eql('lento'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/control/modo",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "control",
+                "modo"
+              ]
+            },
+            "description": "La pasarela cobra pero responde después de los 700 ms del ACL: el caso que la conciliación debe resolver sin cobrar dos veces. También genera las claves de esta corrida.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"lento\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PAYMENTS: crear un cobro (queda pendiente)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const c = pm.response.json();",
+                  "pm.test('queda pendiente', () => pm.expect(c.estado).to.eql('pendiente'));",
+                  "pm.collectionVariables.set('id_cobro', c.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{payments_url}}/cobros",
+              "host": [
+                "{{payments_url}}"
+              ],
+              "path": [
+                "cobros"
+              ]
+            },
+            "description": "Llamada directa a PAYMENTS (interna, solo local): el BFF no crea cobros en este alcance. El ACL corta a los 700 ms y PAYMENTS lo registra pendiente, aunque la pasarela sí cobró.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clave_idempotencia\": \"{{clave_cobro}}\",\n  \"poliza_id\": \"{{poliza_cobro}}\",\n  \"monto\": \"90000.00\",\n  \"moneda\": \"COP\",\n  \"token_medio_pago\": \"tok_newman\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Pasarela: el cobro sí quedó hecho",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('la pasarela lo tiene cobrado', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().estado).to.eql('cobrado');",
+                  "});",
+                  "pm.collectionVariables.set('referencia_pasarela', pm.response.json().referencia);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/v1/cobros/{{clave_cobro}}",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "v1",
+                "cobros",
+                "{{clave_cobro}}"
+              ]
+            },
+            "description": "Consulta directa al mock (solo local): la pasarela registró el cobro aunque respondió tarde."
+          }
+        },
+        {
+          "name": "Pasarela -> modo sano",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('modo sano fijado', () => pm.expect(pm.response.json().modo).to.eql('sano'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/control/modo",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "control",
+                "modo"
+              ]
+            },
+            "description": "La pasarela vuelve a responder a tiempo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"sano\"\n}"
+            }
+          }
+        },
+        {
+          "name": "cobros(polizaId) lo muestra al back-office",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const lista = cuerpo.data.cobros;",
+                  "pm.test('aparece el cobro de la póliza', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(lista).to.have.lengthOf(1);",
+                  "  pm.expect(lista[0].id).to.eql(pm.collectionVariables.get('id_cobro'));",
+                  "  pm.expect(['PENDIENTE', 'COBRADO']).to.include(lista[0].estado);",
+                  "});",
+                  "pm.test('trae monto como texto decimal y fecha', () => {",
+                  "  pm.expect(lista[0].monto).to.eql({ valor: '90000.00', moneda: 'COP' });",
+                  "  pm.expect(lista[0].actualizadoEn).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "La tabla de cobros por póliza (CA-W05-01). Puede verse PENDIENTE o ya COBRADO si el bucle automático (cada 5 s) se adelantó al botón.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($poliza: ID, $estado: EstadoCobro) {\\n  cobros(polizaId: $poliza, estado: $estado) {\\n    id polizaId estado monto { valor moneda } actualizadoEn motivo intentos\\n  }\\n}\",\n  \"variables\": {\n    \"poliza\": \"{{poliza_cobro}}\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "reintentarCobro: concilia y queda cobrado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('queda COBRADO, sin errores', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(cuerpo.data.reintentarCobro.estado).to.eql('COBRADO');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "CA-W05-02: PAYMENTS pregunta a la pasarela, la encuentra cobrada y toma ese resultado sin volver a cobrar.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($id: ID!) {\\n  reintentarCobro(cobroId: $id) { id estado motivo intentos }\\n}\",\n  \"variables\": {\n    \"id\": \"{{id_cobro}}\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "PAYMENTS: una sola referencia (sin doble cobro)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('misma referencia que la pasarela', () => {",
+                  "  pm.expect(pm.response.json().referencia).to.eql(pm.collectionVariables.get('referencia_pasarela'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{payments_url}}/cobros/{{id_cobro}}",
+              "host": [
+                "{{payments_url}}"
+              ],
+              "path": [
+                "cobros",
+                "{{id_cobro}}"
+              ]
+            },
+            "description": "La referencia guardada por Solventa es la misma que registró la pasarela al primer intento: no hubo un segundo cobro."
+          }
+        },
+        {
+          "name": "reintentarCobro otra vez (doble clic)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sigue COBRADO, sin errores', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(cuerpo.data.reintentarCobro.estado).to.eql('COBRADO');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "Un cobro ya cobrado se devuelve sin tocarlo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($id: ID!) {\\n  reintentarCobro(cobroId: $id) { id estado motivo intentos }\\n}\",\n  \"variables\": {\n    \"id\": \"{{id_cobro}}\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Pasarela -> modo rechaza",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('modo rechaza fijado', () => pm.expect(pm.response.json().modo).to.eql('rechaza'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/control/modo",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "control",
+                "modo"
+              ]
+            },
+            "description": "La pasarela responde a tiempo, pero rechaza el cobro.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"rechaza\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PAYMENTS: crear un cobro que la pasarela rechaza",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const c = pm.response.json();",
+                  "pm.test('queda rechazado', () => pm.expect(c.estado).to.eql('rechazado'));",
+                  "pm.collectionVariables.set('id_rechazo', c.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{payments_url}}/cobros",
+              "host": [
+                "{{payments_url}}"
+              ],
+              "path": [
+                "cobros"
+              ]
+            },
+            "description": "Un rechazo es un resultado de negocio (HTTP 200), no una falla.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clave_idempotencia\": \"{{clave_rechazo}}\",\n  \"poliza_id\": \"{{poliza_cobro}}\",\n  \"monto\": \"90000.00\",\n  \"moneda\": \"COP\",\n  \"token_medio_pago\": \"tok_newman\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Pasarela -> modo sano (restaurar)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('modo sano fijado', () => pm.expect(pm.response.json().modo).to.eql('sano'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/control/modo",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "control",
+                "modo"
+              ]
+            },
+            "description": "Deja el mock como estaba.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"sano\"\n}"
+            }
+          }
+        },
+        {
+          "name": "cobros(estado: RECHAZADO) muestra el rechazo con su motivo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const lista = cuerpo.data.cobros;",
+                  "pm.test('un rechazado con motivo', () => {",
+                  "  pm.expect(lista).to.have.lengthOf(1);",
+                  "  pm.expect(lista[0].estado).to.eql('RECHAZADO');",
+                  "  pm.expect(lista[0].motivo).to.eql('fondos_insuficientes');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "El back-office ve por qué se rechazó.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($poliza: ID, $estado: EstadoCobro) {\\n  cobros(polizaId: $poliza, estado: $estado) {\\n    id polizaId estado monto { valor moneda } actualizadoEn motivo intentos\\n  }\\n}\",\n  \"variables\": {\n    \"poliza\": \"{{poliza_cobro}}\",\n    \"estado\": \"RECHAZADO\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "reintentarCobro de un rechazado: requiere otro medio de pago",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('error público con el motivo', () => {",
+                  "  pm.expect(cuerpo.errors[0].message).to.include('otro medio de pago');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "Insistir con el mismo medio de pago no arregla un rechazo: error claro, HTTP 200.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($id: ID!) {\\n  reintentarCobro(cobroId: $id) { id estado motivo intentos }\\n}\",\n  \"variables\": {\n    \"id\": \"{{id_rechazo}}\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "cobros sin token: exige sesión aun en modo opcional",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('exige iniciar sesión', () => {",
+                  "  pm.expect(cuerpo.errors[0].message).to.eql('Debes iniciar sesión.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "Son datos de pagos: siempre exigen el token del BACKOFFICE.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  cobros { id }\\n}\"\n}"
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
@@ -2057,6 +2678,30 @@
     },
     {
       "key": "token_alterado",
+      "value": ""
+    },
+    {
+      "key": "clave_cobro",
+      "value": ""
+    },
+    {
+      "key": "clave_rechazo",
+      "value": ""
+    },
+    {
+      "key": "poliza_cobro",
+      "value": ""
+    },
+    {
+      "key": "id_cobro",
+      "value": ""
+    },
+    {
+      "key": "id_rechazo",
+      "value": ""
+    },
+    {
+      "key": "referencia_pasarela",
       "value": ""
     }
   ],

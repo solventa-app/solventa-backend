@@ -62,11 +62,14 @@ jobs:
               - 'scripts/**'
             flujos:
               - '.github/**'
-            # El humo GraphQL del BFF recorre AUTH, ACL, RISK y RATING: corre si cambia el BFF,
-            # AUTH (su consentimiento) o el propio script.
+            # El humo GraphQL del BFF recorre AUTH, ACL, RISK, RATING, PAYMENTS y la pasarela:
+            # corre si cambia cualquiera de los que ejerce (o el propio script).
             humo_bff:
               - 'services/bff/**'
               - 'services/auth/**'
+              - 'services/payments/**'
+              - 'services/acl-worker/**'
+              - 'stubs/pasarela/**'
               - 'scripts/humo_bff.py'
             services/bff: ['services/bff/**']
             services/auth: ['services/auth/**']
