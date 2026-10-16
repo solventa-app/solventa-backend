@@ -139,7 +139,11 @@ jobs:
             ${{ matrix.servicio }}/requirements.txt
             requirements-dev.txt
       - name: Instalar dependencias
-        run: pip install -r requirements.txt -r ${{ github.workspace }}/requirements-dev.txt
+        # Dos pip separados: cada .txt lleva hashes y pip, en modo de hashes, no mezcla archivos con
+        # versiones fijadas por separado de una misma transitiva.
+        run: |
+          pip install -r requirements.txt
+          pip install -r ${{ github.workspace }}/requirements-dev.txt
       - name: Lint (ruff)
         run: ruff check .
       - name: Pruebas

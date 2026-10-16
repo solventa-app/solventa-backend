@@ -93,7 +93,7 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
   `SONDA_INTERVALO_SEGUNDOS` (2), `CACHE_TTL_SEGUNDOS` (300),
   `COLA_RECONCILIACION_REDIS_URL` (`redis://localhost:6379/2`, db de Redis distinta a la de la
   caché — ver `services/consolidador-fuentes/README.md`).
-- Pruebas: `pip install -r requirements.txt -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta).
+- Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta).
 - Imagen: `docker build -t solventa-acl-worker .`
 
 ### Verificación en vivo (Circuit Breaker + sonda)

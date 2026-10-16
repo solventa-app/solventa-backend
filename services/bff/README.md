@@ -60,7 +60,7 @@ están en [`docs/autenticacion-usuarios.md`](../../docs/autenticacion-usuarios.m
 ## Operación
 
 - Puerto local: `8000`. GraphQL: `POST /graphql/web` y `/graphql/app` (GraphiQL en el navegador). Salud: `GET /health`. Métricas: `GET /metrics`.
-- Pruebas: `pip install -r requirements.txt -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta). Sin red: dobles en `tests/fakes.py`.
+- Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta). Sin red: dobles en `tests/fakes.py`.
 - Humo de punta a punta (el mismo que corre el CI):
   ```bash
   docker compose --profile servicios up -d --build --wait

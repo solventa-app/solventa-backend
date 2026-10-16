@@ -91,7 +91,7 @@ A diferencia de RISK, aquí **no se hashea `cobroId` ni `claveIdempotencia`** en
 - `POST /cobros/{id}/reintentar` → el cobro tras conciliar/cobrar. Sobre `cobrado` o `cobrando` lo devuelve sin
   cambios; sobre `rechazado` responde `409` ("requiere otro medio de pago"); `404` si no existe.
 - Variables de entorno: `DATABASE_URL` (ya fijada en `docker-compose.yml`), `ACL_URL` (ídem), `PAYMENTS_ACL_TIMEOUT_SEGUNDOS` (default `3.0`, timeout de PAYMENTS llamando al ACL Worker — defensa en profundidad, el presupuesto de 700 ms proveedor-abajo ya lo aplica el ACL Worker), `REINTENTO_COBRO_INTERVALO_SEGUNDOS` (default `5`), `REINTENTO_COBRO_MAX_INTENTOS` (default `10`).
-- Pruebas: `pip install -r requirements.txt -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta). Usan dobles de prueba (`tests/fakes.py`), no PostgreSQL ni ACL Worker reales — ver "Verificación en vivo" abajo para la prueba con PostgreSQL y el ACL Worker reales.
+- Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta). Usan dobles de prueba (`tests/fakes.py`), no PostgreSQL ni ACL Worker reales — ver "Verificación en vivo" abajo para la prueba con PostgreSQL y el ACL Worker reales.
 - Imagen: `docker build -t solventa-payments .`
 
 ## Migraciones
