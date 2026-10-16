@@ -3,9 +3,10 @@ levantar PostgreSQL ni el ACL Worker reales (mismo patrón de las pruebas de
 `acl-worker`/`risk`: fakes en vez de mocks)."""
 
 import threading
+from datetime import UTC, datetime
 from typing import Any
 
-from app.application.cliente_acl import OrdenCobro, ResultadoCobro
+from app.application.cliente_acl import OrdenCobro, ResultadoCobro, ResultadoConsulta
 
 
 class RepositorioCobrosFalso:
@@ -37,6 +38,8 @@ class RepositorioCobrosFalso:
                 "referencia": None,
                 "motivo": None,
                 "intentos": 1,
+                "creado_en": datetime.now(UTC),
+                "actualizado_en": datetime.now(UTC),
             }
             self._por_clave[orden["clave_idempotencia"]] = cobro
             self._por_id[cobro_id] = cobro
@@ -71,6 +74,20 @@ class RepositorioCobrosFalso:
                 if cobro["estado"] == "pendiente" and cobro["intentos"] < max_intentos
             ]
 
+    def obtener(self, cobro_id: str) -> dict | None:
+        with self._lock:
+            cobro = self._por_id.get(cobro_id)
+            return dict(cobro) if cobro else None
+
+    def listar(self, poliza_id: str | None, estado: str | None) -> list[dict]:
+        with self._lock:
+            return [
+                dict(c)
+                for c in self._por_id.values()
+                if (poliza_id is None or c["poliza_id"] == poliza_id)
+                and (estado is None or c["estado"] == estado)
+            ]
+
     def balance_poliza(self, poliza_id: str) -> str:
         with self._lock:
             total = sum(
@@ -87,10 +104,28 @@ class ClienteAclFalso:
     repitiendo el último si se agotan) para simular, p. ej., primero
     `pendiente` y luego `cobrado` (como en el reintento real)."""
 
-    def __init__(self, resultados: list[ResultadoCobro] | None = None) -> None:
+    def __init__(
+        self,
+        resultados: list[ResultadoCobro] | None = None,
+        en_pasarela: dict[str, ResultadoConsulta] | None = None,
+        consulta_desconocida: bool = False,
+    ) -> None:
         self._resultados = resultados or [ResultadoCobro(estado="cobrado", referencia="ref-1")]
         self._lock = threading.Lock()
         self.ordenes: list[OrdenCobro] = []
+        # Conciliación: lo que "la pasarela" ya tiene registrado, por clave.
+        self.en_pasarela = en_pasarela or {}
+        self.consulta_desconocida = consulta_desconocida
+        self.consultas: list[str] = []
+
+    def consultar(self, clave_idempotencia: str) -> ResultadoConsulta:
+        with self._lock:
+            self.consultas.append(clave_idempotencia)
+            if self.consulta_desconocida:
+                return ResultadoConsulta(resultado="desconocido")
+            return self.en_pasarela.get(
+                clave_idempotencia, ResultadoConsulta(resultado="no_encontrado")
+            )
 
     def cobrar(self, orden: OrdenCobro) -> ResultadoCobro:
         with self._lock:

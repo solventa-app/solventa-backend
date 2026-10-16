@@ -26,7 +26,7 @@ from psycopg_pool import ConnectionPool
 
 _COLUMNAS = (
     "id, clave_idempotencia, poliza_id, monto, moneda, token_medio_pago, "
-    "estado, referencia, motivo, intentos"
+    "estado, referencia, motivo, intentos, creado_en, actualizado_en"
 )
 
 
@@ -101,6 +101,27 @@ class RepositorioCobrosPostgres:
                 ORDER BY creado_en ASC
                 """,
                 {"max_intentos": max_intentos},
+            ).fetchall()
+            return [dict(fila) for fila in filas]
+
+    def obtener(self, cobro_id: str) -> dict | None:
+        with self._pool.connection() as conexion:
+            fila = conexion.execute(
+                f"SELECT {_COLUMNAS} FROM cobros WHERE id = %(id)s", {"id": cobro_id}
+            ).fetchone()
+            return dict(fila) if fila is not None else None
+
+    def listar(self, poliza_id: str | None, estado: str | None) -> list[dict]:
+        """Para la tabla del back-office (CA-W05-01); ambos filtros son opcionales."""
+        with self._pool.connection() as conexion:
+            filas = conexion.execute(
+                f"""
+                SELECT {_COLUMNAS} FROM cobros
+                WHERE (%(poliza_id)s::text IS NULL OR poliza_id = %(poliza_id)s)
+                  AND (%(estado)s::text IS NULL OR estado = %(estado)s)
+                ORDER BY actualizado_en DESC
+                """,
+                {"poliza_id": poliza_id, "estado": estado},
             ).fetchall()
             return [dict(fila) for fila in filas]
 

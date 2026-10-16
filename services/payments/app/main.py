@@ -8,8 +8,10 @@ llama directamente ni guarda estado del circuito — eso vive en `acl-worker`.
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from prometheus_fastapi_instrumentator import Instrumentator
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel
@@ -19,7 +21,7 @@ from app.application.cliente_acl import ClienteAcl
 from app.application.configuracion import Configuracion
 from app.application.reintento import ReintentoCobrosPendientes
 from app.application.repositorio_cobros import RepositorioCobrosPostgres, construir_pool
-from app.application.servicio_cobros import ServicioCobros
+from app.application.servicio_cobros import NoReintentable, ServicioCobros
 
 # Sin esto, los logs INFO de app.application.servicio_cobros/bus_eventos/reintento
 # se descartan en silencio (mismo motivo documentado en acl-worker/app/main.py).
@@ -44,6 +46,11 @@ class CobroResponse(BaseModel):
     referencia: str | None = None
     motivo: str | None = None
     intentos: int
+    creado_en: datetime | None = None
+    actualizado_en: datetime | None = None
+
+
+EstadoCobro = Literal["cobrando", "cobrado", "rechazado", "pendiente"]
 
 
 class BalanceResponse(BaseModel):
@@ -107,6 +114,32 @@ def create_app(
     @app.post("/cobros", tags=["cobros"], response_model=CobroResponse)
     def crear_cobro(body: OrdenCobroRequest) -> CobroResponse:
         cobro = app.state.servicio_cobros.crear_cobro(body.model_dump())
+        return CobroResponse(**cobro)
+
+    @app.get("/cobros", tags=["cobros"], response_model=list[CobroResponse])
+    def listar_cobros(
+        poliza_id: str | None = None, estado: EstadoCobro | None = None
+    ) -> list[CobroResponse]:
+        """Tabla del back-office (CA-W05-01): filtros opcionales por póliza y estado."""
+        return [CobroResponse(**c) for c in app.state.servicio_cobros.listar(poliza_id, estado)]
+
+    @app.get("/cobros/{cobro_id}", tags=["cobros"], response_model=CobroResponse)
+    def obtener_cobro(cobro_id: str) -> CobroResponse:
+        cobro = app.state.servicio_cobros.obtener(cobro_id)
+        if cobro is None:
+            raise HTTPException(status_code=404, detail="cobro no encontrado")
+        return CobroResponse(**cobro)
+
+    @app.post("/cobros/{cobro_id}/reintentar", tags=["cobros"], response_model=CobroResponse)
+    def reintentar_cobro(cobro_id: str) -> CobroResponse:
+        """CA-W05-02: concilia con la pasarela y, si hace falta, cobra con la misma clave.
+        Nunca un 5xx por la pasarela: si no responde, el cobro sigue `pendiente`."""
+        try:
+            cobro = app.state.servicio_cobros.reintentar(cobro_id)
+        except NoReintentable as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        if cobro is None:
+            raise HTTPException(status_code=404, detail="cobro no encontrado")
         return CobroResponse(**cobro)
 
     @app.get("/polizas/{poliza_id}/balance", tags=["cobros"], response_model=BalanceResponse)
