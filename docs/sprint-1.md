@@ -153,7 +153,7 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
 - **BFF (T-W01-7, 2026-10-09):** `services/bff` implementa el contrato GraphQL con Strawberry y orquesta
   `solicitarOferta` (AUTH → ACL Worker ×5 en paralelo → RISK → RATING). El consentimiento de AUTH es un **mock en
   memoria** con los endpoints definitivos, a la espera de T-W01-4; `oferta(id)` devuelve `null`, `contactarAsesor` es
-  un mock y `cobros`/`reintentarCobro` responden "no disponible" hasta KAN-28. Verificado en vivo con
+  un mock y `cobros`/`reintentarCobro` responden "no disponible" hasta KAN-28 (resuelto el 2026-10-16, ver la nota de cobros en el back-office). Verificado en vivo con
   `scripts/humo_bff.py` sobre el compose: COMPLETA ~130 ms en caliente; PRELIMINAR ~730-765 ms con Open Finance lento
   (lo fija el corte de 700 ms del ACL; la oferta degradada excede el p95 de 400 ms de CA-W01-03, a medir con k6 en
   PF2-2); `ErrorOferta` sin reintento tras revocar.

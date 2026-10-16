@@ -58,14 +58,30 @@ El bucle automático de PAYMENTS (cada 5 s, hasta 10 intentos) hace exactamente 
 
 ## 4. Estados de un cobro
 
-| Estado | Cuándo | ¿Se puede reintentar? |
-|---|---|---|
-| `cobrando` | Recién creado, mientras se llama a la pasarela | Se devuelve tal cual |
-| `cobrado` | La pasarela cobró (directo o detectado al conciliar) | Se devuelve tal cual |
-| `pendiente` | La pasarela no respondió a tiempo o estaba caída | **Sí** |
-| `rechazado` | La pasarela respondió, pero rechazó el cobro (p. ej. fondos insuficientes) | No: requiere otro medio de pago |
+| Estado | Quién lo pone | Cuándo | ¿Se puede reintentar? |
+|---|---|---|---|
+| `cobrando` | PAYMENTS | Recién creado, mientras se llama a la pasarela | Se devuelve tal cual |
+| `cobrado` | La pasarela | Cobró (lo informa al cobrar o se detecta al conciliar) | Se devuelve tal cual |
+| `rechazado` | La pasarela | Respondió, pero rechazó el cobro (p. ej. fondos insuficientes) | No: requiere otro medio de pago |
+| `pendiente` | El ACL Worker | La pasarela no respondió: HTTP 503, más de 700 ms o circuito abierto | **Sí** |
 
-El `motivo` explica el estado: `pasarela_no_disponible`, `circuito_abierto` o `fondos_insuficientes`.
+**La pasarela solo responde `cobrado` o `rechazado`**, siempre con HTTP 200. Cuando tiene problemas no devuelve un
+estado, sino una falla HTTP (503 o una conexión colgada); el ACL Worker la traduce en `pendiente` para que nunca llegue
+un 5xx al cliente (regla #4). `cobrando` es un estado interno de PAYMENTS. Así, el recorrido completo es: PAYMENTS crea
+el cobro en `cobrando` → la pasarela responde `cobrado` o `rechazado` → si no responde, queda `pendiente`.
+
+El `motivo` explica el estado: `pasarela_no_disponible` o `circuito_abierto` (los pone el ACL Worker en un
+`pendiente`) y `fondos_insuficientes` (lo pone la pasarela en un `rechazado`).
+
+Cómo produce cada estado el mock de la pasarela, por modo:
+
+| Modo del mock | Respuesta | Estado final en PAYMENTS |
+|---|---|---|
+| `sano` | 200 con `cobrado` | `cobrado` |
+| `lento` | 200 con `cobrado`, pero después de 750–1.100 ms (el cobro sí queda hecho) | `pendiente` (el ACL corta a los 700 ms); al reintentar, la conciliación lo deja `cobrado` sin cobrar de nuevo |
+| `error` | HTTP 503, sin registrar el cobro | `pendiente` |
+| `caido` | Conexión colgada 60 s | `pendiente` |
+| `rechaza` | 200 con `rechazado` y `motivo: fondos_insuficientes` | `rechazado` |
 
 ## 5. Qué se construyó
 
@@ -82,7 +98,7 @@ El `motivo` explica el estado: `pasarela_no_disponible`, `circuito_abierto` o `f
 | Nivel | Resultado |
 |---|---|
 | Unitarias | Mock 15, ACL Worker 65, PAYMENTS 39, BFF 90 (incluida la equivalencia con el contrato y que la póliza no viaje en la URL) |
-| Newman | 51 peticiones y 116 aserciones (carpeta nueva 9), dos corridas seguidas sin fallos |
+| Newman | 51 peticiones y 116 aserciones (carpeta nueva 9). En 6 corridas, 5 sin fallos y 1 con 4 fallas **en la oferta de HU-W01**, no en cobros (ver limitaciones) |
 | Humo | Paso 6: pasarela lenta → reintento conciliado con una sola referencia |
 | En vivo | Pasarela lenta: **1 solo cobro** enviado y la misma referencia. Caída de 60 s: `intentos` siguió en 1 y el cobro quedó `cobrado` a los 3 s de volver la pasarela |
 
@@ -227,6 +243,7 @@ POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios down -v
 | **El mock vive en memoria** | Reiniciar el contenedor del mock olvida los cobros; la conciliación diría `no_encontrado` | Es un simulador; una pasarela real persiste sus cobros |
 | **Bucle local** | El reintento automático es un bucle en el proceso, no Cloud Tasks | Cloud Tasks cuando exista el proyecto GCP |
 | **PAYMENTS → ACL sin token** | En Cloud Run esas llamadas recibirían 403 | Pendiente ya documentado en `docs/arquitectura-backend.md` |
+| **Falla intermitente en Newman (oferta de HU-W01)** | En 1 de 6 corridas, justo después del humo, la oferta de la carpeta 3 salió `PRELIMINAR` en vez de `COMPLETA` (4 aserciones). No se reprodujo en 4 repeticiones. Esta rama no toca las fuentes de la oferta | Sin causa confirmada. Hipótesis: la carrera de la sonda del circuito que `docs/arquitectura-backend.md` ya reconoce ("no es 100 % infalible") tras el escenario degradado del humo. Vigilarlo en el CI; si se repite, guardar el `newman ... -r json` para ver qué fuente vino degradada |
 
 ## 9. Fuera de alcance
 
