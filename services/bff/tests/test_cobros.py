@@ -1,8 +1,12 @@
 """Cobros del back-office en el GraphQL del BFF (KAN-28, CA-W05-01/02), con dobles."""
 
+import asyncio
+
+import httpx
 from fakes import PaymentsFalso, clientes_falsos, cobro_de_payments, token_de_prueba
 from fastapi.testclient import TestClient
 
+from app.clientes import ClientePaymentsHttp
 from app.configuracion import Configuracion
 from app.main import create_app
 
@@ -101,3 +105,23 @@ def test_solo_el_backoffice_ve_y_reintenta_cobros() -> None:
             assert _post(client, REINTENTAR, {"id": "c-1"}, rol)["errors"]
 
     assert payments.cobros["c-1"]["estado"] == "pendiente"  # nadie sin permiso lo tocó
+
+
+def test_la_poliza_nunca_viaja_en_la_url_hacia_payments() -> None:
+    """Regla #6: las URL quedan en los logs (httpx en el BFF, el acceso en PAYMENTS)."""
+    vistas: list[tuple[str, bytes]] = []
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        vistas.append((str(request.url), request.content))
+        return httpx.Response(200, json=[])
+
+    async def correr() -> None:
+        transporte = httpx.MockTransport(responder)
+        async with httpx.AsyncClient(base_url="http://payments", transport=transporte) as cliente:
+            await ClientePaymentsHttp(cliente).listar_cobros("POL-SECRETA-1", "pendiente")
+
+    asyncio.run(correr())
+
+    url, cuerpo = vistas[0]
+    assert "POL-SECRETA-1" not in url
+    assert b"POL-SECRETA-1" in cuerpo

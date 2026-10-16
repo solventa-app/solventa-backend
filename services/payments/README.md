@@ -11,8 +11,8 @@ PAYMENTS procesa el cobro de primas e indemnizaciones con **pasarela tokenizada*
 - Estados de cobro: `cobrando` → `cobrado` / `rechazado` / `pendiente` (PostgreSQL, base `payments`, única que escribe esta tabla — regla de escritor único).
 - `GET /polizas/{poliza_id}/balance`: suma los `monto` de los cobros en estado `cobrado` de esa póliza. No cubre balances de indemnización (Sprint 3, HU-W04/HU-M04).
 - **Reintento del cobro pendiente (T-W05-4, CA-W05-05):** un bucle local reintenta los cobros `pendiente` reutilizando la MISMA `clave_idempotencia`, acotado a un número máximo de intentos. Ver huecos abajo (no es Cloud Tasks real).
-- **Back-office: listar y reintentar con conciliación (KAN-28, CA-W05-01/02):** `GET /cobros` (filtros `poliza_id` y
-  `estado`), `GET /cobros/{id}` y `POST /cobros/{id}/reintentar`. Antes de cobrar, se **concilia**: se pregunta a la
+- **Back-office: listar y reintentar con conciliación (KAN-28, CA-W05-01/02):** `POST /cobros/buscar` (filtros `poliza_id` y
+  `estado` en el cuerpo, nunca en la URL), `GET /cobros/{id}` y `POST /cobros/{id}/reintentar`. Antes de cobrar, se **concilia**: se pregunta a la
   pasarela (vía `GET {ACL_URL}/pagos/cobros/{clave}`) si ya tiene el cobro; si lo tiene, se toma su resultado **sin
   cobrar de nuevo** (evita el doble cobro cuando la pasarela cobró pero respondió tarde). El bucle automático y el botón
   usan la misma función (`app/application/conciliacion.py`). Ver [`docs/cobros-conciliacion.md`](../../docs/cobros-conciliacion.md).
@@ -85,7 +85,8 @@ A diferencia de RISK, aquí **no se hashea `cobroId` ni `claveIdempotencia`** en
 - Puerto local: `8004`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.
 - `POST /cobros` `{clave_idempotencia, poliza_id, monto, moneda, token_medio_pago}` → `{id, clave_idempotencia, poliza_id, monto, moneda, estado, referencia, motivo, intentos}`.
 - `GET /polizas/{poliza_id}/balance` → `{poliza_id, balance}`.
-- `GET /cobros?poliza_id=&estado=` → lista de cobros (también con `creado_en` y `actualizado_en`).
+- `POST /cobros/buscar` `{poliza_id?, estado?}` → lista de cobros (también con `creado_en` y `actualizado_en`). Los
+  filtros van en el cuerpo y no en la URL porque las URL quedan en los logs de acceso (regla #6).
 - `GET /cobros/{id}` → el cobro, o `404`.
 - `POST /cobros/{id}/reintentar` → el cobro tras conciliar/cobrar. Sobre `cobrado` o `cobrando` lo devuelve sin
   cambios; sobre `rechazado` responde `409` ("requiere otro medio de pago"); `404` si no existe.

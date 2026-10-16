@@ -53,6 +53,14 @@ class CobroResponse(BaseModel):
 EstadoCobro = Literal["cobrando", "cobrado", "rechazado", "pendiente"]
 
 
+class FiltroCobros(BaseModel):
+    """Filtros de la búsqueda. Van en el CUERPO, no en la URL: las URL quedan en los
+    logs de acceso, y la póliza identifica indirectamente a una persona (regla #6)."""
+
+    poliza_id: str | None = None
+    estado: EstadoCobro | None = None
+
+
 class BalanceResponse(BaseModel):
     poliza_id: str
     balance: str
@@ -116,12 +124,11 @@ def create_app(
         cobro = app.state.servicio_cobros.crear_cobro(body.model_dump())
         return CobroResponse(**cobro)
 
-    @app.get("/cobros", tags=["cobros"], response_model=list[CobroResponse])
-    def listar_cobros(
-        poliza_id: str | None = None, estado: EstadoCobro | None = None
-    ) -> list[CobroResponse]:
+    @app.post("/cobros/buscar", tags=["cobros"], response_model=list[CobroResponse])
+    def buscar_cobros(filtro: FiltroCobros) -> list[CobroResponse]:
         """Tabla del back-office (CA-W05-01): filtros opcionales por póliza y estado."""
-        return [CobroResponse(**c) for c in app.state.servicio_cobros.listar(poliza_id, estado)]
+        cobros = app.state.servicio_cobros.listar(filtro.poliza_id, filtro.estado)
+        return [CobroResponse(**c) for c in cobros]
 
     @app.get("/cobros/{cobro_id}", tags=["cobros"], response_model=CobroResponse)
     def obtener_cobro(cobro_id: str) -> CobroResponse:

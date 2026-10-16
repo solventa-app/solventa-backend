@@ -227,9 +227,11 @@ class ClientePaymentsHttp:
         self._cliente = cliente
 
     async def listar_cobros(self, poliza_id: str | None, estado: str | None) -> list[dict]:
-        filtros = {k: v for k, v in (("poliza_id", poliza_id), ("estado", estado)) if v is not None}
+        # Filtros en el CUERPO, nunca en la URL: httpx loguea la URL (regla #6).
         try:
-            respuesta = await self._cliente.get("/cobros", params=filtros)
+            respuesta = await self._cliente.post(
+                "/cobros/buscar", json={"poliza_id": poliza_id, "estado": estado}
+            )
         except httpx.HTTPError as error:
             raise ErrorServicio(type(error).__name__) from error
         if respuesta.is_error:

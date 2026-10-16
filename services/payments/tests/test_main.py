@@ -75,7 +75,7 @@ def test_get_balance_poliza_sin_cobros_es_cero() -> None:
 # ---------- back-office: listar y reintentar (KAN-28, CA-W05-01/02)
 
 
-def test_get_cobros_filtra_por_poliza_y_estado() -> None:
+def test_buscar_cobros_filtra_por_poliza_y_estado() -> None:
     cliente, _ = _cliente(
         ClienteAclFalso([ResultadoCobro(estado="pendiente", motivo="pasarela_no_disponible")])
     )
@@ -83,8 +83,8 @@ def test_get_cobros_filtra_por_poliza_y_estado() -> None:
         client.post("/cobros", json={**ORDEN, "clave_idempotencia": "k-a", "poliza_id": "POL-A"})
         client.post("/cobros", json={**ORDEN, "clave_idempotencia": "k-b", "poliza_id": "POL-B"})
 
-        por_poliza = client.get("/cobros", params={"poliza_id": "POL-A"}).json()
-        por_estado = client.get("/cobros", params={"estado": "cobrado"}).json()
+        por_poliza = client.post("/cobros/buscar", json={"poliza_id": "POL-A"}).json()
+        por_estado = client.post("/cobros/buscar", json={"estado": "cobrado"}).json()
 
     assert [c["poliza_id"] for c in por_poliza] == ["POL-A"]
     assert por_poliza[0]["motivo"] == "pasarela_no_disponible"
