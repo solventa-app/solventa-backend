@@ -74,9 +74,17 @@ del equipo (regla de costos de `CLAUDE.md`).
   revisión del servicio — Terraform sigue siendo la única fuente de verdad para la infraestructura en
   sí (Redis, Cloud SQL, IAM, etc., que siguen fuera de este pipeline).
 - **Secretos:** Cloud SQL y Mongo Atlas generan su contraseña con `random_password` (nunca un valor
-  fijo en el código) y la guardan solo en Secret Manager; Cloud Run los lee con
-  `value_source.secret_key_ref`, nunca como texto plano en una variable de entorno visible en el
-  estado o en la consola de Cloud Run.
+  fijo en el código) y la guardan en Secret Manager; Cloud Run los lee con `value_source.secret_key_ref`, nunca
+  como texto plano en una variable de entorno de la consola de Cloud Run. Ojo: esos valores generados sí quedan
+  en el estado de Terraform (ver "Estado de Terraform"); los que se cargan a mano, no.
+- **Un solo dueño por secreto.** `servicios.tf` crea el contenedor de **todos** los secretos del manifiesto;
+  `cloud-sql.tf` y `mongo-atlas.tf` solo le agregan la versión con el valor real (si `crear_servicios` está activo).
+  Así `crear_cloud_sql`/`crear_mongo_atlas` se pueden activar antes o después de `crear_servicios` sin que dos
+  recursos intenten crear el mismo `secret_id`.
+- **Postgres desde Cloud Run.** Con `crear_cloud_sql`, los servicios con un secreto `database-url-*` (hoy `auth` y
+  `payments`) y sus jobs de migración montan el socket de Cloud SQL en `/cloudsql`, y solo sus cuentas
+  `rt-<servicio>` reciben `roles/cloudsql.client`. Sin ese montaje la URL `...@/auth?host=/cloudsql/...` no
+  conecta y la migración falla antes de aplicar nada.
 
 ## Uso
 
@@ -128,8 +136,11 @@ Hasta que las tres primeras y `GCP_PROTECCION_GASTO` existan, `deploy-staging.ym
 
 ## Cargar los secretos
 
-`terraform output secretos_a_cargar` lista los secretos. Terraform crea el contenedor con un valor marcador
-(`pendiente-de-cargar`); el real se agrega aparte, y nunca queda en el estado de Terraform:
+`terraform output secretos_a_cargar` lista **todos** los secretos del manifiesto. Terraform crea cada contenedor con un
+valor marcador (`pendiente-de-cargar`). Con `crear_cloud_sql` (y `crear_servicios`) Terraform ya escribe solo
+`database-url-auth` y `database-url-payments`, y con `crear_mongo_atlas` escribe `mongo-uri-risk`: esos no hay que
+cargarlos. El resto (`mongo-uri-rating`, `redis-url-*`, `clave-jwt`, `clave-cliente-id`) se agrega aparte, y ese valor
+nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
 
 ```bash
 printf '%s' 'postgresql://USUARIO:CLAVE@/auth?host=/cloudsql/PROYECTO:REGION:INSTANCIA' \
@@ -215,6 +226,13 @@ medido en ese experimento; dejarlo así de explícito para no sugerir una verifi
 
 ## Estado de verificación
 
-Validado: `terraform fmt -check`, `terraform validate` y la evaluación offline de los `for_each`/manifiesto con `terraform console`.
-**No** se ha corrido `plan` ni `apply` (no hay proyecto GCP): espere ajustes en la primera ejecución real, en particular la
-deriva de atributos que el pipeline modifica (por eso `servicios.tf` ignora imagen, etiquetas, cliente y tráfico).
+Validado: `terraform fmt -check`, `terraform validate`, `terraform plan` contra `solventa-511815` (con las banderas
+apagadas: 9 recursos sin costo) y planes de las combinaciones `crear_servicios` / `crear_cloud_sql` / `crear_pipeline` /
+`crear_mongo_atlas` (sin secretos repetidos, socket de Cloud SQL solo donde corresponde). **Ningún `apply` ha corrido
+todavía contra GCP**: espere ajustes en la primera ejecución real, en particular la deriva de atributos que el pipeline
+modifica (por eso `servicios.tf` ignora imagen, etiquetas, cliente y tráfico) y el primer arranque de los servicios con
+Cloud SQL, que solo se puede comprobar con la instancia creada.
+
+**Pendiente conocido:** los servicios que usan Redis (`rating`, `acl-worker`, `consolidador-fuentes`) todavía no declaran
+`vpc_access` hacia el conector de `redis.tf`; hay que conectarlo antes de activar `crear_redis`, porque Memorystore solo
+tiene IP privada.

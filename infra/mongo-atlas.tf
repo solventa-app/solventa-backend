@@ -62,27 +62,14 @@ resource "mongodbatlas_project_ip_access_list" "abierta" {
   comment    = "M0 no soporta peering/private endpoint; Cloud Run no tiene IP saliente fija sin Cloud NAT adicional."
 }
 
-resource "google_secret_manager_secret" "mongo_uri" {
-  count     = var.crear_mongo_atlas ? 1 : 0
-  project   = var.project_id
-  secret_id = "mongo-uri-risk"
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.apis]
-}
-
+# El contenedor del secreto `mongo-uri-risk` lo crea servicios.tf (único dueño; ver cloud-sql.tf). Aquí solo se
+# agrega la versión con el valor real, y solo si los servicios existen. RATING usa su propio secreto
+# (`mongo-uri-rating`, usuario de solo lectura) que se carga a mano. El acceso a los secretos se da por secreto
+# a la cuenta de cada servicio en servicios.tf, no a nivel de proyecto.
 resource "google_secret_manager_secret_version" "mongo_uri" {
-  count       = var.crear_mongo_atlas ? 1 : 0
-  secret      = google_secret_manager_secret.mongo_uri[0].id
-  secret_data = "mongodb+srv://risk-service:${random_password.mongo_atlas[0].result}@${replace(mongodbatlas_cluster.risk[0].srv_address, "mongodb+srv://", "")}/risk?retryWrites=true&w=majority"
-}
+  count      = (var.crear_mongo_atlas && var.crear_servicios) ? 1 : 0
+  secret     = google_secret_manager_secret.secreto["mongo-uri-risk"].id
+  depends_on = [google_secret_manager_secret_version.marcador]
 
-resource "google_project_iam_member" "cloud_run_secretos" {
-  count   = (var.crear_cloud_sql || var.crear_mongo_atlas) ? 1 : 0
-  project = var.project_id
-  role    = "roles/secretmanager.secretAccessor"
-  member  = "serviceAccount:${data.google_project.actual.number}-compute@developer.gserviceaccount.com"
+  secret_data = "mongodb+srv://risk-service:${random_password.mongo_atlas[0].result}@${replace(mongodbatlas_cluster.risk[0].srv_address, "mongodb+srv://", "")}/risk?retryWrites=true&w=majority"
 }
