@@ -17,3 +17,13 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `opcional` (valor actual), las operaciones existentes siguen funcionando sin token; cuando pase a `obligatoria`, todas
   exigirán token. Ese cambio se avisará antes y requiere el PR gemelo en `solventa-frontend`.
 - Afecta al frontend: sí (operaciones nuevas; las existentes no cambian de forma).
+
+## v0.2 — 2026-10-16
+
+- KAN-28 (HU-W05, CA-W05-01/02): cobros para el back-office. `cobros` acepta el filtro opcional `polizaId`; `Cobro`
+  suma los campos opcionales `motivo` e `intentos`. Solo cambios aditivos.
+- `cobros` y `reintentarCobro` dejan de responder "no disponible": devuelven datos reales de PAYMENTS y **exigen token
+  de un BACKOFFICE siempre**, aun con la bandera del BFF en `opcional` (son datos de pagos).
+- `reintentarCobro` concilia con la pasarela antes de cobrar y reutiliza la misma clave de idempotencia. Sobre un cobro
+  `cobrado` o `cobrando` lo devuelve sin cambios; sobre uno `rechazado` responde un error ("requiere otro medio de pago").
+- Afecta al frontend: sí (pantalla de cobros del back-office). Requiere el PR gemelo en `solventa-frontend`.

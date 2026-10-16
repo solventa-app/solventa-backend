@@ -7,7 +7,8 @@ no el contrato.
 Operaciones sin backend todavía (alcance del Sprint 1, KAN-24):
 - `oferta(id)` devuelve `null`: RATING no persiste ofertas aún.
 - `contactarAsesor` es un MOCK que solo confirma.
-- `cobros`/`reintentarCobro` responden un error "no disponible" hasta KAN-28.
+`cobros` y `reintentarCobro` (KAN-28) leen y reintentan en PAYMENTS, que concilia
+con la pasarela antes de cobrar (ver `docs/cobros-conciliacion.md`).
 Ninguna produce un 5xx: los errores de GraphQL viajan con HTTP 200.
 
 Permisos (HU-M02): cada resolutor llama a `exigir_rol` con los roles que admite. La
@@ -182,6 +183,8 @@ class Cobro:
     estado: EstadoCobro
     monto: Monto
     actualizado_en: datetime
+    motivo: str | None  # por qué quedó pendiente o rechazado
+    intentos: int | None
 
 
 # ---------- Usuarios y sesión (HU-M02) ----------
@@ -296,6 +299,19 @@ def _oferta(datos: dict) -> Oferta:
     )
 
 
+def _cobro(datos: dict) -> Cobro:
+    """`datos` es la respuesta de PAYMENTS (estados en minúscula, `monto` y `moneda` sueltos)."""
+    return Cobro(
+        id=strawberry.ID(datos["id"]),
+        poliza_id=strawberry.ID(datos["poliza_id"]),
+        estado=EstadoCobro(datos["estado"].upper()),
+        monto=Monto(valor=datos["monto"], moneda=datos["moneda"]),
+        actualizado_en=datetime.fromisoformat(datos["actualizado_en"]),
+        motivo=datos.get("motivo"),
+        intentos=datos.get("intentos"),
+    )
+
+
 def _usuario(datos: dict) -> Usuario:
     return Usuario(
         id=strawberry.ID(datos["id"]),
@@ -313,6 +329,7 @@ CLIENTE_O_ASESOR = ("CLIENTE", "ASESOR")
 SOLO_BACKOFFICE = ("BACKOFFICE",)
 MENSAJE_AUTH_NO_DISPONIBLE = "No pudimos procesar la solicitud. Intenta de nuevo."
 MENSAJE_USUARIO_NO_ENCONTRADO = "Usuario no encontrado."
+MENSAJE_COBROS_NO_DISPONIBLES = "No pudimos consultar los cobros. Intenta de nuevo."
 
 
 def _auth(info: Info):
@@ -328,9 +345,23 @@ class Query:
         return None
 
     @strawberry.field
-    def cobros(self, info: Info, estado: EstadoCobro | None = strawberry.UNSET) -> list[Cobro]:
-        exigir_rol(info, *SOLO_BACKOFFICE)
-        raise ErrorPublico("no disponible: KAN-28")
+    async def cobros(
+        self,
+        info: Info,
+        poliza_id: strawberry.ID | None = strawberry.UNSET,
+        estado: EstadoCobro | None = strawberry.UNSET,
+    ) -> list[Cobro]:
+        """Tabla del back-office (CA-W05-01). Siempre exige token: son datos de pagos."""
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        filtro_poliza = str(poliza_id) if isinstance(poliza_id, str) else None
+        filtro_estado = estado.value.lower() if isinstance(estado, EstadoCobro) else None
+        try:
+            datos = await info.context["clientes"].payments.listar_cobros(
+                filtro_poliza, filtro_estado
+            )
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_COBROS_NO_DISPONIBLES) from error
+        return [_cobro(c) for c in datos]
 
     @strawberry.field
     async def yo(self, info: Info) -> Usuario | None:
@@ -409,9 +440,19 @@ class Mutation:
         )
 
     @strawberry.mutation
-    def reintentar_cobro(self, info: Info, cobro_id: strawberry.ID) -> Cobro:
-        exigir_rol(info, *SOLO_BACKOFFICE)
-        raise ErrorPublico("no disponible: KAN-28")
+    async def reintentar_cobro(self, info: Info, cobro_id: strawberry.ID) -> Cobro:
+        """CA-W05-02: PAYMENTS concilia con la pasarela y, si hace falta, cobra con la
+        misma clave. Sobre un cobro ya cobrado lo devuelve sin cambios."""
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        try:
+            datos = await info.context["clientes"].payments.reintentar_cobro(str(cobro_id))
+        except SolicitudInvalida as error:
+            raise ErrorPublico(str(error)) from error
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_COBROS_NO_DISPONIBLES) from error
+        if datos is None:
+            raise ErrorPublico("Cobro no encontrado.")
+        return _cobro(datos)
 
     # ---------- Usuarios y sesión (HU-M02) ----------
 

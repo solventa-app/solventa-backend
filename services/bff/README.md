@@ -8,7 +8,7 @@ BFF único de GraphQL para web y móvil (ADR-01): un solo Cloud Run con el esque
 (`/graphql/web` y `/graphql/app`; el canal viaja en el contexto). **No tiene lógica de negocio**: orquesta AUTH,
 ACL Worker, RISK y RATING y traduce al contrato de `contracts/graphql/schema.graphql`.
 
-- Historias: HU-W01 (este alcance, T-W01-7) y HU-W05 (KAN-28, pendiente). La API REST B2B `/v1` llega con HU-W07 (Sprint 2).
+- Historias: HU-W01 (T-W01-7), HU-M02 (autenticación) y HU-W05 (KAN-28, cobros del back-office). La API REST B2B `/v1` llega con HU-W07 (Sprint 2).
 - Regla: nunca devuelve un 5xx crudo al cliente; traduce la degradación a oferta preliminar o error con reintento (CA-W01-04/05).
   Los errores internos se enmascaran ("Unexpected error."); solo `ErrorPublico` muestra su mensaje.
 
@@ -23,7 +23,7 @@ ACL Worker, RISK y RATING y traduce al contrato de `contracts/graphql/schema.gra
 | `solicitarOferta` | Completo: ver el flujo abajo |
 | `oferta(id)` | Devuelve `null`: RATING no persiste ofertas todavía |
 | `contactarAsesor` | **MOCK**: solo confirma (no hay servicio de asesores) |
-| `cobros` / `reintentarCobro` | Error "no disponible: KAN-28" (HTTP 200) hasta que PAYMENTS exponga listado y reintento |
+| `cobros(polizaId, estado)` / `reintentarCobro` | Completas (KAN-28), sobre PAYMENTS: solo BACKOFFICE y **siempre con token**. El reintento concilia con la pasarela antes de cobrar (ver [`docs/cobros-conciliacion.md`](../../docs/cobros-conciliacion.md)) |
 | `iniciarSesion`, `yo`, `usuarios`, `crearUsuario`, `cambiarRolUsuario`, `suspenderUsuario` | Completas (HU-M02), sobre AUTH |
 
 ## Autenticación y permisos (HU-M02)

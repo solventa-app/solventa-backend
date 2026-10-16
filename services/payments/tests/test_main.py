@@ -70,3 +70,62 @@ def test_get_balance_poliza_sin_cobros_es_cero() -> None:
         r = client.get("/polizas/poliza-sin-cobros/balance")
 
     assert r.json()["balance"] == "0.00"
+
+
+# ---------- back-office: listar y reintentar (KAN-28, CA-W05-01/02)
+
+
+def test_buscar_cobros_filtra_por_poliza_y_estado() -> None:
+    cliente, _ = _cliente(
+        ClienteAclFalso([ResultadoCobro(estado="pendiente", motivo="pasarela_no_disponible")])
+    )
+    with cliente as client:
+        client.post("/cobros", json={**ORDEN, "clave_idempotencia": "k-a", "poliza_id": "POL-A"})
+        client.post("/cobros", json={**ORDEN, "clave_idempotencia": "k-b", "poliza_id": "POL-B"})
+
+        por_poliza = client.post("/cobros/buscar", json={"poliza_id": "POL-A"}).json()
+        por_estado = client.post("/cobros/buscar", json={"estado": "cobrado"}).json()
+
+    assert [c["poliza_id"] for c in por_poliza] == ["POL-A"]
+    assert por_poliza[0]["motivo"] == "pasarela_no_disponible"
+    assert por_poliza[0]["actualizado_en"]
+    assert por_estado == []
+
+
+def test_get_cobro_inexistente_404() -> None:
+    cliente, _ = _cliente()
+    with cliente as client:
+        assert client.get("/cobros/no-existe").status_code == 404
+
+
+def test_post_reintentar_resuelve_un_pendiente() -> None:
+    acl = ClienteAclFalso(
+        [
+            ResultadoCobro(estado="pendiente", motivo="pasarela_no_disponible"),
+            ResultadoCobro(estado="cobrado", referencia="pg-reintento"),
+        ]
+    )
+    cliente, _ = _cliente(acl)
+    with cliente as client:
+        creado = client.post("/cobros", json=ORDEN).json()
+        r = client.post(f"/cobros/{creado['id']}/reintentar")
+
+    assert r.status_code == 200
+    assert r.json()["estado"] == "cobrado"
+    assert r.json()["clave_idempotencia"] == ORDEN["clave_idempotencia"]
+
+
+def test_post_reintentar_un_rechazado_responde_409_con_mensaje() -> None:
+    cliente, _ = _cliente(ClienteAclFalso([ResultadoCobro(estado="rechazado", motivo="fondos")]))
+    with cliente as client:
+        creado = client.post("/cobros", json=ORDEN).json()
+        r = client.post(f"/cobros/{creado['id']}/reintentar")
+
+    assert r.status_code == 409
+    assert "otro medio de pago" in r.json()["detail"]
+
+
+def test_post_reintentar_inexistente_404() -> None:
+    cliente, _ = _cliente()
+    with cliente as client:
+        assert client.post("/cobros/no-existe/reintentar").status_code == 404

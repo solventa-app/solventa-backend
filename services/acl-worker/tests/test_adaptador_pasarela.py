@@ -65,3 +65,36 @@ def test_respeta_el_timeout_duro_con_proveedor_caido(servidor_caido: str) -> Non
     with pytest.raises(httpx.TimeoutException):
         adaptador.cobrar(ORDEN)
     assert time.monotonic() - inicio < 0.5
+
+
+def test_consultar_encontrado_mapea_el_cobro() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/cobros/idem-1"
+        return httpx.Response(200, json={"estado": "cobrado", "referencia": "pg-7"})
+
+    adaptador = AdaptadorPasarela("http://stub-pasarela", 0.7, cliente=_cliente_mock(handler))
+    cobro = adaptador.consultar("idem-1")
+
+    assert cobro.estado == "cobrado"
+    assert cobro.referencia == "pg-7"
+
+
+def test_consultar_404_devuelve_none_sin_excepcion() -> None:
+    adaptador = AdaptadorPasarela(
+        "http://stub-pasarela",
+        0.7,
+        cliente=_cliente_mock(lambda request: httpx.Response(404, json={"detail": "no"})),
+    )
+
+    assert adaptador.consultar("no-existe") is None
+
+
+def test_consultar_propaga_5xx_para_el_circuito() -> None:
+    adaptador = AdaptadorPasarela(
+        "http://stub-pasarela",
+        0.7,
+        cliente=_cliente_mock(lambda request: httpx.Response(503, json={})),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        adaptador.consultar("idem-1")

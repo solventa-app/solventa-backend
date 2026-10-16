@@ -206,15 +206,70 @@ class RatingFalso:
         return self.oferta
 
 
+def cobro_de_payments(cobro_id: str, poliza_id: str, estado: str, **extra) -> dict:
+    """Misma forma que devuelve PAYMENTS (`services/payments/app/main.py`, `CobroResponse`)."""
+    return {
+        "id": cobro_id,
+        "clave_idempotencia": f"clave-{cobro_id}",
+        "poliza_id": poliza_id,
+        "monto": "80000.00",
+        "moneda": "COP",
+        "estado": estado,
+        "referencia": None,
+        "motivo": None,
+        "intentos": 1,
+        "creado_en": "2026-10-16T12:00:00+00:00",
+        "actualizado_en": "2026-10-16T12:00:00+00:00",
+        **extra,
+    }
+
+
+class PaymentsFalso:
+    """Doble de PAYMENTS: reintentar un pendiente lo deja cobrado; un rechazado da
+    `SolicitudInvalida` (el 409 real); un cobrado se devuelve sin cambios."""
+
+    def __init__(self, cobros: list[dict] | None = None, falla: bool = False) -> None:
+        self.cobros = {c["id"]: dict(c) for c in (cobros or [])}
+        self.falla = falla
+        self.filtros: list[tuple[str | None, str | None]] = []
+
+    async def listar_cobros(self, poliza_id: str | None, estado: str | None) -> list[dict]:
+        if self.falla:
+            raise ErrorServicio("caido")
+        self.filtros.append((poliza_id, estado))
+        return [
+            c
+            for c in self.cobros.values()
+            if (poliza_id is None or c["poliza_id"] == poliza_id)
+            and (estado is None or c["estado"] == estado)
+        ]
+
+    async def reintentar_cobro(self, cobro_id: str) -> dict | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        cobro = self.cobros.get(cobro_id)
+        if cobro is None:
+            return None
+        if cobro["estado"] == "rechazado":
+            raise SolicitudInvalida(
+                "El cobro fue rechazado por la pasarela: requiere otro medio de pago."
+            )
+        if cobro["estado"] == "pendiente":
+            cobro.update(estado="cobrado", referencia="pg-reintento", motivo=None)
+        return cobro
+
+
 def clientes_falsos(
     auth: AuthFalso | None = None,
     acl: AclFalso | None = None,
     risk: RiskFalso | None = None,
     rating: RatingFalso | None = None,
+    payments: PaymentsFalso | None = None,
 ) -> Clientes:
     return Clientes(
         auth=auth or AuthFalso(),
         acl=acl or AclFalso(),
         risk=risk or RiskFalso(),
         rating=rating or RatingFalso(),
+        payments=payments or PaymentsFalso(),
     )

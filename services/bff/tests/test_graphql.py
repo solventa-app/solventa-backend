@@ -96,11 +96,11 @@ def test_auth_caido_da_error_publico_con_mensaje() -> None:
     assert "No pudimos registrar el consentimiento" in cuerpo["errors"][0]["message"]
 
 
-def test_cobros_no_disponible_hasta_kan_28_con_http_200() -> None:
+def test_cobros_sin_token_exige_sesion_aun_en_modo_opcional() -> None:
     with _cliente() as client:
         cuerpo = _post(client, "{ cobros { id } }")
 
-    assert cuerpo["errors"][0]["message"] == "no disponible: KAN-28"
+    assert cuerpo["errors"][0]["message"] == "Debes iniciar sesión."
 
 
 def test_oferta_por_id_devuelve_null() -> None:

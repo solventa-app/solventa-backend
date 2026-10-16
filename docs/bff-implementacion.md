@@ -1,7 +1,8 @@
 # Implementación del BFF GraphQL (KAN-24, HU-W01)
 
 Resumen de lo que se construyó para el BFF en la rama `feat/KAN-24-bff-graphql`, las decisiones que se tomaron
-y cómo verificarlo. Cubre la tarea **T-W01-7** del Sprint 1 y deja listo el camino para HU-W05 (KAN-28).
+y cómo verificarlo. Cubre la tarea **T-W01-7** del Sprint 1 y deja listo el camino para HU-W05 (KAN-28), que se completó después
+(sección 10).
 
 Documentos relacionados: [README del BFF](../services/bff/README.md) · [arquitectura](arquitectura-backend.md) ·
 [contrato GraphQL](../contracts/graphql/schema.graphql) · [pruebas Newman](../tests/newman/README.md).
@@ -21,7 +22,7 @@ punta contra el stack local y, más adelante, contra staging.
 | Consentimiento | **Mock en memoria dentro de `services/auth`** con los endpoints definitivos | AUTH solo tenía `/health`. Al ser HTTP real, cuando llegue T-W01-4 (Postgres) solo cambia el almacén, no el BFF |
 | `cliente_id` | HMAC-SHA256 del documento, con clave | El contrato recibe el documento pero los servicios esperan un id opaco. Marcado con **REWIRE** para reemplazarlo cuando AUTH tenga la tabla de identidad |
 | GraphQL | **Strawberry** (code-first), en `/graphql/web` y `/graphql/app` | Propuesta de ADR-01, confirmada al construirlo. Un solo esquema, el canal viaja en el contexto |
-| Alcance | **Solo HU-W01**; cobros quedan "no disponible" | Una historia por PR (`docs/convenciones.md`); los cobros llegan con KAN-28 |
+| Alcance | **Solo HU-W01**; cobros quedan "no disponible" (resuelto después en KAN-28, sección 10) | Una historia por PR (`docs/convenciones.md`); los cobros llegan con KAN-28 |
 
 ## 3. Flujo de `solicitarOferta`
 
@@ -78,7 +79,7 @@ Operaciones del contrato y su estado:
 | `solicitarOferta` | Completa |
 | `oferta(id)` | Devuelve `null`: RATING todavía no guarda ofertas |
 | `contactarAsesor` | **Mock**: solo confirma |
-| `cobros`, `reintentarCobro` | Error "no disponible: KAN-28" (HTTP 200) |
+| `cobros`, `reintentarCobro` | En esta entrega, error "no disponible: KAN-28" (HTTP 200). **Hoy son reales**: ver sección 10 |
 
 ### 4.3 Infraestructura
 
@@ -189,3 +190,22 @@ limitaciones y **el paso a paso con ejemplos**, está en [autenticacion-usuarios
   pruebas usan sufijos de letras).
 - **Limitación a tener presente**: suspender a un usuario impide nuevos inicios de sesión, pero su token vigente vale
   hasta que vence (máx. 60 min).
+
+## 10. Cobros en el back-office (HU-W05, KAN-28, rama `feat/KAN-28-cobros-backoffice`)
+
+`cobros` y `reintentarCobro` dejaron de responder "no disponible". El detalle completo —decisiones, flujo, estados,
+limitaciones y **el paso a paso con ejemplos**— está en [cobros-conciliacion.md](cobros-conciliacion.md). En resumen:
+
+- **El BFF** expone `cobros(polizaId, estado)` y `reintentarCobro`, solo para `BACKOFFICE` y **siempre con token**
+  (aun con la bandera en `opcional`): son datos de pagos. Llama a PAYMENTS con un cliente nuevo (`ClientePaymentsHttp`).
+- **PAYMENTS concilia antes de reintentar:** pregunta a la pasarela, vía el ACL Worker, si ya tiene el cobro; si lo
+  tiene, toma su resultado sin cobrar de nuevo. Eso cierra un doble cobro posible cuando la pasarela cobraba pero
+  respondía después de los 700 ms.
+- **Los intentos que no llegan a la pasarela no cuentan:** una caída larga ya no deja cobros `pendiente` para siempre.
+- **El mock de la pasarela** se comporta como una real: recuerda los cobros por clave, puede rechazar y se puede consultar.
+- **Contrato v0.2:** filtro `polizaId` y campos `motivo` e `intentos` en `Cobro`, todos opcionales.
+- **Pruebas:** BFF 90 unitarias (incluida una que garantiza que la póliza nunca viaja en la URL hacia PAYMENTS), y
+  Newman con **51 peticiones y 116 aserciones** (carpeta nueva 9).
+- **Hallazgo durante la verificación:** la búsqueda de cobros mandaba la póliza en la URL y quedaba escrita en los
+  logs del BFF y de PAYMENTS (regla #6). Se corrigió con `POST /cobros/buscar` y los filtros en el cuerpo.
+

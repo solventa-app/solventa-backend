@@ -41,8 +41,21 @@ class ResultadoCobro:
     detalle: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class ResultadoConsulta:
+    """Conciliación (KAN-28): `encontrado` (con estado y referencia de la pasarela),
+    `no_encontrado` o `desconocido` (no se pudo preguntar)."""
+
+    resultado: str
+    estado: str | None = None
+    referencia: str | None = None
+    motivo: str | None = None
+
+
 class PuertoClienteAcl(Protocol):
     def cobrar(self, orden: OrdenCobro) -> ResultadoCobro: ...
+
+    def consultar(self, clave_idempotencia: str) -> ResultadoConsulta: ...
 
 
 class ClienteAcl:
@@ -76,6 +89,27 @@ class ClienteAcl:
                 type(error).__name__,
             )
             return ResultadoCobro(estado="pendiente", motivo="acl_no_disponible")
+
+    def consultar(self, clave_idempotencia: str) -> ResultadoConsulta:
+        """`GET {ACL_URL}/pagos/cobros/{clave}`: ¿la pasarela ya tiene este cobro?
+        Ante cualquier falla devuelve `desconocido` (nunca propaga, como `cobrar`)."""
+        try:
+            respuesta = self._cliente.get(f"/pagos/cobros/{clave_idempotencia}")
+            respuesta.raise_for_status()
+            cuerpo = respuesta.json()
+            return ResultadoConsulta(
+                resultado=cuerpo["resultado"],
+                estado=cuerpo.get("estado"),
+                referencia=cuerpo.get("referencia"),
+                motivo=cuerpo.get("motivo"),
+            )
+        except Exception as error:
+            logger.warning(
+                "fallo consultando al acl-worker referencia=%s error=%s",
+                id_opaco(clave_idempotencia),
+                type(error).__name__,
+            )
+            return ResultadoConsulta(resultado="desconocido")
 
     def cerrar(self) -> None:
         self._cliente.close()

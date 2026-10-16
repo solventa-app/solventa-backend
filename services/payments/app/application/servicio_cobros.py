@@ -10,9 +10,16 @@ from typing import Any, Protocol
 
 from app.application.bus_eventos import PuertoBusEventos, construir_evento_cobro_estado_cambiado
 from app.application.cliente_acl import OrdenCobro, PuertoClienteAcl
+from app.application.conciliacion import procesar_reintento
 from app.application.identificadores import id_opaco
 
 logger = logging.getLogger("payments.cobros")
+
+MENSAJE_RECHAZADO = "El cobro fue rechazado por la pasarela: requiere otro medio de pago."
+
+
+class NoReintentable(Exception):
+    """El cobro no se puede reintentar (hoy: fue rechazado). Mensaje apto para el usuario."""
 
 
 class RepositorioCobros(Protocol):
@@ -27,6 +34,10 @@ class RepositorioCobros(Protocol):
     ) -> dict: ...
 
     def listar_pendientes(self, max_intentos: int) -> list[dict]: ...
+
+    def obtener(self, cobro_id: str) -> dict | None: ...
+
+    def listar(self, poliza_id: str | None, estado: str | None) -> list[dict]: ...
 
     def balance_poliza(self, poliza_id: str) -> str: ...
 
@@ -80,6 +91,30 @@ class ServicioCobros:
         )
         self._emitir(cobro_actualizado)
         return cobro_actualizado
+
+    def listar(self, poliza_id: str | None, estado: str | None) -> list[dict[str, Any]]:
+        return self._repositorio.listar(poliza_id, estado)
+
+    def obtener(self, cobro_id: str) -> dict[str, Any] | None:
+        return self._repositorio.obtener(cobro_id)
+
+    def reintentar(self, cobro_id: str) -> dict[str, Any] | None:
+        """Reintento a demanda del back-office (CA-W05-02). `None` si no existe.
+
+        - `pendiente`: concilia y, si hace falta, cobra con la MISMA clave
+          (`procesar_reintento`, la misma función del bucle automático).
+        - `cobrado` o `cobrando`: se devuelve tal cual (un doble clic no cobra dos veces).
+        - `rechazado`: `NoReintentable`; insistir con el mismo medio de pago no lo arregla.
+        Funciona aunque el cobro ya haya agotado los intentos del bucle automático."""
+        cobro = self._repositorio.obtener(cobro_id)
+        if cobro is None:
+            return None
+        if cobro["estado"] == "rechazado":
+            raise NoReintentable(MENSAJE_RECHAZADO)
+        if cobro["estado"] != "pendiente":
+            return cobro
+        logger.info("reintento manual poliza=%s", id_opaco(cobro["poliza_id"]))
+        return procesar_reintento(cobro, self._repositorio, self._cliente_acl, self._bus)
 
     def balance_poliza(self, poliza_id: str) -> str:
         return self._repositorio.balance_poliza(poliza_id)
