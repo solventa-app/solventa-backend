@@ -163,3 +163,11 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   backend** (el ASESOR se autentica, usa el mismo flujo y queda como actor del consentimiento); la tarjeta visual es de
   `solventa-frontend`. **CA-W01-02 gana el actor** que le faltaba. Móvil (biometría, refresh) y API Gateway quedan
   documentados como pendientes en `docs/autenticacion-usuarios.md`.
+- **Cobros en el back-office (HU-W05, KAN-28, 2026-10-16):** CA-W05-01 (tabla de cobros por póliza con su estado) y
+  CA-W05-02 (reintentar con la misma clave) **cumplidos en el backend**: `cobros(polizaId, estado)` y `reintentarCobro`
+  en el BFF, solo BACKOFFICE con token. Cada reintento —manual o automático— **concilia** primero con la pasarela, lo
+  que cierra un doble cobro posible cuando la pasarela cobraba pero respondía después de los 700 ms; además, los
+  intentos con el circuito abierto ya no cuentan (una caída larga dejaba cobros `pendiente` para siempre). Detalle y
+  paso a paso en `docs/cobros-conciliacion.md`. **Aviso de planificación:** exponer cobros en el BFF no era una tarea
+  del plan del sprint (las de backend de HU-W05 son T-W05-2 a 5). Estimación ~9,5 h frente a las 2 h de T-W05-5 y las
+  3 h de holgura: hay que registrarla en Jira bajo KAN-28.

@@ -12,7 +12,7 @@ se actualiza este archivo en el mismo cambio.
 | `auth` | 8001 | Consentimiento append-only; JWT con scopes (Sprint 2) | PostgreSQL `auth` | 1 |
 | `risk` | 8002 | Escribe el perfil de riesgo; devuelve `operationTime`; cifrado de campo | MongoDB primaria | 1 |
 | `rating` | 8003 | Calcula la oferta; lee de la secundaria; caché Redis | — (solo lee) | 1 |
-| `payments` | 8004 | Cobros con pasarela tokenizada, idempotencia, reintento | PostgreSQL `payments` | 1 |
+| `payments` | 8004 | Cobros con pasarela tokenizada, idempotencia, reintento con conciliación, búsqueda para el back-office | PostgreSQL `payments` | 1 |
 | `acl-worker` | 8005 | Único contacto con proveedores externos; hexagonal; Circuit Breaker (700 ms) | Redis (estado del circuito y caché) | 1 |
 | `stubs/open-finance` | 8101 | Proveedor simulado (2 fuentes) | — | 1 |
 | `stubs/open-data` | 8102 | Proveedor simulado (3 fuentes) | — | 1 |
@@ -56,6 +56,11 @@ Se corrige antes del primer despliegue, con el mismo patrón.
 ## Puertos del ACL Worker
 
 Definidos en `services/acl-worker/app/domain/puertos.py` (propuesta del Sprint 1): `PuertoFuenteFinanciera`, `PuertoFuenteAbierta`, `PuertoPasarelaPagos`. KYC y firma electrónica se agregan en el Sprint 2.
+
+`PuertoPasarelaPagos` tiene `cobrar` y `consultar` (KAN-28). `consultar` busca un cobro por la **referencia del
+comercio** (la `clave_idempotencia` que Solventa envía), como consultan las pasarelas reales; la usa PAYMENTS para
+**conciliar** antes de reintentar un cobro pendiente (si la pasarela ya cobró, se toma ese resultado sin cobrar de
+nuevo). Flujo y decisiones en [`cobros-conciliacion.md`](cobros-conciliacion.md).
 
 Un Circuit Breaker (`purgatory`) por adaptador/proveedor (`open-finance`, `open-data`, `pasarela`),
 no por fuente individual. `purgatory` no expone un evento "el circuito lleva N segundos abierto" ni
