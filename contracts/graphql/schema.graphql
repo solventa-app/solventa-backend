@@ -118,6 +118,8 @@ type Cobro {
   estado: EstadoCobro!
   monto: Monto!
   actualizadoEn: DateTime!
+  motivo: String # por qué quedó pendiente o rechazado (p. ej. pasarela_no_disponible)
+  intentos: Int # cuántas veces se intentó cobrar
 }
 
 # ---------- Usuarios y sesión (HU-M02, CA-W01-11) ----------
@@ -175,7 +177,7 @@ input CrearUsuarioInput {
 
 type Query {
   oferta(id: ID!): Oferta
-  cobros(estado: EstadoCobro): [Cobro!]!
+  cobros(polizaId: ID, estado: EstadoCobro): [Cobro!]!
   yo: Usuario
   usuarios(rol: RolUsuario): [Usuario!]!
 }
