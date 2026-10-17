@@ -84,6 +84,9 @@ A diferencia de RISK, aquí **no se hashea `cobroId` ni `idIntentoCobro`** en el
 
 - Puerto local: `8004`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.
 - `POST /cobros` `{id_intento_cobro, poliza_id, monto, moneda, token_medio_pago}` → `{id, id_intento_cobro, poliza_id, monto, moneda, estado, referencia, motivo, intentos}`.
+  `422` si algún campo llega vacío; `409` si el mismo `id_intento_cobro` llega con otra póliza, monto, moneda o medio
+  de pago (antes devolvía en silencio el cobro original). El nombre viene de la migración `0003`/`0004` (antes
+  `clave_idempotencia`).
 - `GET /polizas/{poliza_id}/balance` → `{poliza_id, balance}`.
 - `POST /cobros/buscar` `{poliza_id?, estado?}` → lista de cobros (también con `creado_en` y `actualizado_en`). Los
   filtros van en el cuerpo y no en la URL porque las URL quedan en los logs de acceso (regla #6).
