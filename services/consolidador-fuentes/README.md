@@ -68,7 +68,9 @@ límite anticorrupción con proveedores externos — ese límite ya lo tiene `ac
 - Puerto local: `8006`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.
 - Variables de entorno: `REDIS_URL` (`redis://localhost:6379/2` por defecto, misma cola que
   `COLA_RECONCILIACION_REDIS_URL` del lado productor en `acl-worker`), `ACL_URL`
-  (`http://localhost:8005` por defecto), `ACL_TIMEOUT_S` (3 s por defecto — más holgado que el
+  (`http://localhost:8005` por defecto), `AUTH_URL` (`http://localhost:8001` por defecto: antes de
+  reintentar verifica que el consentimiento siga vigente y, si se revocó o no existe, descarta el job
+  sin consultar — regla #7), `ACL_TIMEOUT_S` (3 s por defecto — más holgado que el
   presupuesto de 700 ms del camino síncrono, porque esta llamada corre en un job de fondo, no en
   el camino de usuario).
 - Pruebas: `pip install -r requirements.txt pytest ruff && python -m pytest && ruff check .`

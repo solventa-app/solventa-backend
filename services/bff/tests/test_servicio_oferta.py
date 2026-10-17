@@ -3,6 +3,7 @@
 import asyncio
 import logging
 
+import pytest
 from fakes import (
     CONSENTIMIENTO_VIGENTE,
     OFERTA_COMPLETA,
@@ -13,14 +14,31 @@ from fakes import (
     clientes_falsos,
 )
 
-from app.clientes import ErrorServicio, SolicitudInvalida
-from app.servicio_oferta import FUENTES, ErrorOfertaDatos, ServicioOferta
+from app.clientes import DatosInsuficientes, ErrorServicio, SolicitudInvalida
+from app.servicio_oferta import (
+    FUENTES,
+    MENSAJE_DATOS_INSUFICIENTES,
+    MENSAJE_DIRECCION_INVALIDA,
+    MENSAJE_DOCUMENTO_INVALIDO,
+    MENSAJE_PLAZO_INVALIDO,
+    MENSAJE_VALOR_INVALIDO,
+    ErrorOfertaDatos,
+    ServicioOferta,
+)
 
 DOCUMENTO = "CC-1020304050"
+DIRECCION = "Calle 100 # 15-20, Bogotá"
 
 
-def _solicitar(servicio: ServicioOferta, consentimiento_id: str = "c-1"):
-    return asyncio.run(servicio.solicitar(consentimiento_id, DOCUMENTO, "200000000"))
+def _solicitar(
+    servicio: ServicioOferta,
+    consentimiento_id: str = "c-1",
+    documento: str = DOCUMENTO,
+    valor: str = "200000000",
+    plazo: int = 240,
+    direccion: str = DIRECCION,
+):
+    return asyncio.run(servicio.solicitar(consentimiento_id, documento, valor, plazo, direccion))
 
 
 def test_flujo_sano_consulta_las_5_fuentes_y_devuelve_la_oferta_de_rating() -> None:
@@ -33,8 +51,9 @@ def test_flujo_sano_consulta_las_5_fuentes_y_devuelve_la_oferta_de_rating() -> N
     assert sorted(llamada[2] for llamada in acl.llamadas) == sorted(FUENTES)
     cliente_id, fuentes = risk.llamadas[0]
     assert len(fuentes) == 5
-    # RATING recibe el `operation_time` de RISK y el valor del crédito como cobertura.
-    assert rating.llamadas == [(cliente_id, "1700000000.1", "200000000")]
+    # RATING recibe el `operation_time` de RISK, el valor del crédito como cobertura,
+    # el plazo y la dirección (para la prima).
+    assert rating.llamadas == [(cliente_id, "1700000000.1", "200000000", 240, DIRECCION)]
 
 
 def test_el_cliente_id_es_opaco_nunca_el_documento() -> None:
@@ -127,3 +146,58 @@ def test_los_logs_no_llevan_el_documento(caplog) -> None:
 
     assert caplog.records, "se esperaba al menos un log del flujo"
     assert DOCUMENTO not in caplog.text
+
+
+# ---------- CA-W01-05: datos insuficientes ----------
+
+
+def test_sin_historial_crediticio_da_error_con_reintento() -> None:
+    servicio = ServicioOferta(clientes_falsos(rating=RatingFalso(error=DatosInsuficientes())), "c")
+
+    resultado = _solicitar(servicio)
+
+    assert resultado == ErrorOfertaDatos(MENSAJE_DATOS_INSUFICIENTES, puede_reintentar=True)
+
+
+# ---------- B3: validación de la solicitud ----------
+
+
+@pytest.mark.parametrize(
+    ("cambios", "mensaje"),
+    [
+        ({"documento": ""}, MENSAJE_DOCUMENTO_INVALIDO),
+        ({"documento": "abc12"}, MENSAJE_DOCUMENTO_INVALIDO),
+        ({"documento": "1" * 21}, MENSAJE_DOCUMENTO_INVALIDO),
+        ({"valor": "no-es-un-numero"}, MENSAJE_VALOR_INVALIDO),
+        ({"valor": "0"}, MENSAJE_VALOR_INVALIDO),
+        ({"valor": "-5"}, MENSAJE_VALOR_INVALIDO),
+        ({"valor": "Infinity"}, MENSAJE_VALOR_INVALIDO),
+        ({"plazo": 0}, MENSAJE_PLAZO_INVALIDO),
+        ({"plazo": 361}, MENSAJE_PLAZO_INVALIDO),
+        ({"direccion": "   "}, MENSAJE_DIRECCION_INVALIDA),
+        ({"direccion": "x" * 201}, MENSAJE_DIRECCION_INVALIDA),
+    ],
+)
+def test_solicitud_invalida_da_error_sin_reintento_y_no_consulta_nada(cambios, mensaje) -> None:
+    auth, acl = AuthFalso(), AclFalso()
+    servicio = ServicioOferta(clientes_falsos(auth=auth, acl=acl), "clave")
+
+    resultado = _solicitar(servicio, **cambios)
+
+    assert resultado == ErrorOfertaDatos(mensaje, puede_reintentar=False)
+    assert acl.llamadas == []
+
+
+def test_los_limites_del_plazo_son_validos() -> None:
+    for plazo in (1, 360):
+        servicio = ServicioOferta(clientes_falsos(), "clave")
+        assert not isinstance(_solicitar(servicio, plazo=plazo), ErrorOfertaDatos)
+
+
+def test_los_logs_no_llevan_la_direccion(caplog) -> None:
+    servicio = ServicioOferta(clientes_falsos(acl=AclFalso({"camara-comercio"})), "clave")
+
+    with caplog.at_level(logging.DEBUG):
+        _solicitar(servicio)
+
+    assert DIRECCION not in caplog.text

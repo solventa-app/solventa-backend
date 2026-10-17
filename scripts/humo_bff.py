@@ -37,7 +37,8 @@ CLAVE_BACKOFFICE = os.getenv("CLAVE_BACKOFFICE", "admin-local-solventa")
 
 # Datos ficticios (sin datos reales).
 ENTRADA = {
-    "documentoIdentidad": "CC-HUMO-0001",
+    # El BFF exige al menos 6 dígitos en el documento (mismo límite que el formulario W01-01).
+    "documentoIdentidad": "CC-HUMO-100001",
     "valorCredito": "200000000",
     "plazoMeses": 240,
     "direccionInmueble": "Direccion de prueba",
@@ -107,10 +108,9 @@ def _iniciar_sesion(usuario: str, clave: str) -> dict:
     return sesion
 
 
-def _solicitar(consentimiento_id: str, token: str) -> dict:
-    respuesta = _graphql(
-        SOLICITAR, {"entrada": {**ENTRADA, "consentimientoId": consentimiento_id}}, token
-    )
+def _solicitar(consentimiento_id: str, token: str, **cambios) -> dict:
+    entrada = {**ENTRADA, **cambios, "consentimientoId": consentimiento_id}
+    respuesta = _graphql(SOLICITAR, {"entrada": entrada}, token)
     resultado = respuesta["solicitarOferta"]
     resumen = resultado.get("tipo") or resultado.get("mensaje")
     print(f"   -> {resultado['__typename']} {resumen} ({respuesta['_ms']} ms)")
@@ -151,11 +151,20 @@ def main() -> int:
         _fallar("la oferta COMPLETA debe traer prima puntual y no rango")
 
     print("3. solicitarOferta con Open Finance lento")
+    # Mismo documento del paso 2: el historial crediticio sale de la caché -> PRELIMINAR.
+    # Documento nuevo: sin historial ni caché no hay oferta -> ErrorOferta con reintento
+    # (CA-W01-05; el historial crediticio es la única fuente obligatoria).
+    documento_sin_cache = "CC-HUMO-" + "".join(random.choices(string.digits, k=8))
     _modo_open_finance("lento")
     try:
         oferta = _solicitar(consentimiento["id"], token)
+        sin_datos = _solicitar(
+            consentimiento["id"], token, documentoIdentidad=documento_sin_cache
+        )
     finally:
         _modo_open_finance("sano")
+    if sin_datos["__typename"] != "ErrorOferta" or not sin_datos["puedeReintentar"]:
+        _fallar(f"sin historial crediticio se esperaba ErrorOferta con reintento: {sin_datos}")
     if oferta["__typename"] != "Oferta" or oferta["tipo"] != "PRELIMINAR":
         _fallar(f"se esperaba una oferta PRELIMINAR: {oferta}")
     if oferta["rangoPrima"] is None:
@@ -166,6 +175,11 @@ def main() -> int:
         lambda: set(_http(f"{ACL}/circuitos").values()) == {"closed"},
         "los circuitos del ACL vuelven a cerrar",
     )
+
+    print("3b. solicitud con un plazo inválido")
+    invalida = _solicitar(consentimiento["id"], token, plazoMeses=0)
+    if invalida["__typename"] != "ErrorOferta" or invalida["puedeReintentar"]:
+        _fallar(f"un plazo de 0 meses debe dar ErrorOferta sin reintento: {invalida}")
 
     print("4. revocarConsentimiento y volver a solicitar")
     revocado = _graphql(REVOCAR, {"id": consentimiento["id"]}, token)["revocarConsentimiento"]

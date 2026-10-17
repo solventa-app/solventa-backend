@@ -36,13 +36,34 @@ un mal dato).
 ```
 tasa_base_mensual = 0.00045   # 0.045% del monto asegurado por mes — ilustrativo
 factor_riesgo = 2.2 - (score_total / 100) * 1.4   # 0.8 (score=100) .. 2.2 (score=0)
-prima_mensual = cobertura * tasa_base_mensual * factor_riesgo
+prima_mensual = cobertura * tasa_base_mensual * factor_riesgo * factor_plazo * factor_zona
 ```
+
+`factor_plazo` (plazo del crédito en meses, también ilustrativo): hasta 60 → 0.95,
+61-180 → 1.00, 181-240 → 1.05, más de 240 → 1.10.
+
+`factor_zona`: ciudad detectada en el texto de la dirección del inmueble (sin
+tildes ni mayúsculas, palabra completa): Bogotá 1.00, Medellín 1.00, Cali 1.03;
+otra o no detectada 1.05. Ninguna de las 5 fuentes describe el inmueble, así que
+esto es lo mínimo para que la dirección cuente; en producción se reemplazaría por
+una fuente de geocodificación detrás del ACL Worker (regla #2). La dirección
+nunca se loguea (regla #6).
+
+Si la solicitud no trae plazo o dirección (un BFF anterior a este cambio), el
+factor correspondiente es 1.00: la prima queda igual que antes.
+
+## Datos insuficientes (CA-W01-05)
+
+`historial-crediticio` es la única fuente obligatoria (decisión del equipo,
+2026-10-17): si no llegó ni en línea ni de caché (estado `FALLO`), no hay oferta
+y se lanza `DatosInsuficientes` (RATING responde 422 y el BFF lo traduce a
+`ErrorOferta` con reintento). Las 5 fuentes se siguen consultando en paralelo: la
+importancia se aplica aquí, después, para no pasarse del presupuesto de latencia.
 
 ## Oferta preliminar vs completa (CA-W01-04)
 
-Si CUALQUIERA de las 5 fuentes no está fresca (falta, `de_cache=True` o
-`degradado=True`): `tipo=PRELIMINAR`, se devuelve `rangoPrima` (±20%
+Si el historial crediticio llegó pero CUALQUIERA de las 5 fuentes no está fresca
+(falta, `de_cache=True` o `degradado=True`): `tipo=PRELIMINAR`, se devuelve `rangoPrima` (±20%
 alrededor de `prima_mensual`), sin `prima` puntual. Si las 5 están frescas:
 `tipo=COMPLETA`, se devuelve `prima` puntual, sin `rangoPrima`.
 
@@ -72,6 +93,8 @@ sube (p. ej. a "v2") y la caché vieja queda huérfana — nunca se lee por
 accidente con reglas distintas, y expira sola por el TTL."""
 
 import logging
+import re
+import unicodedata
 import uuid
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Protocol
@@ -101,6 +124,31 @@ ORIGEN_POR_FUENTE: dict[str, str] = {
     "camara-comercio": "OPEN_DATA",
     "antecedentes-judiciales": "OPEN_DATA",
 }
+
+# CA-W01-05: sin estas fuentes (ni en línea ni de caché) no hay oferta.
+FUENTES_OBLIGATORIAS = ("historial-crediticio",)
+
+# Factor por plazo del crédito: (plazo máximo en meses, factor). Ilustrativo.
+FACTORES_PLAZO: tuple[tuple[int, Decimal], ...] = (
+    (60, Decimal("0.95")),
+    (180, Decimal("1.00")),
+    (240, Decimal("1.05")),
+)
+FACTOR_PLAZO_LARGO = Decimal("1.10")
+
+# Factor por ciudad detectada en la dirección (sin tildes, en minúscula). Ilustrativo.
+FACTORES_CIUDAD: dict[str, Decimal] = {
+    "bogota": Decimal("1.00"),
+    "medellin": Decimal("1.00"),
+    "cali": Decimal("1.03"),
+}
+FACTOR_OTRA_CIUDAD = Decimal("1.05")
+UNO = Decimal(1)
+
+
+class DatosInsuficientes(Exception):
+    """Falta una fuente obligatoria: no se puede ofrecer ni una oferta preliminar."""
+
 
 NEUTRO = Decimal(50)
 CERO = Decimal(0)
@@ -199,10 +247,50 @@ def calcular_score(fuentes: list[dict[str, Any]]) -> tuple[int, list[dict[str, A
     return score_total, desglose
 
 
-def calcular_prima(cobertura: Decimal, score_total: int) -> Decimal:
+def factor_plazo(plazo_meses: int | None) -> Decimal:
+    if plazo_meses is None:
+        return UNO
+    for maximo, factor in FACTORES_PLAZO:
+        if plazo_meses <= maximo:
+            return factor
+    return FACTOR_PLAZO_LARGO
+
+
+def _sin_tildes(texto: str) -> str:
+    descompuesto = unicodedata.normalize("NFKD", texto.lower())
+    return "".join(c for c in descompuesto if not unicodedata.combining(c))
+
+
+def factor_zona(direccion_inmueble: str | None) -> Decimal:
+    if direccion_inmueble is None:
+        return UNO
+    palabras = set(re.findall(r"[a-z]+", _sin_tildes(direccion_inmueble)))
+    for ciudad, factor in FACTORES_CIUDAD.items():
+        if ciudad in palabras:
+            return factor
+    return FACTOR_OTRA_CIUDAD
+
+
+def calcular_prima(
+    cobertura: Decimal,
+    score_total: int,
+    plazo_meses: int | None = None,
+    direccion_inmueble: str | None = None,
+) -> Decimal:
     factor_riesgo = Decimal("2.2") - (Decimal(score_total) / CIEN) * Decimal("1.4")
-    prima_mensual = cobertura * TASA_BASE_MENSUAL * factor_riesgo
+    prima_mensual = (
+        cobertura
+        * TASA_BASE_MENSUAL
+        * factor_riesgo
+        * factor_plazo(plazo_meses)
+        * factor_zona(direccion_inmueble)
+    )
     return prima_mensual.quantize(DOS_DECIMALES, rounding=ROUND_HALF_UP)
+
+
+def _faltan_obligatorias(fuentes_consultadas: list[dict[str, Any]]) -> bool:
+    estados = {f["nombre"]: f["estado"] for f in fuentes_consultadas}
+    return any(estados.get(nombre, "FALLO") == "FALLO" for nombre in FUENTES_OBLIGATORIAS)
 
 
 def calcular_rango_prima(prima: Decimal) -> tuple[Decimal, Decimal]:
@@ -280,12 +368,18 @@ class ServicioOferta:
         self._cache_score = cache_score
 
     def generar(
-        self, cliente_id: str, operation_time: str, cobertura: str
+        self,
+        cliente_id: str,
+        operation_time: str,
+        cobertura: str,
+        plazo_meses: int | None = None,
+        direccion_inmueble: str | None = None,
     ) -> tuple[dict[str, Any] | None, bool]:
         """Devuelve `(oferta, score_de_cache)`. `oferta` es `None` si no hay
         perfil para `cliente_id` (el llamador decide el 404). Puede lanzar
         `ValueError`/`decimal.InvalidOperation` si `operation_time` o
-        `cobertura` no tienen un formato válido — el llamador decide el 400."""
+        `cobertura` no tienen un formato válido — el llamador decide el 400 —, y
+        `DatosInsuficientes` si falta una fuente obligatoria (CA-W01-05)."""
         perfil = self._lector_perfiles.leer(cliente_id, operation_time)
         if perfil is None:
             return None, False
@@ -308,7 +402,12 @@ class ServicioOferta:
             resultado_score["score_total"],
         )
 
-        prima = calcular_prima(cobertura_decimal, resultado_score["score_total"])
+        if _faltan_obligatorias(resultado_score["fuentes"]):
+            raise DatosInsuficientes("falta una fuente obligatoria")
+
+        prima = calcular_prima(
+            cobertura_decimal, resultado_score["score_total"], plazo_meses, direccion_inmueble
+        )
 
         oferta: dict[str, Any] = {
             "id": str(uuid.uuid4()),

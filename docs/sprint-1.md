@@ -171,3 +171,11 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   paso a paso en `docs/cobros-conciliacion.md`. **Aviso de planificación:** exponer cobros en el BFF no era una tarea
   del plan del sprint (las de backend de HU-W05 son T-W05-2 a 5). Estimación ~9,5 h frente a las 2 h de T-W05-5 y las
   3 h de holgura: hay que registrarla en Jira bajo KAN-28.
+- **Reglas de la oferta de HU-W01 (KAN-24, 2026-10-17, decididas con el equipo):** CA-W01-05 ya no queda cubierto
+  solo por fallas de RISK/RATING. El **historial crediticio es la única fuente obligatoria**: si no llega ni en línea
+  ni de caché, RATING responde `datos_insuficientes` y el BFF devuelve `ErrorOferta` con reintento; si llega y falla
+  cualquier otra (incluidos los antecedentes judiciales), la oferta es PRELIMINAR. Las 5 fuentes se siguen consultando
+  en paralelo (en orden sumarían hasta 5 × 700 ms). Además, el BFF valida la solicitud (documento, valor, plazo de 1 a
+  360 meses y dirección) antes de consultar nada, y RATING usa el plazo y la ciudad de la dirección en la prima con
+  factores **ilustrativos** (ver `services/rating/README.md`). El `consolidador-fuentes` verifica en AUTH que el
+  consentimiento siga vigente antes de reintentar una fuente (regla #7). Sin cambios de contrato.

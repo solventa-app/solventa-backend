@@ -21,6 +21,19 @@ class RespuestaFalsa:
         return self._cuerpo
 
 
+@pytest.fixture(autouse=True)
+def consentimiento_vigente_por_defecto(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """AUTH responde "vigente" salvo que la prueba lo cambie. Devuelve las URL consultadas."""
+    consultadas: list[str] = []
+
+    def get_falso(url, timeout):
+        consultadas.append(url)
+        return RespuestaFalsa({"id": "consent-1", "vigente": True})
+
+    monkeypatch.setattr(tareas.httpx, "get", get_falso)
+    return consultadas
+
+
 def _cuerpo(*, de_cache: bool, degradado: bool) -> dict:
     return {
         "fuente": "cuentas-bancarias",
@@ -78,6 +91,62 @@ def test_acl_worker_caido_propaga_la_excepcion_de_httpx(monkeypatch: pytest.Monk
         raise httpx.ConnectError("caido")
 
     monkeypatch.setattr(tareas.httpx, "post", post_falso)
+
+    with pytest.raises(httpx.ConnectError):
+        tareas.reconciliar_fuente("cuentas-bancarias", "cliente-1", "consent-1", 123.0)
+
+
+# ---------- Regla #7: sin consentimiento vigente no se consulta ----------
+
+
+def _post_que_no_debe_llamarse(url, json, timeout):
+    raise AssertionError("no debe consultar el ACL Worker sin consentimiento vigente")
+
+
+def test_verifica_el_consentimiento_en_auth_antes_de_consultar(
+    monkeypatch: pytest.MonkeyPatch, consentimiento_vigente_por_defecto: list[str]
+) -> None:
+    monkeypatch.setattr(
+        tareas.httpx,
+        "post",
+        lambda url, json, timeout: RespuestaFalsa(_cuerpo(de_cache=False, degradado=False)),
+    )
+
+    tareas.reconciliar_fuente("cuentas-bancarias", "cliente-1", "consent-1", 123.0)
+
+    assert consentimiento_vigente_por_defecto == [f"{tareas.AUTH_URL}/consentimientos/consent-1"]
+
+
+def test_consentimiento_revocado_descarta_el_job_sin_consultar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        tareas.httpx,
+        "get",
+        lambda url, timeout: RespuestaFalsa({"id": "consent-1", "vigente": False}),
+    )
+    monkeypatch.setattr(tareas.httpx, "post", _post_que_no_debe_llamarse)
+
+    tareas.reconciliar_fuente("cuentas-bancarias", "cliente-1", "consent-1", 123.0)
+
+
+def test_consentimiento_inexistente_descarta_el_job_sin_consultar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(tareas.httpx, "get", lambda url, timeout: RespuestaFalsa({}, 404))
+    monkeypatch.setattr(tareas.httpx, "post", _post_que_no_debe_llamarse)
+
+    tareas.reconciliar_fuente("cuentas-bancarias", "cliente-1", "consent-1", 123.0)
+
+
+def test_auth_caido_propaga_para_que_rq_reintente_y_no_consulta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def get_caido(url, timeout):
+        raise httpx.ConnectError("caido")
+
+    monkeypatch.setattr(tareas.httpx, "get", get_caido)
+    monkeypatch.setattr(tareas.httpx, "post", _post_que_no_debe_llamarse)
 
     with pytest.raises(httpx.ConnectError):
         tareas.reconciliar_fuente("cuentas-bancarias", "cliente-1", "consent-1", 123.0)

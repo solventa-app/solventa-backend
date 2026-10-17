@@ -419,7 +419,11 @@ class Mutation:
     async def solicitar_oferta(self, info: Info, entrada: SolicitudOfertaInput) -> ResultadoOferta:
         exigir_rol(info, *CLIENTE_O_ASESOR)
         resultado = await info.context["servicio_oferta"].solicitar(
-            str(entrada.consentimiento_id), entrada.documento_identidad, entrada.valor_credito
+            str(entrada.consentimiento_id),
+            entrada.documento_identidad,
+            entrada.valor_credito,
+            entrada.plazo_meses,
+            entrada.direccion_inmueble,
         )
         if isinstance(resultado, ErrorOfertaDatos):
             return ErrorOferta(

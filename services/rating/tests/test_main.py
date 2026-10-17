@@ -5,6 +5,7 @@ se hace con `docker compose`, ver README.md)."""
 from fakes import LectorPerfilesFalso, ServicioOfertaFalso
 from fastapi.testclient import TestClient
 
+from app.application.servicio_oferta import DatosInsuficientes
 from app.main import create_app
 
 
@@ -80,7 +81,7 @@ def test_generar_oferta_devuelve_la_oferta_calculada() -> None:
 
     assert r.status_code == 200
     assert r.json() == OFERTA_EJEMPLO
-    assert servicio.llamadas == [("cliente-1", "1700000001.1", "200000000")]
+    assert servicio.llamadas == [("cliente-1", "1700000001.1", "200000000", None, None)]
 
 
 def test_generar_oferta_sin_perfil_responde_404_no_5xx() -> None:
@@ -140,3 +141,41 @@ def test_generar_oferta_sin_campos_requeridos_responde_422() -> None:
         r = client.post("/ofertas", json={"cliente_id": "cliente-1"})
 
     assert r.status_code == 422
+
+
+def test_generar_oferta_pasa_plazo_y_direccion_al_servicio() -> None:
+    servicio = ServicioOfertaFalso(oferta=OFERTA_EJEMPLO)
+
+    with TestClient(create_app(servicio_oferta=servicio)) as client:
+        r = client.post(
+            "/ofertas",
+            json={
+                "cliente_id": "cliente-1",
+                "operation_time": "1700000001.1",
+                "cobertura": "200000000",
+                "plazo_meses": 240,
+                "direccion_inmueble": "Cra 7 # 10-20, Cali",
+            },
+        )
+
+    assert r.status_code == 200
+    assert servicio.llamadas == [
+        ("cliente-1", "1700000001.1", "200000000", 240, "Cra 7 # 10-20, Cali")
+    ]
+
+
+def test_generar_oferta_sin_fuente_obligatoria_responde_422_datos_insuficientes() -> None:
+    servicio = ServicioOfertaFalso(error=DatosInsuficientes("falta historial"))
+
+    with TestClient(create_app(servicio_oferta=servicio)) as client:
+        r = client.post(
+            "/ofertas",
+            json={
+                "cliente_id": "cliente-1",
+                "operation_time": "1700000001.1",
+                "cobertura": "200000000",
+            },
+        )
+
+    assert r.status_code == 422
+    assert r.json() == {"detail": "datos_insuficientes"}
