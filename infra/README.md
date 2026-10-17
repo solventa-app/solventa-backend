@@ -276,6 +276,12 @@ key ring de KMS (no se puede borrar) ni los secretos si ya cargaste valores real
   manifiesto: plan → guardia → apply) → construir la imagen (tag = SHA) → migrar → desplegar sin tráfico → humo → promover. Si
   `infra` falla o el guardia bloquea, no se despliega nada. Para permitir una destrucción revisada: *Run workflow* con
   `permitir_destruir`.
+- **Informe de despliegue** (último job de `deploy-staging.yml`, `informe`): corre siempre que el despliegue arrancó, también si
+  una etapa falló, y deja un Markdown con el resultado de cada etapa, lo que quedó corriendo en Cloud Run (servicio, commit,
+  acceso y URL, leídos del estado real y no de lo previsto), cómo llamar al BFF y a los servicios privados, y **qué debes hacer**
+  (logs y rollback si algo falló, almacenes de datos que faltan, secretos por cargar, reintegrar `main` en `develop`, tag del
+  sprint). Está en el resumen de la ejecución (Actions) y como artefacto `informe-despliegue-<n>` durante 90 días. Lo genera
+  `scripts/informe_despliegue.py`; si el informe falla no tumba el despliegue.
 - `rollback-staging.yml` vuelve una revisión de aplicación a la anterior. **No** revierte infraestructura: para eso se revierte el PR.
 
 ## Patrón de referencia

@@ -5,6 +5,8 @@ name: Deploy staging
 # Flujo (ADR-07):  construir UNA vez (imagen = SHA)  ->  migrar la base (Cloud Run Job, misma imagen)
 #                  ->  revisión nueva SIN tráfico  ->  prueba de humo sobre ella  ->  promover.
 # Si algo falla antes de "promover", staging sigue sirviendo la revisión anterior.
+# Al final, el job `informe` deja un informe en Markdown (qué quedó corriendo, URL y qué hacer) en el resumen de la
+# ejecución y como artefacto `informe-despliegue-<n>`; ver scripts/informe_despliegue.py.
 # Si el merge cambió infra/ o .github/servicios.json, ANTES de construir se aplica Terraform (etapa `infra`, ADR-09):
 # plan -> guardia contra destrucciones (scripts/revisar_plan.py) -> apply. Un servicio nuevo existe antes de desplegarlo
 # y no hay carrera entre Terraform y `gcloud run deploy`. Si `infra` falla, no se despliega nada.
@@ -280,3 +282,50 @@ jobs:
         env:
           NOMBRE: ${{ matrix.servicio }}
         run: echo "- **${NOMBRE}** desplegado en staging (commit \`${SHA::7}\`)" >> "$GITHUB_STEP_SUMMARY"
+
+  informe:
+    # Informe del despliegue en Markdown: qué quedó corriendo, sus URL y qué hacer ahora. Corre SIEMPRE que `preparar` pasó,
+    # también si una etapa falló, y lee el estado REAL de Cloud Run (cada despliegue deja la etiqueta `commit-sha`), no lo
+    # previsto. Va al resumen de la ejecución y se guarda como artefacto. Si el informe mismo falla, no tumba el despliegue.
+    needs: [preparar, infra, construir, migrar, desplegar]
+    if: ${{ !cancelled() && needs.preparar.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SHA }}
+          fetch-depth: 0 # tags y ramas, para saber si falta reintegrar main en develop o poner el tag del sprint
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Estado real de Cloud Run
+        run: gcloud run services list --region "$REGION" --format=json > "$RUNNER_TEMP/cloud-run.json"
+      - name: Generar el informe
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          EVENTO: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$NEEDS" > "$RUNNER_TEMP/needs.json"
+          adelante=$(git rev-list --count origin/develop..origin/main 2>/dev/null || echo 0)
+          tags=$(git tag --points-at "$SHA" | tr '\n' ' ')
+          python3 scripts/informe_despliegue.py --sha "$SHA" --repo "$REPO" --evento "$EVENTO" \
+            --needs "$RUNNER_TEMP/needs.json" --cloud-run "$RUNNER_TEMP/cloud-run.json" \
+            --run-url "$RUN_URL" --proyecto "$PROYECTO" --region "$REGION" \
+            --main-adelante "$adelante" --tags "$tags" > informe-despliegue.md
+          cat informe-despliegue.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: informe-despliegue-${{ github.run_number }}-${{ github.run_attempt }}
+          path: informe-despliegue.md
+          retention-days: 90
