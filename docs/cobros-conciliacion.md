@@ -12,6 +12,7 @@ Documentos relacionados: [README de PAYMENTS](../services/payments/README.md) ·
 
 | Nombre | Quién lo genera | Para qué |
 |---|---|---|
+| `cliente_id` (`clienteId`) | AUTH (id del usuario CLIENTE) | A quién se le cobra; PAYMENTS guarda el id y AUTH el nombre |
 | `id` (cobro) | PAYMENTS (UUID) | Identifica el registro en Solventa: es el que usan `reintentarCobro` y `GET /cobros/{id}` |
 | `id_intento_cobro` (`idIntentoCobro` en GraphQL y en el evento) | Quien ordena el cobro (el frontend genera un UUID por intento) | Idempotencia: si la misma orden llega dos veces, se cobra una sola vez. Con otros datos, PAYMENTS responde 409 |
 | `referencia` (`pg-…`) | La pasarela | El comprobante del cobro en el proveedor |
@@ -19,6 +20,22 @@ Documentos relacionados: [README de PAYMENTS](../services/payments/README.md) ·
 En la pasarela, el `id_intento_cobro` se llama `referencia_comercio`: el adaptador del ACL Worker traduce el nombre en
 la frontera. Antes se llamaba `clave_idempotencia`; se renombró en todo el producto (KAN-28, migraciones `0003` y `0004`
 de PAYMENTS y evento `cobro.estado-cambiado` v2).
+
+### El nombre del cliente
+
+El back-office ve **quién es el cliente** de cada cobro. El nombre es dato personal, así que:
+
+- **Vive en AUTH**, cifrado por campo (AES-256-GCM, `services/auth/app/cifrado.py`), en `usuarios.nombre_cifrado`. Solo los
+  usuarios CLIENTE tienen nombre. PAYMENTS guarda únicamente el `cliente_id` (escritor único: cada servicio escribe lo suyo).
+- **Sale solo por `cobros`, `crearCobro` y `reintentarCobro`**, que son solo BACKOFFICE y siempre con token. `Usuario` no
+  lo expone y `crearUsuario` no lo devuelve.
+- **El BFF compone la respuesta:** pide a AUTH los nombres de **todos** los clientes de la lista en una sola llamada (de
+  a 200, el máximo de AUTH), no uno por cobro. Si AUTH no responde, los cobros llegan igual con `cliente.nombre` en
+  `null`: ver el cobro importa más que ver el nombre.
+- **Auditoría:** cada consulta deja un log con quién la hizo (id opaco) y cuántos clientes pidió; nunca los nombres ni los ids.
+- **Limitación:** `clienteId` lo declara quien ordena el cobro. Mientras no exista el servicio de pólizas, nada valida que la
+  póliza sea de ese cliente.
+- **Llave:** `CIFRADO_CLAVE` (local, no secreta; en la nube, el secreto `clave-cifrado`). Pendiente pasar a Cloud KMS (D-04).
 
 ## 1. El problema
 
@@ -105,6 +122,7 @@ Cómo produce cada estado el mock de la pasarela, por modo:
 | **ACL Worker** | `PuertoPasarelaPagos.consultar`; `GET /pagos/cobros/{referencia_comercio}` (siempre 200); `motivo=circuito_abierto`; póliza enmascarada en logs |
 | **PAYMENTS** | `POST /cobros/buscar` (filtros en el cuerpo), `GET /cobros/{id}`, `POST /cobros/{id}/reintentar`; `procesar_reintento` concilia en el bucle y en el botón |
 | **BFF** | `cobros` y `reintentarCobro` reales, solo BACKOFFICE con token |
+| **Nombre del cliente (2026-10-17)** | Contrato v0.5; AUTH guarda `nombre_cifrado` (migración `0003`) y expone `POST /usuarios/nombres`; PAYMENTS guarda `cliente_id` (migración `0005`); el BFF compone `cobros.cliente { id nombre }` en lotes |
 | **Ajustes (2026-10-17)** | Contrato v0.3/v0.4: `crearCobro` en el BFF y evento v2 con `idIntentoCobro`; renombre a `id_intento_cobro` (mock: `referencia_comercio`); PAYMENTS responde 409 si el mismo intento llega con otros datos y 422 si falta un campo |
 
 ## 6. Pruebas
@@ -112,6 +130,7 @@ Cómo produce cada estado el mock de la pasarela, por modo:
 | Nivel | Resultado |
 |---|---|
 | Unitarias | Mock 15, ACL Worker 65, PAYMENTS 39, BFF 90 (incluida la equivalencia con el contrato y que la póliza no viaje en la URL) |
+| Nombre del cliente (2026-10-17) | AUTH 74, PAYMENTS 47, BFF 109. Newman: 55 peticiones y 126 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. Nombre ilegible en la base y 0 apariciones en logs |
 | Ajustes (2026-10-17) | Mock 15, ACL Worker 66, PAYMENTS 43, BFF 99. Newman: 54 peticiones y 122 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. Este paso a paso, verificado tal como está escrito |
 | Newman | 51 peticiones y 116 aserciones (carpeta nueva 9). En 6 corridas, 5 sin fallos y 1 con 4 fallas **en la oferta de HU-W01**, no en cobros (ver limitaciones) |
 | Humo | Paso 6: `crearCobro` con la pasarela lenta → reintento conciliado con una sola referencia |
@@ -148,18 +167,22 @@ modo() { curl -s -X POST "$PASARELA/control/modo" -H 'Content-Type: application/
 POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios up -d --build --wait
 TOKEN_BO=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"admin.solventa\", clave:\"admin-local-solventa\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
 echo "${TOKEN_BO:0:20}..."
+ALIAS="cliente.demo.$(python3 -c "import random,string;print(''.join(random.choices(string.ascii_lowercase,k=8)))")"
+ID_CL=$(gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"'"$ALIAS"'\", clave:\"clave-demo-0001\", rol:CLIENTE, nombre:\"Ana Pérez Demo\"}) { ... on Usuario { id } } }"}' "$TOKEN_BO" | campo data.crearUsuario.id)
+echo "cliente: $ID_CL"
 ```
 
-**Esperado:** el inicio de un JWT. Si el `up` falla porque Postgres queda `unhealthy` en el primer arranque, repítelo.
+**Esperado:** el inicio de un JWT y el id del cliente que se crea con nombre (el alias lleva letras al azar: un alias con 6 o más
+dígitos seguidos se rechaza por parecer un documento). Si el `up` falla porque Postgres queda `unhealthy` en el primer arranque, repítelo.
 
 ### Paso 2. Un cobro con la pasarela lenta
 
 ```bash
 CLAVE="demo-$(date +%s)"
 CREAR='mutation($e: CrearCobroInput!) { crearCobro(entrada: $e) { __typename ... on Cobro { id estado } ... on ErrorCobro { mensaje } } }'
-entrada() { echo '{"query":"'"$CREAR"'","variables":{"e":{"idIntentoCobro":"'"$1"'","polizaId":"'"$2"'","monto":{"valor":"'"$3"'","moneda":"COP"},"tokenMedioPago":"tok_demo"}}}'; }
+entrada() { echo '{"query":"'"$CREAR"'","variables":{"e":{"idIntentoCobro":"'"$1"'","polizaId":"'"$2"'","monto":{"valor":"'"$3"'","moneda":"COP"},"tokenMedioPago":"tok_demo","clienteId":"'"$4"'"}}}'; }
 modo lento
-ID=$(gql "$(entrada "$CLAVE" POL-DEMO-1 90000.00)" "$TOKEN_BO" | campo data.crearCobro.id)
+ID=$(gql "$(entrada "$CLAVE" POL-DEMO-1 90000.00 "$ID_CL")" "$TOKEN_BO" | campo data.crearCobro.id)
 modo sano
 curl -s "$PAY/cobros/$ID" | campo estado
 curl -s "$PASARELA/v1/cobros/$CLAVE" | campo referencia
@@ -171,8 +194,8 @@ curl -s "$PASARELA/v1/cobros/$CLAVE" | campo referencia
 ### Paso 2b. Reenviar la misma orden
 
 ```bash
-gql "$(entrada "$CLAVE" POL-DEMO-1 90000.00)" "$TOKEN_BO"
-gql "$(entrada "$CLAVE" POL-DEMO-1 1.00)" "$TOKEN_BO"
+gql "$(entrada "$CLAVE" POL-DEMO-1 90000.00 "$ID_CL")" "$TOKEN_BO"
+gql "$(entrada "$CLAVE" POL-DEMO-1 1.00 "$ID_CL")" "$TOKEN_BO"
 ```
 
 **Esperado:** la primera devuelve el **mismo** `id` (no se crea otro cobro); la segunda, con otro monto, un
@@ -182,12 +205,13 @@ gql "$(entrada "$CLAVE" POL-DEMO-1 1.00)" "$TOKEN_BO"
 ### Paso 3. El back-office ve el cobro
 
 ```bash
-gql '{"query":"query($p: ID) { cobros(polizaId: $p) { id estado monto { valor moneda } motivo intentos } }","variables":{"p":"POL-DEMO-1"}}' "$TOKEN_BO"
+gql '{"query":"query($p: ID) { cobros(polizaId: $p) { id estado monto { valor moneda } motivo intentos cliente { id nombre } } }","variables":{"p":"POL-DEMO-1"}}' "$TOKEN_BO"
 ```
 
 **Esperado:** el cobro con `"estado":"PENDIENTE"` y `"motivo":"pasarela_no_disponible"`, o ya `COBRADO` si el bucle
 automático (cada 5 s) se te adelantó.
-**Demuestra:** CA-W05-01, la tabla de cobros por póliza con su estado.
+Además, `"cliente":{"id":"…","nombre":"Ana Pérez Demo"}`.
+**Demuestra:** CA-W05-01, la tabla de cobros por póliza con su estado y el cliente al que se le cobra.
 
 ### Paso 4. Reintentar: concilia sin cobrar de nuevo
 
@@ -205,7 +229,7 @@ el mismo cobro sin cambios.
 
 ```bash
 modo rechaza
-ID_R=$(gql "$(entrada "rech-$(date +%s)" POL-DEMO-1 90000.00)" "$TOKEN_BO" | campo data.crearCobro.id)
+ID_R=$(gql "$(entrada "rech-$(date +%s)" POL-DEMO-1 90000.00 "$ID_CL")" "$TOKEN_BO" | campo data.crearCobro.id)
 modo sano
 gql '{"query":"query { cobros(polizaId: \"POL-DEMO-1\", estado: RECHAZADO) { estado motivo } }"}' "$TOKEN_BO"
 gql '{"query":"mutation($id: ID!) { reintentarCobro(cobroId: $id) { estado } }","variables":{"id":"'"$ID_R"'"}}' "$TOKEN_BO"
@@ -248,6 +272,17 @@ docker compose logs acl-worker payments bff --no-color | grep -c "POL-DEMO" || t
 de cobros manda sus filtros en el **cuerpo** (`POST /cobros/buscar`): una póliza en la URL quedaría escrita en el log
 de acceso de PAYMENTS y en el log de `httpx` del BFF. Lo detectó este mismo paso al verificar el documento.
 
+### Paso 8b. El nombre está cifrado en la base
+
+```bash
+docker compose exec -T postgres psql -U postgres -d auth -tc "SELECT nombre_cifrado FROM usuarios WHERE id='$ID_CL'"
+docker compose exec -T postgres psql -U postgres -d payments -tc "SELECT count(*) FROM information_schema.columns WHERE table_name='cobros' AND column_name ILIKE '%nombre%'"
+docker compose logs auth bff payments acl-worker --no-color | grep -c "Ana Pérez Demo" || true
+```
+
+**Esperado:** un texto ilegible (no "Ana Pérez Demo"); `0` columnas de nombre en `cobros`; y `0` apariciones del nombre en los logs.
+**Demuestra:** regla #6: el nombre está cifrado en reposo, solo vive en AUTH y no se loguea.
+
 ### Paso 9. Pruebas automáticas y apagar
 
 ```bash
@@ -257,7 +292,7 @@ npx --yes newman@6.2.2 run tests/newman/solventa-bff.postman_collection.json \
 POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios down -v
 ```
 
-**Esperado:** `OK: humo del BFF en verde` y Newman con 122 aserciones, 0 fallidas.
+**Esperado:** `OK: humo del BFF en verde` y Newman con 126 aserciones, 0 fallidas.
 
 ## 8. Limitaciones conocidas
 

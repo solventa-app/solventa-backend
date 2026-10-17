@@ -176,3 +176,8 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   `cobro.estado-cambiado` en `version: 2`. El BFF suma `crearCobro` (solo BACKOFFICE con token; el cliente envía
   `idIntentoCobro`), y PAYMENTS responde 409 si el mismo intento llega con otros datos. **Tampoco estaba en el plan del
   sprint:** hay que registrar estas horas en Jira bajo KAN-28.
+- **Nombre del cliente en los cobros (KAN-28, 2026-10-17):** el back-office ve a quién se le cobra. AUTH guarda el nombre
+  del CLIENTE cifrado por campo (decisión D-04 en su versión local: llave de entorno, Cloud KMS pendiente), PAYMENTS guarda
+  solo el `cliente_id` y el BFF compone `cobros.cliente { id nombre }` en lotes. **Tampoco estaba en el plan del sprint:**
+  registrar las horas en Jira bajo KAN-28. La relación póliza→cliente la declara quien ordena el cobro hasta que exista el
+  servicio de pólizas.
