@@ -5,11 +5,11 @@ hexagonal es solo para `acl-worker`). PAYMENTS es el **único escritor** de
 la tabla `cobros` (regla de arquitectura #1): este módulo es el único lugar
 del sistema que escribe ahí.
 
-**Idempotencia real a nivel de base de datos (CA-W05-04):** `clave_idempotencia`
+**Idempotencia real a nivel de base de datos (CA-W05-04):** `id_intento_cobro`
 tiene un índice UNIQUE (creado por la migración `0002_cobros`, ver
 `migrations/versions/0002_cobros.py` — el esquema lo crea Alembic, no esta
 clase: nada de migrar al arrancar la app, ADR-07). `crear_o_obtener` hace
-un `INSERT ... ON CONFLICT (clave_idempotencia) DO NOTHING RETURNING ...`.
+un `INSERT ... ON CONFLICT (id_intento_cobro) DO NOTHING RETURNING ...`.
 Bajo concurrencia real (dos conexiones insertando la MISMA clave al mismo
 tiempo), Postgres serializa el conflicto con el lock del índice único: la
 segunda conexión en llegar se bloquea hasta que la primera termine su
@@ -25,7 +25,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 _COLUMNAS = (
-    "id, clave_idempotencia, poliza_id, monto, moneda, token_medio_pago, "
+    "id, id_intento_cobro, poliza_id, cliente_id, monto, moneda, token_medio_pago, "
     "estado, referencia, motivo, intentos, creado_en, actualizado_en"
 )
 
@@ -39,21 +39,22 @@ class RepositorioCobrosPostgres:
             fila = conexion.execute(
                 f"""
                 INSERT INTO cobros
-                    (id, clave_idempotencia, poliza_id, monto, moneda, token_medio_pago, estado)
+                    (id, id_intento_cobro, poliza_id, cliente_id, monto, moneda,
+                     token_medio_pago, estado)
                 VALUES
-                    (%(id)s, %(clave_idempotencia)s, %(poliza_id)s, %(monto)s, %(moneda)s,
-                     %(token_medio_pago)s, 'cobrando')
-                ON CONFLICT (clave_idempotencia) DO NOTHING
+                    (%(id)s, %(id_intento_cobro)s, %(poliza_id)s, %(cliente_id)s, %(monto)s,
+                     %(moneda)s, %(token_medio_pago)s, 'cobrando')
+                ON CONFLICT (id_intento_cobro) DO NOTHING
                 RETURNING {_COLUMNAS}
                 """,
-                {"id": cobro_id, **orden},
+                {"id": cobro_id, "cliente_id": None, **orden},
             ).fetchone()
             if fila is not None:
                 return dict(fila), True
 
             fila_existente = conexion.execute(
-                f"SELECT {_COLUMNAS} FROM cobros WHERE clave_idempotencia = %(clave_idempotencia)s",
-                {"clave_idempotencia": orden["clave_idempotencia"]},
+                f"SELECT {_COLUMNAS} FROM cobros WHERE id_intento_cobro = %(id_intento_cobro)s",
+                {"id_intento_cobro": orden["id_intento_cobro"]},
             ).fetchone()
             return dict(fila_existente), False
 

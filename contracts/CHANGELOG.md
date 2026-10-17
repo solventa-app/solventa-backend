@@ -27,3 +27,27 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - `reintentarCobro` concilia con la pasarela antes de cobrar y reutiliza la misma clave de idempotencia. Sobre un cobro
   `cobrado` o `cobrando` lo devuelve sin cambios; sobre uno `rechazado` responde un error ("requiere otro medio de pago").
 - Afecta al frontend: sí (pantalla de cobros del back-office). Requiere el PR gemelo en `solventa-frontend`.
+
+## v0.3 — 2026-10-17
+
+- KAN-28 (HU-W05): mutación `crearCobro(entrada: CrearCobroInput!): ResultadoCobro!` con los tipos nuevos
+  `MontoInput`, `CrearCobroInput`, `ErrorCobro` y la unión `ResultadoCobro`. Solo la puede usar un BACKOFFICE y siempre
+  con token. El cliente genera `idIntentoCobro` (un UUID por intento) y lo reenvía igual si repite la orden.
+- Evento `cobro.estado-cambiado`: se agrega `idIntentoCobro`; `claveIdempotencia` queda obsoleta (mismo valor).
+- Afecta al frontend: sí (operación nueva; las existentes no cambian de forma).
+
+## v0.4 — 2026-10-17
+
+- KAN-28: **cambio incompatible, aprobado por el equipo.** El evento `cobro.estado-cambiado` pasa a `version: 2`: se
+  quita `claveIdempotencia` y `idIntentoCobro` es obligatorio. Es una excepción a las reglas 1 y 2 (no se esperó un
+  sprint con el campo obsoleto): el evento aún no tiene consumidores, porque no hay Pub/Sub real ni nada desplegado.
+- Afecta al frontend: no (el frontend no consume eventos).
+
+## v0.5 — 2026-10-17
+
+- KAN-28: el back-office ve el nombre del cliente en los cobros. Tipo nuevo `ClienteCobro { id, nombre }`; `Cobro` suma
+  `cliente` (opcional); `CrearCobroInput` suma `clienteId` (opcional); `CrearUsuarioInput` suma `nombre` (opcional, solo
+  para CLIENTE). Solo cambios aditivos.
+- El nombre es dato personal: AUTH lo guarda cifrado y solo sale por `cobros` (solo BACKOFFICE, con token). `Usuario` no
+  lo expone. Si AUTH no responde, el cobro llega con `cliente.nombre` en `null`, nunca un error.
+- Afecta al frontend: sí (la tabla de cobros puede mostrar el cliente; el alta de CLIENTE puede pedir el nombre).

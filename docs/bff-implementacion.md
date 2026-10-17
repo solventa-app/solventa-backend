@@ -131,7 +131,7 @@ unitaria que lo fija.
 
 ```bash
 # Pruebas unitarias
-cd services/bff && pip install -r requirements.txt -r ../../requirements-dev.txt && python -m pytest
+cd services/bff && pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest
 
 # Stack completo (si 5432 o 6379 están ocupados: POSTGRES_PORT=5433 REDIS_PORT=6380)
 docker compose --profile servicios up -d --build --wait

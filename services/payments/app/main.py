@@ -14,14 +14,18 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException
 from prometheus_fastapi_instrumentator import Instrumentator
 from psycopg_pool import ConnectionPool
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.application.bus_eventos import BusEventosLog
 from app.application.cliente_acl import ClienteAcl
 from app.application.configuracion import Configuracion
 from app.application.reintento import ReintentoCobrosPendientes
 from app.application.repositorio_cobros import RepositorioCobrosPostgres, construir_pool
-from app.application.servicio_cobros import NoReintentable, ServicioCobros
+from app.application.servicio_cobros import (
+    IntentoCobroEnConflicto,
+    NoReintentable,
+    ServicioCobros,
+)
 
 # Sin esto, los logs INFO de app.application.servicio_cobros/bus_eventos/reintento
 # se descartan en silencio (mismo motivo documentado en acl-worker/app/main.py).
@@ -29,17 +33,25 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 
 
 class OrdenCobroRequest(BaseModel):
-    clave_idempotencia: str
-    poliza_id: str
-    monto: str
-    moneda: str
-    token_medio_pago: str
+    # Lo genera quien ordena el cobro y lo reenvía igual al repetir (CA-W05-04).
+    id_intento_cobro: str = Field(min_length=1)
+    poliza_id: str = Field(min_length=1)
+    # El usuario CLIENTE de AUTH a quien se le cobra. Solo el id: el nombre vive en AUTH.
+    cliente_id: str | None = Field(default=None, min_length=1)
+    monto: str = Field(min_length=1)
+    moneda: str = Field(min_length=1)
+    token_medio_pago: str = Field(min_length=1)
+
+
+class ErrorResponse(BaseModel):
+    detail: str
 
 
 class CobroResponse(BaseModel):
     id: str
-    clave_idempotencia: str
+    id_intento_cobro: str
     poliza_id: str
+    cliente_id: str | None = None
     monto: str
     moneda: str
     estado: str
@@ -119,9 +131,17 @@ def create_app(
     def health() -> dict[str, str]:
         return {"servicio": "payments", "estado": "ok"}
 
-    @app.post("/cobros", tags=["cobros"], response_model=CobroResponse)
+    @app.post(
+        "/cobros",
+        tags=["cobros"],
+        response_model=CobroResponse,
+        responses={409: {"model": ErrorResponse, "description": "mismo intento, otros datos"}},
+    )
     def crear_cobro(body: OrdenCobroRequest) -> CobroResponse:
-        cobro = app.state.servicio_cobros.crear_cobro(body.model_dump())
+        try:
+            cobro = app.state.servicio_cobros.crear_cobro(body.model_dump())
+        except IntentoCobroEnConflicto as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         return CobroResponse(**cobro)
 
     @app.post("/cobros/buscar", tags=["cobros"], response_model=list[CobroResponse])
@@ -130,14 +150,24 @@ def create_app(
         cobros = app.state.servicio_cobros.listar(filtro.poliza_id, filtro.estado)
         return [CobroResponse(**c) for c in cobros]
 
-    @app.get("/cobros/{cobro_id}", tags=["cobros"], response_model=CobroResponse)
+    @app.get(
+        "/cobros/{cobro_id}",
+        tags=["cobros"],
+        response_model=CobroResponse,
+        responses={404: {"model": ErrorResponse}},
+    )
     def obtener_cobro(cobro_id: str) -> CobroResponse:
         cobro = app.state.servicio_cobros.obtener(cobro_id)
         if cobro is None:
             raise HTTPException(status_code=404, detail="cobro no encontrado")
         return CobroResponse(**cobro)
 
-    @app.post("/cobros/{cobro_id}/reintentar", tags=["cobros"], response_model=CobroResponse)
+    @app.post(
+        "/cobros/{cobro_id}/reintentar",
+        tags=["cobros"],
+        response_model=CobroResponse,
+        responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
+    )
     def reintentar_cobro(cobro_id: str) -> CobroResponse:
         """CA-W05-02: concilia con la pasarela y, si hace falta, cobra con la misma clave.
         Nunca un 5xx por la pasarela: si no responde, el cobro sigue `pendiente`."""

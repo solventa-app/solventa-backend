@@ -11,10 +11,10 @@ Arquitectura: [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md). Co
 ## Estado (2026-10-04)
 
 - Repo **recién estructurado**: esqueletos de servicios y stubs (solo `/health` y `/metrics`), contratos v0, entorno local con Docker Compose, CI/CD y agentes. **Aún no hay lógica de negocio.**
-- **CI/CD y migraciones armados (ADR-07, 2026-10-04):** migraciones (Alembic en `auth`/`payments`, runner de MongoDB en `risk`), CI con migraciones contra almacén real + humo del stack + gitleaks + actionlint, `deploy-staging.yml` y `rollback-staging.yml` (apagados hasta definir el proyecto GCP) y Terraform de WIF/Cloud Run detrás de banderas. Probado en local; **lo de GCP/GitHub no se ha ejecutado nunca**.
+- **CI/CD y migraciones armados (ADR-07, 2026-10-04):** migraciones (Alembic en `auth`/`payments`, runner de MongoDB en `risk`), CI con migraciones contra almacén real + humo del stack + gitleaks + actionlint, `deploy-staging.yml` y `rollback-staging.yml` (apagados hasta cargar las variables de GitHub) y Terraform de WIF/Cloud Run detrás de banderas. Probado en local; el `apply` de Terraform ya corrió contra GCP (2026-10-17), pero **el pipeline de GitHub no se ha ejecutado nunca**.
 - Sprint 1 (tentativo): 12–25 de octubre de 2026 — HU-W01 (KAN-24, 20 pts) y HU-W05 (KAN-28, 6 pts) con 7 habilitadoras. Holgura de solo 3 h: no se sobre-construye.
 - **Decisiones pendientes de confirmar en el Planning** (recomendación del plan entre paréntesis; no las trates como cerradas): D-01 base de velocidad (recálculo 27/27/44), D-02 read-your-writes (sesión causal `afterClusterTime`), D-04 cifrado (campo + Cloud KMS), D-05 proveedores (stubs por contrato), D-06 adelantar HU-W05 al Sprint 1. D-03 (cobro antes o después de emitir) se cierra en el Sprint 2.
-- GitHub: organización `solventa-app` (`origin` = https://github.com/solventa-app/solventa-backend.git, repo vacío; aún sin commit ni push). Sin proyecto GCP definido todavía: el pipeline de deploy existe pero está apagado (ver `infra/README.md`); no hay nada desplegado.
+- GitHub: organización `solventa-app` (`origin` = https://github.com/solventa-app/solventa-backend.git, repo vacío; aún sin commit ni push). Proyecto GCP de staging: `solventa-511815`. El 2026-10-17 se aplicó a mano la infraestructura base (ADR-09: 10 servicios y 3 jobs de migración en Cloud Run con la imagen de ejemplo, la cuenta y la federación del pipeline, y la protección de gasto, probada); no hay bases de datos y el pipeline de deploy sigue apagado hasta cargar las variables de GitHub (ver `infra/README.md`). No hay ninguna imagen real desplegada.
 
 ## Stack y decisiones ya tomadas (ADR-01 a ADR-05 del documento de arquitectura)
 
@@ -41,7 +41,7 @@ Arquitectura: [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md). Co
 - **Cada servicio migra solo su almacén** (escritor único): `auth`, `payments`, `risk`. RATING no migra.
 - **Migraciones compatibles hacia atrás** (expandir/contraer): corren mientras la revisión anterior aún atiende. Postgres con `downgrade` probado en CI; MongoDB idempotentes. Hacia adelante en staging, nunca bajar el esquema.
 - **`.github/servicios.json` es la fuente única de servicios.** Un servicio nuevo se agrega ahí y `python scripts/validar_servicios.py` dice qué más falta.
-- **Terraform no se aplica desde el pipeline** y el despliegue sigue apagado hasta que existan las variables de `infra/README.md` (incluida `GCP_PROTECCION_GASTO`).
+- **Terraform se aplica desde el pipeline** (ADR-09): un merge a `main` (release u hotfix; `develop` no despliega) que cambia `infra/` o `.github/servicios.json` aplica antes de construir y desplegar, con un guardia que bloquea destrucciones (`scripts/revisar_plan.py`). Las banderas de costo viven en `infra/staging.tfvars`. El despliegue sigue apagado hasta que existan las variables de `infra/README.md` (incluida `GCP_PROTECCION_GASTO`). El agente no aplica a mano sin confirmación.
 - Una migración nueva se verifica con `bash scripts/verificar-migraciones.sh <servicio>` antes de abrir el PR.
 
 ## Agentes de este repo (`.claude/agents/`)

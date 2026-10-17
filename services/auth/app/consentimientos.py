@@ -1,6 +1,6 @@
 """Registro de consentimientos sobre PostgreSQL (T-W01-4, HA-SEG-001, CA-W01-02/08).
 
-Tabla `consentimientos` de la base `auth` (migración `0003`). **Append-only**: revocar fija
+Tabla `consentimientos` de la base `auth` (migración `0004`). **Append-only**: revocar fija
 `revocado_en` una sola vez y nunca se borra; lo hace cumplir un trigger en la base, no solo
 este código. El contrato HTTP de `app/main.py` no cambió respecto del mock en memoria que
 había antes (ni el BFF): ese mock vive ahora en `tests/fakes.py` como doble de prueba.
