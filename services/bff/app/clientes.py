@@ -65,6 +65,8 @@ class PuertoPayments(Protocol):
 
     async def reintentar_cobro(self, cobro_id: str) -> dict | None: ...
 
+    async def crear_cobro(self, orden: dict) -> dict: ...
+
 
 @dataclass
 class Clientes:
@@ -246,6 +248,19 @@ class ClientePaymentsHttp:
             return None
         if respuesta.status_code == 409:
             raise SolicitudInvalida(respuesta.json().get("detail", "No se puede reintentar."))
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def crear_cobro(self, orden: dict) -> dict:
+        """El token del medio de pago y la póliza van solo en el cuerpo (regla #6).
+        409 (mismo intento con otros datos) y 422 (datos inválidos) llegan como
+        `SolicitudInvalida`; PAYMENTS no responde 5xx por la pasarela."""
+        respuesta = await _pedir(self._cliente, "POST", "/cobros", orden)
+        if respuesta.status_code == 409:
+            raise SolicitudInvalida(respuesta.json().get("detail", "Cobro en conflicto."))
+        if respuesta.status_code == 422:
+            raise SolicitudInvalida("Los datos del cobro no son válidos.")
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()

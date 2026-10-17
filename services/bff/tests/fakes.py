@@ -210,7 +210,7 @@ def cobro_de_payments(cobro_id: str, poliza_id: str, estado: str, **extra) -> di
     """Misma forma que devuelve PAYMENTS (`services/payments/app/main.py`, `CobroResponse`)."""
     return {
         "id": cobro_id,
-        "clave_idempotencia": f"clave-{cobro_id}",
+        "id_intento_cobro": f"intento-{cobro_id}",
         "poliza_id": poliza_id,
         "monto": "80000.00",
         "moneda": "COP",
@@ -232,6 +232,7 @@ class PaymentsFalso:
         self.cobros = {c["id"]: dict(c) for c in (cobros or [])}
         self.falla = falla
         self.filtros: list[tuple[str | None, str | None]] = []
+        self.ordenes: list[dict] = []
 
     async def listar_cobros(self, poliza_id: str | None, estado: str | None) -> list[dict]:
         if self.falla:
@@ -256,6 +257,27 @@ class PaymentsFalso:
             )
         if cobro["estado"] == "pendiente":
             cobro.update(estado="cobrado", referencia="pg-reintento", motivo=None)
+        return cobro
+
+    async def crear_cobro(self, orden: dict) -> dict:
+        """Idempotente por `id_intento_cobro`, como PAYMENTS: con otros datos, el 409 real."""
+        if self.falla:
+            raise ErrorServicio("caido")
+        for cobro in self.cobros.values():
+            if cobro["id_intento_cobro"] == orden["id_intento_cobro"]:
+                if cobro["monto"] != orden["monto"] or cobro["poliza_id"] != orden["poliza_id"]:
+                    raise SolicitudInvalida("Ese id_intento_cobro ya se usó con otros datos.")
+                return cobro
+        cobro = cobro_de_payments(
+            f"cobro-{len(self.cobros) + 1}",
+            orden["poliza_id"],
+            "cobrado",
+            id_intento_cobro=orden["id_intento_cobro"],
+            monto=orden["monto"],
+            moneda=orden["moneda"],
+        )
+        self.cobros[cobro["id"]] = cobro
+        self.ordenes.append(orden)
         return cobro
 
 

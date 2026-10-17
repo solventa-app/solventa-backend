@@ -63,6 +63,16 @@ del equipo (regla de costos de `CLAUDE.md`).
   `presupuesto_monto = 958332` (300 USD a la TRM de 3.194,44 del 10-oct-2026). El tope es una protección, no una
   conversión exacta: si el peso se aprecia mucho, conviene recalcularlo. La función `frenar-gasto` decide por umbral
   relativo (50/80/100 %), así que no depende de la moneda.
+- **Lo que dejó ver el primer `apply` real de la protección de gasto** (proyecto `solventa-511815`):
+  - La API de presupuestos exige un proyecto de cuota explícito con credenciales de usuario, y tus credenciales locales
+    pueden traer otro como cuota (`quota_project_id`). Por eso `google_billing_budget` usa el provider con alias
+    `google.facturacion` (`user_project_override` + `billing_project`, ver `versions.tf`), y solo ese recurso. No se
+    puso global: con `user_project_override` en todo, habilitar las APIs de un proyecto nuevo falla (403) hasta que
+    Cloud Resource Manager esté habilitada, que es una de las APIs que se habilitan ahí.
+  - En proyectos nuevos la cuenta de Compute por defecto ya no trae roles. La función `frenar-gasto` se construye con una
+    cuenta propia (`frenar-gasto-build`, `roles/cloudbuild.builds.builder`) y recibe el evento con la cuenta de la función
+    (`roles/eventarc.eventReceiver`); sin eso el build falla con "missing permission on the build service account".
+  - La API guarda el filtro del presupuesto con el **número** de proyecto; con el ID, cada `plan` mostraba una diferencia.
 - **Acceso entre servicios por IAM, no `allUsers` global.** `servicios.tf` crea una service account
   de runtime por servicio y solo otorga `roles/run.invoker` a quien el manifiesto declara en `llama`;
   `allUsers` solo se concede a los servicios marcados `publico: true` (hoy, `bff`). Más estricto que
@@ -74,9 +84,17 @@ del equipo (regla de costos de `CLAUDE.md`).
   revisión del servicio — Terraform sigue siendo la única fuente de verdad para la infraestructura en
   sí (Redis, Cloud SQL, IAM, etc., que siguen fuera de este pipeline).
 - **Secretos:** Cloud SQL y Mongo Atlas generan su contraseña con `random_password` (nunca un valor
-  fijo en el código) y la guardan solo en Secret Manager; Cloud Run los lee con
-  `value_source.secret_key_ref`, nunca como texto plano en una variable de entorno visible en el
-  estado o en la consola de Cloud Run.
+  fijo en el código) y la guardan en Secret Manager; Cloud Run los lee con `value_source.secret_key_ref`, nunca
+  como texto plano en una variable de entorno de la consola de Cloud Run. Ojo: esos valores generados sí quedan
+  en el estado de Terraform (ver "Estado de Terraform"); los que se cargan a mano, no.
+- **Un solo dueño por secreto.** `servicios.tf` crea el contenedor de **todos** los secretos del manifiesto;
+  `cloud-sql.tf` y `mongo-atlas.tf` solo le agregan la versión con el valor real (si `crear_servicios` está activo).
+  Así `crear_cloud_sql`/`crear_mongo_atlas` se pueden activar antes o después de `crear_servicios` sin que dos
+  recursos intenten crear el mismo `secret_id`.
+- **Postgres desde Cloud Run.** Con `crear_cloud_sql`, los servicios con un secreto `database-url-*` (hoy `auth` y
+  `payments`) y sus jobs de migración montan el socket de Cloud SQL en `/cloudsql`, y solo sus cuentas
+  `rt-<servicio>` reciben `roles/cloudsql.client`. Sin ese montaje la URL `...@/auth?host=/cloudsql/...` no
+  conecta y la migración falla antes de aplicar nada.
 
 ## Uso
 
@@ -88,6 +106,28 @@ terraform fmt -check -recursive && terraform validate
 terraform plan          # solo lectura (necesita credenciales de un proyecto real)
 terraform apply         # CREA recursos: confirmar con el equipo antes, uno por uno
 ```
+
+## Estado de Terraform
+
+El estado vive en GCS (`gs://solventa-511815-tfstate`, prefijo `solventa-backend`), no en tu máquina: así no se pierde y
+el equipo trabaja sobre el mismo. El bucket no lo crea Terraform (huevo y gallina); se creó una sola vez a mano, en
+`us-central1`, con acceso uniforme, prevención de acceso público y versionado:
+
+```bash
+gcloud storage buckets create gs://solventa-511815-tfstate --project=solventa-511815 --location=us-central1 \
+  --uniform-bucket-level-access --public-access-prevention
+gcloud storage buckets update gs://solventa-511815-tfstate --versioning
+```
+
+- Quien corra `terraform init`/`plan`/`apply` necesita credenciales de aplicación (`gcloud auth application-default login`)
+  con acceso al bucket (`roles/storage.objectUser` basta; el propietario del proyecto ya lo tiene). El CI usa
+  `init -backend=false`: no toca el bucket.
+- Terraform bloquea el estado durante un `apply`; si una corrida se corta y deja el bloqueo, se libera con
+  `terraform force-unlock <ID>` (solo si nadie más está aplicando).
+- Versionado = se puede volver a una versión anterior del estado (`gcloud storage ls --all-versions gs://solventa-511815-tfstate/**`).
+- **El estado contiene secretos:** las contraseñas generadas por `random_password` y las URLs de conexión que Terraform
+  escribe en Secret Manager (Cloud SQL, Mongo Atlas) quedan en el estado en claro. Dar acceso al bucket equivale a dar
+  acceso a esos secretos: no se amplía más allá de quien aplica Terraform.
 
 Secuencia recomendada para activar algo (nunca todo junto): `crear_kms` (si aplica) ->
 `crear_presupuesto` (SIEMPRE antes de cualquier otra cosa facturable) -> `crear_pipeline` ->
@@ -101,7 +141,7 @@ según qué historia lo necesite.
 2. Activar la **protección de gasto** (`crear_presupuesto = true` en este mismo directorio — ver
    "Decisiones" arriba: es diseño nuevo, no hay nada previo en `../solventa-arquitectura/proteccion-costos/`
    que copiar, se verificó que esa carpeta no existe). Sin ella no se despliega nada más.
-3. Mover el estado a un bucket de GCS con versionado (ver `versions.tf`).
+3. Estado en un bucket de GCS con versionado: ya hecho (ver "Estado de Terraform").
 4. `crear_pipeline = true` → `terraform apply` → copiar los outputs a GitHub (ver "Conectar GitHub con GCP").
 5. `crear_servicios = true` → `terraform apply` → **cargar el valor real de cada secreto** (ver "Cargar los secretos").
 6. Primer despliegue: Actions > *Deploy staging* > *Run workflow* con `servicios = todos` (los servicios nacen con la
@@ -128,8 +168,11 @@ Hasta que las tres primeras y `GCP_PROTECCION_GASTO` existan, `deploy-staging.ym
 
 ## Cargar los secretos
 
-`terraform output secretos_a_cargar` lista los secretos. Terraform crea el contenedor con un valor marcador
-(`pendiente-de-cargar`); el real se agrega aparte, y nunca queda en el estado de Terraform:
+`terraform output secretos_a_cargar` lista **todos** los secretos del manifiesto. Terraform crea cada contenedor con un
+valor marcador (`pendiente-de-cargar`). Con `crear_cloud_sql` (y `crear_servicios`) Terraform ya escribe solo
+`database-url-auth` y `database-url-payments`, y con `crear_mongo_atlas` escribe `mongo-uri-risk`: esos no hay que
+cargarlos. El resto (`mongo-uri-rating`, `redis-url-*`, `clave-jwt`, `clave-cliente-id`) se agrega aparte, y ese valor
+nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
 
 ```bash
 printf '%s' 'postgresql://USUARIO:CLAVE@/auth?host=/cloudsql/PROYECTO:REGION:INSTANCIA' \
@@ -215,6 +258,13 @@ medido en ese experimento; dejarlo así de explícito para no sugerir una verifi
 
 ## Estado de verificación
 
-Validado: `terraform fmt -check`, `terraform validate` y la evaluación offline de los `for_each`/manifiesto con `terraform console`.
-**No** se ha corrido `plan` ni `apply` (no hay proyecto GCP): espere ajustes en la primera ejecución real, en particular la
-deriva de atributos que el pipeline modifica (por eso `servicios.tf` ignora imagen, etiquetas, cliente y tráfico).
+Validado: `terraform fmt -check`, `terraform validate`, `terraform plan` contra `solventa-511815` (con las banderas
+apagadas: 9 recursos sin costo) y planes de las combinaciones `crear_servicios` / `crear_cloud_sql` / `crear_pipeline` /
+`crear_mongo_atlas` (sin secretos repetidos, socket de Cloud SQL solo donde corresponde). **Ningún `apply` ha corrido
+todavía contra GCP**: espere ajustes en la primera ejecución real, en particular la deriva de atributos que el pipeline
+modifica (por eso `servicios.tf` ignora imagen, etiquetas, cliente y tráfico) y el primer arranque de los servicios con
+Cloud SQL, que solo se puede comprobar con la instancia creada.
+
+**Pendiente conocido:** los servicios que usan Redis (`rating`, `acl-worker`, `consolidador-fuentes`) todavía no declaran
+`vpc_access` hacia el conector de `redis.tf`; hay que conectarlo antes de activar `crear_redis`, porque Memorystore solo
+tiene IP privada.
