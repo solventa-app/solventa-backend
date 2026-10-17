@@ -5,7 +5,7 @@ from app.application.servicio_pagos import ServicioCobro
 from app.domain.puertos import OrdenCobro, ResultadoCobro
 
 ORDEN = OrdenCobro(
-    clave_idempotencia="idem-1",
+    id_intento_cobro="idem-1",
     poliza_id="pol-1",
     monto="150000.00",
     moneda="COP",

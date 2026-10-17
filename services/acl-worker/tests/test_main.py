@@ -68,7 +68,7 @@ def test_cobrar_con_pasarela_caida_queda_pendiente_sin_5xx() -> None:
         r = client.post(
             "/pagos/cobrar",
             json={
-                "clave_idempotencia": "idem-1",
+                "id_intento_cobro": "idem-1",
                 "poliza_id": "pol-1",
                 "monto": "150000.00",
                 "moneda": "COP",

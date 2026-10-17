@@ -72,7 +72,7 @@ que nunca se construyó.
 - Variables de entorno: `MONGO_URI`, `ACL_URL` (no se usa en esta tarea — RISK no llama al ACL
   Worker directamente, recibe los datos ya resueltos en el cuerpo de la petición; se mantiene
   porque ya está en `docker-compose.yml`).
-- Pruebas: `pip install -r requirements.txt -r ../../requirements-dev.txt && python -m pytest`
+- Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest`
   (desde esta carpeta). Las pruebas usan dobles de prueba (`tests/fakes.py`), no MongoDB real —
   ver "Verificación en vivo" más abajo para la prueba con el replica set real.
 - Imagen: `docker build -t solventa-risk .`

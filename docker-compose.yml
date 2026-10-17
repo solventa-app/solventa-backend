@@ -145,6 +145,9 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/auth
       # Solo local; en Cloud Run llega de Secret Manager (clave-jwt), el mismo que usa el BFF.
       JWT_SECRETO: solo-local-no-secreta-jwt-solventa-0001
+      # Cifrado por campo del nombre del cliente. Sin valor, usa la llave local (no secreta);
+      # en Cloud Run llega de Secret Manager (clave-cifrado) y no arranca con la local.
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
     depends_on:
       postgres: { condition: service_healthy }
       migrar-auth: { condition: service_completed_successfully }

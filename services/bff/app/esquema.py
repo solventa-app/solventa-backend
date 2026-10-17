@@ -14,6 +14,7 @@ Ninguna produce un 5xx: los errores de GraphQL viajan con HTTP 200.
 Permisos (HU-M02): cada resolutor llama a `exigir_rol` con los roles que admite. La
 matriz completa está en `docs/autenticacion-usuarios.md`."""
 
+import logging
 from datetime import datetime
 from enum import Enum
 from typing import Annotated
@@ -25,7 +26,11 @@ from strawberry.types import Info
 
 from app.autenticacion_usuarios import MENSAJE_SIN_PERMISO, MENSAJE_SIN_SESION, UsuarioActual
 from app.clientes import ErrorServicio, SolicitudInvalida
+from app.identificadores import id_opaco
 from app.servicio_oferta import ErrorOfertaDatos
+
+logger = logging.getLogger("bff.cobros")
+TAMANO_LOTE_NOMBRES = 200  # el máximo de ids por llamada que admite AUTH
 
 
 class ErrorPublico(Exception):
@@ -177,6 +182,12 @@ class ConfirmacionContacto:
 
 
 @strawberry.type
+class ClienteCobro:
+    id: strawberry.ID
+    nombre: str | None  # dato personal; null si AUTH no respondió o no tiene nombre
+
+
+@strawberry.type
 class Cobro:
     id: strawberry.ID
     poliza_id: strawberry.ID
@@ -185,6 +196,34 @@ class Cobro:
     actualizado_en: datetime
     motivo: str | None  # por qué quedó pendiente o rechazado
     intentos: int | None
+    cliente: ClienteCobro | None
+
+
+@strawberry.input
+class MontoInput:
+    valor: str  # decimal como texto, nunca float
+    moneda: str
+
+
+@strawberry.input
+class CrearCobroInput:
+    # Lo genera el cliente (un UUID por intento) y lo reenvía igual si repite la orden.
+    id_intento_cobro: strawberry.ID
+    poliza_id: strawberry.ID
+    monto: MontoInput
+    token_medio_pago: str  # token del proveedor PCI-DSS; nunca datos de tarjeta
+    # El CLIENTE a quien se le cobra. Mientras no exista el servicio de pólizas, nada valida
+    # que la póliza sea suya.
+    # UNSET (no `None`): así el esquema no publica `= null` y sigue igual al contrato.
+    cliente_id: strawberry.ID | None = strawberry.UNSET
+
+
+@strawberry.type
+class ErrorCobro:
+    mensaje: str
+
+
+ResultadoCobro = Annotated[Cobro | ErrorCobro, strawberry.union("ResultadoCobro")]
 
 
 # ---------- Usuarios y sesión (HU-M02) ----------
@@ -246,6 +285,9 @@ class CrearUsuarioInput:
     usuario: str
     clave: str
     rol: RolUsuario
+    # Solo CLIENTE; AUTH lo guarda cifrado y no lo devuelve.
+    # UNSET: igual que el contrato (sin `= null`).
+    nombre: str | None = strawberry.UNSET
 
 
 # ---------- Traducción desde los servicios ----------
@@ -299,8 +341,10 @@ def _oferta(datos: dict) -> Oferta:
     )
 
 
-def _cobro(datos: dict) -> Cobro:
-    """`datos` es la respuesta de PAYMENTS (estados en minúscula, `monto` y `moneda` sueltos)."""
+def _cobro(datos: dict, nombres: dict[str, str] | None = None) -> Cobro:
+    """`datos` es la respuesta de PAYMENTS (estados en minúscula, `monto` y `moneda` sueltos).
+    `nombres` es `{cliente_id: nombre}` de AUTH; sin él, el cliente sale sin nombre."""
+    cliente_id = datos.get("cliente_id")
     return Cobro(
         id=strawberry.ID(datos["id"]),
         poliza_id=strawberry.ID(datos["poliza_id"]),
@@ -309,6 +353,11 @@ def _cobro(datos: dict) -> Cobro:
         actualizado_en=datetime.fromisoformat(datos["actualizado_en"]),
         motivo=datos.get("motivo"),
         intentos=datos.get("intentos"),
+        cliente=(
+            ClienteCobro(id=strawberry.ID(cliente_id), nombre=(nombres or {}).get(cliente_id))
+            if cliente_id
+            else None
+        ),
     )
 
 
@@ -336,6 +385,29 @@ def _auth(info: Info):
     return info.context["clientes"].auth
 
 
+async def _nombres_de_clientes(info: Info, cobros: list[dict]) -> dict[str, str]:
+    """Pide a AUTH los nombres de los clientes de estos cobros, todos juntos (no uno por
+    cobro) y de a 200, el máximo de AUTH. Si AUTH falla, los cobros salen sin nombre: ver el
+    cobro importa más que ver el nombre. El nombre es dato personal: ni él ni los ids se
+    loguean; solo cuántos clientes se consultaron y quién consultó (auditoría)."""
+    ids = sorted({c["cliente_id"] for c in cobros if c.get("cliente_id")})
+    if not ids:
+        return {}
+    usuario = info.context.get("usuario")
+    logger.info(
+        "nombres de clientes consultados actor=%s clientes=%d",
+        id_opaco(usuario.id) if usuario else "-",
+        len(ids),
+    )
+    nombres: dict[str, str] = {}
+    try:
+        for i in range(0, len(ids), TAMANO_LOTE_NOMBRES):
+            nombres |= await _auth(info).nombres_de_clientes(ids[i : i + TAMANO_LOTE_NOMBRES])
+    except (ErrorServicio, SolicitudInvalida) as error:
+        logger.warning("nombres de clientes no disponibles error=%s", type(error).__name__)
+    return nombres
+
+
 @strawberry.type
 class Query:
     @strawberry.field
@@ -361,7 +433,8 @@ class Query:
             )
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_COBROS_NO_DISPONIBLES) from error
-        return [_cobro(c) for c in datos]
+        nombres = await _nombres_de_clientes(info, datos)
+        return [_cobro(c, nombres) for c in datos]
 
     @strawberry.field
     async def yo(self, info: Info) -> Usuario | None:
@@ -456,7 +529,30 @@ class Mutation:
             raise ErrorPublico(MENSAJE_COBROS_NO_DISPONIBLES) from error
         if datos is None:
             raise ErrorPublico("Cobro no encontrado.")
-        return _cobro(datos)
+        return _cobro(datos, await _nombres_de_clientes(info, [datos]))
+
+    @strawberry.mutation
+    async def crear_cobro(self, info: Info, entrada: CrearCobroInput) -> ResultadoCobro:
+        """KAN-28: el back-office ordena un cobro en PAYMENTS. Reenviar el mismo
+        `idIntentoCobro` devuelve el mismo cobro sin cobrar de nuevo. Ni el token del
+        medio de pago ni la póliza se loguean."""
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        try:
+            datos = await info.context["clientes"].payments.crear_cobro(
+                {
+                    "id_intento_cobro": str(entrada.id_intento_cobro),
+                    "poliza_id": str(entrada.poliza_id),
+                    "cliente_id": str(entrada.cliente_id) if entrada.cliente_id else None,
+                    "monto": entrada.monto.valor,
+                    "moneda": entrada.monto.moneda,
+                    "token_medio_pago": entrada.token_medio_pago,
+                }
+            )
+        except SolicitudInvalida as error:
+            return ErrorCobro(mensaje=str(error))
+        except ErrorServicio as error:
+            raise ErrorPublico("No pudimos registrar el cobro. Intenta de nuevo.") from error
+        return _cobro(datos, await _nombres_de_clientes(info, [datos]))
 
     # ---------- Usuarios y sesión (HU-M02) ----------
 
@@ -480,7 +576,10 @@ class Mutation:
         exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
         try:
             datos = await _auth(info).crear_usuario(
-                entrada.usuario, entrada.clave, entrada.rol.value
+                entrada.usuario,
+                entrada.clave,
+                entrada.rol.value,
+                entrada.nombre if isinstance(entrada.nombre, str) else None,
             )
         except SolicitudInvalida as error:
             return ErrorUsuario(mensaje=str(error))

@@ -2,6 +2,7 @@
 
 - **Estado:** propuesto; los rulesets y workflows están en el repo pero **no se han aplicado en GitHub** (ver "Para activarlo")
 - **Fecha:** 2026-10-08
+- **Nota (2026-10-17):** staging despliega desde `main` (cada release o hotfix), no desde `develop`: lo que se despliega es lo liberado, y un merge a `develop` ya no dispara ningún despliegue ni `apply` de Terraform. Lo dispone `deploy-staging.yml`; ver [ADR-09](ADR-09-terraform-desde-el-pipeline.md).
 - **Reemplaza:** la regla "trunk-based" de ADR-06 (punto 7), la de ADR-07 ("cada merge a `main` deja el repo desplegable a staging") y la rama física `staging` que introdujo el PR #71 (KAN-175). El resto de ambos ADR sigue vigente.
 
 ## Contexto
@@ -13,7 +14,7 @@ estabilizar el cierre de cada sprint mientras el siguiente ya avanza.
 
 ## Decisión
 
-1. **`main`** guarda lo liberado; **`develop`** integra y **despliega a staging**; el trabajo vive en ramas
+1. **`main`** guarda lo liberado y **despliega a staging** (nota 2026-10-17); **`develop`** integra y no despliega; el trabajo vive en ramas
    `feat|fix|chore/KAN-N-descripcion` que salen de y vuelven a `develop`.
 2. Cierre de sprint con **`release/sprint-N`** (solo correcciones) → `main` con tag `sprint-N` → reintegración `main` → `develop`.
    Correcciones urgentes con **`hotfix/KAN-N-descripcion`** desde `main`.

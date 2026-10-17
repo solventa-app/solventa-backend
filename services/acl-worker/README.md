@@ -38,7 +38,7 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
   disponible, el cobro queda `pendiente` (CA-W05-04). La idempotencia persistente y el reintento
   vía Cloud Tasks (T-W05-3/4) son responsabilidad de `payments`, no de este servicio.
 - **Conciliación (KAN-28):** `PuertoPasarelaPagos.consultar` busca un cobro por la **referencia del comercio** (la
-  `clave_idempotencia` que envía Solventa), como consultan las pasarelas reales; `ServicioCobro.consultar` usa el mismo
+  `id_intento_cobro` que envía Solventa), como consultan las pasarelas reales; `ServicioCobro.consultar` usa el mismo
   Circuit Breaker y el mismo presupuesto, y responde `encontrado`, `no_encontrado` o `desconocido` (sin poder
   preguntar). Un cobro que no se intentó porque el circuito estaba abierto lleva `motivo=circuito_abierto`, distinto de
   `pasarela_no_disponible`, para que PAYMENTS no le cuente ese intento. Los logs enmascaran la póliza (`id_opaco`).
@@ -86,14 +86,14 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
 - Observabilidad del circuito (sin datos personales): `GET /circuitos` → `{"open-finance": "closed", ...}`.
 - Endpoints internos (backend-a-backend, no forman parte de `contracts/`):
   - `POST /fuentes/consultar` `{cliente_id, consentimiento_id, fuente}` → `{fuente, datos, capturado_en, de_cache, degradado}`.
-  - `POST /pagos/cobrar` `{clave_idempotencia, poliza_id, monto, moneda, token_medio_pago}` → `{estado, referencia, motivo, detalle}`.
+  - `POST /pagos/cobrar` `{id_intento_cobro, poliza_id, monto, moneda, token_medio_pago}` → `{estado, referencia, motivo, detalle}`.
   - `GET /pagos/cobros/{referencia_comercio}` → siempre 200 con `{resultado: encontrado|no_encontrado|desconocido, estado, referencia, motivo}`.
 - Variables de entorno: `REDIS_URL`, `OPEN_FINANCE_URL`, `OPEN_DATA_URL`, `PASARELA_URL`,
   `TIMEOUT_MS` (700), `BREAKER_UMBRAL_FALLOS` (3), `BREAKER_TTL_SEGUNDOS` (5),
   `SONDA_INTERVALO_SEGUNDOS` (2), `CACHE_TTL_SEGUNDOS` (300),
   `COLA_RECONCILIACION_REDIS_URL` (`redis://localhost:6379/2`, db de Redis distinta a la de la
   caché — ver `services/consolidador-fuentes/README.md`).
-- Pruebas: `pip install -r requirements.txt -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta).
+- Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta).
 - Imagen: `docker build -t solventa-acl-worker .`
 
 ### Verificación en vivo (Circuit Breaker + sonda)

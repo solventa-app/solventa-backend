@@ -14,7 +14,11 @@
     "puerto": 8001,
     "url_env": "AUTH_URL",
     "migracion": ["alembic", "upgrade", "head"],
-    "secretos": { "DATABASE_URL": "database-url-auth", "JWT_SECRETO": "clave-jwt" }
+    "secretos": {
+      "DATABASE_URL": "database-url-auth",
+      "JWT_SECRETO": "clave-jwt",
+      "CIFRADO_CLAVE": "clave-cifrado"
+    }
   },
   {
     "nombre": "risk",

@@ -20,6 +20,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel
 
+from app.cifrado import CifradorAesGcm
 from app.configuracion import Configuracion
 from app.consentimientos import AlmacenConsentimientos, AlmacenConsentimientosMemoria
 from app.identificadores import id_opaco
@@ -69,6 +70,13 @@ class SolicitudUsuario(BaseModel):
     usuario: str
     clave: str
     rol: str
+    nombre: str | None = None  # solo CLIENTE; se guarda cifrado y no se devuelve
+
+
+class SolicitudNombres(BaseModel):
+    """Los ids van en el cuerpo, nunca en la URL (regla #6)."""
+
+    ids: list[str]
 
 
 class SolicitudRol(BaseModel):
@@ -110,7 +118,8 @@ def create_app(
             pool = construir_pool(config.database_url)
             repositorio = RepositorioUsuariosPostgres(pool)
             hasher = PasswordHasher()
-            app.state.usuarios = ServicioUsuarios(repositorio, hasher)
+            cifrador = CifradorAesGcm.desde_base64(config.cifrado_clave)
+            app.state.usuarios = ServicioUsuarios(repositorio, hasher, cifrador)
             app.state.sesiones = ServicioSesiones(
                 repositorio, hasher, config.jwt_secreto, config.jwt_vigencia_minutos
             )
@@ -173,13 +182,27 @@ def create_app(
     @app.post("/usuarios", tags=["usuarios"], response_model=UsuarioResponse)
     def crear_usuario(body: SolicitudUsuario) -> UsuarioResponse:
         try:
-            usuario = app.state.usuarios.crear(body.usuario, body.clave, body.rol)
+            usuario = app.state.usuarios.crear(body.usuario, body.clave, body.rol, body.nombre)
         except DatoInvalido as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         except UsuarioDuplicado as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         logger_usuarios.info("usuario creado id=%s rol=%s", id_opaco(usuario["id"]), usuario["rol"])
         return UsuarioResponse(**usuario)
+
+    @app.post(
+        "/usuarios/nombres",
+        tags=["usuarios"],
+        response_model=dict[str, str],
+        responses={400: {"description": "demasiados ids"}},
+    )
+    def nombres_de_clientes(body: SolicitudNombres) -> dict[str, str]:
+        """Nombres en claro de los CLIENTE pedidos (`{id: nombre}`); los que no tienen nombre
+        no aparecen. Es dato personal: solo lo llama el BFF para un BACKOFFICE; nunca se loguea."""
+        try:
+            return app.state.usuarios.nombres(body.ids)
+        except DatoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.get("/usuarios", tags=["usuarios"], response_model=list[UsuarioResponse])
     def listar_usuarios(rol: str | None = None) -> list[UsuarioResponse]:

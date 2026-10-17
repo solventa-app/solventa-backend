@@ -58,7 +58,7 @@ Se corrige antes del primer despliegue, con el mismo patrón.
 Definidos en `services/acl-worker/app/domain/puertos.py` (propuesta del Sprint 1): `PuertoFuenteFinanciera`, `PuertoFuenteAbierta`, `PuertoPasarelaPagos`. KYC y firma electrónica se agregan en el Sprint 2.
 
 `PuertoPasarelaPagos` tiene `cobrar` y `consultar` (KAN-28). `consultar` busca un cobro por la **referencia del
-comercio** (la `clave_idempotencia` que Solventa envía), como consultan las pasarelas reales; la usa PAYMENTS para
+comercio** (el `id_intento_cobro` que Solventa envía), como consultan las pasarelas reales; la usa PAYMENTS para
 **conciliar** antes de reintentar un cobro pendiente (si la pasarela ya cobró, se toma ese resultado sin cobrar de
 nuevo). Flujo y decisiones en [`cobros-conciliacion.md`](cobros-conciliacion.md).
 

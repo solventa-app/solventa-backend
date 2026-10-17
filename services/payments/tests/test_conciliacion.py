@@ -11,7 +11,7 @@ from app.application.reintento import ejecutar_una_pasada
 from app.application.servicio_cobros import NoReintentable, ServicioCobros
 
 ORDEN = {
-    "clave_idempotencia": "clave-concilia-1",
+    "id_intento_cobro": "clave-concilia-1",
     "poliza_id": "POL-CONCILIA-1",
     "monto": "80000.00",
     "moneda": "COP",
@@ -38,7 +38,7 @@ def test_si_la_pasarela_ya_lo_cobro_se_concilia_sin_cobrar_de_nuevo() -> None:
     ya_cobrado = ResultadoConsulta(
         resultado="encontrado", estado="cobrado", referencia="pg-original"
     )
-    acl = ClienteAclFalso(en_pasarela={ORDEN["clave_idempotencia"]: ya_cobrado})
+    acl = ClienteAclFalso(en_pasarela={ORDEN["id_intento_cobro"]: ya_cobrado})
     bus = BusEventosFalso()
 
     actualizado = ServicioCobros(repositorio, acl, bus).reintentar(cobro["id"])
@@ -56,8 +56,8 @@ def test_si_la_pasarela_no_lo_tiene_se_cobra_con_la_misma_clave() -> None:
 
     actualizado = ServicioCobros(repositorio, acl, BusEventosFalso()).reintentar(cobro["id"])
 
-    assert acl.consultas == [ORDEN["clave_idempotencia"]]  # primero concilia
-    assert acl.ordenes[0].clave_idempotencia == ORDEN["clave_idempotencia"]
+    assert acl.consultas == [ORDEN["id_intento_cobro"]]  # primero concilia
+    assert acl.ordenes[0].id_intento_cobro == ORDEN["id_intento_cobro"]
     assert actualizado["estado"] == "cobrado"
     assert actualizado["intentos"] == cobro["intentos"] + 1
 
@@ -80,7 +80,7 @@ def test_el_bucle_tambien_concilia_antes_de_cobrar() -> None:
     ya_cobrado = ResultadoConsulta(
         resultado="encontrado", estado="cobrado", referencia="pg-original"
     )
-    acl = ClienteAclFalso(en_pasarela={ORDEN["clave_idempotencia"]: ya_cobrado})
+    acl = ClienteAclFalso(en_pasarela={ORDEN["id_intento_cobro"]: ya_cobrado})
 
     ejecutar_una_pasada(repositorio, acl, BusEventosFalso(), max_intentos=10)
 

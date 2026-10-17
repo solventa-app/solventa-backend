@@ -5,7 +5,7 @@ es un bucle `asyncio` periódico arrancado desde el lifespan de FastAPI (mismo
 patrón que `SondaRecuperacion` en `services/acl-worker/app/application/sonda.py`):
 cada `intervalo_s` busca cobros en estado `pendiente` con menos de
 `max_intentos` intentos y vuelve a llamar a `POST {ACL_URL}/pagos/cobrar` con
-la MISMA `clave_idempotencia` (CA-W05-05: el reintento reutiliza la clave),
+el MISMO `id_intento_cobro` (CA-W05-05: el reintento reutiliza la clave),
 **conciliando antes** con la pasarela (`app/application/conciliacion.py`, KAN-28).
 
 **Acotado, no reintenta para siempre:** `listar_pendientes` (en

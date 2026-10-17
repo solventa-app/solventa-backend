@@ -37,6 +37,7 @@ def test_en_cloud_run_rechaza_un_secreto_corto(monkeypatch) -> None:
 def test_en_cloud_run_arranca_con_un_secreto_real(monkeypatch) -> None:
     monkeypatch.setenv("K_SERVICE", "auth")
     monkeypatch.setenv("JWT_SECRETO", "a" * 64)
+    monkeypatch.setenv("CIFRADO_CLAVE", "b" * 43 + "=")
 
     assert Configuracion.desde_entorno().jwt_secreto == "a" * 64
 

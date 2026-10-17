@@ -38,7 +38,7 @@ curl localhost:8000/health
 
 # 3. Pruebas de un servicio
 cd services/risk
-pip install -r requirements.txt -r ../../requirements-dev.txt
+pip install -r requirements.txt && pip install -r ../../requirements-dev.txt
 python -m pytest
 
 # 4. Contratos y consistencia de servicios

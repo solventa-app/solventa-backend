@@ -45,6 +45,12 @@ variable "entorno_github" {
   default     = "staging"
 }
 
+variable "entorno_github_infra" {
+  description = "Entorno de GitHub (Settings > Environments) que puede asumir la identidad de Terraform, con muchos más permisos que la de despliegue. Es donde se pueden exigir revisores antes de cada apply."
+  type        = string
+  default     = "infra-staging"
+}
+
 variable "imagen_inicial" {
   description = "Imagen con la que se crean los servicios la primera vez; el pipeline la reemplaza por la del commit (Terraform ignora el cambio de imagen)."
   type        = string

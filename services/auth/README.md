@@ -39,7 +39,8 @@ los llama el BFF, que ya validó el token y el rol.
 | Método | Ruta | Respuesta |
 |---|---|---|
 | `POST` | `/sesiones` `{usuario, clave}` | `{token, expira_en, usuario}`, o `401` con mensaje genérico |
-| `POST` | `/usuarios` `{usuario, clave, rol}` | el usuario (sin hash); `400` alias o clave inválidos; `409` alias repetido |
+| `POST` | `/usuarios` `{usuario, clave, rol, nombre?}` | el usuario (sin hash ni nombre); `400` alias, clave o nombre inválidos (el nombre es solo de CLIENTE); `409` alias repetido |
+| `POST` | `/usuarios/nombres` `{ids}` | `{id: nombre}` de los CLIENTE pedidos (hasta 200; ids en el cuerpo). Dato personal: solo lo llama el BFF para un BACKOFFICE |
 | `GET` | `/usuarios?rol=` | lista de usuarios |
 | `GET` | `/usuarios/{id}` | el usuario, o `404` |
 | `POST` | `/usuarios/{id}/rol` `{rol}` | el usuario con el rol nuevo, o `404` |
@@ -49,7 +50,7 @@ los llama el BFF, que ya validó el token y el rol.
 - JWT **HS256** (`pyjwt`), 60 min, con `sub`, `rol`, `scopes`, `iat`, `exp` y `jti`. Secreto `JWT_SECRETO`
   (`clave-jwt` en Secret Manager, el mismo que lee el BFF). En Cloud Run no arranca con el valor local, el marcador de
   Terraform ni uno de menos de 32 bytes.
-- El alias no puede ser un correo ni un documento: la tabla no guarda datos personales.
+- El alias no puede ser un correo ni un documento. El único dato personal es el **nombre del CLIENTE** (KAN-28): va cifrado por campo (AES-256-GCM con el id del usuario como dato asociado, `app/cifrado.py`), con la llave `CIFRADO_CLAVE` (local no secreta; en la nube, `clave-cifrado`, y no arranca con la local). Rotarla sin re-cifrar deja los nombres ilegibles.
 - Primer BACKOFFICE: `CLAVE_INICIAL=... python -m app.crear_usuario --usuario <alias> --rol BACKOFFICE` (idempotente).
   En compose lo hace la tarea `crear-backoffice` con credenciales **solo locales**: `admin.solventa` / `admin-local-solventa`.
 - Logs: solo el id opaco del usuario; nunca el alias, la clave ni el token.
@@ -57,7 +58,7 @@ los llama el BFF, que ya validó el token y el rol.
 ## Operación
 
 - Puerto local: `8001`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.
-- Pruebas: `pip install -r requirements.txt -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta).
+- Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta).
 - Imagen: `docker build -t solventa-auth .`
 
 ## Migraciones
