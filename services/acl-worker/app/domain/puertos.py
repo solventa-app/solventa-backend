@@ -53,7 +53,7 @@ EstadoCobro = Literal["cobrado", "rechazado", "pendiente"]
 
 @dataclass
 class OrdenCobro:
-    clave_idempotencia: str  # un mismo intento recibido dos veces se ejecuta una vez (CA-W05-04)
+    id_intento_cobro: str  # un mismo intento recibido dos veces se ejecuta una vez (CA-W05-04)
     poliza_id: str
     monto: str  # decimal como texto, nunca float
     moneda: str
@@ -68,5 +68,24 @@ class ResultadoCobro:
     detalle: dict[str, Any] = field(default_factory=dict)
 
 
+ResultadoConciliacion = Literal["encontrado", "no_encontrado", "desconocido"]
+
+
+@dataclass
+class ConsultaCobro:
+    """Respuesta de la conciliación (KAN-28): ¿la pasarela tiene este cobro?
+    `desconocido` = no se le pudo preguntar (caída o circuito abierto)."""
+
+    resultado: ResultadoConciliacion
+    cobro: ResultadoCobro | None = None
+
+
 class PuertoPasarelaPagos(Protocol):
     def cobrar(self, orden: OrdenCobro) -> ResultadoCobro: ...
+
+    def consultar(self, referencia_comercio: str) -> ResultadoCobro | None:
+        """Busca un cobro por la **referencia del comercio**, que es la
+        `id_intento_cobro` que Solventa envía al cobrar. Así consultan las pasarelas
+        reales (p. ej. Wompi `reference`, PayU `referenceCode`), de modo que cambiar de
+        proveedor sigue siendo solo agregar un adaptador (CA-W05-06). `None` si no existe."""
+        ...

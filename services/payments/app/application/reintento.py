@@ -5,14 +5,15 @@ es un bucle `asyncio` periódico arrancado desde el lifespan de FastAPI (mismo
 patrón que `SondaRecuperacion` en `services/acl-worker/app/application/sonda.py`):
 cada `intervalo_s` busca cobros en estado `pendiente` con menos de
 `max_intentos` intentos y vuelve a llamar a `POST {ACL_URL}/pagos/cobrar` con
-la MISMA `clave_idempotencia` (CA-W05-05: el reintento reutiliza la clave).
+el MISMO `id_intento_cobro` (CA-W05-05: el reintento reutiliza la clave),
+**conciliando antes** con la pasarela (`app/application/conciliacion.py`, KAN-28).
 
 **Acotado, no reintenta para siempre:** `listar_pendientes` (en
 `repositorio_cobros.py`) solo devuelve cobros con `intentos < max_intentos`.
 Una vez que un cobro agota los intentos sin resolverse, este bucle deja de
-tocarlo: queda `pendiente` para seguimiento manual, consultable vía
-`GET /polizas/{poliza_id}/balance` o una consulta directa a la tabla `cobros`
-(no se construye una DLQ formal aparte — ya es una fila consultable).
+tocarlo: queda `pendiente` para el back-office, que lo ve en `GET /cobros` y lo
+reintenta a mano con `POST /cobros/{id}/reintentar` (KAN-28). Los intentos que no
+llegaron a la pasarela (circuito abierto o conciliación sin respuesta) no cuentan.
 
 **Aislamiento de la decisión GCP (regla de arquitectura #3, sin puertos y
 adaptadores para esto):** `ejecutar_una_pasada` es la lógica de reintento en
@@ -26,9 +27,9 @@ toca, solo el disparador."""
 import asyncio
 import logging
 
-from app.application.bus_eventos import PuertoBusEventos, construir_evento_cobro_estado_cambiado
-from app.application.cliente_acl import OrdenCobro, PuertoClienteAcl
-from app.application.identificadores import id_opaco
+from app.application.bus_eventos import PuertoBusEventos
+from app.application.cliente_acl import PuertoClienteAcl
+from app.application.conciliacion import procesar_reintento
 from app.application.servicio_cobros import RepositorioCobros
 
 logger = logging.getLogger("payments.reintento")
@@ -42,36 +43,12 @@ def ejecutar_una_pasada(
 ) -> int:
     """Una pasada del reintento: función pequeña y aislada (ver docstring del
     módulo) reusada tal cual por el bucle en background y por las pruebas
-    (sin `asyncio`, sin esperar ningún `intervalo_s`). Devuelve cuántos
+    (sin `asyncio`, sin esperar ningún `intervalo_s`). Cada cobro pasa por
+    `procesar_reintento` (concilia antes de cobrar, KAN-28). Devuelve cuántos
     cobros pendientes se procesaron en esta pasada."""
     pendientes = repositorio.listar_pendientes(max_intentos)
     for cobro in pendientes:
-        resultado = cliente_acl.cobrar(
-            OrdenCobro(
-                clave_idempotencia=cobro["clave_idempotencia"],
-                poliza_id=cobro["poliza_id"],
-                monto=cobro["monto"],
-                moneda=cobro["moneda"],
-                token_medio_pago=cobro["token_medio_pago"],
-            )
-        )
-        actualizado = repositorio.actualizar_estado_y_contar_intento(
-            cobro["id"], resultado.estado, resultado.referencia, resultado.motivo
-        )
-        logger.info(
-            "reintento cobro poliza=%s intentos=%s estado=%s",
-            id_opaco(actualizado["poliza_id"]),
-            actualizado["intentos"],
-            actualizado["estado"],
-        )
-        bus.publicar(
-            construir_evento_cobro_estado_cambiado(
-                cobro_id=actualizado["id"],
-                poliza_id=actualizado["poliza_id"],
-                estado=actualizado["estado"],
-                clave_idempotencia=actualizado["clave_idempotencia"],
-            )
-        )
+        procesar_reintento(cobro, repositorio, cliente_acl, bus)
     return len(pendientes)
 
 

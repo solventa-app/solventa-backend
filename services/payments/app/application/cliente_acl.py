@@ -26,7 +26,7 @@ logger = logging.getLogger("payments.cliente_acl")
 
 @dataclass
 class OrdenCobro:
-    clave_idempotencia: str
+    id_intento_cobro: str
     poliza_id: str
     monto: str  # decimal como texto, nunca float
     moneda: str
@@ -41,8 +41,21 @@ class ResultadoCobro:
     detalle: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class ResultadoConsulta:
+    """Conciliación (KAN-28): `encontrado` (con estado y referencia de la pasarela),
+    `no_encontrado` o `desconocido` (no se pudo preguntar)."""
+
+    resultado: str
+    estado: str | None = None
+    referencia: str | None = None
+    motivo: str | None = None
+
+
 class PuertoClienteAcl(Protocol):
     def cobrar(self, orden: OrdenCobro) -> ResultadoCobro: ...
+
+    def consultar(self, id_intento_cobro: str) -> ResultadoConsulta: ...
 
 
 class ClienteAcl:
@@ -54,7 +67,7 @@ class ClienteAcl:
             respuesta = self._cliente.post(
                 "/pagos/cobrar",
                 json={
-                    "clave_idempotencia": orden.clave_idempotencia,
+                    "id_intento_cobro": orden.id_intento_cobro,
                     "poliza_id": orden.poliza_id,
                     "monto": orden.monto,
                     "moneda": orden.moneda,
@@ -76,6 +89,27 @@ class ClienteAcl:
                 type(error).__name__,
             )
             return ResultadoCobro(estado="pendiente", motivo="acl_no_disponible")
+
+    def consultar(self, id_intento_cobro: str) -> ResultadoConsulta:
+        """`GET {ACL_URL}/pagos/cobros/{clave}`: ¿la pasarela ya tiene este cobro?
+        Ante cualquier falla devuelve `desconocido` (nunca propaga, como `cobrar`)."""
+        try:
+            respuesta = self._cliente.get(f"/pagos/cobros/{id_intento_cobro}")
+            respuesta.raise_for_status()
+            cuerpo = respuesta.json()
+            return ResultadoConsulta(
+                resultado=cuerpo["resultado"],
+                estado=cuerpo.get("estado"),
+                referencia=cuerpo.get("referencia"),
+                motivo=cuerpo.get("motivo"),
+            )
+        except Exception as error:
+            logger.warning(
+                "fallo consultando al acl-worker referencia=%s error=%s",
+                id_opaco(id_intento_cobro),
+                type(error).__name__,
+            )
+            return ResultadoConsulta(resultado="desconocido")
 
     def cerrar(self) -> None:
         self._cliente.close()

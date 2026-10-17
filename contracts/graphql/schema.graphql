@@ -112,19 +112,106 @@ enum EstadoCobro {
   PENDIENTE
 }
 
+# Quién es el cliente de un cobro. El nombre es dato personal: solo lo ve el BACKOFFICE
+# y puede venir vacío si AUTH no responde o el cliente no tiene nombre registrado.
+type ClienteCobro {
+  id: ID!
+  nombre: String
+}
+
 type Cobro {
   id: ID!
   polizaId: ID!
   estado: EstadoCobro!
   monto: Monto!
   actualizadoEn: DateTime!
+  motivo: String # por qué quedó pendiente o rechazado (p. ej. pasarela_no_disponible)
+  intentos: Int # cuántas veces se intentó cobrar
+  cliente: ClienteCobro # null en cobros creados sin clienteId
+}
+
+input MontoInput {
+  valor: String! # decimal como texto, nunca float
+  moneda: String!
+}
+
+input CrearCobroInput {
+  # Lo genera el cliente (un UUID por intento) y lo reenvía igual si repite la orden:
+  # así un doble clic o un reintento no cobra dos veces.
+  idIntentoCobro: ID!
+  polizaId: ID!
+  # El cliente (usuario CLIENTE de AUTH) a quien se le cobra. Mientras no exista el servicio de
+  # pólizas, nada valida que la póliza sea de ese cliente.
+  clienteId: ID = null
+  monto: MontoInput!
+  tokenMedioPago: String! # token del proveedor PCI-DSS; nunca datos de tarjeta
+}
+
+type ErrorCobro {
+  mensaje: String!
+}
+
+union ResultadoCobro = Cobro | ErrorCobro
+
+# ---------- Usuarios y sesión (HU-M02, CA-W01-11) ----------
+# El token de `Sesion` viaja en la cabecera `Authorization: Bearer <token>` de las demás operaciones.
+
+enum RolUsuario {
+  CLIENTE
+  ASESOR
+  BACKOFFICE
+}
+
+enum EstadoUsuario {
+  ACTIVO
+  SUSPENDIDO
+}
+
+type Usuario {
+  id: ID!
+  usuario: String! # alias de acceso: nunca un correo ni un documento
+  rol: RolUsuario!
+  estado: EstadoUsuario!
+  creadoEn: DateTime!
+}
+
+type Sesion {
+  token: String!
+  expiraEn: DateTime!
+  usuario: Usuario!
+}
+
+type ErrorAutenticacion {
+  mensaje: String!
+}
+
+union ResultadoSesion = Sesion | ErrorAutenticacion
+
+type ErrorUsuario {
+  mensaje: String!
+}
+
+union ResultadoUsuario = Usuario | ErrorUsuario
+
+input CredencialesInput {
+  usuario: String!
+  clave: String!
+}
+
+input CrearUsuarioInput {
+  usuario: String!
+  clave: String!
+  rol: RolUsuario!
+  nombre: String = null # solo para CLIENTE (2 a 100 caracteres); se guarda cifrado y no se devuelve
 }
 
 # ---------- Operaciones ----------
 
 type Query {
   oferta(id: ID!): Oferta
-  cobros(estado: EstadoCobro): [Cobro!]!
+  cobros(polizaId: ID, estado: EstadoCobro): [Cobro!]!
+  yo: Usuario
+  usuarios(rol: RolUsuario): [Usuario!]!
 }
 
 type Mutation {
@@ -133,4 +220,9 @@ type Mutation {
   solicitarOferta(entrada: SolicitudOfertaInput!): ResultadoOferta!
   contactarAsesor(ofertaId: ID!, canal: CanalContacto!): ConfirmacionContacto!
   reintentarCobro(cobroId: ID!): Cobro!
+  crearCobro(entrada: CrearCobroInput!): ResultadoCobro!
+  iniciarSesion(entrada: CredencialesInput!): ResultadoSesion!
+  crearUsuario(entrada: CrearUsuarioInput!): ResultadoUsuario!
+  cambiarRolUsuario(id: ID!, rol: RolUsuario!): ResultadoUsuario!
+  suspenderUsuario(id: ID!): ResultadoUsuario!
 }

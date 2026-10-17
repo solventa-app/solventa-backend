@@ -4,7 +4,7 @@ terraform {
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = "~> 6.0"
+      version = "~> 8.7"
     }
     random = {
       # Genera las contraseñas de Cloud SQL / Mongo Atlas que van a Secret Manager (nunca al repo).
@@ -26,13 +26,30 @@ terraform {
     }
   }
 
-  # El estado es LOCAL por ahora (ignorado por git). Cuando el equipo defina el proyecto GCP,
-  # moverlo a un bucket de GCS con versionado: `backend "gcs" { bucket = "..." prefix = "solventa-backend" }`.
+  # Estado remoto en GCS (bucket con versionado y bloqueo de acceso público). El bucket NO lo crea Terraform
+  # (huevo y gallina): se creó a mano, ver "Estado de Terraform" en infra/README.md. El CI usa
+  # `init -backend=false`, así que no necesita acceso al bucket.
+  backend "gcs" {
+    bucket = "solventa-511815-tfstate"
+    prefix = "solventa-backend"
+  }
 }
 
 provider "google" {
   project = var.project_id
   region  = var.region
+}
+
+# Solo para google_billing_budget: la API de presupuestos exige un proyecto de cuota explícito cuando se usan
+# credenciales de usuario (si no, responde 403 aunque la API esté habilitada). El resto de recursos NO lo usa:
+# con user_project_override global, habilitar las APIs de un proyecto nuevo fallaría hasta que Cloud Resource
+# Manager esté habilitada, que es justo una de las APIs que se habilitan ahí.
+provider "google" {
+  alias                 = "facturacion"
+  project               = var.project_id
+  region                = var.region
+  user_project_override = true
+  billing_project       = var.project_id
 }
 
 # Sin bloque de configuración: lee MONGODB_ATLAS_PUBLIC_KEY / MONGODB_ATLAS_PRIVATE_KEY del entorno.

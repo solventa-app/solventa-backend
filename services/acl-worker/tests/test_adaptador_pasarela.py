@@ -10,7 +10,7 @@ from app.adapters.pasarela import AdaptadorPasarela
 from app.domain.puertos import OrdenCobro
 
 ORDEN = OrdenCobro(
-    clave_idempotencia="idem-1",
+    id_intento_cobro="idem-1",
     poliza_id="pol-1",
     monto="150000.00",
     moneda="COP",
@@ -65,3 +65,51 @@ def test_respeta_el_timeout_duro_con_proveedor_caido(servidor_caido: str) -> Non
     with pytest.raises(httpx.TimeoutException):
         adaptador.cobrar(ORDEN)
     assert time.monotonic() - inicio < 0.5
+
+
+def test_consultar_encontrado_mapea_el_cobro() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/cobros/idem-1"
+        return httpx.Response(200, json={"estado": "cobrado", "referencia": "pg-7"})
+
+    adaptador = AdaptadorPasarela("http://stub-pasarela", 0.7, cliente=_cliente_mock(handler))
+    cobro = adaptador.consultar("idem-1")
+
+    assert cobro.estado == "cobrado"
+    assert cobro.referencia == "pg-7"
+
+
+def test_consultar_404_devuelve_none_sin_excepcion() -> None:
+    adaptador = AdaptadorPasarela(
+        "http://stub-pasarela",
+        0.7,
+        cliente=_cliente_mock(lambda request: httpx.Response(404, json={"detail": "no"})),
+    )
+
+    assert adaptador.consultar("no-existe") is None
+
+
+def test_consultar_propaga_5xx_para_el_circuito() -> None:
+    adaptador = AdaptadorPasarela(
+        "http://stub-pasarela",
+        0.7,
+        cliente=_cliente_mock(lambda request: httpx.Response(503, json={})),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        adaptador.consultar("idem-1")
+
+
+def test_traduce_el_id_intento_cobro_a_referencia_del_comercio() -> None:
+    """Frontera: Solventa dice `id_intento_cobro`, la pasarela dice `referencia_comercio`."""
+    enviado: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        enviado.update(json.loads(request.content))
+        return httpx.Response(200, json={"estado": "cobrado", "referencia": "pg-1"})
+
+    adaptador = AdaptadorPasarela("http://stub-pasarela", 0.7, cliente=_cliente_mock(handler))
+    adaptador.cobrar(ORDEN)
+
+    assert enviado["referencia_comercio"] == ORDEN.id_intento_cobro
+    assert "id_intento_cobro" not in enviado and "clave_idempotencia" not in enviado

@@ -23,7 +23,9 @@ class AdaptadorPasarela:
         respuesta = self._cliente.post(
             "/v1/cobros",
             json={
-                "clave_idempotencia": orden.clave_idempotencia,
+                # Traducción de frontera: la pasarela llama "referencia del comercio" a lo
+                # que Solventa llama `id_intento_cobro` en su dominio.
+                "referencia_comercio": orden.id_intento_cobro,
                 "poliza_id": orden.poliza_id,
                 "monto": orden.monto,
                 "moneda": orden.moneda,
@@ -31,6 +33,24 @@ class AdaptadorPasarela:
             },
             timeout=timeout,
         )
+        respuesta.raise_for_status()
+        cuerpo = respuesta.json()
+        return ResultadoCobro(
+            estado=cuerpo["estado"],
+            referencia=cuerpo.get("referencia"),
+            motivo=cuerpo.get("motivo"),
+            detalle=cuerpo.get("detalle", {}),
+        )
+
+    def consultar(
+        self, referencia_comercio: str, timeout_s: float | None = None
+    ) -> ResultadoCobro | None:
+        """`GET /v1/cobros/{referencia_comercio}`: 404 → `None` (no es una falla, no
+        abre el circuito); cualquier otro error se propaga para el Circuit Breaker."""
+        timeout = timeout_s if timeout_s is not None else self._timeout_s
+        respuesta = self._cliente.get(f"/v1/cobros/{referencia_comercio}", timeout=timeout)
+        if respuesta.status_code == 404:
+            return None
         respuesta.raise_for_status()
         cuerpo = respuesta.json()
         return ResultadoCobro(

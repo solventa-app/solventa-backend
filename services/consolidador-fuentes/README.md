@@ -71,8 +71,8 @@ límite anticorrupción con proveedores externos — ese límite ya lo tiene `ac
   (`http://localhost:8005` por defecto), `ACL_TIMEOUT_S` (3 s por defecto — más holgado que el
   presupuesto de 700 ms del camino síncrono, porque esta llamada corre en un job de fondo, no en
   el camino de usuario).
-- Pruebas: `pip install -r requirements.txt pytest ruff && python -m pytest && ruff check .`
-  (desde esta carpeta; no hay `requirements-dev.txt` compartido en este servicio todavía).
+- Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest && ruff check .`
+  (desde esta carpeta).
 - Imagen: `docker build -t solventa-consolidador-fuentes .`
 
 ### Verificación en vivo (reconciliación diferida)

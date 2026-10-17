@@ -97,9 +97,21 @@ services:
     ports: ["8000:8000"]
     environment:
       AUTH_URL: http://auth:8001
+      ACL_URL: http://acl-worker:8005
       RISK_URL: http://risk:8002
       RATING_URL: http://rating:8003
       PAYMENTS_URL: http://payments:8004
+      # Solo local: el repo es público. En Cloud Run llega de Secret Manager (clave-cliente-id).
+      CLIENTE_ID_CLAVE: solo-local-no-secreta
+      # Mismo valor que AUTH (firma HS256). Solo local; en Cloud Run llega de Secret Manager (clave-jwt).
+      JWT_SECRETO: solo-local-no-secreta-jwt-solventa-0001
+      # "opcional": sin token las operaciones de antes siguen funcionando (ver docs/autenticacion-usuarios.md).
+      AUTENTICACION_USUARIOS: opcional
+    depends_on:
+      auth: { condition: service_healthy }
+      acl-worker: { condition: service_healthy }
+      risk: { condition: service_healthy }
+      rating: { condition: service_healthy }
 
   migrar-auth:
     <<: *tarea
@@ -111,6 +123,19 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
 
+  # Primer usuario BACKOFFICE (la API exige un BACKOFFICE para crear usuarios). Idempotente:
+  # si ya existe no hace nada, así que corre en cada `up`. Alias y clave SOLO LOCALES, no secretos.
+  crear-backoffice:
+    <<: *tarea
+    image: solventa/auth:local
+    build: ./services/auth
+    command: ["python", "-m", "app.crear_usuario", "--usuario", "admin.solventa", "--rol", "BACKOFFICE"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/auth
+      CLAVE_INICIAL: admin-local-solventa
+    depends_on:
+      migrar-auth: { condition: service_completed_successfully }
+
   auth:
     <<: *servicio
     image: solventa/auth:local
@@ -118,9 +143,15 @@ services:
     ports: ["8001:8001"]
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/auth
+      # Solo local; en Cloud Run llega de Secret Manager (clave-jwt), el mismo que usa el BFF.
+      JWT_SECRETO: solo-local-no-secreta-jwt-solventa-0001
+      # Cifrado por campo del nombre del cliente. Sin valor, usa la llave local (no secreta);
+      # en Cloud Run llega de Secret Manager (clave-cifrado) y no arranca con la local.
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
     depends_on:
       postgres: { condition: service_healthy }
       migrar-auth: { condition: service_completed_successfully }
+      crear-backoffice: { condition: service_completed_successfully }
 
   migrar-risk:
     <<: *tarea

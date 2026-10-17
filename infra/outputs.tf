@@ -18,6 +18,11 @@ output "deploy_sa" {
   value       = var.crear_pipeline ? google_service_account.deploy[0].email : null
 }
 
+output "terraform_sa" {
+  description = "Valor de la variable de GitHub GCP_TERRAFORM_SA (null si crear_pipeline = false)."
+  value       = var.crear_pipeline ? google_service_account.terraform[0].email : null
+}
+
 output "secretos_a_cargar" {
   description = "Secretos cuyo valor real hay que cargar a mano con `gcloud secrets versions add` (vacío si crear_servicios = false)."
   value       = sort(tolist(local.secretos))

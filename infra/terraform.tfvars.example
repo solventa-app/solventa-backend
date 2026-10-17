@@ -19,6 +19,10 @@ crear_servicios = false # Cloud Run + jobs de migración + secretos (escala a ce
 # Solo si crear_presupuesto = true:
 # billing_account_id         = "XXXXXX-XXXXXX-XXXXXX"
 # presupuesto_correos_alerta = ["equipo@example.com"]
+# La moneda debe ser la de la cuenta de facturación (`gcloud billing accounts describe <ID>`); si no, GCP rechaza el presupuesto.
+# El default es 300 USD. La cuenta del equipo está en COP: 300 USD x TRM 3.194,44 (10-oct-2026) = 958.332 COP.
+# presupuesto_moneda = "COP"
+# presupuesto_monto  = 958332
 
 # Solo si crear_mongo_atlas = true (requiere cuenta/org de Atlas ya creada):
 # mongodb_atlas_org_id = "..."

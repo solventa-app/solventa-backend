@@ -56,7 +56,7 @@ HU-W05 — Recaudo (11 h):
 - **CA-W01-09:** RATING usa el perfil recién escrito por RISK (read-your-writes).
 - **CA-W01-10:** campos sensibles cifrados en reposo y en tránsito; logs sin datos personales.
 - **CA-W01-11:** el asesor comercial autenticado ve la tarjeta de nueva cotización y usa el mismo formulario y flujo que el cliente.
-- **CA-W05-01/02:** tabla de cobros por póliza con su estado; reintentar relanza el cobro con la misma clave de idempotencia.
+- **CA-W05-01/02:** tabla de cobros por póliza con su estado; reintentar relanza el cobro con el mismo `id_intento_cobro`.
 - **CA-W05-03/04/05:** captura de tarjeta con componente tokenizado del proveedor PCI-DSS; un mismo intento de cobro se ejecuta una sola vez; si la pasarela supera 700 ms el cobro queda pendiente (sin 5xx) y se reintenta con Cloud Tasks.
 - **CA-W05-06/07:** cambiar de pasarela no toca el Core; la orden de pago de indemnización (Sprint 3) actualiza el balance.
 
@@ -150,3 +150,34 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   que disparan el fallback. Verificado en vivo: con `mongo2` pausado, la lectura responde 200 en ~0.57s
   (`leido_de_secundaria:false`, sin 5xx ni cuelgue) en vez de bloquear 10s+; al reanudar `mongo2`, la
   siguiente lectura ya vuelve `leido_de_secundaria:true` sin reiniciar nada.
+- **BFF (T-W01-7, 2026-10-09):** `services/bff` implementa el contrato GraphQL con Strawberry y orquesta
+  `solicitarOferta` (AUTH → ACL Worker ×5 en paralelo → RISK → RATING). El consentimiento de AUTH es un **mock en
+  memoria** con los endpoints definitivos, a la espera de T-W01-4; `oferta(id)` devuelve `null`, `contactarAsesor` es
+  un mock y `cobros`/`reintentarCobro` responden "no disponible" hasta KAN-28 (resuelto el 2026-10-16, ver la nota de cobros en el back-office). Verificado en vivo con
+  `scripts/humo_bff.py` sobre el compose: COMPLETA ~130 ms en caliente; PRELIMINAR ~730-765 ms con Open Finance lento
+  (lo fija el corte de 700 ms del ACL; la oferta degradada excede el p95 de 400 ms de CA-W01-03, a medir con k6 en
+  PF2-2); `ErrorOferta` sin reintento tras revocar.
+- **Autenticación de usuarios (HU-M02 simple para web, 2026-10-14, trazada a KAN-24 por CA-W01-11):** usuarios
+  `CLIENTE`/`ASESOR`/`BACKOFFICE` en Postgres (base `auth`), inicio de sesión con JWT HS256 y permisos por rol en el BFF,
+  con la bandera `AUTENTICACION_USUARIOS=opcional` para no romper al frontend. **CA-W01-11 queda cumplido en el
+  backend** (el ASESOR se autentica, usa el mismo flujo y queda como actor del consentimiento); la tarjeta visual es de
+  `solventa-frontend`. **CA-W01-02 gana el actor** que le faltaba. Móvil (biometría, refresh) y API Gateway quedan
+  documentados como pendientes en `docs/autenticacion-usuarios.md`.
+- **Cobros en el back-office (HU-W05, KAN-28, 2026-10-16):** CA-W05-01 (tabla de cobros por póliza con su estado) y
+  CA-W05-02 (reintentar con la misma clave) **cumplidos en el backend**: `cobros(polizaId, estado)` y `reintentarCobro`
+  en el BFF, solo BACKOFFICE con token. Cada reintento —manual o automático— **concilia** primero con la pasarela, lo
+  que cierra un doble cobro posible cuando la pasarela cobraba pero respondía después de los 700 ms; además, los
+  intentos con el circuito abierto ya no cuentan (una caída larga dejaba cobros `pendiente` para siempre). Detalle y
+  paso a paso en `docs/cobros-conciliacion.md`. **Aviso de planificación:** exponer cobros en el BFF no era una tarea
+  del plan del sprint (las de backend de HU-W05 son T-W05-2 a 5). Estimación ~9,5 h frente a las 2 h de T-W05-5 y las
+  3 h de holgura: hay que registrarla en Jira bajo KAN-28.
+- **Ajustes de cobros (KAN-28, 2026-10-17):** `clave_idempotencia` se renombra a `id_intento_cobro` en todo el producto
+  (en la pasarela, `referencia_comercio`), con migraciones de expansión y contracción en PAYMENTS y el evento
+  `cobro.estado-cambiado` en `version: 2`. El BFF suma `crearCobro` (solo BACKOFFICE con token; el cliente envía
+  `idIntentoCobro`), y PAYMENTS responde 409 si el mismo intento llega con otros datos. **Tampoco estaba en el plan del
+  sprint:** hay que registrar estas horas en Jira bajo KAN-28.
+- **Nombre del cliente en los cobros (KAN-28, 2026-10-17):** el back-office ve a quién se le cobra. AUTH guarda el nombre
+  del CLIENTE cifrado por campo (decisión D-04 en su versión local: llave de entorno, Cloud KMS pendiente), PAYMENTS guarda
+  solo el `cliente_id` y el BFF compone `cobros.cliente { id nombre }` en lotes. **Tampoco estaba en el plan del sprint:**
+  registrar las horas en Jira bajo KAN-28. La relación póliza→cliente la declara quien ordena el cobro hasta que exista el
+  servicio de pólizas.

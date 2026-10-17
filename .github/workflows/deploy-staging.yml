@@ -1,27 +1,44 @@
 name: Deploy staging
 
-# Despliega a staging lo que cambió en `develop` (git-flow, ADR-08), SOLO después de que CI pase (workflow_run), o a mano.
+# Despliega a staging lo que llegó a `main` (un release o un hotfix, git-flow ADR-08), SOLO después de que CI pase
+# (workflow_run), o a mano desde `main`. `develop` integra pero NO despliega.
 # Flujo (ADR-07):  construir UNA vez (imagen = SHA)  ->  migrar la base (Cloud Run Job, misma imagen)
 #                  ->  revisión nueva SIN tráfico  ->  prueba de humo sobre ella  ->  promover.
 # Si algo falla antes de "promover", staging sigue sirviendo la revisión anterior.
-# Terraform NO se aplica aquí (costos y permisos): ver infra/README.md.
+# Al final, el job `informe` deja un informe en Markdown (qué quedó corriendo, URL y qué hacer) en el resumen de la
+# ejecución y como artefacto `informe-despliegue-<n>`; ver scripts/informe_despliegue.py.
+# Si el merge cambió infra/ o .github/servicios.json, ANTES de construir se aplica Terraform (etapa `infra`, ADR-09):
+# plan -> guardia contra destrucciones (scripts/revisar_plan.py) -> apply. Un servicio nuevo existe antes de desplegarlo
+# y no hay carrera entre Terraform y `gcloud run deploy`. Si `infra` falla, no se despliega nada.
 #
 # APAGADO por defecto: no hace nada hasta que existan estas variables del repositorio
 # (Settings > Secrets and variables > Actions > Variables):
 #   GCP_PROJECT_ID, GCP_WIF_PROVIDER, GCP_DEPLOY_SA   salen de `terraform output` (infra/README.md)
 #   GCP_PROTECCION_GASTO = activa                     confirma que la protección de gasto está instalada
+#   GCP_TERRAFORM_SA, GCP_BILLING_ACCOUNT_ID          solo para la etapa `infra` (outputs de Terraform y cuenta de facturación)
 #   GCP_REGION (opcional, us-central1), GCP_REGISTRY_REPO (opcional, solventa-backend)
 on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-    branches: [develop]
+    # Solo `main`. Ojo: en workflow_run GitHub toma como ref la rama por defecto (develop), no la del CI, así que los
+    # entornos `staging` e `infra-staging` aceptan `main` y `develop`; que solo `main` despliegue lo garantiza este filtro
+    # y la condición de `preparar` para la ejecución manual, no el entorno.
+    branches: [main]
   workflow_dispatch:
     inputs:
       servicios:
         description: 'Servicios a desplegar separados por coma (ej. auth,risk) o "todos"'
         required: true
         default: todos
+      infra:
+        description: 'Aplicar también Terraform (infra/) antes de desplegar'
+        type: boolean
+        default: false
+      permitir_destruir:
+        description: 'Permitir que Terraform destruya o reemplace recursos (solo si ya revisaste el plan)'
+        type: boolean
+        default: false
 
 # Un solo despliegue a la vez y nunca se corta a medias (podría dejar una migración sin su código).
 concurrency:
@@ -35,22 +52,23 @@ env:
   PROYECTO: ${{ vars.GCP_PROJECT_ID }}
   REGION: ${{ vars.GCP_REGION || 'us-central1' }}
   REPOSITORIO: ${{ vars.GCP_REGISTRY_REPO || 'solventa-backend' }}
-  # En workflow_run, github.sha es el último commit de develop, no el que validó CI: se usa el de CI.
+  # En workflow_run, github.sha es el último commit de la rama por defecto (develop), no el que validó CI: se usa el de CI.
   SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   preparar:
     if: >-
       vars.GCP_PROJECT_ID != '' && vars.GCP_PROTECCION_GASTO == 'activa' &&
-      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/develop') ||
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       servicios: ${{ steps.sel.outputs.servicios }}
       migraciones: ${{ steps.sel.outputs.migraciones }}
+      infra: ${{ steps.infra.outputs.infra }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.SHA }}
           fetch-depth: 2
@@ -66,15 +84,79 @@ jobs:
           elif [ "$EVENTO" = "workflow_dispatch" ]; then
             python scripts/seleccionar_servicios.py lista "$ENTRADA" >> "$GITHUB_OUTPUT"
           else
-            # Squash merge: el padre del commit es develop antes del PR. Con otro tipo de merge, usa "Run workflow".
+            # Merge commit de un release o hotfix en main: su primer padre es main antes del merge, así que el diff es todo
+            # lo liberado. Si entra de otra forma (p. ej. un commit directo), usa "Run workflow" desde main.
             python scripts/seleccionar_servicios.py cambios "${SHA}^" "$SHA" >> "$GITHUB_OUTPUT"
           fi
           cat "$GITHUB_OUTPUT"
+      - name: ¿Hay que aplicar Terraform?
+        id: infra
+        env:
+          EVENTO: ${{ github.event_name }}
+          ENTRADA: ${{ inputs.infra }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENTO" = "workflow_dispatch" ]; then
+            echo "infra=${ENTRADA}" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "${SHA}^" "$SHA" | grep -qE '^(infra/|\.github/servicios\.json$)'; then
+            echo "infra=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "infra=false" >> "$GITHUB_OUTPUT"
+          fi
+          grep '^infra=' "$GITHUB_OUTPUT"
+
+  infra:
+    # Aplica la infraestructura (Terraform) con una identidad distinta y más potente que la de despliegue,
+    # en su propio entorno de GitHub (`infra-staging`): ahí se pueden exigir revisores antes de cada apply.
+    needs: preparar
+    if: needs.preparar.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: infra-staging
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra
+    env:
+      TF_INPUT: "0"
+      TF_IN_AUTOMATION: "1"
+      TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+      TF_VAR_billing_account_id: ${{ vars.GCP_BILLING_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SHA }}
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_TERRAFORM_SA }}
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+      - run: terraform init
+      - name: Plan
+        run: |
+          set -euo pipefail
+          terraform plan -var-file=staging.tfvars -out=plan.bin
+          terraform show -json plan.bin > plan.json
+      - name: Revisar el plan (no se destruye nada sin decisión explícita)
+        env:
+          PERMITIR: ${{ inputs.permitir_destruir }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$PERMITIR" = "true" ]; then args+=(--permitir-destruir); fi
+          python3 ../scripts/revisar_plan.py plan.json "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Aplicar
+        run: terraform apply plan.bin
 
   construir:
     # Construir una vez: la imagen que pasó CI es la que llega a staging (etiqueta = SHA, nunca "latest").
-    needs: preparar
-    if: needs.preparar.outputs.servicios != '[]'
+    needs: [preparar, infra]
+    # `infra` se omite cuando el merge no tocó Terraform; si falló, no se construye ni se despliega nada.
+    if: ${{ !cancelled() && needs.preparar.result == 'success' && needs.preparar.outputs.servicios != '[]' && contains(fromJSON('["success","skipped"]'), needs.infra.result) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: staging
@@ -86,14 +168,14 @@ jobs:
       matrix:
         servicio: ${{ fromJSON(needs.preparar.outputs.servicios) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.SHA }}
-      - uses: google-github-actions/auth@v3
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
-      - uses: google-github-actions/setup-gcloud@v3
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
       - name: Construir y publicar la imagen (si no existe ya para este SHA)
         env:
           NOMBRE: ${{ matrix.servicio }}
@@ -126,11 +208,11 @@ jobs:
       matrix:
         servicio: ${{ fromJSON(needs.preparar.outputs.migraciones) }}
     steps:
-      - uses: google-github-actions/auth@v3
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
-      - uses: google-github-actions/setup-gcloud@v3
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
       - name: Migrar (Cloud Run Job)
         env:
           NOMBRE: ${{ matrix.servicio }}
@@ -155,11 +237,11 @@ jobs:
       matrix:
         servicio: ${{ fromJSON(needs.preparar.outputs.servicios) }}
     steps:
-      - uses: google-github-actions/auth@v3
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
-      - uses: google-github-actions/setup-gcloud@v3
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
       - name: Revisión nueva SIN tráfico
         id: rev
         env:
@@ -177,7 +259,7 @@ jobs:
       # Terraform lo registra como custom audience, que vale también para las URL con etiqueta).
       - name: Token de identidad para la prueba de humo
         id: idt
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
@@ -200,3 +282,50 @@ jobs:
         env:
           NOMBRE: ${{ matrix.servicio }}
         run: echo "- **${NOMBRE}** desplegado en staging (commit \`${SHA::7}\`)" >> "$GITHUB_STEP_SUMMARY"
+
+  informe:
+    # Informe del despliegue en Markdown: qué quedó corriendo, sus URL y qué hacer ahora. Corre SIEMPRE que `preparar` pasó,
+    # también si una etapa falló, y lee el estado REAL de Cloud Run (cada despliegue deja la etiqueta `commit-sha`), no lo
+    # previsto. Va al resumen de la ejecución y se guarda como artefacto. Si el informe mismo falla, no tumba el despliegue.
+    needs: [preparar, infra, construir, migrar, desplegar]
+    if: ${{ !cancelled() && needs.preparar.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SHA }}
+          fetch-depth: 0 # tags y ramas, para saber si falta reintegrar main en develop o poner el tag del sprint
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Estado real de Cloud Run
+        run: gcloud run services list --region "$REGION" --format=json > "$RUNNER_TEMP/cloud-run.json"
+      - name: Generar el informe
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          EVENTO: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$NEEDS" > "$RUNNER_TEMP/needs.json"
+          adelante=$(git rev-list --count origin/develop..origin/main 2>/dev/null || echo 0)
+          tags=$(git tag --points-at "$SHA" | tr '\n' ' ')
+          python3 scripts/informe_despliegue.py --sha "$SHA" --repo "$REPO" --evento "$EVENTO" \
+            --needs "$RUNNER_TEMP/needs.json" --cloud-run "$RUNNER_TEMP/cloud-run.json" \
+            --run-url "$RUN_URL" --proyecto "$PROYECTO" --region "$REGION" \
+            --main-adelante "$adelante" --tags "$tags" > informe-despliegue.md
+          cat informe-despliegue.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: informe-despliegue-${{ github.run_number }}-${{ github.run_attempt }}
+          path: informe-despliegue.md
+          retention-days: 90

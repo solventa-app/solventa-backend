@@ -1,8 +1,19 @@
 """Stub de la pasarela de pagos tokenizada.
 
 Mismos 4 modos de falla que los stubs de Open Finance/Open Data (`sano`,
-`lento`, `error`, `caido`), fijados en caliente vía `/control/modo` o por
-llamada vía query param `modo`/header `X-Modo-Simulado`. Nunca recibe ni
+`lento`, `error`, `caido`) más `rechaza` (la pasarela responde, pero rechaza el
+cobro), fijados en caliente vía `/control/modo` o por llamada vía query param
+`modo`/header `X-Modo-Simulado`.
+
+Como una pasarela real, **recuerda cada cobro por su referencia del comercio**
+(`referencia_comercio`): repetir un cobro con la misma referencia devuelve el
+resultado original sin cobrar de nuevo, y
+`GET /v1/cobros/{referencia_comercio}` permite consultarlo (conciliación,
+KAN-28). La memoria vive en el proceso: se reinicia limpia con el contenedor.
+
+Modo `lento` realista: el cobro se registra **antes** de la espera, así que si
+el ACL Worker corta a los 700 ms, el cobro igual quedó hecho en la pasarela
+(es el caso que la conciliación debe detectar para no cobrar dos veces). Nunca recibe ni
 almacena datos de tarjeta: solo un `token_medio_pago` opaco (ya tokenizado
 por el proveedor PCI-DSS), como exige CA-W05-03 y la regla de arquitectura #6.
 
@@ -23,8 +34,9 @@ from fastapi import FastAPI, Header, HTTPException
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 
-MODOS = ("sano", "lento", "error", "caido")
-Modo = Literal["sano", "lento", "error", "caido"]
+MODOS = ("sano", "lento", "error", "caido", "rechaza")
+Modo = Literal["sano", "lento", "error", "caido", "rechaza"]
+MOTIVO_RECHAZO = "fondos_insuficientes"
 
 LATENCIA_LENTA_MIN_MS = 750
 LATENCIA_LENTA_MAX_MS = 1100
@@ -37,7 +49,10 @@ class SolicitudModo(BaseModel):
 
 
 class SolicitudCobro(BaseModel):
-    clave_idempotencia: str
+    # "Comercio" es el punto de vista de la pasarela: el comercio somos nosotros.
+    # Solventa la llama `id_intento_cobro` en su propio dominio, y el adaptador del
+    # ACL Worker (`AdaptadorPasarela`) traduce entre los dos nombres.
+    referencia_comercio: str
     poliza_id: str
     monto: str
     moneda: str
@@ -47,6 +62,9 @@ class SolicitudCobro(BaseModel):
 def create_app() -> FastAPI:
     app = FastAPI(title="solventa-stub-pasarela", version="0.1.0")
     estado = {"modo": "sano"}
+    # Cobros registrados por `referencia_comercio`.
+    cobros: dict[str, dict] = {}
+    candado = asyncio.Lock()
 
     def _modo_efectivo(modo_qp: str | None, modo_header: str | None) -> str:
         modo = modo_qp or modo_header or estado["modo"]
@@ -54,15 +72,22 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=f"modo inválido: {modo}")
         return modo
 
-    async def _aplicar_modo(modo: str) -> None:
+    async def _fallar_si_corresponde(modo: str) -> None:
+        """Fallas que ocurren ANTES de procesar nada: no registran el cobro."""
         if modo == "caido":
             await asyncio.sleep(60)
         if modo == "error":
             raise HTTPException(status_code=503, detail="pasarela_no_disponible")
+
+    async def _esperar_respuesta(modo: str) -> None:
         if modo == "lento":
             await asyncio.sleep(random.uniform(LATENCIA_LENTA_MIN_MS, LATENCIA_LENTA_MAX_MS) / 1000)
         else:
             await asyncio.sleep(random.uniform(LATENCIA_SANA_MIN_MS, LATENCIA_SANA_MAX_MS) / 1000)
+
+    async def _aplicar_modo(modo: str) -> None:
+        await _fallar_si_corresponde(modo)
+        await _esperar_respuesta(modo)
 
     @app.get("/health", tags=["operacion"])
     def health() -> dict[str, str]:
@@ -84,12 +109,42 @@ def create_app() -> FastAPI:
         x_modo_simulado: str | None = Header(default=None),
     ) -> dict:
         modo_efectivo = _modo_efectivo(modo, x_modo_simulado)
-        await _aplicar_modo(modo_efectivo)
-        return {
-            "estado": "cobrado",
-            "referencia": f"pg-{uuid.uuid4()}",
-            "detalle": {"clave_idempotencia": body.clave_idempotencia},
-        }
+        await _fallar_si_corresponde(modo_efectivo)
+        async with candado:
+            resultado = cobros.get(body.referencia_comercio)
+            if resultado is None:
+                # Cobro nuevo. Se registra ANTES de la espera de `lento`: si el
+                # cliente corta, el cobro igual quedó hecho (como en la vida real).
+                if modo_efectivo == "rechaza":
+                    resultado = {
+                        "estado": "rechazado",
+                        "referencia": None,
+                        "motivo": MOTIVO_RECHAZO,
+                    }
+                else:
+                    resultado = {
+                        "estado": "cobrado",
+                        "referencia": f"pg-{uuid.uuid4()}",
+                        "motivo": None,
+                    }
+                resultado["detalle"] = {"referencia_comercio": body.referencia_comercio}
+                cobros[body.referencia_comercio] = resultado
+        await _esperar_respuesta(modo_efectivo)
+        return resultado
+
+    @app.get("/v1/cobros/{referencia_comercio}", tags=["proveedor"])
+    async def consultar_cobro(
+        referencia_comercio: str,
+        modo: str | None = None,
+        x_modo_simulado: str | None = Header(default=None),
+    ) -> dict:
+        """Conciliación: ¿la pasarela tiene un cobro con esta referencia del comercio
+        (`referencia_comercio`)? 404 si no. Obedece el modo simulado."""
+        await _aplicar_modo(_modo_efectivo(modo, x_modo_simulado))
+        resultado = cobros.get(referencia_comercio)
+        if resultado is None:
+            raise HTTPException(status_code=404, detail="cobro no encontrado")
+        return resultado
 
     @app.get("/v1/estado", tags=["proveedor"])
     async def estado_proveedor(

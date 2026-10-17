@@ -143,7 +143,7 @@ de verdad (sesión, `read_preference`, `maxTimeMS`) se verifica en vivo (ver aba
 - Variables de entorno: `MONGO_URI`, `REDIS_URL` (Cache-Aside del score, HA-LAT-001),
   `RATING_MAX_TIME_MS` (150 por defecto — cota de espera en la secundaria antes de caer a la
   primaria, D-02), `OFERTA_CACHE_TTL_SEGUNDOS` (300 por defecto — TTL del score cacheado).
-- Pruebas: `pip install -r requirements.txt -r ../../requirements-dev.txt && python -m pytest`
+- Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest`
   (desde esta carpeta). Las pruebas usan dobles de prueba (`tests/fakes.py`), no MongoDB ni Redis
   reales.
 - Imagen: `docker build -t solventa-rating .`

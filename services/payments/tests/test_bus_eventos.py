@@ -28,7 +28,7 @@ def esquema() -> dict:
 @pytest.mark.parametrize("estado", ["cobrando", "cobrado", "rechazado", "pendiente"])
 def test_evento_construido_valida_contra_el_contrato(esquema: dict, estado: str) -> None:
     evento = construir_evento_cobro_estado_cambiado(
-        cobro_id="cobro-123", poliza_id="poliza-abc", estado=estado, clave_idempotencia="clave-1"
+        cobro_id="cobro-123", poliza_id="poliza-abc", estado=estado, id_intento_cobro="clave-1"
     )
 
     jsonschema.validate(evento, esquema)
@@ -36,16 +36,16 @@ def test_evento_construido_valida_contra_el_contrato(esquema: dict, estado: str)
 
 def test_evento_lleva_los_campos_correctos() -> None:
     evento = construir_evento_cobro_estado_cambiado(
-        cobro_id="cobro-123", poliza_id="poliza-abc", estado="cobrado", clave_idempotencia="clave-1"
+        cobro_id="cobro-123", poliza_id="poliza-abc", estado="cobrado", id_intento_cobro="clave-1"
     )
 
     assert evento["tipo"] == "cobro.estado-cambiado"
-    assert evento["version"] == 1
+    assert evento["version"] == 2
     assert evento["datos"] == {
         "cobroId": "cobro-123",
         "polizaId": "poliza-abc",
         "estado": "cobrado",
-        "claveIdempotencia": "clave-1",
+        "idIntentoCobro": "clave-1",
     }
 
 
@@ -54,7 +54,7 @@ def test_bus_log_no_filtra_la_poliza_en_crudo(caplog: pytest.LogCaptureFixture) 
         cobro_id="cobro-123",
         poliza_id="poliza-muy-identificable-456",
         estado="cobrado",
-        clave_idempotencia="clave-1",
+        id_intento_cobro="clave-1",
     )
 
     with caplog.at_level(logging.INFO, logger="payments.eventos"):

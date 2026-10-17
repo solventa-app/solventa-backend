@@ -65,7 +65,7 @@ class DatosFuenteResponse(BaseModel):
 
 
 class OrdenCobroRequest(BaseModel):
-    clave_idempotencia: str
+    id_intento_cobro: str
     poliza_id: str
     monto: str
     moneda: str
@@ -77,6 +77,15 @@ class ResultadoCobroResponse(BaseModel):
     referencia: str | None
     motivo: str | None
     detalle: dict
+
+
+class ConsultaCobroResponse(BaseModel):
+    """Conciliación: `encontrado` (con el cobro), `no_encontrado` o `desconocido`."""
+
+    resultado: str
+    estado: str | None = None
+    referencia: str | None = None
+    motivo: str | None = None
 
 
 def _construir_servicios_fuentes(
@@ -209,7 +218,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
     @app.post("/pagos/cobrar", tags=["pagos"], response_model=ResultadoCobroResponse)
     def cobrar(body: OrdenCobroRequest) -> ResultadoCobroResponse:
         orden = OrdenCobro(
-            clave_idempotencia=body.clave_idempotencia,
+            id_intento_cobro=body.id_intento_cobro,
             poliza_id=body.poliza_id,
             monto=body.monto,
             moneda=body.moneda,
@@ -221,6 +230,23 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             referencia=resultado.referencia,
             motivo=resultado.motivo,
             detalle=resultado.detalle,
+        )
+
+    @app.get(
+        "/pagos/cobros/{referencia_comercio}",
+        tags=["pagos"],
+        response_model=ConsultaCobroResponse,
+    )
+    def consultar_cobro(referencia_comercio: str) -> ConsultaCobroResponse:
+        """Conciliación (KAN-28). Siempre 200: si la pasarela no responde, `desconocido`
+        (regla #4: nunca un 5xx por el proveedor)."""
+        consulta = app.state.servicio_cobro.consultar(referencia_comercio)
+        cobro = consulta.cobro
+        return ConsultaCobroResponse(
+            resultado=consulta.resultado,
+            estado=cobro.estado if cobro else None,
+            referencia=cobro.referencia if cobro else None,
+            motivo=cobro.motivo if cobro else None,
         )
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)

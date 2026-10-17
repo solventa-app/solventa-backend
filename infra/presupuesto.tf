@@ -6,8 +6,8 @@
 # nada que copiar o adaptar. Lo que sigue es un diseño propio con el patrón estándar de GCP
 # (presupuesto -> Pub/Sub -> Cloud Function), no una migración de algo ya probado.
 #
-# Qué hace: presupuesto de facturación con alertas en 50/80/100% del crédito (var.presupuesto_monto_usd,
-# default USD 300) + una Cloud Function (infra/funciones/frenar-gasto/) que, al recibir la alerta del
+# Qué hace: presupuesto de facturación con alertas en 50/80/100% del crédito (var.presupuesto_monto en
+# var.presupuesto_moneda, default 300 USD; la moneda debe ser la de la cuenta de facturación) + una Cloud Function (infra/funciones/frenar-gasto/) que, al recibir la alerta del
 # 100%, bloquea el tráfico de entrada de TODOS los servicios de Cloud Run del proyecto.
 #
 # Límites honestos de este diseño (no es una garantía absoluta, ver regla 2 de CLAUDE.md):
@@ -23,6 +23,7 @@
 resource "google_project_service" "presupuesto_apis" {
   for_each = var.crear_presupuesto ? toset([
     "billingbudgets.googleapis.com",
+    "cloudbilling.googleapis.com", # leer/asignar la política IAM de la cuenta de facturación (cicd.tf) pasa por esta API
     "cloudfunctions.googleapis.com",
     "cloudbuild.googleapis.com",
     "eventarc.googleapis.com",
@@ -54,18 +55,21 @@ resource "google_monitoring_notification_channel" "correo" {
 }
 
 resource "google_billing_budget" "presupuesto" {
+  provider        = google.facturacion # proyecto de cuota explícito, ver versions.tf
   count           = var.crear_presupuesto ? 1 : 0
   billing_account = var.billing_account_id
   display_name    = "solventa-backend-staging"
+  depends_on      = [google_project_service.presupuesto_apis]
 
   budget_filter {
-    projects = ["projects/${var.project_id}"]
+    # La API guarda el filtro con el NÚMERO de proyecto; con el ID, cada plan veía una diferencia.
+    projects = ["projects/${data.google_project.actual.number}"]
   }
 
   amount {
     specified_amount {
-      currency_code = "USD"
-      units         = tostring(var.presupuesto_monto_usd)
+      currency_code = var.presupuesto_moneda
+      units         = tostring(var.presupuesto_monto)
     }
   }
 
@@ -129,6 +133,43 @@ resource "google_project_iam_member" "frenar_gasto_run_admin" {
   member  = "serviceAccount:${google_service_account.frenar_gasto[0].email}"
 }
 
+# En proyectos nuevos la cuenta de Compute por defecto ya no trae roles. Cloud Functions la usa para construir y
+# para entregar el evento de Pub/Sub, y sin ellos el build falla ("missing permission on the build service
+# account"). Se usan cuentas propias con el rol mínimo en vez de ampliar la cuenta por defecto.
+resource "google_service_account" "frenar_gasto_build" {
+  count        = var.crear_presupuesto ? 1 : 0
+  project      = var.project_id
+  account_id   = "frenar-gasto-build"
+  display_name = "Build de la función frenar-gasto (Cloud Build)"
+}
+
+resource "google_project_iam_member" "frenar_gasto_build" {
+  count   = var.crear_presupuesto ? 1 : 0
+  project = var.project_id
+  role    = "roles/cloudbuild.builds.builder"
+  member  = "serviceAccount:${google_service_account.frenar_gasto_build[0].email}"
+}
+
+# El build lee el código desde un bucket que Cloud Functions crea y administra (no es de Terraform) y exige
+# Storage Object Viewer sobre él para la cuenta de build; `cloudbuild.builds.builder` no lo cubre. Se da sobre ESE
+# bucket y no sobre el proyecto: a nivel de proyecto también leería el bucket del estado de Terraform, que contiene
+# secretos. El bucket nace con el primer intento de desplegar una función 2ª generación en la región: en un proyecto
+# nuevo el primer `apply` falla aquí (y deja la función tainted) y el siguiente funciona.
+resource "google_storage_bucket_iam_member" "frenar_gasto_build_fuente" {
+  count  = var.crear_presupuesto ? 1 : 0
+  bucket = "gcf-v2-sources-${data.google_project.actual.number}-${var.region}"
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.frenar_gasto_build[0].email}"
+}
+
+# Recibir el evento del topic (Eventarc). run.admin ya cubre invocar la función.
+resource "google_project_iam_member" "frenar_gasto_eventos" {
+  count   = var.crear_presupuesto ? 1 : 0
+  project = var.project_id
+  role    = "roles/eventarc.eventReceiver"
+  member  = "serviceAccount:${google_service_account.frenar_gasto[0].email}"
+}
+
 resource "google_cloudfunctions2_function" "frenar_gasto" {
   count    = var.crear_presupuesto ? 1 : 0
   project  = var.project_id
@@ -136,8 +177,9 @@ resource "google_cloudfunctions2_function" "frenar_gasto" {
   location = var.region
 
   build_config {
-    runtime     = "python312"
-    entry_point = "frenar_gasto"
+    runtime         = "python312"
+    entry_point     = "frenar_gasto"
+    service_account = google_service_account.frenar_gasto_build[0].id
     source {
       storage_source {
         bucket = google_storage_bucket.fuente_funciones[0].name
@@ -155,11 +197,17 @@ resource "google_cloudfunctions2_function" "frenar_gasto" {
   }
 
   event_trigger {
-    trigger_region = var.region
-    event_type     = "google.cloud.pubsub.topic.v1.messagePublished"
-    pubsub_topic   = google_pubsub_topic.alertas_presupuesto[0].id
-    retry_policy   = "RETRY_POLICY_DO_NOT_RETRY"
+    trigger_region        = var.region
+    event_type            = "google.cloud.pubsub.topic.v1.messagePublished"
+    pubsub_topic          = google_pubsub_topic.alertas_presupuesto[0].id
+    retry_policy          = "RETRY_POLICY_DO_NOT_RETRY"
+    service_account_email = google_service_account.frenar_gasto[0].email
   }
 
-  depends_on = [google_project_service.presupuesto_apis]
+  depends_on = [
+    google_project_service.presupuesto_apis,
+    google_project_iam_member.frenar_gasto_build,
+    google_storage_bucket_iam_member.frenar_gasto_build_fuente,
+    google_project_iam_member.frenar_gasto_eventos,
+  ]
 }
