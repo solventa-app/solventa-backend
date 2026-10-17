@@ -52,10 +52,9 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   lo expone. Si AUTH no responde, el cobro llega con `cliente.nombre` en `null`, nunca un error.
 - Afecta al frontend: sí (la tabla de cobros puede mostrar el cliente; el alta de CLIENTE puede pedir el nombre).
 
-## v0.6 — 2026-10-17
+## v0.5.1 — 2026-10-17
 
-- KAN-28: sin cambio de comportamiento. `CrearCobroInput.clienteId` y `CrearUsuarioInput.nombre` (opcionales desde la
-  v0.5) declaran `= null` de forma explícita, que es lo que ya imprime el BFF (Strawberry) para un campo opcional sin valor.
-  Para un cliente es lo mismo que omitirlos; el contrato no coincidía con el BFF y la prueba de equivalencia, que con
-  `graphql-core` 3.3 compara los valores por defecto de los campos de entrada, fallaba. Solo cambios aditivos.
-- Afecta al frontend: no (omitir el campo o mandar `null` sigue valiendo).
+- KAN-176: `CrearCobroInput.clienteId` y `CrearUsuarioInput.nombre` declaran su valor por defecto (`= null`), que el BFF
+  ya exponía. Sin cambio de comportamiento: siguen siendo opcionales. Lo detectó la prueba de equivalencia
+  esquema↔contrato al alinear `graphql-core` 3.3.0 en el CI.
+- Afecta al frontend: no.
