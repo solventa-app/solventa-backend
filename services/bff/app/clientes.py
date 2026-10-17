@@ -37,7 +37,11 @@ class PuertoAuth(Protocol):
 
     async def listar_usuarios(self, rol: str | None) -> list[dict]: ...
 
-    async def crear_usuario(self, usuario: str, clave: str, rol: str) -> dict: ...
+    async def crear_usuario(
+        self, usuario: str, clave: str, rol: str, nombre: str | None = None
+    ) -> dict: ...
+
+    async def nombres_de_clientes(self, ids: list[str]) -> dict[str, str]: ...
 
     async def cambiar_rol_usuario(self, usuario_id: str, rol: str) -> dict | None: ...
 
@@ -146,10 +150,17 @@ class ClienteAuthHttp:
         ruta = "/usuarios" if rol is None else f"/usuarios?rol={rol}"
         return _json_o_error(await _pedir(self._cliente, "GET", ruta))
 
-    async def crear_usuario(self, usuario: str, clave: str, rol: str) -> dict:
-        respuesta = await _pedir(
-            self._cliente, "POST", "/usuarios", {"usuario": usuario, "clave": clave, "rol": rol}
-        )
+    async def crear_usuario(
+        self, usuario: str, clave: str, rol: str, nombre: str | None = None
+    ) -> dict:
+        # El nombre (dato personal) y la clave viajan solo en el cuerpo, nunca en la URL.
+        cuerpo = {"usuario": usuario, "clave": clave, "rol": rol, "nombre": nombre}
+        return _json_o_error(await _pedir(self._cliente, "POST", "/usuarios", cuerpo))
+
+    async def nombres_de_clientes(self, ids: list[str]) -> dict[str, str]:
+        """`{id: nombre}` de los CLIENTE pedidos (dato personal: nunca se loguea). Los ids
+        van en el cuerpo, no en la URL; AUTH admite hasta 200 por llamada."""
+        respuesta = await _pedir(self._cliente, "POST", "/usuarios/nombres", {"ids": ids})
         return _json_o_error(respuesta)
 
     async def cambiar_rol_usuario(self, usuario_id: str, rol: str) -> dict | None:
