@@ -214,8 +214,7 @@ class CrearCobroInput:
     token_medio_pago: str  # token del proveedor PCI-DSS; nunca datos de tarjeta
     # El CLIENTE a quien se le cobra. Mientras no exista el servicio de pólizas, nada valida
     # que la póliza sea suya.
-    # UNSET (no `None`): así el esquema no publica `= null` y sigue igual al contrato.
-    cliente_id: strawberry.ID | None = strawberry.UNSET
+    cliente_id: strawberry.ID | None = None
 
 
 @strawberry.type
@@ -285,9 +284,7 @@ class CrearUsuarioInput:
     usuario: str
     clave: str
     rol: RolUsuario
-    # Solo CLIENTE; AUTH lo guarda cifrado y no lo devuelve.
-    # UNSET: igual que el contrato (sin `= null`).
-    nombre: str | None = strawberry.UNSET
+    nombre: str | None = None  # solo CLIENTE; AUTH lo guarda cifrado y no lo devuelve
 
 
 # ---------- Traducción desde los servicios ----------
@@ -408,6 +405,14 @@ async def _nombres_de_clientes(info: Info, cobros: list[dict]) -> dict[str, str]
     return nombres
 
 
+# Cómo se nombra cada canal en el resumen de `contactarAsesor` (CA-W01-07).
+RESUMEN_CANAL = {
+    CanalContacto.LLAMAR: "llamada",
+    CanalContacto.CHAT: "chat",
+    CanalContacto.AGENDAR: "llamada agendada",
+}
+
+
 @strawberry.type
 class Query:
     @strawberry.field
@@ -509,11 +514,13 @@ class Mutation:
         self, info: Info, oferta_id: strawberry.ID, canal: CanalContacto
     ) -> ConfirmacionContacto:
         exigir_rol(info, *CLIENTE_O_ASESOR)
-        # MOCK (CA-W01-07): no hay servicio de asesores todavía; solo confirma.
+        # MOCK (CA-W01-07): no hay servicio de asesores todavía; solo confirma. El resumen no
+        # lleva el id de la oferta: no le dice nada al cliente y llega vacío cuando se pide un
+        # asesor desde la pantalla de error (W01-03c), donde no hubo oferta.
         return ConfirmacionContacto(
             canal=canal,
-            resumen=f"Recibimos tu solicitud ({canal.value}) sobre la oferta {oferta_id}. "
-            "Un asesor te contactará.",
+            resumen=f"Recibimos tu solicitud de {RESUMEN_CANAL[canal]}. "
+            "Un asesor te contactará para continuar tu cotización.",
         )
 
     @strawberry.mutation
@@ -576,10 +583,7 @@ class Mutation:
         exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
         try:
             datos = await _auth(info).crear_usuario(
-                entrada.usuario,
-                entrada.clave,
-                entrada.rol.value,
-                entrada.nombre if isinstance(entrada.nombre, str) else None,
+                entrada.usuario, entrada.clave, entrada.rol.value, entrada.nombre
             )
         except SolicitudInvalida as error:
             return ErrorUsuario(mensaje=str(error))
