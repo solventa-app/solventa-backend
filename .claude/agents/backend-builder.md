@@ -22,7 +22,7 @@ Eres responsable de **construir el código de backend** de Solventa en este repo
 - Escritor único: no escribas en almacenes de otro servicio. RATING solo lee.
 - Datos personales: cifrado de campo antes de persistir; **nunca** en logs ni etiquetas de métricas; cero datos de tarjeta.
 - Configuración por variables de entorno (los nombres están en `docker-compose.yml`); sin secretos en el código.
-- Agrega dependencias a `requirements.txt` del servicio con versión fija, solo las que uses.
+- Agrega dependencias a `requirements.in` del servicio con versión fija, solo las que uses, y regenera el `requirements.txt` (con hashes) con `scripts/compilar-requirements.sh <servicio>`; no lo edites a mano.
 - **Cambios de esquema = migración** (ADR-07), en el servicio dueño del almacén (`auth`, `payments`, `risk`; RATING no migra). Nunca crees tablas, colecciones ni índices desde el código de la aplicación. Postgres: `alembic revision -m "..." --rev-id NNNN` con `upgrade` y `downgrade` en SQL. MongoDB: módulo en `migrations/versiones/`, idempotente. Siempre compatibles hacia atrás (agregar sí; renombrar/borrar en dos despliegues).
 - Escribe pruebas junto al código (`tests/`): unitarias del dominio y pruebas de contrato de cada adaptador. Mira primero las de quien venga antes.
 

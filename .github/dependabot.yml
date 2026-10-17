@@ -11,7 +11,7 @@ updates:
   - { package-ecosystem: pip, directory: /stubs/open-finance, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /stubs/open-data, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /stubs/pasarela, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /, target-branch: develop, schedule: { interval: weekly } }  # requirements-dev.txt
+  - { package-ecosystem: pip, directory: /, target-branch: develop, schedule: { interval: weekly } }  # requirements-dev.in / .txt
 
   # --- Imágenes base de Docker ---
   - { package-ecosystem: docker, directory: /services/bff, target-branch: develop, schedule: { interval: weekly } }

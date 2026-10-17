@@ -58,7 +58,7 @@ los llama el BFF, que ya validó el token y el rol.
 ## Operación
 
 - Puerto local: `8001`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.
-- Pruebas: `pip install -r requirements.txt -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta).
+- Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta).
 - Imagen: `docker build -t solventa-auth .`
 
 ## Migraciones
