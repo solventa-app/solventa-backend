@@ -13,7 +13,8 @@ from app.main import create_app
 
 COBROS = """query($poliza: ID, $estado: EstadoCobro) {
   cobros(polizaId: $poliza, estado: $estado) {
-    id polizaId estado monto { valor moneda } actualizadoEn motivo intentos reintentosRestantes
+    id polizaId estado monto { valor moneda } actualizadoEn motivo intentos
+    reintentosRestantes idTransaccion
   }
 }"""
 REINTENTAR = """mutation($id: ID!) {
@@ -69,6 +70,7 @@ def test_lista_cobros_con_el_formato_del_contrato() -> None:
             "motivo": "pasarela_no_disponible",
             "intentos": 1,
             "reintentosRestantes": 3,
+            "idTransaccion": None,
         }
     ]
 
@@ -97,6 +99,14 @@ def test_reintentar_un_rechazado_lo_cobra_y_descuenta_un_reintento() -> None:
 
     assert cobro["estado"] == "COBRADO"
     assert cobro["reintentosRestantes"] == 2
+
+
+def test_el_id_de_transaccion_es_la_referencia_de_la_pasarela() -> None:
+    cobrado = cobro_de_payments("c-1", "POL-1", "cobrado", referencia="pg-123")
+    with _cliente(PaymentsFalso([cobrado])) as client:
+        cobros = _post(client, COBROS, {})["data"]["cobros"]
+
+    assert cobros[0]["idTransaccion"] == "pg-123"
 
 
 def test_reintentar_un_rechazado_sin_reintentos_da_un_error_claro() -> None:

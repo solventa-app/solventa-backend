@@ -127,6 +127,7 @@ type Cobro {
   actualizadoEn: DateTime!
   motivo: String # por qué quedó pendiente o rechazado (p. ej. pasarela_no_disponible)
   intentos: Int # cuántas veces se intentó cobrar
+  idTransaccion: String # referencia que devolvió la pasarela; null mientras no hay cobro hecho
   # Reintentos manuales que le quedan a un cobro RECHAZADO (máximo 3, prototipo W05-01).
   # En 0, `reintentarCobro` responde error: requiere otro medio de pago.
   reintentosRestantes: Int

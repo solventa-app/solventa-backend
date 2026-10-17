@@ -62,7 +62,8 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 ## v0.6 — 2026-10-17
 
 - KAN-28 (HU-W05, CA-W05-02): un cobro `RECHAZADO` se puede reintentar a mano **hasta 3 veces** (decisión del equipo
-  según el prototipo W05-01). `Cobro` suma `reintentosRestantes` (opcional). Solo cambios aditivos en el esquema.
+  según el prototipo W05-01). `Cobro` suma `reintentosRestantes` e `idTransaccion` (la referencia que devolvió la pasarela, columna "ID de transacción" de W05-01),
+  ambos opcionales. Solo cambios aditivos en el esquema.
 - Cambio de comportamiento: `reintentarCobro` sobre un `RECHAZADO` ya no responde "requiere otro medio de pago" de
   entrada: hace un intento nuevo ante la pasarela (con su propia referencia) y devuelve el cobro. Solo al agotar los 3
   responde el error "Se agotaron los 3 reintentos: el cobro requiere otro medio de pago.".
