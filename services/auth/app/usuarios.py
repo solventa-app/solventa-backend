@@ -7,10 +7,11 @@ Capa simple, sin puertos y adaptadores formales (regla #3): el `Protocol` existe
 para probar con dobles sin levantar PostgreSQL.
 
 Datos personales: el alias de acceso **no puede ser un correo ni un documento**
-(`validar_alias`). El único dato personal que guarda la tabla es el **nombre del CLIENTE**
-(KAN-28), y va **cifrado por campo** (`app/cifrado.py`, SEG-002): nunca en claro en la base,
-nunca en los logs y solo sale por `nombres`, que el BFF consulta para el BACKOFFICE. La clave
-se guarda solo como hash argon2id y nunca sale de este servicio."""
+(`validar_alias`). El único dato personal que guarda la tabla es el **nombre** (KAN-28), de
+cualquier rol, **cifrado por campo** (`app/cifrado.py`, SEG-002): nunca en claro en la base ni
+en los logs. Solo sale por dos caminos: `nombre_de` (el propio usuario, al iniciar sesión o
+consultar `yo`) y `nombres` (los CLIENTE de una lista, para el BACKOFFICE). La clave se guarda
+solo como hash argon2id y nunca sale de este servicio."""
 
 import re
 import unicodedata
@@ -38,7 +39,7 @@ MAXIMO_IDS_POR_CONSULTA = 200
 
 # Columnas que pueden salir del servicio: nunca el hash ni el estado del bloqueo.
 _PUBLICAS = "id, usuario, rol, estado, creado_en"
-_TODAS = f"{_PUBLICAS}, hash_clave, intentos_fallidos, bloqueado_hasta"
+_TODAS = f"{_PUBLICAS}, hash_clave, intentos_fallidos, bloqueado_hasta, nombre_cifrado"
 
 
 class DatoInvalido(Exception):
@@ -74,10 +75,8 @@ def validar_rol(rol: str) -> None:
         raise DatoInvalido(f"Rol desconocido: {rol}.")
 
 
-def normalizar_nombre(nombre: str, rol: str) -> str:
-    """Devuelve el nombre sin espacios sobrantes. Solo los CLIENTE tienen nombre."""
-    if rol != "CLIENTE":
-        raise DatoInvalido("Solo los clientes tienen nombre.")
+def normalizar_nombre(nombre: str) -> str:
+    """Devuelve el nombre sin espacios sobrantes. Cualquier rol puede tener nombre."""
     limpio = " ".join(nombre.split())
     if not NOMBRE_LONGITUD_MINIMA <= len(limpio) <= NOMBRE_LONGITUD_MAXIMA:
         raise DatoInvalido(
@@ -265,7 +264,7 @@ class ServicioUsuarios:
         usuario_id = str(uuid.uuid4())
         nombre_cifrado = None
         if nombre is not None:
-            limpio = normalizar_nombre(nombre, rol)
+            limpio = normalizar_nombre(nombre)
             if self._cifrador is None:
                 raise DatoInvalido("Este servicio no está configurado para guardar nombres.")
             nombre_cifrado = self._cifrador.cifrar(limpio, usuario_id)
@@ -279,6 +278,18 @@ class ServicioUsuarios:
     def obtener(self, usuario_id: str) -> dict | None:
         fila = self._repositorio.obtener(usuario_id)
         return publico(fila) if fila else None
+
+    def nombre_de(self, usuario_id: str) -> str | None:
+        """El nombre del propio usuario, para mostrárselo a él al iniciar sesión (`yo`). Nunca
+        se usa para otro usuario: el BFF solo lo pide con el id del token. `None` si no tiene
+        nombre o no se puede descifrar."""
+        fila = self._repositorio.obtener(usuario_id)
+        if self._cifrador is None or not fila or not fila.get("nombre_cifrado"):
+            return None
+        try:
+            return self._cifrador.descifrar(fila["nombre_cifrado"], usuario_id)
+        except ErrorDeCifrado:
+            return None
 
     def nombres(self, ids: list[str]) -> dict[str, str]:
         """Nombres en claro de los CLIENTE pedidos. Un nombre que no se pueda descifrar se

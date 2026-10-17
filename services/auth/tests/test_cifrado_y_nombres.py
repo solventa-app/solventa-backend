@@ -2,6 +2,7 @@
 
 import logging
 
+import jwt
 import pytest
 from fakes import CIFRADOR_PRUEBAS, HASHER_RAPIDO, RepositorioUsuariosMemoria
 from fastapi.testclient import TestClient
@@ -100,12 +101,35 @@ def test_los_espacios_sobrantes_se_limpian() -> None:
     assert servicio.nombres([usuario["id"]]) == {usuario["id"]: "Ana Pérez"}
 
 
-@pytest.mark.parametrize("rol", ["ASESOR", "BACKOFFICE"])
-def test_solo_los_clientes_tienen_nombre(rol: str) -> None:
+@pytest.mark.parametrize("rol", ["CLIENTE", "ASESOR", "BACKOFFICE"])
+def test_cualquier_rol_puede_tener_nombre(rol: str) -> None:
     servicio, _ = _servicio()
+    usuario = servicio.crear("persona.uno", CLAVE, rol, NOMBRE)
 
-    with pytest.raises(DatoInvalido, match="Solo los clientes"):
-        servicio.crear("persona.uno", CLAVE, rol, NOMBRE)
+    assert servicio.nombre_de(usuario["id"]) == NOMBRE
+
+
+def test_nombre_de_un_usuario_sin_nombre_es_none() -> None:
+    servicio, _ = _servicio()
+    usuario = servicio.crear("asesor.uno", CLAVE, "ASESOR")
+
+    assert servicio.nombre_de(usuario["id"]) is None
+    assert servicio.nombre_de("no-existe") is None
+
+
+def test_nombre_de_con_dato_danado_es_none() -> None:
+    servicio, repositorio = _servicio()
+    usuario = servicio.crear("asesor.uno", CLAVE, "ASESOR", NOMBRE)
+    repositorio.filas[usuario["id"]]["nombre_cifrado"] = "dañado"
+
+    assert servicio.nombre_de(usuario["id"]) is None
+
+
+def test_nombres_por_lista_sigue_siendo_solo_de_clientes() -> None:
+    servicio, _ = _servicio()
+    asesor = servicio.crear("asesor.uno", CLAVE, "ASESOR", NOMBRE)
+
+    assert servicio.nombres([asesor["id"]]) == {}
 
 
 @pytest.mark.parametrize("nombre", ["", " ", "A", "x" * 101, "Ana\x00Pérez", "Ana\nPérez\x07"])
@@ -171,21 +195,39 @@ def test_crear_cliente_con_nombre_y_consultarlo_por_ids() -> None:
             json={"usuario": "cliente.uno", "clave": CLAVE, "rol": "CLIENTE", "nombre": NOMBRE},
         )
         assert creado.status_code == 200
-        assert "nombre" not in creado.json()
+        assert creado.json()["nombre"] is None
         r = client.post("/usuarios/nombres", json={"ids": [creado.json()["id"]]})
 
     assert r.status_code == 200
     assert r.json() == {creado.json()["id"]: NOMBRE}
 
 
-def test_http_nombre_de_asesor_da_400() -> None:
+def test_http_el_login_y_el_get_traen_el_nombre_propio_pero_la_lista_no() -> None:
     with _http() as client:
-        r = client.post(
+        creado = client.post(
+            "/usuarios",
+            json={"usuario": "asesor.uno", "clave": CLAVE, "rol": "ASESOR", "nombre": NOMBRE},
+        ).json()
+        sesion = client.post("/sesiones", json={"usuario": "asesor.uno", "clave": CLAVE}).json()
+        propio = client.get(f"/usuarios/{creado['id']}").json()
+        lista = client.get("/usuarios").json()
+
+    assert creado["nombre"] is None  # al crear no se devuelve
+    assert sesion["usuario"]["nombre"] == NOMBRE
+    assert propio["nombre"] == NOMBRE
+    assert all(u["nombre"] is None for u in lista)
+
+
+def test_http_el_nombre_no_viaja_en_el_jwt() -> None:
+    with _http() as client:
+        client.post(
             "/usuarios",
             json={"usuario": "asesor.uno", "clave": CLAVE, "rol": "ASESOR", "nombre": NOMBRE},
         )
+        sesion = client.post("/sesiones", json={"usuario": "asesor.uno", "clave": CLAVE}).json()
 
-    assert r.status_code == 400
+    claims = jwt.decode(sesion["token"], options={"verify_signature": False})
+    assert "nombre" not in claims and NOMBRE not in sesion["token"]
 
 
 def test_http_demasiados_ids_da_400() -> None:
