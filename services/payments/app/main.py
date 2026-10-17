@@ -58,6 +58,9 @@ class CobroResponse(BaseModel):
     referencia: str | None = None
     motivo: str | None = None
     intentos: int
+    # Reintentos manuales de un rechazado ya hechos y los que quedan (CA-W05-02).
+    reintentos_rechazo: int = 0
+    reintentos_rechazo_restantes: int = 0
     creado_en: datetime | None = None
     actualizado_en: datetime | None = None
 
@@ -103,7 +106,9 @@ def create_app(
             repositorio = RepositorioCobrosPostgres(pool)
             cliente_acl = ClienteAcl(config.acl_url, config.acl_timeout_segundos)
             bus = BusEventosLog()
-            app.state.servicio_cobros = ServicioCobros(repositorio, cliente_acl, bus)
+            app.state.servicio_cobros = ServicioCobros(
+                repositorio, cliente_acl, bus, config.reintentos_rechazo_maximo
+            )
             app.state.reintento = ReintentoCobrosPendientes(
                 repositorio,
                 cliente_acl,
@@ -127,6 +132,10 @@ def create_app(
 
     app = FastAPI(title="solventa-payments", version="0.1.0", lifespan=lifespan)
 
+    def _respuesta(cobro: dict) -> CobroResponse:
+        restantes = app.state.servicio_cobros.reintentos_restantes(cobro)
+        return CobroResponse(**cobro, reintentos_rechazo_restantes=restantes)
+
     @app.get("/health", tags=["operacion"])
     def health() -> dict[str, str]:
         return {"servicio": "payments", "estado": "ok"}
@@ -142,13 +151,13 @@ def create_app(
             cobro = app.state.servicio_cobros.crear_cobro(body.model_dump())
         except IntentoCobroEnConflicto as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
-        return CobroResponse(**cobro)
+        return _respuesta(cobro)
 
     @app.post("/cobros/buscar", tags=["cobros"], response_model=list[CobroResponse])
     def buscar_cobros(filtro: FiltroCobros) -> list[CobroResponse]:
         """Tabla del back-office (CA-W05-01): filtros opcionales por póliza y estado."""
         cobros = app.state.servicio_cobros.listar(filtro.poliza_id, filtro.estado)
-        return [CobroResponse(**c) for c in cobros]
+        return [_respuesta(c) for c in cobros]
 
     @app.get(
         "/cobros/{cobro_id}",
@@ -160,7 +169,7 @@ def create_app(
         cobro = app.state.servicio_cobros.obtener(cobro_id)
         if cobro is None:
             raise HTTPException(status_code=404, detail="cobro no encontrado")
-        return CobroResponse(**cobro)
+        return _respuesta(cobro)
 
     @app.post(
         "/cobros/{cobro_id}/reintentar",
@@ -169,15 +178,16 @@ def create_app(
         responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
     )
     def reintentar_cobro(cobro_id: str) -> CobroResponse:
-        """CA-W05-02: concilia con la pasarela y, si hace falta, cobra con la misma clave.
-        Nunca un 5xx por la pasarela: si no responde, el cobro sigue `pendiente`."""
+        """CA-W05-02: un `pendiente` se concilia y, si hace falta, se cobra con la misma clave;
+        un `rechazado` se vuelve a cobrar con una referencia nueva, hasta 3 veces (409 al
+        agotarlas). Nunca un 5xx por la pasarela: si no responde, el cobro sigue `pendiente`."""
         try:
             cobro = app.state.servicio_cobros.reintentar(cobro_id)
         except NoReintentable as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         if cobro is None:
             raise HTTPException(status_code=404, detail="cobro no encontrado")
-        return CobroResponse(**cobro)
+        return _respuesta(cobro)
 
     @app.get("/polizas/{poliza_id}/balance", tags=["cobros"], response_model=BalanceResponse)
     def balance(poliza_id: str) -> BalanceResponse:

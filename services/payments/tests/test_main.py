@@ -183,10 +183,27 @@ def test_post_reintentar_resuelve_un_pendiente() -> None:
     assert r.json()["id_intento_cobro"] == ORDEN["id_intento_cobro"]
 
 
-def test_post_reintentar_un_rechazado_responde_409_con_mensaje() -> None:
+def test_post_reintentar_un_rechazado_lo_vuelve_a_cobrar_y_dice_cuantos_quedan() -> None:
+    rechazo = ResultadoCobro(estado="rechazado", motivo="fondos_insuficientes")
+    cliente, _ = _cliente(ClienteAclFalso([rechazo, ResultadoCobro(estado="cobrado")]))
+    with cliente as client:
+        creado = client.post("/cobros", json=ORDEN).json()
+        r = client.post(f"/cobros/{creado['id']}/reintentar")
+
+    assert creado["estado"] == "rechazado"
+    assert creado["reintentos_rechazo_restantes"] == 3
+    assert r.status_code == 200
+    assert r.json()["estado"] == "cobrado"
+    assert r.json()["reintentos_rechazo"] == 1
+    assert r.json()["reintentos_rechazo_restantes"] == 2
+
+
+def test_post_reintentar_un_rechazado_sin_reintentos_responde_409_con_mensaje() -> None:
     cliente, _ = _cliente(ClienteAclFalso([ResultadoCobro(estado="rechazado", motivo="fondos")]))
     with cliente as client:
         creado = client.post("/cobros", json=ORDEN).json()
+        for _ in range(3):
+            assert client.post(f"/cobros/{creado['id']}/reintentar").status_code == 200
         r = client.post(f"/cobros/{creado['id']}/reintentar")
 
     assert r.status_code == 409

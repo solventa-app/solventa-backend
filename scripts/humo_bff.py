@@ -255,6 +255,39 @@ def main() -> int:
         _fallar(f"el reintento debía conciliar con la pasarela sin cobrar de nuevo: {final}")
     print(f"   -> cobrado con la referencia original de la pasarela ({referencia_pasarela[:11]}…)")
 
+    print("7. cobro rechazado y reintento manual (hasta 3, prototipo W05-01)")
+    clave_rechazo = "rechazo-humo-" + "".join(random.choices(string.ascii_lowercase, k=8))
+    _http(f"{STUB_PASARELA}/control/modo", {"modo": "rechaza"})
+    try:
+        rechazado = _graphql(
+            "mutation($e: CrearCobroInput!) { crearCobro(entrada: $e) { "
+            "__typename ... on Cobro { id estado reintentosRestantes } "
+            "... on ErrorCobro { mensaje } } }",
+            {
+                "e": {
+                    "idIntentoCobro": clave_rechazo,
+                    "polizaId": "POL-HUMO-2",
+                    "monto": {"valor": "90000.00", "moneda": "COP"},
+                    "tokenMedioPago": "tok_humo",
+                }
+            },
+            token_backoffice,
+        )["crearCobro"]
+    finally:
+        _http(f"{STUB_PASARELA}/control/modo", {"modo": "sano"})
+    if rechazado.get("estado") != "RECHAZADO" or rechazado.get("reintentosRestantes") != 3:
+        _fallar(f"con la pasarela en `rechaza` el cobro debía quedar rechazado con 3: {rechazado}")
+    reintento = _graphql(
+        "mutation($id: ID!) { reintentarCobro(cobroId: $id) { estado reintentosRestantes } }",
+        {"id": rechazado["id"]},
+        token_backoffice,
+    )["reintentarCobro"]
+    if reintento != {"estado": "COBRADO", "reintentosRestantes": 2}:
+        _fallar(f"el reintento del rechazado debía cobrar y dejar 2: {reintento}")
+    # La pasarela tiene el reintento con su propia referencia (si no, esto da 404).
+    _http(f"{STUB_PASARELA}/v1/cobros/{clave_rechazo}-r1")
+    print("   -> rechazado, reintentado con una referencia nueva y cobrado (quedan 2)")
+
     print("OK: humo del BFF en verde")
     return 0
 

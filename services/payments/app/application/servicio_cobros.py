@@ -11,16 +11,22 @@ from typing import Any, Protocol
 
 from app.application.bus_eventos import PuertoBusEventos, construir_evento_cobro_estado_cambiado
 from app.application.cliente_acl import OrdenCobro, PuertoClienteAcl
-from app.application.conciliacion import procesar_reintento
+from app.application.conciliacion import procesar_reintento, referencia_ante_pasarela
 from app.application.identificadores import id_opaco
 
 logger = logging.getLogger("payments.cobros")
 
-MENSAJE_RECHAZADO = "El cobro fue rechazado por la pasarela: requiere otro medio de pago."
+# Reintentos manuales de un `rechazado` por defecto (el número del prototipo W05-01).
+REINTENTOS_RECHAZO_MAXIMO = 3
+
+
+def mensaje_reintentos_agotados(maximo: int) -> str:
+    return f"Se agotaron los {maximo} reintentos: el cobro requiere otro medio de pago."
 
 
 class NoReintentable(Exception):
-    """El cobro no se puede reintentar (hoy: fue rechazado). Mensaje apto para el usuario."""
+    """El cobro no se puede reintentar (hoy: rechazado y sin reintentos). Mensaje apto para
+    el usuario."""
 
 
 MENSAJE_CONFLICTO = (
@@ -60,6 +66,8 @@ class RepositorioCobros(Protocol):
         self, cobro_id: str, estado: str, referencia: str | None, motivo: str | None
     ) -> dict: ...
 
+    def iniciar_reintento_rechazo(self, cobro_id: str, maximo: int) -> dict | None: ...
+
     def listar_pendientes(self, max_intentos: int) -> list[dict]: ...
 
     def obtener(self, cobro_id: str) -> dict | None: ...
@@ -75,10 +83,12 @@ class ServicioCobros:
         repositorio: RepositorioCobros,
         cliente_acl: PuertoClienteAcl,
         bus: PuertoBusEventos,
+        reintentos_rechazo_maximo: int = REINTENTOS_RECHAZO_MAXIMO,
     ) -> None:
         self._repositorio = repositorio
         self._cliente_acl = cliente_acl
         self._bus = bus
+        self.reintentos_rechazo_maximo = reintentos_rechazo_maximo
 
     def crear_cobro(self, orden: dict[str, Any]) -> dict[str, Any]:
         """Idempotencia (CA-W05-04): si `id_intento_cobro` ya existía, NO se
@@ -137,18 +147,55 @@ class ServicioCobros:
 
         - `pendiente`: concilia y, si hace falta, cobra con la MISMA clave
           (`procesar_reintento`, la misma función del bucle automático).
+        - `rechazado`: un intento nuevo ante la pasarela, con su propia referencia
+          (`{id_intento_cobro}-rN`), hasta `reintentos_rechazo_maximo` veces (decisión del
+          equipo, prototipo W05-01). Agotados: `NoReintentable`.
         - `cobrado` o `cobrando`: se devuelve tal cual (un doble clic no cobra dos veces).
-        - `rechazado`: `NoReintentable`; insistir con el mismo medio de pago no lo arregla.
         Funciona aunque el cobro ya haya agotado los intentos del bucle automático."""
         cobro = self._repositorio.obtener(cobro_id)
         if cobro is None:
             return None
         if cobro["estado"] == "rechazado":
-            raise NoReintentable(MENSAJE_RECHAZADO)
+            return self._reintentar_rechazado(cobro)
         if cobro["estado"] != "pendiente":
             return cobro
         logger.info("reintento manual poliza=%s", id_opaco(cobro["poliza_id"]))
         return procesar_reintento(cobro, self._repositorio, self._cliente_acl, self._bus)
+
+    def _reintentar_rechazado(self, cobro: dict[str, Any]) -> dict[str, Any]:
+        maximo = self.reintentos_rechazo_maximo
+        if cobro.get("reintentos_rechazo", 0) >= maximo:
+            raise NoReintentable(mensaje_reintentos_agotados(maximo))
+        iniciado = self._repositorio.iniciar_reintento_rechazo(cobro["id"], maximo)
+        if iniciado is None:
+            # Otro clic ganó (o se agotó justo ahora): se devuelve como quedó, sin cobrar.
+            actual = self._repositorio.obtener(cobro["id"])
+            if actual is not None and actual["estado"] == "rechazado":
+                raise NoReintentable(mensaje_reintentos_agotados(maximo))
+            return actual or cobro
+        logger.info(
+            "reintento de un rechazado poliza=%s reintento=%s",
+            id_opaco(iniciado["poliza_id"]),
+            iniciado["reintentos_rechazo"],
+        )
+        self._emitir(iniciado)
+        resultado = self._cliente_acl.cobrar(
+            OrdenCobro(
+                id_intento_cobro=referencia_ante_pasarela(iniciado),
+                poliza_id=iniciado["poliza_id"],
+                monto=iniciado["monto"],
+                moneda=iniciado["moneda"],
+                token_medio_pago=iniciado["token_medio_pago"],
+            )
+        )
+        actualizado = self._repositorio.actualizar_estado(
+            iniciado["id"], resultado.estado, resultado.referencia, resultado.motivo
+        )
+        self._emitir(actualizado)
+        return actualizado
+
+    def reintentos_restantes(self, cobro: dict[str, Any]) -> int:
+        return max(0, self.reintentos_rechazo_maximo - cobro.get("reintentos_rechazo", 0))
 
     def balance_poliza(self, poliza_id: str) -> str:
         return self._repositorio.balance_poliza(poliza_id)
