@@ -62,5 +62,31 @@ resource "google_redis_instance" "cache" {
   region             = var.region
   authorized_network = google_compute_network.privada[0].id
 
+  # Con contraseña (AUTH): la cadena la genera Memorystore y solo se usa dentro de la URL que se escribe en Secret
+  # Manager (abajo); no está en el repositorio. Matiz de ADR-09: también queda en el estado de Terraform.
+  auth_enabled = true
+
   depends_on = [google_project_service.redis_apis]
+}
+
+# --- Secretos de conexión (Secret Manager, nunca en el repo) ---
+# El CONTENEDOR del secreto lo crea servicios.tf (único dueño). Aquí solo se agrega la versión con el valor real, y
+# solo si los servicios existen; depends_on con la versión marcadora asegura que la real sea la más nueva
+# ("latest" es la que lee Cloud Run). El número es la base lógica, igual que redis:6379/0,1,2 en docker-compose.yml:
+# 0 = acl-worker (cache y circuito), 1 = rating (sesión causal, D-02), 2 = cola de reconciliación (acl-worker y
+# consolidador-fuentes).
+locals {
+  redis_bases = (var.crear_redis && var.crear_servicios) ? {
+    "redis-url-acl"                 = 0
+    "redis-url-rating"              = 1
+    "redis-url-cola-reconciliacion" = 2
+  } : {}
+}
+
+resource "google_secret_manager_secret_version" "redis_url" {
+  for_each   = local.redis_bases
+  secret     = google_secret_manager_secret.secreto[each.key].id
+  depends_on = [google_secret_manager_secret_version.marcador]
+
+  secret_data = "redis://:${google_redis_instance.cache[0].auth_string}@${google_redis_instance.cache[0].host}:${google_redis_instance.cache[0].port}/${each.value}"
 }
