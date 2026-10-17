@@ -1568,6 +1568,60 @@
           }
         },
         {
+          "name": "CLIENTE crea un cobro",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('rechazado por rol', () => {",
+                  "  pm.expect(cuerpo.errors).to.have.lengthOf(1);",
+                  "  pm.expect(cuerpo.errors[0].message).to.eql('No tienes permiso para esta operación.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "Crear cobros es solo del BACKOFFICE.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id estado monto { valor moneda } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"intento-cliente\",\n      \"polizaId\": \"POL-NEWMAN\",\n      \"monto\": {\n        \"valor\": \"1.00\",\n        \"moneda\": \"COP\"\n      },\n      \"tokenMedioPago\": \"tok_newman\"\n    }\n  }\n}"
+            }
+          }
+        },
+        {
           "name": "BACKOFFICE solicita una oferta",
           "event": [
             {
@@ -2011,16 +2065,22 @@
           }
         },
         {
-          "name": "PAYMENTS: crear un cobro (queda pendiente)",
+          "name": "crearCobro: el cobro queda pendiente",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const c = pm.response.json();",
-                  "pm.test('queda pendiente', () => pm.expect(c.estado).to.eql('pendiente'));",
+                  "const cuerpo = pm.response.json();",
+                  "const c = cuerpo.data.crearCobro;",
+                  "pm.test('es un Cobro pendiente', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(c.__typename).to.eql('Cobro');",
+                  "  pm.expect(c.estado).to.eql('PENDIENTE');",
+                  "});",
                   "pm.collectionVariables.set('id_cobro', c.id);"
                 ]
               }
@@ -2029,7 +2089,14 @@
           "request": {
             "method": "POST",
             "auth": {
-              "type": "noauth"
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
             },
             "header": [
               {
@@ -2038,18 +2105,19 @@
               }
             ],
             "url": {
-              "raw": "{{payments_url}}/cobros",
+              "raw": "{{bff_url}}/graphql/web",
               "host": [
-                "{{payments_url}}"
+                "{{bff_url}}"
               ],
               "path": [
-                "cobros"
+                "graphql",
+                "web"
               ]
             },
-            "description": "Llamada directa a PAYMENTS (interna, solo local): el BFF no crea cobros en este alcance. El ACL corta a los 700 ms y PAYMENTS lo registra pendiente, aunque la pasarela sí cobró.",
+            "description": "El back-office ordena el cobro desde el BFF. El ACL corta a los 700 ms y PAYMENTS lo registra pendiente, aunque la pasarela sí cobró.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"clave_idempotencia\": \"{{clave_cobro}}\",\n  \"poliza_id\": \"{{poliza_cobro}}\",\n  \"monto\": \"90000.00\",\n  \"moneda\": \"COP\",\n  \"token_medio_pago\": \"tok_newman\"\n}"
+              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id estado monto { valor moneda } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_cobro}}\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"monto\": {\n        \"valor\": \"90000.00\",\n        \"moneda\": \"COP\"\n      },\n      \"tokenMedioPago\": \"tok_newman\"\n    }\n  }\n}"
             }
           }
         },
@@ -2345,6 +2413,116 @@
           }
         },
         {
+          "name": "crearCobro reenviado con el mismo idIntentoCobro: mismo cobro",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const c = cuerpo.data.crearCobro;",
+                  "pm.test('devuelve el mismo cobro, ya cobrado', () => {",
+                  "  pm.expect(c.id).to.eql(pm.collectionVariables.get('id_cobro'));",
+                  "  pm.expect(c.estado).to.eql('COBRADO');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "Un doble clic o un reintento del frontend no crea otro cobro ni vuelve a cobrar.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id estado monto { valor moneda } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_cobro}}\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"monto\": {\n        \"valor\": \"90000.00\",\n        \"moneda\": \"COP\"\n      },\n      \"tokenMedioPago\": \"tok_newman\"\n    }\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "crearCobro: mismo idIntentoCobro con otro monto da ErrorCobro",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const c = cuerpo.data.crearCobro;",
+                  "pm.test('ErrorCobro con mensaje', () => {",
+                  "  pm.expect(c.__typename).to.eql('ErrorCobro');",
+                  "  pm.expect(c.mensaje).to.include('otros datos');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "PAYMENTS responde 409 y el BFF lo traduce a ErrorCobro con un mensaje para el usuario.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id estado monto { valor moneda } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_cobro}}\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"monto\": {\n        \"valor\": \"1.00\",\n        \"moneda\": \"COP\"\n      },\n      \"tokenMedioPago\": \"tok_newman\"\n    }\n  }\n}"
+            }
+          }
+        },
+        {
           "name": "Pasarela -> modo rechaza",
           "event": [
             {
@@ -2386,16 +2564,18 @@
           }
         },
         {
-          "name": "PAYMENTS: crear un cobro que la pasarela rechaza",
+          "name": "crearCobro: la pasarela lo rechaza",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const c = pm.response.json();",
-                  "pm.test('queda rechazado', () => pm.expect(c.estado).to.eql('rechazado'));",
+                  "const cuerpo = pm.response.json();",
+                  "const c = cuerpo.data.crearCobro;",
+                  "pm.test('queda rechazado', () => pm.expect(c.estado).to.eql('RECHAZADO'));",
                   "pm.collectionVariables.set('id_rechazo', c.id);"
                 ]
               }
@@ -2404,7 +2584,14 @@
           "request": {
             "method": "POST",
             "auth": {
-              "type": "noauth"
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
             },
             "header": [
               {
@@ -2413,18 +2600,19 @@
               }
             ],
             "url": {
-              "raw": "{{payments_url}}/cobros",
+              "raw": "{{bff_url}}/graphql/web",
               "host": [
-                "{{payments_url}}"
+                "{{bff_url}}"
               ],
               "path": [
-                "cobros"
+                "graphql",
+                "web"
               ]
             },
-            "description": "Un rechazo es un resultado de negocio (HTTP 200), no una falla.",
+            "description": "Con la pasarela en modo rechaza, el cobro queda rechazado con su motivo.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"clave_idempotencia\": \"{{clave_rechazo}}\",\n  \"poliza_id\": \"{{poliza_cobro}}\",\n  \"monto\": \"90000.00\",\n  \"moneda\": \"COP\",\n  \"token_medio_pago\": \"tok_newman\"\n}"
+              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id estado monto { valor moneda } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_rechazo}}\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"monto\": {\n        \"valor\": \"90000.00\",\n        \"moneda\": \"COP\"\n      },\n      \"tokenMedioPago\": \"tok_newman\"\n    }\n  }\n}"
             }
           }
         },

@@ -6,7 +6,7 @@
 #
 # Por qué: el .in lleva solo las dependencias directas (es lo que se edita); el .txt las fija TODAS, transitivas
 # incluidas, con el hash de cada archivo. Así un build instala siempre lo mismo y pip rechaza cualquier archivo
-# distinto del esperado. Se compila en Linux con Python 3.12, la misma imagen base que los Dockerfiles, para que
+# distinto del esperado. Se compila en Linux con Python 3.14, la misma imagen base que los Dockerfiles, para que
 # el resultado coincida con lo que se despliega (compilar en Windows/macOS cambiaría los marcadores de plataforma).
 #
 # Dependabot actualiza el .in y recompila el .txt solo; este script es para cambios manuales.

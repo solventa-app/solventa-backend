@@ -6,6 +6,7 @@ probarse con dobles sin levantar PostgreSQL ni el ACL Worker reales."""
 
 import logging
 import uuid
+from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 
 from app.application.bus_eventos import PuertoBusEventos, construir_evento_cobro_estado_cambiado
@@ -20,6 +21,31 @@ MENSAJE_RECHAZADO = "El cobro fue rechazado por la pasarela: requiere otro medio
 
 class NoReintentable(Exception):
     """El cobro no se puede reintentar (hoy: fue rechazado). Mensaje apto para el usuario."""
+
+
+MENSAJE_CONFLICTO = (
+    "Ese id_intento_cobro ya se usó con otros datos: genera uno nuevo para una orden distinta."
+)
+
+
+class IntentoCobroEnConflicto(Exception):
+    """El `id_intento_cobro` ya existe con otra póliza, monto, moneda o medio de pago."""
+
+
+def _mismo_monto(a: str, b: str) -> bool:
+    try:
+        return Decimal(a) == Decimal(b)
+    except InvalidOperation:
+        return a == b
+
+
+def _misma_orden(cobro: dict[str, Any], orden: dict[str, Any]) -> bool:
+    return (
+        cobro["poliza_id"] == orden["poliza_id"]
+        and cobro["moneda"] == orden["moneda"]
+        and cobro["token_medio_pago"] == orden["token_medio_pago"]
+        and _mismo_monto(cobro["monto"], orden["monto"])
+    )
 
 
 class RepositorioCobros(Protocol):
@@ -54,15 +80,22 @@ class ServicioCobros:
         self._bus = bus
 
     def crear_cobro(self, orden: dict[str, Any]) -> dict[str, Any]:
-        """Idempotencia (CA-W05-04): si `clave_idempotencia` ya existía, NO se
+        """Idempotencia (CA-W05-04): si `id_intento_cobro` ya existía, NO se
         vuelve a llamar al ACL Worker — se devuelve la fila ya persistida tal
-        cual (sea cual sea su estado actual)."""
+        cual (sea cual sea su estado actual). Si llega con otros datos, es un error
+        del cliente y se rechaza (`IntentoCobroEnConflicto`), nunca se ignora."""
         cobro_id = str(uuid.uuid4())
         cobro, creado = self._repositorio.crear_o_obtener(cobro_id, orden)
 
         if not creado:
+            if not _misma_orden(cobro, orden):
+                logger.info(
+                    "id_intento_cobro repetido con otros datos poliza=%s",
+                    id_opaco(cobro["poliza_id"]),
+                )
+                raise IntentoCobroEnConflicto(MENSAJE_CONFLICTO)
             logger.info(
-                "cobro ya existia para esta clave de idempotencia poliza=%s estado=%s",
+                "cobro ya existia para este id_intento_cobro poliza=%s estado=%s",
                 id_opaco(cobro["poliza_id"]),
                 cobro["estado"],
             )
@@ -73,7 +106,7 @@ class ServicioCobros:
 
         resultado = self._cliente_acl.cobrar(
             OrdenCobro(
-                clave_idempotencia=cobro["clave_idempotencia"],
+                id_intento_cobro=cobro["id_intento_cobro"],
                 poliza_id=cobro["poliza_id"],
                 monto=cobro["monto"],
                 moneda=cobro["moneda"],
@@ -124,6 +157,6 @@ class ServicioCobros:
             cobro_id=cobro["id"],
             poliza_id=cobro["poliza_id"],
             estado=cobro["estado"],
-            clave_idempotencia=cobro["clave_idempotencia"],
+            id_intento_cobro=cobro["id_intento_cobro"],
         )
         self._bus.publicar(evento)

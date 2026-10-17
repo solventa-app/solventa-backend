@@ -122,6 +122,26 @@ type Cobro {
   intentos: Int # cuántas veces se intentó cobrar
 }
 
+input MontoInput {
+  valor: String! # decimal como texto, nunca float
+  moneda: String!
+}
+
+input CrearCobroInput {
+  # Lo genera el cliente (un UUID por intento) y lo reenvía igual si repite la orden:
+  # así un doble clic o un reintento no cobra dos veces.
+  idIntentoCobro: ID!
+  polizaId: ID!
+  monto: MontoInput!
+  tokenMedioPago: String! # token del proveedor PCI-DSS; nunca datos de tarjeta
+}
+
+type ErrorCobro {
+  mensaje: String!
+}
+
+union ResultadoCobro = Cobro | ErrorCobro
+
 # ---------- Usuarios y sesión (HU-M02, CA-W01-11) ----------
 # El token de `Sesion` viaja en la cabecera `Authorization: Bearer <token>` de las demás operaciones.
 
@@ -188,6 +208,7 @@ type Mutation {
   solicitarOferta(entrada: SolicitudOfertaInput!): ResultadoOferta!
   contactarAsesor(ofertaId: ID!, canal: CanalContacto!): ConfirmacionContacto!
   reintentarCobro(cobroId: ID!): Cobro!
+  crearCobro(entrada: CrearCobroInput!): ResultadoCobro!
   iniciarSesion(entrada: CredencialesInput!): ResultadoSesion!
   crearUsuario(entrada: CrearUsuarioInput!): ResultadoUsuario!
   cambiarRolUsuario(id: ID!, rol: RolUsuario!): ResultadoUsuario!

@@ -13,7 +13,7 @@ from app.application.cliente_acl import ResultadoCobro
 from app.application.servicio_cobros import ServicioCobros
 
 ORDEN = {
-    "clave_idempotencia": "clave-abc-123",
+    "id_intento_cobro": "clave-abc-123",
     "poliza_id": "poliza-1",
     "monto": "150.00",
     "moneda": "COP",
@@ -52,7 +52,7 @@ def test_crear_cobro_con_pasarela_no_disponible_queda_pendiente_sin_excepcion() 
 
 
 def test_mismo_intento_recibido_dos_veces_secuencialmente_se_ejecuta_una_sola_vez() -> None:
-    """CA-W05-04: un mismo intento recibido dos veces (misma `clave_idempotencia`)
+    """CA-W05-04: un mismo intento recibido dos veces (mismo `id_intento_cobro`)
     se ejecuta una sola vez — la segunda llamada NO vuelve a invocar al ACL
     Worker, devuelve la fila ya persistida."""
     servicio, repositorio, cliente_acl, _ = _servicio()
@@ -118,7 +118,7 @@ def test_balance_poliza_suma_solo_los_cobros_en_estado_cobrado() -> None:
         repositorio, ClienteAclFalso([ResultadoCobro(estado="pendiente")]), BusEventosFalso()
     )
 
-    servicio_cobrado.crear_cobro({**ORDEN, "clave_idempotencia": "clave-1", "monto": "100.00"})
-    servicio_pendiente.crear_cobro({**ORDEN, "clave_idempotencia": "clave-2", "monto": "999.00"})
+    servicio_cobrado.crear_cobro({**ORDEN, "id_intento_cobro": "clave-1", "monto": "100.00"})
+    servicio_pendiente.crear_cobro({**ORDEN, "id_intento_cobro": "clave-2", "monto": "999.00"})
 
     assert servicio_cobrado.balance_poliza("poliza-1") == "100.00"

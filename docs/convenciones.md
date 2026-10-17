@@ -80,14 +80,14 @@ feature (feat|fix|chore/KAN-N-…) ──squash──► develop ──► relea
 
 ## Código
 
-- Python 3.12, `ruff` (config en `pyproject.toml`), pruebas con `python -m pytest` desde la carpeta del servicio.
+- Python 3.14, `ruff` (config en `pyproject.toml`), pruebas con `python -m pytest` desde la carpeta del servicio.
 - Dependencias fijadas **con hash** (reproducibles y a prueba de un paquete cambiado aguas arriba): cada servicio tiene un
   `requirements.in` (solo las directas, es lo que se edita) y un `requirements.txt` generado con **todas** las
   dependencias, transitivas incluidas, y el hash de cada archivo. No se edita a mano: se cambia el `.in` y se corre
-  `scripts/compilar-requirements.sh [servicio]` (compila en Linux/Python 3.12, la misma base que las imágenes).
+  `scripts/compilar-requirements.sh [servicio]` (compila en Linux/Python 3.14, la misma base que las imágenes).
   Dependabot actualiza el `.in` y recompila el `.txt` solo. Se instala con `pip install -r requirements.txt` y las
   herramientas de prueba aparte (`pip install -r ../../requirements-dev.txt`), nunca los dos archivos en un solo `pip`.
-- Imágenes base por **digest** (`FROM python:3.12-slim@sha256:...`) y GitHub Actions por **SHA** de commit con el tag como
+- Imágenes base por **digest** (`FROM python:3.14-slim@sha256:...`) y GitHub Actions por **SHA** de commit con el tag como
   comentario: Dependabot (docker y github-actions) mantiene ambos al día.
 - Un servicio no importa código de otro: se comunican por HTTP o eventos, y comparten **contratos**, no librerías.
 - Configuración por variables de entorno. Nunca secretos en el repo (`.env` ignorado; en nube, Secret Manager).

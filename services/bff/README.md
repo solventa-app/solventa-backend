@@ -23,7 +23,7 @@ ACL Worker, RISK y RATING y traduce al contrato de `contracts/graphql/schema.gra
 | `solicitarOferta` | Completo: ver el flujo abajo |
 | `oferta(id)` | Devuelve `null`: RATING no persiste ofertas todavía |
 | `contactarAsesor` | **MOCK**: solo confirma (no hay servicio de asesores) |
-| `cobros(polizaId, estado)` / `reintentarCobro` | Completas (KAN-28), sobre PAYMENTS: solo BACKOFFICE y **siempre con token**. El reintento concilia con la pasarela antes de cobrar (ver [`docs/cobros-conciliacion.md`](../../docs/cobros-conciliacion.md)) |
+| `cobros(polizaId, estado)` / `crearCobro` / `reintentarCobro` | Completas (KAN-28), sobre PAYMENTS: solo BACKOFFICE y **siempre con token**. `crearCobro` recibe `idIntentoCobro` del cliente (idempotencia) y devuelve `Cobro` o `ErrorCobro`. El reintento concilia con la pasarela antes de cobrar (ver [`docs/cobros-conciliacion.md`](../../docs/cobros-conciliacion.md)) |
 | `iniciarSesion`, `yo`, `usuarios`, `crearUsuario`, `cambiarRolUsuario`, `suspenderUsuario` | Completas (HU-M02), sobre AUTH |
 
 ## Autenticación y permisos (HU-M02)

@@ -54,12 +54,15 @@ resource "google_monitoring_notification_channel" "correo" {
 }
 
 resource "google_billing_budget" "presupuesto" {
+  provider        = google.facturacion # proyecto de cuota explícito, ver versions.tf
   count           = var.crear_presupuesto ? 1 : 0
   billing_account = var.billing_account_id
   display_name    = "solventa-backend-staging"
+  depends_on      = [google_project_service.presupuesto_apis]
 
   budget_filter {
-    projects = ["projects/${var.project_id}"]
+    # La API guarda el filtro con el NÚMERO de proyecto; con el ID, cada plan veía una diferencia.
+    projects = ["projects/${data.google_project.actual.number}"]
   }
 
   amount {
@@ -129,6 +132,31 @@ resource "google_project_iam_member" "frenar_gasto_run_admin" {
   member  = "serviceAccount:${google_service_account.frenar_gasto[0].email}"
 }
 
+# En proyectos nuevos la cuenta de Compute por defecto ya no trae roles. Cloud Functions la usa para construir y
+# para entregar el evento de Pub/Sub, y sin ellos el build falla ("missing permission on the build service
+# account"). Se usan cuentas propias con el rol mínimo en vez de ampliar la cuenta por defecto.
+resource "google_service_account" "frenar_gasto_build" {
+  count        = var.crear_presupuesto ? 1 : 0
+  project      = var.project_id
+  account_id   = "frenar-gasto-build"
+  display_name = "Build de la función frenar-gasto (Cloud Build)"
+}
+
+resource "google_project_iam_member" "frenar_gasto_build" {
+  count   = var.crear_presupuesto ? 1 : 0
+  project = var.project_id
+  role    = "roles/cloudbuild.builds.builder"
+  member  = "serviceAccount:${google_service_account.frenar_gasto_build[0].email}"
+}
+
+# Recibir el evento del topic (Eventarc). run.admin ya cubre invocar la función.
+resource "google_project_iam_member" "frenar_gasto_eventos" {
+  count   = var.crear_presupuesto ? 1 : 0
+  project = var.project_id
+  role    = "roles/eventarc.eventReceiver"
+  member  = "serviceAccount:${google_service_account.frenar_gasto[0].email}"
+}
+
 resource "google_cloudfunctions2_function" "frenar_gasto" {
   count    = var.crear_presupuesto ? 1 : 0
   project  = var.project_id
@@ -136,8 +164,9 @@ resource "google_cloudfunctions2_function" "frenar_gasto" {
   location = var.region
 
   build_config {
-    runtime     = "python312"
-    entry_point = "frenar_gasto"
+    runtime         = "python312"
+    entry_point     = "frenar_gasto"
+    service_account = google_service_account.frenar_gasto_build[0].id
     source {
       storage_source {
         bucket = google_storage_bucket.fuente_funciones[0].name
@@ -155,11 +184,16 @@ resource "google_cloudfunctions2_function" "frenar_gasto" {
   }
 
   event_trigger {
-    trigger_region = var.region
-    event_type     = "google.cloud.pubsub.topic.v1.messagePublished"
-    pubsub_topic   = google_pubsub_topic.alertas_presupuesto[0].id
-    retry_policy   = "RETRY_POLICY_DO_NOT_RETRY"
+    trigger_region        = var.region
+    event_type            = "google.cloud.pubsub.topic.v1.messagePublished"
+    pubsub_topic          = google_pubsub_topic.alertas_presupuesto[0].id
+    retry_policy          = "RETRY_POLICY_DO_NOT_RETRY"
+    service_account_email = google_service_account.frenar_gasto[0].email
   }
 
-  depends_on = [google_project_service.presupuesto_apis]
+  depends_on = [
+    google_project_service.presupuesto_apis,
+    google_project_iam_member.frenar_gasto_build,
+    google_project_iam_member.frenar_gasto_eventos,
+  ]
 }

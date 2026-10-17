@@ -6,11 +6,11 @@ PAYMENTS: cobros con pasarela tokenizada.
 
 PAYMENTS procesa el cobro de primas e indemnizaciones con **pasarela tokenizada** (HU-W05). Ningún dato de tarjeta toca servidores propios (EC031): `token_medio_pago` es el token opaco del proveedor PCI-DSS, no un dato de tarjeta real.
 
-- `POST /cobros`: recibe `clave_idempotencia`, `poliza_id`, `monto` (texto decimal, nunca float), `moneda`, `token_medio_pago` — el mismo shape que ya acepta `acl-worker` en `POST /pagos/cobrar` (`OrdenCobro`); no se inventa un contrato nuevo entre PAYMENTS y el ACL Worker.
-- **Idempotencia real a nivel de base de datos (CA-W05-04):** un mismo intento recibido dos veces (incluso en paralelo) se ejecuta una sola vez. `clave_idempotencia` es `UNIQUE` en PostgreSQL; el `INSERT ... ON CONFLICT (clave_idempotencia) DO NOTHING RETURNING ...` es correcto bajo concurrencia real (ver "Diseño" abajo), no solo un `SELECT` seguido de un `INSERT`.
+- `POST /cobros`: recibe `id_intento_cobro`, `poliza_id`, `monto` (texto decimal, nunca float), `moneda`, `token_medio_pago` — el mismo shape que ya acepta `acl-worker` en `POST /pagos/cobrar` (`OrdenCobro`); no se inventa un contrato nuevo entre PAYMENTS y el ACL Worker.
+- **Idempotencia real a nivel de base de datos (CA-W05-04):** un mismo intento recibido dos veces (incluso en paralelo) se ejecuta una sola vez. `id_intento_cobro` es `UNIQUE` en PostgreSQL; el `INSERT ... ON CONFLICT (id_intento_cobro) DO NOTHING RETURNING ...` es correcto bajo concurrencia real (ver "Diseño" abajo), no solo un `SELECT` seguido de un `INSERT`.
 - Estados de cobro: `cobrando` → `cobrado` / `rechazado` / `pendiente` (PostgreSQL, base `payments`, única que escribe esta tabla — regla de escritor único).
 - `GET /polizas/{poliza_id}/balance`: suma los `monto` de los cobros en estado `cobrado` de esa póliza. No cubre balances de indemnización (Sprint 3, HU-W04/HU-M04).
-- **Reintento del cobro pendiente (T-W05-4, CA-W05-05):** un bucle local reintenta los cobros `pendiente` reutilizando la MISMA `clave_idempotencia`, acotado a un número máximo de intentos. Ver huecos abajo (no es Cloud Tasks real).
+- **Reintento del cobro pendiente (T-W05-4, CA-W05-05):** un bucle local reintenta los cobros `pendiente` reutilizando el MISMO `id_intento_cobro`, acotado a un número máximo de intentos. Ver huecos abajo (no es Cloud Tasks real).
 - **Back-office: listar y reintentar con conciliación (KAN-28, CA-W05-01/02):** `POST /cobros/buscar` (filtros `poliza_id` y
   `estado` en el cuerpo, nunca en la URL), `GET /cobros/{id}` y `POST /cobros/{id}/reintentar`. Antes de cobrar, se **concilia**: se pregunta a la
   pasarela (vía `GET {ACL_URL}/pagos/cobros/{clave}`) si ya tiene el cobro; si lo tiene, se toma su resultado **sin
@@ -28,7 +28,7 @@ Creada por la migración de Alembic `migrations/versions/0002_cobros.py` (`op.cr
 ```sql
 cobros (
     id TEXT PRIMARY KEY,                 -- UUID generado en Python, no en la BD
-    clave_idempotencia TEXT UNIQUE NOT NULL,
+    id_intento_cobro TEXT UNIQUE NOT NULL,
     poliza_id TEXT NOT NULL,
     monto TEXT NOT NULL,                 -- decimal como texto, nunca float
     moneda TEXT NOT NULL,
@@ -46,7 +46,7 @@ cobros (
 
 `RepositorioCobrosPostgres.crear_o_obtener` (`app/application/repositorio_cobros.py`):
 
-1. `INSERT ... ON CONFLICT (clave_idempotencia) DO NOTHING RETURNING ...` en una conexión con `autocommit=True` (una sentencia = una transacción, vía `psycopg_pool.ConnectionPool`).
+1. `INSERT ... ON CONFLICT (id_intento_cobro) DO NOTHING RETURNING ...` en una conexión con `autocommit=True` (una sentencia = una transacción, vía `psycopg_pool.ConnectionPool`).
 2. Si `RETURNING` devuelve una fila → es la primera vez con esa clave → se llama al ACL Worker.
 3. Si no devuelve nada → ya existía → **no se llama al ACL Worker otra vez**, se hace un `SELECT` de la fila existente y se devuelve tal cual (sea cual sea su estado actual: `cobrando`, `cobrado`, `rechazado` o `pendiente`).
 
@@ -56,7 +56,7 @@ Por qué es correcto bajo concurrencia (dos requests simultáneas con la misma c
 
 No hay Cloud Tasks real disponible (sin proyecto GCP, ver `CLAUDE.md`). `app/application/reintento.py` implementa:
 
-- `ejecutar_una_pasada(repositorio, cliente_acl, bus, max_intentos)`: la lógica de reintento en sí — pequeña, aislada, sin saber qué la dispara. Busca cobros `pendiente` con `intentos < max_intentos`, llama de nuevo a `POST {ACL_URL}/pagos/cobrar` con la **misma** `clave_idempotencia` (CA-W05-05) y actualiza el estado.
+- `ejecutar_una_pasada(repositorio, cliente_acl, bus, max_intentos)`: la lógica de reintento en sí — pequeña, aislada, sin saber qué la dispara. Busca cobros `pendiente` con `intentos < max_intentos`, llama de nuevo a `POST {ACL_URL}/pagos/cobrar` con la **misma** `id_intento_cobro` (CA-W05-05) y actualiza el estado.
 - `ReintentoCobrosPendientes`: HOY lo que dispara `ejecutar_una_pasada` — un bucle `asyncio` arrancado desde el `lifespan` de FastAPI (mismo patrón que `SondaRecuperacion` de `acl-worker/app/application/sonda.py`), cada `REINTENTO_COBRO_INTERVALO_SEGUNDOS` (default `5`).
 - **Acotado:** `listar_pendientes` solo devuelve cobros con `intentos < REINTENTO_COBRO_MAX_INTENTOS` (default `10`). Agotados los intentos, el cobro deja de aparecer y el bucle ya no lo toca — queda `pendiente` y el back-office lo reintenta a mano con `POST /cobros/{id}/reintentar` (KAN-28). Los intentos que **no llegaron a la pasarela** (circuito abierto o conciliación sin respuesta) no cuentan: una caída larga ya no agota el cobro.
 - **Cuando `infra-engineer` tenga un proyecto GCP real:** lo que cambia es QUÉ dispara el reintento (una tarea de Cloud Tasks llamando a un endpoint interno que invoque `ejecutar_una_pasada`, en vez de este bucle `asyncio`) — la lógica de PAYMENTS no se toca. Deliberadamente **no** se construyó una abstracción de puertos y adaptadores para esto (regla de arquitectura #3: hexagonal es solo para `acl-worker`); aislar la decisión en una función pequeña (`ejecutar_una_pasada`) es suficiente.
@@ -65,7 +65,7 @@ No hay Cloud Tasks real disponible (sin proyecto GCP, ver `CLAUDE.md`). `app/app
 
 Mismo patrón placeholder que `services/risk/app/application/bus_eventos.py` (sin Pub/Sub real, sin proyecto GCP): `BusEventosLog` solo loguea el evento ya serializado. El evento (`cobro.estado-cambiado`) valida contra `contracts/events/cobro.estado-cambiado.schema.json` (ver `tests/test_bus_eventos.py`).
 
-A diferencia de RISK, aquí **no se hashea `cobroId` ni `claveIdempotencia`** en el log: son identificadores internos/de correlación, no datos personales. Sí se hashea `polizaId` (identifica, indirectamente, a la persona asegurada) con el mismo patrón `id_opaco` de `acl-worker`/`risk` (duplicado deliberadamente, sin código compartido entre servicios) — más estricto que el logging actual de `acl-worker/app/application/servicio_pagos.py`, que loguea `poliza_id` en claro; no se tocó ese servicio, solo se documenta la diferencia.
+A diferencia de RISK, aquí **no se hashea `cobroId` ni `idIntentoCobro`** en el log: son identificadores internos/de correlación, no datos personales. Sí se hashea `polizaId` (identifica, indirectamente, a la persona asegurada) con el mismo patrón `id_opaco` de `acl-worker`/`risk` (duplicado deliberadamente, sin código compartido entre servicios) — más estricto que el logging actual de `acl-worker/app/application/servicio_pagos.py`, que loguea `poliza_id` en claro; no se tocó ese servicio, solo se documenta la diferencia.
 
 ### Dinero y tarjeta
 
@@ -83,7 +83,10 @@ A diferencia de RISK, aquí **no se hashea `cobroId` ni `claveIdempotencia`** en
 ## Operación
 
 - Puerto local: `8004`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.
-- `POST /cobros` `{clave_idempotencia, poliza_id, monto, moneda, token_medio_pago}` → `{id, clave_idempotencia, poliza_id, monto, moneda, estado, referencia, motivo, intentos}`.
+- `POST /cobros` `{id_intento_cobro, poliza_id, monto, moneda, token_medio_pago}` → `{id, id_intento_cobro, poliza_id, monto, moneda, estado, referencia, motivo, intentos}`.
+  `422` si algún campo llega vacío; `409` si el mismo `id_intento_cobro` llega con otra póliza, monto, moneda o medio
+  de pago (antes devolvía en silencio el cobro original). El nombre viene de la migración `0003`/`0004` (antes
+  `clave_idempotencia`).
 - `GET /polizas/{poliza_id}/balance` → `{poliza_id, balance}`.
 - `POST /cobros/buscar` `{poliza_id?, estado?}` → lista de cobros (también con `creado_en` y `actualizado_en`). Los
   filtros van en el cuerpo y no en la URL porque las URL quedan en los logs de acceso (regla #6).
@@ -116,19 +119,19 @@ docker compose --profile servicios up -d --build postgres redis acl-worker stub-
 
 ```bash
 curl -s -X POST localhost:8004/cobros -H 'content-type: application/json' -d '{
-  "clave_idempotencia": "demo-001", "poliza_id": "poliza-demo-1",
+  "id_intento_cobro": "demo-001", "poliza_id": "poliza-demo-1",
   "monto": "150000.00", "moneda": "COP", "token_medio_pago": "tok_demo_1"
 }'
 # -> {"estado":"cobrado", ...}
 ```
 
-**(b) La MISMA `clave_idempotencia` enviada dos veces no duplica el cobro ni llama dos veces a la pasarela** (verificado con las métricas del stub, no solo con la respuesta — ver evidencia abajo con `curl -s localhost:8103/metrics | grep 'v1_cobros.*POST'`).
+**(b) El MISMO `id_intento_cobro` enviado dos veces no duplica el cobro ni llama dos veces a la pasarela** (verificado con las métricas del stub, no solo con la respuesta — ver evidencia abajo con `curl -s localhost:8103/metrics | grep 'v1_cobros.*POST'`).
 
 **(c) Pasarela caída → `pendiente` sin 5xx → vuelve sana → el bucle de reintento la resuelve solo:**
 
 ```bash
 curl -s -X POST localhost:8103/control/modo -d '{"modo":"caido"}' -H 'content-type: application/json'
-curl -s -X POST localhost:8004/cobros -d '{"clave_idempotencia":"demo-002", ...}' # -> estado: pendiente
+curl -s -X POST localhost:8004/cobros -d '{"id_intento_cobro":"demo-002", ...}' # -> estado: pendiente
 curl -s -X POST localhost:8103/control/modo -d '{"modo":"sano"}' -H 'content-type: application/json'
 # esperar <= REINTENTO_COBRO_INTERVALO_SEGUNDOS (default 5s) x unos pocos ciclos
 curl -s localhost:8004/polizas/poliza-demo-2/balance # -> ya refleja el cobro resuelto
