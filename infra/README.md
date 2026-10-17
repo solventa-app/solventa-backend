@@ -253,6 +253,68 @@ gcloud run jobs delete crear-backoffice --region us-central1 --quiet
 
 Nunca se ha ejecutado (no hay proyecto GCP): revisa los nombres reales con `terraform output` antes de usarlo.
 
+## Apagar y encender lo que cuesta (sin depender de nadie)
+
+Staging es sintético y sin usuarios: lo que **cobra por hora aunque nadie lo use** no tiene por qué estar encendido todo
+el tiempo. Cualquiera del equipo puede apagarlo y volver a subirlo con un botón de GitHub.
+
+| Recurso | Cobra por hora | Al apagar | Al encender |
+|---|---|---|---|
+| **Cloud SQL** (`auth`, `payments`) | Sí (~USD 9-12/mes con `db-f1-micro`, según este README) | Se **detiene**: conserva las bases, los usuarios y las migraciones; solo se paga el disco | Arranca (1-3 min); no hay que volver a migrar |
+| **Redis + conector VPC** (`rating`, `acl-worker`, `consolidador-fuentes`) | Sí (~USD 0,12/h juntos, según este README) | Se **borra** (es una caché) | Se vuelve a crear (10-15 min) |
+| Cloud Run, Secret Manager, MongoDB Atlas M0 | No / casi cero / gratis | No se toca | No se toca |
+
+### El botón
+
+*GitHub → Actions → **Costos staging** → Run workflow → elige la acción:*
+
+- **`estado`**: solo informa qué está encendido y qué apagado. No cambia nada.
+- **`apagar`**: detiene Cloud SQL y borra Redis y su conector.
+- **`encender`**: arranca Cloud SQL y vuelve a crear Redis y el conector.
+
+El resumen de la ejecución muestra el plan antes de aplicarlo y el estado en que queda.
+
+**Seguridad:** `apagar` solo puede **borrar** Redis y su conector (la guardia de `scripts/revisar_plan.py` falla sin aplicar
+nada si el plan destruyera otra cosa, y un reemplazo nunca se permite). Cloud SQL no se borra: se detiene.
+
+**Qué recuerda el sistema:** el estado queda en `gs://<proyecto>-tfstate/solventa-backend/costos/estado` (`apagado` o
+`encendido`). El despliegue automático (`deploy-staging.yml`) lo respeta: **un release no vuelve a encender lo que está
+apagado**. Sin marca guardada se considera `encendido`.
+
+**Después de encender**, los servicios toman las URLs nuevas al arrancar su próxima revisión (Terraform ya crea una). Si
+alguno sigue fallando, lanza *Deploy staging* solo para ese servicio. Mientras está apagado, los servicios que dependen de
+Cloud SQL o Redis no atienden: es lo esperado.
+
+**Apagado automático (opcional):** el workflow no se ejecuta solo. Para apagar cada noche, descomenta el bloque `schedule`
+de `.github/workflows/costos-staging.yml`.
+
+**Primera vez:** el workflow aplica la infraestructura de `main`, así que solo funciona cuando `main` ya trae este cambio (lo
+dice con un error claro si no).
+
+### Plan B: a mano desde Cloud Shell (si el botón no sirve)
+
+Hazlo desde **Cloud Shell o Linux/WSL**, no desde Windows: el zip de la función `frenar-gasto` lleva el MD5 de su contenido
+y en Windows sale distinto; un `apply` desde ahí hace que el siguiente despliegue automático bloquee su guardia.
+
+```bash
+git clone https://github.com/solventa-app/solventa-backend && cd solventa-backend && git checkout main
+cd infra
+export TF_VAR_project_id=solventa-511815
+export TF_VAR_billing_account_id=<ID de la cuenta de facturación (variable GCP_BILLING_ACCOUNT_ID de GitHub)>
+terraform init
+
+# APAGAR: Terraform muestra el plan y pide escribir "yes"; revisa que solo toque Cloud SQL y Redis/conector
+terraform apply -var-file=staging.tfvars -var=cloud_sql_encendida=false -var=crear_redis=false
+printf apagado | gcloud storage cp - gs://solventa-511815-tfstate/solventa-backend/costos/estado
+
+# ENCENDER
+terraform apply -var-file=staging.tfvars
+printf encendido | gcloud storage cp - gs://solventa-511815-tfstate/solventa-backend/costos/estado
+```
+
+**No** apagues Cloud SQL con `gcloud sql instances patch` ni borres Redis desde la consola: Terraform lo vería como deriva y
+lo deshacería en el próximo despliegue.
+
 ## Costos y cómo destruir
 
 | Cuándo | Qué | Costo a vigilar |

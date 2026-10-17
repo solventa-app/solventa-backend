@@ -1,0 +1,185 @@
+name: Costos staging
+
+# Apaga o enciende lo que cobra por hora en staging. Es un botón para el equipo, sin depender de nadie más:
+#
+#   Actions > Costos staging > Run workflow > elige la acción.
+#
+#   estado    solo informa qué está encendido y qué apagado (no cambia nada).
+#   apagar    DETIENE Cloud SQL (conserva las bases, los usuarios y las migraciones; solo se paga el disco) y BORRA
+#             Redis y su conector VPC (es una caché: se recrea sola al encender). Es lo que más ahorra: Redis y el
+#             conector cuestan ~USD 0,12/h según infra/README.md.
+#   encender  arranca Cloud SQL y vuelve a crear Redis y el conector (unos 10-15 minutos).
+#
+# El estado queda guardado en gs://<proyecto>-tfstate/solventa-backend/costos/estado ("apagado" | "encendido") y el
+# despliegue automático (deploy-staging.yml) lo respeta: un release no vuelve a encender lo que está apagado.
+# Solo toca Cloud SQL, Redis y el conector VPC: si el plan destruyera otra cosa, el workflow falla sin aplicar nada.
+#
+# NO se ejecuta solo. Para apagar cada noche, descomenta `schedule`. Si algo falla, infra/README.md explica cómo
+# hacer lo mismo a mano desde Cloud Shell.
+on:
+  workflow_dispatch:
+    inputs:
+      accion:
+        description: 'Qué hacer con lo que cobra por hora'
+        type: choice
+        options: [estado, apagar, encender]
+        default: estado
+  # schedule:
+  #   - cron: '0 5 * * *' # apagar cada noche a las 05:00 UTC (00:00 en Colombia)
+
+permissions:
+  contents: read
+
+# Comparte el grupo con el despliegue: nunca dos `apply` a la vez sobre el mismo estado.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  costos:
+    # Como el resto del despliegue: no hace nada hasta que existan las variables y la protección de gasto.
+    if: >-
+      vars.GCP_PROJECT_ID != '' && vars.GCP_PROTECCION_GASTO == 'activa' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: infra-staging
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_INPUT: "0"
+      TF_IN_AUTOMATION: "1"
+      TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+      TF_VAR_billing_account_id: ${{ vars.GCP_BILLING_ACCOUNT_ID }}
+      PROYECTO: ${{ vars.GCP_PROJECT_ID }}
+      # `schedule` (si se descomenta) siempre apaga.
+      ACCION: ${{ github.event_name == 'schedule' && 'apagar' || inputs.accion }}
+    steps:
+      # Las herramientas (la guardia de destrucciones) salen de la rama que se ejecuta; la infraestructura que se
+      # aplica sale SIEMPRE de `main`, que es lo que está desplegado.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: herramientas
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: codigo
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_TERRAFORM_SA }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+      - name: ¿El Terraform de main ya sabe apagar y encender?
+        run: |
+          if ! grep -q 'cloud_sql_encendida' codigo/infra/variables.tf; then
+            echo "::error title=Costos staging::main todavía no trae el apagado de costos. Mezcla a main el release que incluye este workflow y vuelve a ejecutarlo."
+            exit 1
+          fi
+      - name: Terraform init
+        working-directory: codigo/infra
+        run: terraform init
+      - name: Estado actual
+        working-directory: codigo/infra
+        run: |
+          set -uo pipefail
+          url="gs://${PROYECTO}-tfstate/solventa-backend/costos/estado"
+          if salida=$(gcloud storage cat "$url" 2>&1); then
+            marca=$(printf '%s' "$salida" | tr -d '[:space:]')
+          elif printf '%s' "$salida" | grep -q -i -E 'matched no objects|not found|404'; then
+            marca="encendido (aún no hay marca guardada)"
+          else
+            echo "::error title=Costos staging::No pude leer el estado guardado: $salida"
+            exit 1
+          fi
+          existentes=$(terraform state list 2>/dev/null || true)
+          sql="no existe"
+          if printf '%s\n' "$existentes" | grep -q '^google_sql_database_instance\.principal'; then
+            sql=$(terraform state show 'google_sql_database_instance.principal[0]' 2>/dev/null \
+              | awk -F'"' '/activation_policy/ {print ($2=="NEVER") ? "detenida" : "en marcha"}' | head -1)
+            sql=${sql:-"existe"}
+          fi
+          redis="no existe"
+          if printf '%s\n' "$existentes" | grep -q '^google_redis_instance\.cache'; then redis="en marcha"; fi
+          conector="no existe"
+          if printf '%s\n' "$existentes" | grep -q '^google_vpc_access_connector\.conector'; then conector="en marcha"; fi
+          {
+            echo "### Costos de staging — acción: \`${ACCION}\`"
+            echo ""
+            echo "| Recurso | Estado ahora |"
+            echo "|---|---|"
+            echo "| Marca guardada | **${marca}** |"
+            echo "| Cloud SQL | ${sql} |"
+            echo "| Redis (Memorystore) | ${redis} |"
+            echo "| Conector VPC | ${conector} |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Plan
+        if: env.ACCION != 'estado'
+        working-directory: codigo/infra
+        run: |
+          set -euo pipefail
+          extra=()
+          if [ "$ACCION" = "apagar" ]; then
+            extra=(-var=cloud_sql_encendida=false -var=crear_redis=false)
+          fi
+          terraform plan -var-file=staging.tfvars "${extra[@]}" -out=plan.bin
+          terraform show -json plan.bin > plan.json
+      - name: Revisar el plan (apagar solo puede borrar Redis y su conector)
+        if: env.ACCION != 'estado'
+        working-directory: codigo/infra
+        run: |
+          set -euo pipefail
+          revisar=../../herramientas/scripts/revisar_plan.py
+          if [ "$ACCION" = "apagar" ]; then
+            python3 "$revisar" plan.json \
+              --solo-destruir '^google_redis_instance\.' \
+              --solo-destruir '^google_vpc_access_connector\.' \
+              --solo-destruir '^google_compute_subnetwork\.conector' \
+              --solo-destruir '^google_compute_network\.privada' \
+              --solo-destruir '^google_project_service\.redis_apis' \
+              --solo-destruir '^google_secret_manager_secret_version\.redis_url' | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            python3 "$revisar" plan.json | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Aplicar
+        if: env.ACCION != 'estado'
+        working-directory: codigo/infra
+        run: terraform apply plan.bin
+      - name: Guardar el estado y resumir
+        if: env.ACCION != 'estado'
+        run: |
+          set -euo pipefail
+          if [ "$ACCION" = "apagar" ]; then nuevo=apagado; else nuevo=encendido; fi
+          printf '%s' "$nuevo" | gcloud storage cp - "gs://${PROYECTO}-tfstate/solventa-backend/costos/estado"
+          if [ "$nuevo" = "apagado" ]; then
+            cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+
+          **Apagado.** Cloud SQL quedó detenida (conserva los datos; solo se paga el disco) y Redis y su conector VPC se
+          borraron. Los servicios que dependen de ellos no atenderán hasta que lo vuelvas a encender.
+
+          Para volver a subirlo: *Actions → Costos staging → Run workflow → `encender`* (unos 10-15 minutos).
+          EOF
+          else
+            cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+
+          **Encendido.** Cloud SQL en marcha y, si `crear_redis` está en `true` en `infra/staging.tfvars`, Redis y su
+          conector recreados. Los servicios toman las URLs nuevas al arrancar su próxima revisión: si alguno sigue
+          fallando, lanza *Deploy staging* para ese servicio.
+
+          Para volver a apagarlo: *Actions → Costos staging → Run workflow → `apagar`*.
+          EOF
+          fi
+      - name: Si falló
+        if: failure()
+        run: |
+          {
+            echo ""
+            echo "### ❌ No se completó"
+            echo ""
+            echo "No se guardó ningún estado nuevo. Revisa el paso que falló. Si el botón no sirve, \`infra/README.md\`"
+            echo "(sección «Apagar y encender lo que cuesta») explica cómo hacerlo a mano desde Cloud Shell."
+          } >> "$GITHUB_STEP_SUMMARY"

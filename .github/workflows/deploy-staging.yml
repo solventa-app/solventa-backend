@@ -136,10 +136,36 @@ jobs:
         with:
           terraform_wrapper: false
       - run: terraform init
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      # Lo que cobra por hora (Cloud SQL, Redis) puede estar APAGADO a propósito (workflow `Costos staging`).
+      # Un release no debe volver a encenderlo: la marca guardada manda sobre `staging.tfvars`.
+      - name: ¿Los costos están apagados?
+        id: costos
+        run: |
+          set -uo pipefail
+          url="gs://${PROYECTO}-tfstate/solventa-backend/costos/estado"
+          if salida=$(gcloud storage cat "$url" 2>&1); then
+            estado=$(printf '%s' "$salida" | tr -d '[:space:]')
+          elif printf '%s' "$salida" | grep -q -i -E 'matched no objects|not found|404'; then
+            estado=encendido
+          else
+            echo "::error title=Costos::No pude leer el estado de los costos: $salida"
+            exit 1
+          fi
+          echo "estado=$estado" >> "$GITHUB_OUTPUT"
+          if [ "$estado" = "apagado" ]; then
+            echo "### Costos de staging: **apagados** (Cloud SQL detenida y sin Redis). Para encenderlos: workflow *Costos staging*." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Plan
+        env:
+          COSTOS: ${{ steps.costos.outputs.estado }}
         run: |
           set -euo pipefail
-          terraform plan -var-file=staging.tfvars -out=plan.bin
+          extra=()
+          if [ "$COSTOS" = "apagado" ]; then
+            extra=(-var=cloud_sql_encendida=false -var=crear_redis=false)
+          fi
+          terraform plan -var-file=staging.tfvars "${extra[@]}" -out=plan.bin
           terraform show -json plan.bin > plan.json
       - name: Revisar el plan (no se destruye nada sin decisión explícita)
         env:

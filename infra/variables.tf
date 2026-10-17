@@ -102,6 +102,12 @@ variable "cloud_sql_tier" {
   default     = "db-f1-micro"
 }
 
+variable "cloud_sql_encendida" {
+  description = "Si la instancia de Cloud SQL está en marcha (`ALWAYS`) o DETENIDA (`NEVER`). Detenerla conserva las bases, los usuarios y las migraciones y solo deja de cobrar la instancia (queda el disco); es el \"apagado\" de staging, que se maneja con el workflow `Costos staging`. No tiene efecto si `crear_cloud_sql = false`."
+  type        = bool
+  default     = true
+}
+
 # --------------------------------------------------------------------------------------------------
 # MongoDB Atlas (RISK). Opt-in porque requiere una cuenta/organización de Atlas que HOY no existe.
 # Decisión documentada en infra/README.md: Atlas M0 (gratis) en vez de un replica set autogestionado
