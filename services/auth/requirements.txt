@@ -8,3 +8,4 @@ psycopg[binary]==3.3.6
 psycopg-pool==3.3.3
 argon2-cffi==25.1.0
 pyjwt==2.15.1
+cryptography==44.0.0
