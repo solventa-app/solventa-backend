@@ -116,4 +116,7 @@ resource "google_billing_account_iam_member" "terraform_lee_presupuesto" {
   billing_account_id = var.billing_account_id
   role               = "roles/billing.viewer"
   member             = "serviceAccount:${google_service_account.terraform[0].email}"
+
+  # El proveedor `facturacion` cobra la cuota al proyecto (versions.tf): la Cloud Billing API debe estar habilitada.
+  depends_on = [google_project_service.presupuesto_apis]
 }

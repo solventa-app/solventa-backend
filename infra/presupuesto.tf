@@ -23,6 +23,7 @@
 resource "google_project_service" "presupuesto_apis" {
   for_each = var.crear_presupuesto ? toset([
     "billingbudgets.googleapis.com",
+    "cloudbilling.googleapis.com", # leer/asignar la política IAM de la cuenta de facturación (cicd.tf) pasa por esta API
     "cloudfunctions.googleapis.com",
     "cloudbuild.googleapis.com",
     "eventarc.googleapis.com",

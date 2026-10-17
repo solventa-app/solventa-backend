@@ -1,6 +1,6 @@
 # ADR-09 — Terraform se aplica desde el pipeline
 
-- **Estado:** propuesto. El workflow y el guardia están probados con planes reales y `actionlint`; el `apply` desde GitHub **no** se ha ejecutado nunca (hace falta el arranque manual de abajo).
+- **Estado:** propuesto. El workflow y el guardia están probados con planes reales y `actionlint`; el arranque manual de abajo se hizo el 2026-10-17 (114 recursos, `plan` final sin cambios), pero el `apply` desde GitHub **no** se ha ejecutado nunca.
 - **Fecha:** 2026-10-16
 - **Reemplaza:** la decisión 9 de [ADR-07](ADR-07-cicd-y-migraciones.md) ("`terraform apply` es siempre manual"). El resto de ADR-07 sigue vigente.
 

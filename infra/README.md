@@ -72,6 +72,14 @@ del equipo (regla de costos de `CLAUDE.md`).
   - En proyectos nuevos la cuenta de Compute por defecto ya no trae roles. La función `frenar-gasto` se construye con una
     cuenta propia (`frenar-gasto-build`, `roles/cloudbuild.builds.builder`) y recibe el evento con la cuenta de la función
     (`roles/eventarc.eventReceiver`); sin eso el build falla con "missing permission on the build service account".
+    Además el build lee el código desde `gcf-v2-sources-<proyecto>-<región>`, un bucket que crea y administra GCP en el
+    primer despliegue: la cuenta de build necesita `roles/storage.objectViewer` **sobre ese bucket** (no sobre el proyecto,
+    donde leería también el estado de Terraform). En un proyecto nuevo el primer `apply` falla en ese punto y el siguiente pasa.
+  - `main.py` necesita `@functions_framework.cloud_event`. Sin el decorador la función **se despliega y aparece `ACTIVE`**,
+    pero cada alerta revienta con `TypeError` (el framework la llama con `(data, context)`) y nunca frena nada. Se descubrió
+    publicando una alerta de prueba (`alertThresholdExceeded: 0.5`, que solo registra) en `alertas-presupuesto`.
+  - `google_billing_account_iam_member` (cicd.tf) pasa por la Cloud Billing API del proyecto de cuota: hay que habilitar
+    `cloudbilling.googleapis.com` (está en `presupuesto_apis`) y la propagación tarda uno o dos minutos.
   - La API guarda el filtro del presupuesto con el **número** de proyecto; con el ID, cada `plan` mostraba una diferencia.
 - **Acceso entre servicios por IAM, no `allUsers` global.** `servicios.tf` crea una service account
   de runtime por servicio y solo otorga `roles/run.invoker` a quien el manifiesto declara en `llama`;
@@ -246,8 +254,8 @@ key ring de KMS (no se puede borrar) ni los secretos si ya cargaste valores real
 
 ## Pendiente de confirmación del usuario/equipo antes de que nada de esto se pueda aplicar
 
-- El **`project_id` real** del proyecto GCP de staging (hoy no existe ninguno, según `CLAUDE.md`).
-- El **`billing_account_id`** real, si se activa `crear_presupuesto`.
+- Resuelto el 2026-10-17: el proyecto de staging es `solventa-511815` y su cuenta de facturación ya está vinculada y en uso
+  (`billing_account_id` llega por `TF_VAR_billing_account_id`, no por el repositorio).
 - La **cuenta/organización de MongoDB Atlas** y sus API keys, si se activa `crear_mongo_atlas` — hoy
   no existen.
 - Confirmar que `repositorio_github` (`solventa-app/solventa-backend`) sigue siendo el `origin`
@@ -276,10 +284,18 @@ medido en ese experimento; dejarlo así de explícito para no sugerir una verifi
 
 Validado: `terraform fmt -check`, `terraform validate`, `terraform plan` contra `solventa-511815` (con las banderas
 apagadas: 9 recursos sin costo) y planes de las combinaciones `crear_servicios` / `crear_cloud_sql` / `crear_pipeline` /
-`crear_mongo_atlas` (sin secretos repetidos, socket de Cloud SQL solo donde corresponde). **Ningún `apply` ha corrido
-todavía contra GCP**: espere ajustes en la primera ejecución real, en particular la deriva de atributos que el pipeline
-modifica (por eso `servicios.tf` ignora imagen, etiquetas, cliente y tráfico) y el primer arranque de los servicios con
-Cloud SQL, que solo se puede comprobar con la instancia creada.
+`crear_mongo_atlas` (sin secretos repetidos, socket de Cloud SQL solo donde corresponde).
+
+**Aplicado el 2026-10-17** (el arranque manual de ADR-09, desde una máquina con `-var-file=staging.tfvars`): 114 recursos en
+el estado y un `plan` final sin cambios. Existen los 10 servicios de Cloud Run (con la imagen de ejemplo `hello`) y los 3
+jobs de migración, la cuenta y la federación del pipeline, y la protección de gasto, que se probó de verdad: una alerta de
+prueba por debajo del 100 % llega a la función y responde 200. El camino de bloqueo (≥ 100 %) se probó con CloudEvents
+simulados por HTTP, no en vivo, porque bloquearía el ingreso de todos los servicios.
+
+**Sin verificar todavía:** que el `apply` corra desde GitHub (la etapa `infra` y el entorno `infra-staging` no se han
+ejecutado), el despliegue de imágenes reales, la deriva de atributos que el pipeline modifica (por eso `servicios.tf` ignora
+imagen, etiquetas, cliente y tráfico) y el primer arranque de los servicios con Cloud SQL, que solo se puede comprobar con
+la instancia creada (`crear_cloud_sql = false` hoy, así que los servicios con base de datos no pueden arrancar aún).
 
 **Pendiente conocido:** los servicios que usan Redis (`rating`, `acl-worker`, `consolidador-fuentes`) todavía no declaran
 `vpc_access` hacia el conector de `redis.tf`; hay que conectarlo antes de activar `crear_redis`, porque Memorystore solo
