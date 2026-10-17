@@ -62,7 +62,7 @@
     "nombre": "consolidador-fuentes",
     "ruta": "services/consolidador-fuentes",
     "puerto": 8006,
-    "llama": ["acl-worker"],
+    "llama": ["acl-worker", "auth"],
     "secretos": { "REDIS_URL": "redis-url-cola-reconciliacion" }
   },
   {

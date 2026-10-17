@@ -1084,6 +1084,63 @@
           }
         },
         {
+          "name": "sin historial crediticio ni caché",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Documento nuevo en cada corrida: así no hay caché del ACL para él.",
+                  "pm.variables.set('documento_sin_cache', 'CC-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// CA-W01-05: el historial crediticio es la única fuente obligatoria. Con Open Finance lento y un",
+                  "// documento sin caché no hay oferta posible: ErrorOferta con reintento (nunca un 5xx).",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.solicitarOferta;",
+                  "pm.test('ErrorOferta con reintento por datos insuficientes', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(r.__typename).to.eql('ErrorOferta');",
+                  "  pm.expect(r.puedeReintentar).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_sin_cache}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 240,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
+            },
+            "description": "Con Open Finance lento y un documento sin caché, el historial crediticio no llega: ErrorOferta con reintento (CA-W01-05)."
+          }
+        },
+        {
           "name": "Stub Open Finance -> modo sano",
           "event": [
             {
@@ -1275,6 +1332,52 @@
               "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"no-es-un-numero\",\n      \"plazoMeses\": 240,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
             },
             "description": "RATING rechaza el valor (400) y el BFF lo traduce a ErrorOferta sin reintento."
+          }
+        },
+        {
+          "name": "plazo inválido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// B3: el BFF valida la solicitud antes de consultar el consentimiento o las fuentes.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.solicitarOferta;",
+                  "pm.test('ErrorOferta sin reintento por plazo fuera de 1-360 meses', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(r.__typename).to.eql('ErrorOferta');",
+                  "  pm.expect(r.puedeReintentar).to.be.false;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 0,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
+            },
+            "description": "El BFF valida el plazo (1 a 360 meses) y responde ErrorOferta sin reintento, sin consultar fuentes."
           }
         },
         {
@@ -2890,7 +2993,7 @@
     },
     {
       "key": "documento_identidad",
-      "value": "CC-NEWMAN-0001"
+      "value": "CC-NEWMAN-100001"
     },
     {
       "key": "clave_nuevos",

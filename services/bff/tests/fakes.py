@@ -210,10 +210,19 @@ class RatingFalso:
     def __init__(self, oferta: dict | None = None, error: Exception | None = None) -> None:
         self.oferta = oferta or OFERTA_COMPLETA
         self.error = error
-        self.llamadas: list[tuple[str, str, str]] = []
+        self.llamadas: list[tuple[str, str, str, int, str]] = []
 
-    async def generar_oferta(self, cliente_id: str, operation_time: str, cobertura: str) -> dict:
-        self.llamadas.append((cliente_id, operation_time, cobertura))
+    async def generar_oferta(
+        self,
+        cliente_id: str,
+        operation_time: str,
+        cobertura: str,
+        plazo_meses: int,
+        direccion_inmueble: str,
+    ) -> dict:
+        self.llamadas.append(
+            (cliente_id, operation_time, cobertura, plazo_meses, direccion_inmueble)
+        )
         if self.error is not None:
             raise self.error
         return self.oferta

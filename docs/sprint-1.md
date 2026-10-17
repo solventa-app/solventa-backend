@@ -181,3 +181,11 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   solo el `cliente_id` y el BFF compone `cobros.cliente { id nombre }` en lotes. **Tampoco estaba en el plan del sprint:**
   registrar las horas en Jira bajo KAN-28. La relación póliza→cliente la declara quien ordena el cobro hasta que exista el
   servicio de pólizas.
+- **Reglas de la oferta de HU-W01 (KAN-24, 2026-10-17, decididas con el equipo):** CA-W01-05 ya no queda cubierto
+  solo por fallas de RISK/RATING. El **historial crediticio es la única fuente obligatoria**: si no llega ni en línea
+  ni de caché, RATING responde `datos_insuficientes` y el BFF devuelve `ErrorOferta` con reintento; si llega y falla
+  cualquier otra (incluidos los antecedentes judiciales), la oferta es PRELIMINAR. Las 5 fuentes se siguen consultando
+  en paralelo (en orden sumarían hasta 5 × 700 ms). Además, el BFF valida la solicitud (documento, valor, plazo de 1 a
+  360 meses y dirección) antes de consultar nada, y RATING usa el plazo y la ciudad de la dirección en la prima con
+  factores **ilustrativos** (ver `services/rating/README.md`). El `consolidador-fuentes` verifica en AUTH que el
+  consentimiento siga vigente antes de reintentar una fuente (regla #7). Sin cambios de contrato.

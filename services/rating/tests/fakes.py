@@ -53,12 +53,19 @@ class ServicioOfertaFalso:
         self.oferta = oferta
         self.score_de_cache = score_de_cache
         self.error = error
-        self.llamadas: list[tuple[str, str, str]] = []
+        self.llamadas: list[tuple[str, str, str, int | None, str | None]] = []
 
     def generar(
-        self, cliente_id: str, operation_time: str, cobertura: str
+        self,
+        cliente_id: str,
+        operation_time: str,
+        cobertura: str,
+        plazo_meses: int | None = None,
+        direccion_inmueble: str | None = None,
     ) -> tuple[dict[str, Any] | None, bool]:
-        self.llamadas.append((cliente_id, operation_time, cobertura))
+        self.llamadas.append(
+            (cliente_id, operation_time, cobertura, plazo_meses, direccion_inmueble)
+        )
         if self.error is not None:
             raise self.error
         return self.oferta, self.score_de_cache

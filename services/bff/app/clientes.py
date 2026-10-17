@@ -22,6 +22,11 @@ class SolicitudInvalida(Exception):
     """El servicio rechazó la solicitud (4xx): reintentar no la arregla."""
 
 
+class DatosInsuficientes(Exception):
+    """RATING no puede ofertar: falta una fuente obligatoria (CA-W01-05). Reintentar sí
+    puede arreglarlo cuando el proveedor se recupere."""
+
+
 class PuertoAuth(Protocol):
     async def registrar_consentimiento(
         self, finalidad: str, version_texto: str, actor: dict | None = None
@@ -60,7 +65,12 @@ class PuertoRisk(Protocol):
 
 class PuertoRating(Protocol):
     async def generar_oferta(
-        self, cliente_id: str, operation_time: str, cobertura: str
+        self,
+        cliente_id: str,
+        operation_time: str,
+        cobertura: str,
+        plazo_meses: int,
+        direccion_inmueble: str,
     ) -> dict: ...
 
 
@@ -213,17 +223,43 @@ class ClienteRiskHttp:
         return respuesta.json()
 
 
+# Mismo valor que `DETALLE_DATOS_INSUFICIENTES` de services/rating/app/main.py.
+DETALLE_DATOS_INSUFICIENTES = "datos_insuficientes"
+
+
+def _detalle(respuesta: httpx.Response) -> Any:
+    try:
+        return respuesta.json().get("detail")
+    except ValueError:
+        return None
+
+
 class ClienteRatingHttp:
     def __init__(self, cliente: httpx.AsyncClient) -> None:
         self._cliente = cliente
 
-    async def generar_oferta(self, cliente_id: str, operation_time: str, cobertura: str) -> dict:
+    async def generar_oferta(
+        self,
+        cliente_id: str,
+        operation_time: str,
+        cobertura: str,
+        plazo_meses: int,
+        direccion_inmueble: str,
+    ) -> dict:
         respuesta = await _pedir(
             self._cliente,
             "POST",
             "/ofertas",
-            {"cliente_id": cliente_id, "operation_time": operation_time, "cobertura": cobertura},
+            {
+                "cliente_id": cliente_id,
+                "operation_time": operation_time,
+                "cobertura": cobertura,
+                "plazo_meses": plazo_meses,
+                "direccion_inmueble": direccion_inmueble,
+            },
         )
+        if respuesta.status_code == 422 and _detalle(respuesta) == DETALLE_DATOS_INSUFICIENTES:
+            raise DatosInsuficientes()
         if respuesta.status_code == 400:
             raise SolicitudInvalida(respuesta.json().get("detail", ""))
         if respuesta.is_error:

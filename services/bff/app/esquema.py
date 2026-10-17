@@ -214,7 +214,8 @@ class CrearCobroInput:
     token_medio_pago: str  # token del proveedor PCI-DSS; nunca datos de tarjeta
     # El CLIENTE a quien se le cobra. Mientras no exista el servicio de pólizas, nada valida
     # que la póliza sea suya.
-    cliente_id: strawberry.ID | None = None
+    # UNSET (no `None`): así el esquema no publica `= null` y sigue igual al contrato.
+    cliente_id: strawberry.ID | None = strawberry.UNSET
 
 
 @strawberry.type
@@ -284,7 +285,9 @@ class CrearUsuarioInput:
     usuario: str
     clave: str
     rol: RolUsuario
-    nombre: str | None = None  # solo CLIENTE; AUTH lo guarda cifrado y no lo devuelve
+    # Solo CLIENTE; AUTH lo guarda cifrado y no lo devuelve.
+    # UNSET: igual que el contrato (sin `= null`).
+    nombre: str | None = strawberry.UNSET
 
 
 # ---------- Traducción desde los servicios ----------
@@ -489,7 +492,11 @@ class Mutation:
     async def solicitar_oferta(self, info: Info, entrada: SolicitudOfertaInput) -> ResultadoOferta:
         exigir_rol(info, *CLIENTE_O_ASESOR)
         resultado = await info.context["servicio_oferta"].solicitar(
-            str(entrada.consentimiento_id), entrada.documento_identidad, entrada.valor_credito
+            str(entrada.consentimiento_id),
+            entrada.documento_identidad,
+            entrada.valor_credito,
+            entrada.plazo_meses,
+            entrada.direccion_inmueble,
         )
         if isinstance(resultado, ErrorOfertaDatos):
             return ErrorOferta(
@@ -569,7 +576,10 @@ class Mutation:
         exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
         try:
             datos = await _auth(info).crear_usuario(
-                entrada.usuario, entrada.clave, entrada.rol.value, entrada.nombre
+                entrada.usuario,
+                entrada.clave,
+                entrada.rol.value,
+                entrada.nombre if isinstance(entrada.nombre, str) else None,
             )
         except SolicitudInvalida as error:
             return ErrorUsuario(mensaje=str(error))
