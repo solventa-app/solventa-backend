@@ -3,7 +3,10 @@
 #
 # Reparto de responsabilidades (ADR-07): Terraform define QUÉ es cada servicio (cuenta de servicio, variables,
 # secretos, permisos entre servicios); el pipeline solo cambia la IMAGEN de cada revisión y el tráfico.
-# Por eso se ignoran image, labels, client y traffic.
+# Por eso se ignoran image, labels, client y traffic, y de la plantilla del servicio también `labels` y `revision`:
+# `gcloud run deploy --update-labels commit-sha=...` deja esa etiqueta en la plantilla y asigna el nombre de la
+# revisión. Sin ignorarlos, cada servicio desplegado aparece como «modificar» en el plan, y cada `apply` de infra
+# recrearía una revisión de todos los servicios (y en los que no arrancan, volvería a fallar).
 #
 # Costo: Cloud Run y Cloud Run Jobs escalan a cero (~USD 0 en reposo). Secret Manager cobra ~USD 0,06/mes por
 # versión activa. Con `crear_cloud_sql`, los servicios con `database-url-*` (y sus jobs) montan el socket de Cloud SQL;
@@ -178,6 +181,8 @@ resource "google_cloud_run_v2_service" "servicio" {
   lifecycle {
     ignore_changes = [
       template[0].containers[0].image,
+      template[0].labels,
+      template[0].revision,
       labels,
       client,
       client_version,
