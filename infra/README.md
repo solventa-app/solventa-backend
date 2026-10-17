@@ -72,17 +72,24 @@ del equipo (regla de costos de `CLAUDE.md`).
   - En proyectos nuevos la cuenta de Compute por defecto ya no trae roles. La función `frenar-gasto` se construye con una
     cuenta propia (`frenar-gasto-build`, `roles/cloudbuild.builds.builder`) y recibe el evento con la cuenta de la función
     (`roles/eventarc.eventReceiver`); sin eso el build falla con "missing permission on the build service account".
+    Además el build lee el código desde `gcf-v2-sources-<proyecto>-<región>`, un bucket que crea y administra GCP en el
+    primer despliegue: la cuenta de build necesita `roles/storage.objectViewer` **sobre ese bucket** (no sobre el proyecto,
+    donde leería también el estado de Terraform). En un proyecto nuevo el primer `apply` falla en ese punto y el siguiente pasa.
+  - `main.py` necesita `@functions_framework.cloud_event`. Sin el decorador la función **se despliega y aparece `ACTIVE`**,
+    pero cada alerta revienta con `TypeError` (el framework la llama con `(data, context)`) y nunca frena nada. Se descubrió
+    publicando una alerta de prueba (`alertThresholdExceeded: 0.5`, que solo registra) en `alertas-presupuesto`.
+  - `google_billing_account_iam_member` (cicd.tf) pasa por la Cloud Billing API del proyecto de cuota: hay que habilitar
+    `cloudbilling.googleapis.com` (está en `presupuesto_apis`) y la propagación tarda uno o dos minutos.
   - La API guarda el filtro del presupuesto con el **número** de proyecto; con el ID, cada `plan` mostraba una diferencia.
 - **Acceso entre servicios por IAM, no `allUsers` global.** `servicios.tf` crea una service account
   de runtime por servicio y solo otorga `roles/run.invoker` a quien el manifiesto declara en `llama`;
   `allUsers` solo se concede a los servicios marcados `publico: true` (hoy, `bff`). Más estricto que
   el patrón de `solventa-arquitectura/experimento-1-acl-kyc/infra` (que sí usa `allUsers` para todos).
-- **`deploy-staging.yml` migra antes de desplegar y no corre `terraform apply`.** El estado de
-  Terraform es local por ahora (no se ha movido a GCS, ver `versions.tf`), así que aplicarlo desde
-  GitHub Actions crearía un estado desconectado del que usa el equipo localmente. El workflow
-  construye la imagen (tag = SHA), corre el Cloud Run Job de migración y solo entonces actualiza la
-  revisión del servicio — Terraform sigue siendo la única fuente de verdad para la infraestructura en
-  sí (Redis, Cloud SQL, IAM, etc., que siguen fuera de este pipeline).
+- **`deploy-staging.yml` aplica Terraform primero, y luego migra y despliega** ([ADR-09](../docs/adr/ADR-09-terraform-desde-el-pipeline.md)).
+  Si el merge cambió `infra/` o `.github/servicios.json`, la etapa `infra` hace plan, pasa el guardia
+  (`scripts/revisar_plan.py`, que bloquea destrucciones) y aplica; solo entonces construye la imagen
+  (tag = SHA), corre el Cloud Run Job de migración y actualiza la revisión del servicio. El estado ya vive en
+  GCS, así que el pipeline y el equipo trabajan sobre el mismo.
 - **Secretos:** Cloud SQL y Mongo Atlas generan su contraseña con `random_password` (nunca un valor
   fijo en el código) y la guardan en Secret Manager; Cloud Run los lee con `value_source.secret_key_ref`, nunca
   como texto plano en una variable de entorno de la consola de Cloud Run. Ojo: esos valores generados sí quedan
@@ -100,12 +107,16 @@ del equipo (regla de costos de `CLAUDE.md`).
 
 ```bash
 cd infra
-cp terraform.tfvars.example terraform.tfvars   # completar project_id; todo lo demás queda en false
+export TF_VAR_project_id=<proyecto> TF_VAR_billing_account_id=<cuenta-de-facturacion>   # no van en el repo
 terraform init          # el lockfile trae hashes de linux_amd64 (CI) y windows_amd64: no debería modificarlo
 terraform fmt -check -recursive && terraform validate
-terraform plan          # solo lectura (necesita credenciales de un proyecto real)
-terraform apply         # CREA recursos: confirmar con el equipo antes, uno por uno
+terraform plan -var-file=staging.tfvars    # solo lectura (necesita credenciales de un proyecto real)
 ```
+
+`staging.tfvars` es la configuración que aplica el pipeline y la que se usa a mano (ver [ADR-09](../docs/adr/ADR-09-terraform-desde-el-pipeline.md)).
+Desde el arranque, los cambios en `infra/` los aplica el merge a `main` (un release o un hotfix); **no** hagas `terraform apply` a mano salvo para
+el arranque inicial o una emergencia, y siempre con el plan revisado y confirmado por el equipo.
+`terraform.tfvars.example` sigue sirviendo para quien monte un entorno propio con un `terraform.tfvars` local (ignorado por git).
 
 ## Estado de Terraform
 
@@ -144,8 +155,10 @@ según qué historia lo necesite.
 3. Estado en un bucket de GCS con versionado: ya hecho (ver "Estado de Terraform").
 4. `crear_pipeline = true` → `terraform apply` → copiar los outputs a GitHub (ver "Conectar GitHub con GCP").
 5. `crear_servicios = true` → `terraform apply` → **cargar el valor real de cada secreto** (ver "Cargar los secretos").
-6. Primer despliegue: Actions > *Deploy staging* > *Run workflow* con `servicios = todos` (los servicios nacen con la
-   imagen de ejemplo `imagen_inicial`; este paso pone las reales). Desde ahí, cada merge a `develop` despliega solo lo que cambió.
+6. Primer despliegue: Actions > *Deploy staging* > *Run workflow* **eligiendo la rama `main`** (por defecto GitHub propone
+   `develop`, que no despliega) con `servicios = todos` (los servicios nacen con la imagen de ejemplo `imagen_inicial`; este
+   paso pone las reales). Desde ahí, cada release o hotfix que llega a `main` despliega solo lo que cambió. Un merge a
+   `develop` no despliega nada.
 7. Si se va a usar `crear_mongo_atlas`: crear primero la cuenta/organización de MongoDB Atlas a mano
    (no se puede automatizar sin que exista ya) y exportar `MONGODB_ATLAS_PUBLIC_KEY` /
    `MONGODB_ATLAS_PRIVATE_KEY` en el shell que corre terraform. **Nadie ha hecho esto todavía.**
@@ -153,7 +166,7 @@ según qué historia lo necesite.
 ## Conectar GitHub con GCP
 
 Con `crear_pipeline = true`, `terraform output` entrega los valores. En GitHub: Settings > Environments > **New environment
-`staging`** (aquí se pueden exigir revisores y limitar a la rama `develop`), y en Settings > Secrets and variables > Actions >
+`staging`** (aquí se pueden exigir revisores; ver más abajo por qué admite `main` y `develop`), y en Settings > Secrets and variables > Actions >
 **Variables**:
 
 | Variable | Valor |
@@ -161,10 +174,24 @@ Con `crear_pipeline = true`, `terraform output` entrega los valores. En GitHub: 
 | `GCP_PROJECT_ID` | tu `project_id` |
 | `GCP_WIF_PROVIDER` | `terraform output -raw wif_provider` |
 | `GCP_DEPLOY_SA` | `terraform output -raw deploy_sa` |
-| `GCP_PROTECCION_GASTO` | `activa` — solo después del paso 2 de arriba |
+| `GCP_TERRAFORM_SA` | `terraform output -raw terraform_sa` (solo para la etapa `infra`) |
+| `GCP_BILLING_ACCOUNT_ID` | ID de la cuenta de facturación (solo para la etapa `infra`; el presupuesto lo lee con `TF_VAR_billing_account_id`) |
+| `GCP_PROTECCION_GASTO` | `activa` — solo después del paso 2 de arriba, y con la función `frenar-gasto` desplegada |
 | `GCP_REGION`, `GCP_REGISTRY_REPO` | opcionales (`us-central1`, `solventa-backend`) |
 
 Hasta que las tres primeras y `GCP_PROTECCION_GASTO` existan, `deploy-staging.yml` y `rollback-staging.yml` no hacen nada.
+
+**Dos entornos de GitHub** (Settings > Environments): `staging` (despliegue de aplicaciones, identidad `GCP_DEPLOY_SA`) e
+`infra-staging` (Terraform, identidad `GCP_TERRAFORM_SA`, mucho más potente: propietario del proyecto de staging). En
+`infra-staging` se puede exigir revisores antes de cada apply. Los dos están limitados a las ramas `main` y `develop`: en
+`workflow_run` GitHub toma como ref la rama por defecto (`develop`), así que restringirlos solo a `main` bloquearía el
+despliegue. Que solo `main` despliegue lo garantiza `deploy-staging.yml` (`branches: [main]` y la ejecución manual solo desde
+`main`); lo que el entorno impide es que una rama de trabajo o un PR asuma la identidad de Terraform. Si un entorno no existe,
+GitHub lo crea solo en el primer uso **sin reglas de protección**: créalos antes (ya están creados desde el 2026-10-17).
+
+**Arranque (una vez, a mano):** la cuenta de Terraform se crea con `crear_pipeline`, así que ese primer `apply` lo hace una
+persona desde su máquina con `terraform plan -var-file=staging.tfvars` revisado. Después, los cambios en `infra/` los aplica
+el merge. Localmente: `export TF_VAR_project_id=... TF_VAR_billing_account_id=...` y siempre `-var-file=staging.tfvars`.
 
 ## Cargar los secretos
 
@@ -241,8 +268,8 @@ key ring de KMS (no se puede borrar) ni los secretos si ya cargaste valores real
 
 ## Pendiente de confirmación del usuario/equipo antes de que nada de esto se pueda aplicar
 
-- El **`project_id` real** del proyecto GCP de staging (hoy no existe ninguno, según `CLAUDE.md`).
-- El **`billing_account_id`** real, si se activa `crear_presupuesto`.
+- Resuelto el 2026-10-17: el proyecto de staging es `solventa-511815` y su cuenta de facturación ya está vinculada y en uso
+  (`billing_account_id` llega por `TF_VAR_billing_account_id`, no por el repositorio).
 - La **cuenta/organización de MongoDB Atlas** y sus API keys, si se activa `crear_mongo_atlas` — hoy
   no existen.
 - Confirmar que `repositorio_github` (`solventa-app/solventa-backend`) sigue siendo el `origin`
@@ -254,9 +281,17 @@ key ring de KMS (no se puede borrar) ni los secretos si ya cargaste valores real
 ## Pipeline
 
 - `ci.yml` valida el Terraform (`fmt`, `init -backend=false`, `validate`) cuando cambia `infra/` o `.github/servicios.json`. No aplica nada.
-- `deploy-staging.yml` y `rollback-staging.yml` despliegan aplicaciones (no infraestructura): construyen la imagen (tag = SHA),
-  migran y solo entonces actualizan la revisión del servicio. Se disparan **solo manualmente** (`workflow_dispatch`) o desde
-  el flujo que define `ci.yml` tras el merge a `develop` — nunca aplican Terraform.
+- `deploy-staging.yml`, tras el CI del merge a `main` (o a mano desde `main` con `workflow_dispatch`; un merge a `develop` no dispara nada): **`infra`** (si cambió `infra/` o el
+  manifiesto: plan → guardia → apply) → construir la imagen (tag = SHA) → migrar → desplegar sin tráfico → humo → promover. Si
+  `infra` falla o el guardia bloquea, no se despliega nada. Para permitir una destrucción revisada: *Run workflow* con
+  `permitir_destruir`.
+- **Informe de despliegue** (último job de `deploy-staging.yml`, `informe`): corre siempre que el despliegue arrancó, también si
+  una etapa falló, y deja un Markdown con el resultado de cada etapa, lo que quedó corriendo en Cloud Run (servicio, commit,
+  acceso y URL, leídos del estado real y no de lo previsto), cómo llamar al BFF y a los servicios privados, y **qué debes hacer**
+  (logs y rollback si algo falló, almacenes de datos que faltan, secretos por cargar, reintegrar `main` en `develop`, tag del
+  sprint). Está en el resumen de la ejecución (Actions) y como artefacto `informe-despliegue-<n>` durante 90 días. Lo genera
+  `scripts/informe_despliegue.py`; si el informe falla no tumba el despliegue.
+- `rollback-staging.yml` vuelve una revisión de aplicación a la anterior. **No** revierte infraestructura: para eso se revierte el PR.
 
 ## Patrón de referencia
 
@@ -269,10 +304,18 @@ medido en ese experimento; dejarlo así de explícito para no sugerir una verifi
 
 Validado: `terraform fmt -check`, `terraform validate`, `terraform plan` contra `solventa-511815` (con las banderas
 apagadas: 9 recursos sin costo) y planes de las combinaciones `crear_servicios` / `crear_cloud_sql` / `crear_pipeline` /
-`crear_mongo_atlas` (sin secretos repetidos, socket de Cloud SQL solo donde corresponde). **Ningún `apply` ha corrido
-todavía contra GCP**: espere ajustes en la primera ejecución real, en particular la deriva de atributos que el pipeline
-modifica (por eso `servicios.tf` ignora imagen, etiquetas, cliente y tráfico) y el primer arranque de los servicios con
-Cloud SQL, que solo se puede comprobar con la instancia creada.
+`crear_mongo_atlas` (sin secretos repetidos, socket de Cloud SQL solo donde corresponde).
+
+**Aplicado el 2026-10-17** (el arranque manual de ADR-09, desde una máquina con `-var-file=staging.tfvars`): 114 recursos en
+el estado y un `plan` final sin cambios. Existen los 10 servicios de Cloud Run (con la imagen de ejemplo `hello`) y los 3
+jobs de migración, la cuenta y la federación del pipeline, y la protección de gasto, que se probó de verdad: una alerta de
+prueba por debajo del 100 % llega a la función y responde 200. El camino de bloqueo (≥ 100 %) se probó con CloudEvents
+simulados por HTTP, no en vivo, porque bloquearía el ingreso de todos los servicios.
+
+**Sin verificar todavía:** que el `apply` corra desde GitHub (la etapa `infra` y el entorno `infra-staging` no se han
+ejecutado), el despliegue de imágenes reales, la deriva de atributos que el pipeline modifica (por eso `servicios.tf` ignora
+imagen, etiquetas, cliente y tráfico) y el primer arranque de los servicios con Cloud SQL, que solo se puede comprobar con
+la instancia creada (`crear_cloud_sql = false` hoy, así que los servicios con base de datos no pueden arrancar aún).
 
 **Pendiente conocido:** los servicios que usan Redis (`rating`, `acl-worker`, `consolidador-fuentes`) todavía no declaran
 `vpc_access` hacia el conector de `redis.tf`; hay que conectarlo antes de activar `crear_redis`, porque Memorystore solo

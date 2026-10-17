@@ -11,8 +11,8 @@ feature (feat|fix|chore/KAN-N-…) ──squash──► develop ──► relea
 
 | Rama | Rol | Vive | Entra por | Método de merge |
 |---|---|---|---|---|
-| `main` | Lo liberado. Cada commit es un release o un hotfix, etiquetado `sprint-N` en los releases | siempre | PR desde `release/sprint-N` o `hotfix/KAN-N-…` | **merge commit** |
-| `develop` | Integración: lo próximo a liberar. **Despliega a staging** | siempre | PR desde una rama de trabajo; PR desde `main` para reintegrar | **squash** (ramas de trabajo) / **merge commit** (reintegración desde `main`) |
+| `main` | Lo liberado. Cada commit es un release o un hotfix, etiquetado `sprint-N` en los releases. **Despliega a staging** | siempre | PR desde `release/sprint-N` o `hotfix/KAN-N-…` | **merge commit** |
+| `develop` | Integración: lo próximo a liberar. No despliega | siempre | PR desde una rama de trabajo; PR desde `main` para reintegrar | **squash** (ramas de trabajo) / **merge commit** (reintegración desde `main`) |
 | `feat|fix|chore/KAN-N-descripcion` | Una historia o habilitadora | horas o pocos días | sale de `develop` y vuelve a `develop` | squash |
 | `release/sprint-N` | Estabilización del cierre del sprint: solo correcciones | pocos días | sale de `develop` | merge commit hacia `main` |
 | `hotfix/KAN-N-descripcion` | Corrección urgente sobre lo liberado | horas | sale de `main` | merge commit hacia `main` |
@@ -21,7 +21,7 @@ feature (feat|fix|chore/KAN-N-…) ──squash──► develop ──► relea
 
 1. `git switch develop && git pull`, luego `git switch -c feat/KAN-24-consentimiento`.
 2. PR **hacia `develop`**; título `feat(auth): KAN-24 registra consentimiento append-only`; squash al aprobarse.
-3. Al integrarse, CI corre sobre `develop` y, si pasa, se despliega a staging (`deploy-staging.yml`). GitHub borra la rama de trabajo.
+3. Al integrarse, CI corre sobre `develop`. No se despliega: staging recibe lo que llega a `main` con el cierre de sprint. GitHub borra la rama de trabajo.
 
 **Cierre de sprint**
 
@@ -37,7 +37,7 @@ feature (feat|fix|chore/KAN-N-…) ──squash──► develop ──► relea
 - `main` y `develop` tienen ruleset (`.github/rulesets/main.json`, `develop.json`): PR obligatorio, 1 aprobación (se descarta si hay push nuevo), hilos resueltos, checks `CI OK`, `Título del PR` y `Nombre de rama` en verde, sin force-push ni borrado y sin excepciones (ni para administradores). Solo `develop` admite squash; `main` solo merge commit, porque el squash de un release perdería el vínculo con `develop` y haría que cada release reintegrado genere conflictos. Ninguna de las dos exige historial lineal.
 - El check `Nombre de rama` (`pr-rama.yml`) valida el nombre **y la pareja origen→destino** (p. ej. una `feat/…` hacia `main` se rechaza). Bloquea el merge, no la creación de la rama (GitHub no aplica reglas de nombre en este plan). Las de Dependabot (`dependabot/**`) están exentas y apuntan a `develop`.
 - El CI se dispara en cada PR y en cada push a `main` y `develop`.
-- Staging despliega **solo desde `develop`**. Producción no existe todavía: cuando exista, desplegará desde `main`.
+- Staging despliega **solo desde `main`**, es decir, con cada release o hotfix (`deploy-staging.yml`, tras el CI del merge); `develop` integra y no despliega. Producción no existe todavía.
 - Un tag por sprint al cerrarlo, sobre `main`: `sprint-1`, `sprint-2`, `sprint-3` (el mismo nombre en `solventa-frontend`). Los `sprint-*` están protegidos: no se pueden mover ni borrar (`.github/rulesets/tags.json`).
 - Cada merge a `develop` debe dejar el repo desplegable a staging.
 - **Dependabot:** los PRs patch y minor hacia `develop` se aprueban y se integran solos cuando los checks pasan (`dependabot-auto-merge.yml`); los major los revisa una persona.
@@ -49,7 +49,7 @@ feature (feat|fix|chore/KAN-N-…) ──squash──► develop ──► relea
 - **Conventional Commits** con alcance = servicio o carpeta y la clave de Jira: `feat(auth): KAN-24 registra consentimiento append-only`.
   Tipos: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `infra`. Alcances: `bff`, `auth`, `risk`, `rating`, `payments`, `acl`, `stubs`, `contracts`, `infra`, `tests`.
 - El título del PR sigue el mismo formato y **lo valida el CI** (`Título del PR`; Dependabot queda exento). El PR usa la plantilla de `.github/pull_request_template.md`.
-- Las ramas de trabajo se integran con **squash** en `develop`: el título del PR es el commit en `develop`, y el despliegue a staging compara contra su padre. Los PRs de release, hotfix y reintegración usan merge commit; su título sigue el mismo formato (p. ej. `chore(infra): KAN-175 release sprint-1`).
+- Las ramas de trabajo se integran con **squash** en `develop`: el título del PR es el commit en `develop`. Los PRs de release, hotfix y reintegración usan merge commit; el de release o hotfix a `main` es el que despliega a staging, comparado contra su primer padre (todo lo liberado); su título sigue el mismo formato (p. ej. `chore(infra): KAN-175 release sprint-1`).
 - Un PR cuenta una sola historia o habilitadora. Si cruza servicios de backend, sigue siendo un solo PR atómico.
 - Un cambio de contrato (`contracts/`) se avisa explícitamente para abrir el PR gemelo en `solventa-frontend`.
 
@@ -76,7 +76,7 @@ feature (feat|fix|chore/KAN-N-…) ──squash──► develop ──► relea
 
 - `develop` → staging automático **solo si CI pasó** y solo de lo que cambió; una imagen por commit (etiqueta = SHA). Ver `deploy-staging.yml`.
 - Un despliegue fallido antes de "promover" no afecta a staging. Para volver atrás: *Rollback staging* (no revierte la base; se corrige hacia adelante).
-- Terraform **no** se aplica desde el pipeline. Los servicios se declaran en `.github/servicios.json` y `python scripts/validar_servicios.py` debe pasar.
+- Terraform **sí** se aplica desde el pipeline (ADR-09), como primera etapa, al mergear cambios en `infra/` o `.github/servicios.json`; el PR es la aprobación y `infra/staging.tfvars` decide qué existe (activar un recurso de costo es un cambio revisado). Los servicios se declaran en `.github/servicios.json` y `python scripts/validar_servicios.py` debe pasar.
 
 ## Código
 

@@ -3,6 +3,8 @@
 - **Estado:** propuesto; el flujo local y de CI está probado en vivo, el de despliegue a GCP **no** (no existe aún el proyecto GCP)
 - **Fecha:** 2026-10-04
 - **Nota (2026-10-08):** donde dice `main` como rama que despliega a staging, ahora es `develop` ([ADR-08](ADR-08-git-flow.md)).
+- **Nota (2026-10-17):** staging vuelve a desplegar desde `main` (releases y hotfixes) y `develop` ya no despliega; ver la nota de [ADR-08](ADR-08-git-flow.md).
+- **Nota (2026-10-16):** la decisión 9 ("`terraform apply` es siempre manual") la reemplaza [ADR-09](ADR-09-terraform-desde-el-pipeline.md): Terraform se aplica desde el pipeline.
 - **Continúa:** ADR-06 (trunk-based, pipelines filtrados por ruta, "cada merge a `main` deja el repo desplegable a staging")
 
 ## Contexto
