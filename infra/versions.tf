@@ -4,7 +4,7 @@ terraform {
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = "~> 6.0"
+      version = "~> 8.7"
     }
     random = {
       # Genera las contraseñas de Cloud SQL / Mongo Atlas que van a Secret Manager (nunca al repo).
