@@ -324,6 +324,8 @@ atributos; comprobado con un `plan` real contra el estado con deriva (sin la cor
 `rating`, `acl-worker`), que solo se puede comprobar con Cloud SQL, MongoDB Atlas y Redis creados (`crear_cloud_sql`,
 `crear_mongo_atlas` y `crear_redis` están en `false` hoy).
 
-**Pendiente conocido:** los servicios que usan Redis (`rating`, `acl-worker`, `consolidador-fuentes`) todavía no declaran
-`vpc_access` hacia el conector de `redis.tf`; hay que conectarlo antes de activar `crear_redis`, porque Memorystore solo
-tiene IP privada.
+**Redis:** los servicios que declaran un secreto `redis-url-*` (`rating`, `acl-worker`, `consolidador-fuentes`) llevan
+`vpc_access` hacia el conector de `redis.tf` cuando `crear_redis = true` (Memorystore solo tiene IP privada), y Terraform
+escribe las tres URLs `redis-url-*` en Secret Manager con la contraseña (AUTH) que genera Memorystore: no hay que cargar
+nada a mano. **Sin probar en ejecución:** conectividad real servicio → Memorystore, que solo se comprueba con Redis creado
+(`crear_redis = false` hoy; cuesta ~USD 0,12/h según este README).

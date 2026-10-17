@@ -71,6 +71,7 @@ PR ─► CI ─► merge a develop ─► construir (imagen = SHA) ─► migra
 
 - [`CLAUDE.md`](CLAUDE.md) — contexto de trabajo, decisiones cerradas y reglas (léelo antes de tocar código).
 - [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md) — servicios, almacenes y flujo del caso insignia.
+- [`docs/pruebas-manuales.md`](docs/pruebas-manuales.md) — paso a paso para probar todo el backend a mano en tu terminal.
 - [`docs/sprint-1.md`](docs/sprint-1.md) — alcance, habilitadoras, escenarios y decisiones abiertas del Sprint 1.
 - [`docs/convenciones.md`](docs/convenciones.md) — ramas (git-flow), commits, PR y definición de hecho.
 - [`docs/adr/ADR-08-git-flow.md`](docs/adr/ADR-08-git-flow.md) — decisión del flujo `main → develop → feature`.

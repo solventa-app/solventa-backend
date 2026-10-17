@@ -33,6 +33,13 @@ locals {
   }
   cloud_sql_conexion = one(google_sql_database_instance.principal[*].connection_name)
 
+  # Servicios que hablan con Redis: los que declaran un secreto `redis-url-*`. Memorystore solo tiene IP privada, así que
+  # Cloud Run llega a ella únicamente a través del conector VPC de redis.tf.
+  con_redis = {
+    for n, s in local.activos : n => s
+    if var.crear_redis && anytrue([for id in values(try(s.secretos, {})) : startswith(id, "redis-url-")])
+  }
+
   # URL determinista de cada servicio: evita la referencia circular entre servicios que se llaman.
   url = { for n, s in local.servicios : n => "https://${n}-${data.google_project.actual.number}.${var.region}.run.app" }
 
@@ -125,6 +132,15 @@ resource "google_cloud_run_v2_service" "servicio" {
         cloud_sql_instance {
           instances = [local.cloud_sql_conexion]
         }
+      }
+    }
+
+    # Solo el tráfico a rangos privados (Memorystore) sale por el conector; el resto, por la red normal de Cloud Run.
+    dynamic "vpc_access" {
+      for_each = contains(keys(local.con_redis), each.key) ? [1] : []
+      content {
+        connector = google_vpc_access_connector.conector[0].id
+        egress    = "PRIVATE_RANGES_ONLY"
       }
     }
 
