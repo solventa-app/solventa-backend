@@ -5,7 +5,7 @@
 (`ServicioCobros.reintentar`). Así los dos quedan protegidos igual.
 
 Antes de cobrar se **concilia**: se pregunta a la pasarela, vía el ACL Worker,
-si ya tiene un cobro con esta `clave_idempotencia`. Es el caso "la pasarela
+si ya tiene un cobro con esta `id_intento_cobro`. Es el caso "la pasarela
 cobró pero respondió tarde" (el ACL cortó a los 700 ms y PAYMENTS lo registró
 `pendiente`): volver a cobrar sería un doble cobro.
 
@@ -41,7 +41,7 @@ def procesar_reintento(
     bus: PuertoBusEventos,
 ) -> dict[str, Any]:
     """Concilia y, si hace falta, vuelve a cobrar. Devuelve el cobro actualizado."""
-    consulta = cliente_acl.consultar(cobro["clave_idempotencia"])
+    consulta = cliente_acl.consultar(cobro["id_intento_cobro"])
 
     if consulta.resultado == "encontrado":
         actualizado = repositorio.actualizar_estado(
@@ -51,7 +51,7 @@ def procesar_reintento(
     elif consulta.resultado == "no_encontrado":
         resultado = cliente_acl.cobrar(
             OrdenCobro(
-                clave_idempotencia=cobro["clave_idempotencia"],
+                id_intento_cobro=cobro["id_intento_cobro"],
                 poliza_id=cobro["poliza_id"],
                 monto=cobro["monto"],
                 moneda=cobro["moneda"],
@@ -87,7 +87,7 @@ def procesar_reintento(
                 cobro_id=actualizado["id"],
                 poliza_id=actualizado["poliza_id"],
                 estado=actualizado["estado"],
-                clave_idempotencia=actualizado["clave_idempotencia"],
+                id_intento_cobro=actualizado["id_intento_cobro"],
             )
         )
     return actualizado

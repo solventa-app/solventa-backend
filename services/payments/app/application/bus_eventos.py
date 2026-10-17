@@ -16,7 +16,7 @@ Nota sobre logs (regla de arquitectura #6, sin datos personales en logs), a
 diferencia de `services/risk/app/application/bus_eventos.py`: aquí el
 payload de `cobro.estado-cambiado` no tiene ningún dato personal propiamente
 dicho — `cobroId` es un identificador interno (UUID generado por PAYMENTS,
-no identifica a nadie por sí mismo) y `claveIdempotencia` es un valor opaco
+no identifica a nadie por sí mismo) y `idIntentoCobro` es un valor opaco
 de correlación que el cliente genera, así que ambos se loguean en claro.
 `polizaId` sí identifica, indirectamente, a la persona asegurada, así que se
 redacta con el mismo hash opaco que usan RISK y el ACL Worker
@@ -35,7 +35,7 @@ logger = logging.getLogger("payments.eventos")
 
 
 def construir_evento_cobro_estado_cambiado(
-    cobro_id: str, poliza_id: str, estado: str, clave_idempotencia: str
+    cobro_id: str, poliza_id: str, estado: str, id_intento_cobro: str
 ) -> dict[str, Any]:
     """Construye el payload de `cobro.estado-cambiado` (contrato v1)."""
     return {
@@ -47,7 +47,9 @@ def construir_evento_cobro_estado_cambiado(
             "cobroId": cobro_id,
             "polizaId": poliza_id,
             "estado": estado,
-            "claveIdempotencia": clave_idempotencia,
+            "idIntentoCobro": id_intento_cobro,
+            # Obsoleto (contrato v0.3): mismo valor, se retira en la contracción.
+            "claveIdempotencia": id_intento_cobro,
         },
     }
 
@@ -63,12 +65,12 @@ class BusEventosLog:
     def publicar(self, evento: dict[str, Any]) -> None:
         datos = evento["datos"]
         logger.info(
-            "evento=%s eventId=%s cobroId=%s poliza=%s estado=%s claveIdempotencia=%s "
+            "evento=%s eventId=%s cobroId=%s poliza=%s estado=%s idIntentoCobro=%s "
             "[PLACEHOLDER: sin Pub/Sub real todavia]",
             evento["tipo"],
             evento["eventId"],
             datos["cobroId"],
             id_opaco(datos["polizaId"]),
             datos["estado"],
-            datos["claveIdempotencia"],
+            datos["idIntentoCobro"],
         )
