@@ -157,6 +157,11 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   `scripts/humo_bff.py` sobre el compose: COMPLETA ~130 ms en caliente; PRELIMINAR ~730-765 ms con Open Finance lento
   (lo fija el corte de 700 ms del ACL; la oferta degradada excede el p95 de 400 ms de CA-W01-03, a medir con k6 en
   PF2-2); `ErrorOferta` sin reintento tras revocar.
+- **T-W01-4 hecho (KAN-24, 2026-10-17):** el consentimiento deja de ser un mock en memoria. Tabla `consentimientos`
+  append-only en la base `auth` (migración `0003`), con un trigger que rechaza borrar o reescribir filas: solo se
+  puede fijar `revocado_en` una vez. Mismas rutas HTTP, así que el BFF y el frontend no cambian. Verificado en vivo:
+  `verificar-migraciones.sh auth`, humo, Newman y que un consentimiento sobreviva a reiniciar AUTH. Sigue pendiente
+  emitir `consentimiento.registrado`/`revocado` (no hay Pub/Sub).
 - **Autenticación de usuarios (HU-M02 simple para web, 2026-10-14, trazada a KAN-24 por CA-W01-11):** usuarios
   `CLIENTE`/`ASESOR`/`BACKOFFICE` en Postgres (base `auth`), inicio de sesión con JWT HS256 y permisos por rol en el BFF,
   con la bandera `AUTENTICACION_USUARIOS=opcional` para no romper al frontend. **CA-W01-11 queda cumplido en el

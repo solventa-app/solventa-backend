@@ -8,15 +8,17 @@ AUTH es el **único escritor del almacén de identidad** (PostgreSQL, regla de e
 
 - Registro **append-only** de consentimientos (actor, finalidad, versión del texto, sello de tiempo) y de su revocación (HA-SEG-001, EC023).
 - Validación de consentimiento vigente antes de consultar cualquier fuente (CA-W01-01/02).
-- Al revocar, invalida la caché del cliente en ≤ 5 min (CA-W01-08).
+- Al revocar, la siguiente solicitud de oferta se rechaza de inmediato; la caché del ACL expira sola en ≤ 5 min
+  (TTL de 300 s, CA-W01-08).
 - Usuarios (`CLIENTE`, `ASESOR`, `BACKOFFICE`) e inicio de sesión con JWT (HU-M02, versión simple para web; ver
   [`docs/autenticacion-usuarios.md`](../../docs/autenticacion-usuarios.md)). Rotación y refresh quedan pendientes (HA-SEG-005).
 
-Eventos que emite: `consentimiento.registrado`, `consentimiento.revocado` (ver `contracts/events/`).
+Eventos que emitirá: `consentimiento.registrado`, `consentimiento.revocado` (ver `contracts/events/`). **Pendiente:**
+no hay Pub/Sub todavía, así que hoy no se emiten.
 
-## Consentimiento: MOCK en memoria (hasta T-W01-4)
+## Consentimiento: tabla append-only en PostgreSQL (T-W01-4)
 
-Los endpoints ya tienen su forma definitiva; lo que es provisional es el almacén (`app/consentimientos.py`, en memoria):
+Tabla `consentimientos` de la base `auth` (migración `0003_consentimientos`, `app/consentimientos.py`):
 
 | Método | Ruta | Respuesta |
 |---|---|---|
@@ -24,9 +26,10 @@ Los endpoints ya tienen su forma definitiva; lo que es provisional es el almacé
 | `GET` | `/consentimientos/{id}` | el consentimiento, o `404` |
 | `POST` | `/consentimientos/{id}/revocar` | marca `revocado_en` (append-only: nunca borra); idempotente; `404` si no existe |
 
-Limitaciones del mock: el estado se pierde al reiniciar, **no se comparte entre instancias de Cloud Run**
-(`max_instancias` = 2 en staging) y no emite eventos. T-W01-4 lo reemplaza con la tabla de la migración `0002`
-sin cambiar las rutas, de modo que el BFF no se toca.
+**Append-only en la base, no solo en el código:** un trigger (`trg_consentimientos_append_only`) rechaza cualquier
+`DELETE` y cualquier `UPDATE` que no sea fijar `revocado_en` por primera vez. Verificado en vivo: borrar, re-revocar o
+cambiar la finalidad fallan con `consentimientos es append-only`, y un consentimiento sobrevive a reiniciar AUTH.
+Las rutas son las mismas que tenía el mock en memoria (hoy un doble en `tests/fakes.py`), así que el BFF no cambió.
 
 `actor` (opcional) es `{rol, usuario_id}` del usuario autenticado que otorgó el consentimiento; lo envía el BFF
 (CA-W01-02, CA-W01-11). Sin sesión queda en `null`.

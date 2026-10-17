@@ -1,8 +1,11 @@
 """Dobles de prueba de AUTH: en memoria, sin levantar PostgreSQL."""
 
+import uuid
 from datetime import UTC, datetime
 
 from argon2 import PasswordHasher
+
+from app.consentimientos import Consentimiento
 
 # argon2 con costo mínimo: mismas reglas, pero las pruebas no tardan segundos.
 HASHER_RAPIDO = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
@@ -78,3 +81,33 @@ class Reloj:
 
     def __call__(self) -> datetime:
         return self.ahora
+
+
+class AlmacenConsentimientosMemoria:
+    """Cumple el `Protocol` `AlmacenConsentimientos` de `app/consentimientos.py`. Fue el mock
+    de AUTH hasta T-W01-4; ahora solo es un doble de prueba (misma semántica append-only)."""
+
+    def __init__(self) -> None:
+        self._por_id: dict[str, Consentimiento] = {}
+
+    def registrar(
+        self, finalidad: str, version_texto: str, actor: dict[str, str] | None = None
+    ) -> Consentimiento:
+        consentimiento = Consentimiento(
+            actor=actor,
+            id=str(uuid.uuid4()),
+            finalidad=finalidad,
+            version_texto=version_texto,
+            otorgado_en=datetime.now(UTC).isoformat(),
+        )
+        self._por_id[consentimiento.id] = consentimiento
+        return consentimiento
+
+    def obtener(self, consentimiento_id: str) -> Consentimiento | None:
+        return self._por_id.get(consentimiento_id)
+
+    def revocar(self, consentimiento_id: str) -> Consentimiento | None:
+        consentimiento = self._por_id.get(consentimiento_id)
+        if consentimiento is not None and consentimiento.revocado_en is None:
+            consentimiento.revocado_en = datetime.now(UTC).isoformat()
+        return consentimiento

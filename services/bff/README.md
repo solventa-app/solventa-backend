@@ -19,7 +19,7 @@ ACL Worker, RISK y RATING y traduce al contrato de `contracts/graphql/schema.gra
 
 | Operación | Estado |
 |---|---|
-| `registrarConsentimiento` / `revocarConsentimiento` | AUTH (hoy un **mock en memoria**, ver `services/auth/README.md`) |
+| `registrarConsentimiento` / `revocarConsentimiento` | AUTH (tabla append-only en PostgreSQL, ver `services/auth/README.md`) |
 | `solicitarOferta` | Completo: ver el flujo abajo |
 | `oferta(id)` | Devuelve `null`: RATING no persiste ofertas todavía |
 | `contactarAsesor` | **MOCK**: solo confirma (no hay servicio de asesores) |

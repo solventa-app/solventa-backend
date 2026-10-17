@@ -77,7 +77,6 @@ otorgó en nombre del cliente (CA-W01-02 y CA-W01-11).
 | **No hay cierre de sesión en el servidor** | El frontend cierra sesión borrando el token; si alguien lo copió, vale hasta que vence | Igual que la anterior |
 | **Bloqueo por usuario** | Alguien que conozca un alias puede bloquearlo 15 min a propósito | Límite por IP en el API Gateway (Sprint 2) |
 | **HS256 con secreto compartido** | Quien tenga el secreto puede verificar **y** emitir tokens; hoy solo AUTH y el BFF lo leen | Paso a ES256 (sección 8) |
-| **Consentimiento en memoria** | Es el mock de T-W01-4; con más de una instancia de AUTH en Cloud Run se pierde | T-W01-4 (Postgres) |
 
 ## 6. Cómo probarlo paso a paso
 

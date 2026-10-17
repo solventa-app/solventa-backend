@@ -1,25 +1,19 @@
-"""Registro de consentimientos — **MOCK EN MEMORIA**.
+"""Registro de consentimientos sobre PostgreSQL (T-W01-4, HA-SEG-001, CA-W01-02/08).
 
-Existe solo para que el BFF pueda integrarse por HTTP con AUTH mientras se
-construye T-W01-4 (tabla append-only en PostgreSQL, migración Alembic
-`0002`). Cuando llegue, se reemplaza `AlmacenConsentimientosMemoria` por un
-almacén sobre Postgres con la misma interfaz y los endpoints de `app/main.py`
-no cambian (tampoco el BFF).
+Tabla `consentimientos` de la base `auth` (migración `0003`). **Append-only**: revocar fija
+`revocado_en` una sola vez y nunca se borra; lo hace cumplir un trigger en la base, no solo
+este código. El contrato HTTP de `app/main.py` no cambió respecto del mock en memoria que
+había antes (ni el BFF): ese mock vive ahora en `tests/fakes.py` como doble de prueba.
 
-Limitaciones conocidas y aceptadas del mock:
-- El estado se pierde al reiniciar el proceso.
-- No se comparte entre instancias: en Cloud Run con más de una instancia, un
-  consentimiento creado en una no existe en la otra.
-- No emite `consentimiento.registrado`/`consentimiento.revocado`.
+Pendiente (ver `docs/sprint-1.md`): emitir `consentimiento.registrado`/`consentimiento.revocado`
+cuando exista Pub/Sub."""
 
-Semántica append-only igual que la definitiva: revocar marca `revocado_en`,
-nunca borra."""
-
-import threading
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, Protocol
+
+from psycopg_pool import ConnectionPool
 
 
 @dataclass
@@ -51,37 +45,70 @@ class AlmacenConsentimientos(Protocol):
     def revocar(self, consentimiento_id: str) -> Consentimiento | None: ...
 
 
-def _ahora() -> str:
-    return datetime.now(UTC).isoformat()
+_COLUMNAS = "id, finalidad, version_texto, otorgado_en, revocado_en, actor_rol, actor_usuario_id"
 
 
-class AlmacenConsentimientosMemoria:
-    def __init__(self) -> None:
-        self._por_id: dict[str, Consentimiento] = {}
-        self._lock = threading.Lock()
+def _desde_fila(fila: dict[str, Any]) -> Consentimiento:
+    actor = (
+        {"rol": fila["actor_rol"], "usuario_id": fila["actor_usuario_id"]}
+        if fila["actor_rol"] is not None
+        else None
+    )
+    revocado_en: datetime | None = fila["revocado_en"]
+    return Consentimiento(
+        id=fila["id"],
+        finalidad=fila["finalidad"],
+        version_texto=fila["version_texto"],
+        otorgado_en=fila["otorgado_en"].isoformat(),
+        revocado_en=revocado_en.isoformat() if revocado_en is not None else None,
+        actor=actor,
+    )
+
+
+class AlmacenConsentimientosPostgres:
+    """Cada sentencia es una transacción (`autocommit`), igual que `RepositorioUsuariosPostgres`."""
+
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def _una(self, sql: str, parametros: dict[str, Any]) -> Consentimiento | None:
+        with self._pool.connection() as conexion:
+            fila = conexion.execute(sql, parametros).fetchone()
+            return _desde_fila(fila) if fila is not None else None
 
     def registrar(
         self, finalidad: str, version_texto: str, actor: dict[str, str] | None = None
     ) -> Consentimiento:
-        consentimiento = Consentimiento(
-            actor=actor,
-            id=str(uuid.uuid4()),
-            finalidad=finalidad,
-            version_texto=version_texto,
-            otorgado_en=_ahora(),
+        consentimiento = self._una(
+            f"""
+            INSERT INTO consentimientos (id, finalidad, version_texto, actor_rol, actor_usuario_id)
+            VALUES (%(id)s, %(finalidad)s, %(version_texto)s, %(actor_rol)s, %(actor_usuario_id)s)
+            RETURNING {_COLUMNAS}
+            """,
+            {
+                "id": str(uuid.uuid4()),
+                "finalidad": finalidad,
+                "version_texto": version_texto,
+                "actor_rol": actor["rol"] if actor else None,
+                "actor_usuario_id": actor["usuario_id"] if actor else None,
+            },
         )
-        with self._lock:
-            self._por_id[consentimiento.id] = consentimiento
+        assert consentimiento is not None  # INSERT ... RETURNING siempre devuelve la fila
         return consentimiento
 
     def obtener(self, consentimiento_id: str) -> Consentimiento | None:
-        with self._lock:
-            return self._por_id.get(consentimiento_id)
+        return self._una(
+            f"SELECT {_COLUMNAS} FROM consentimientos WHERE id = %(id)s", {"id": consentimiento_id}
+        )
 
     def revocar(self, consentimiento_id: str) -> Consentimiento | None:
         """Idempotente: revocar dos veces conserva la fecha de la primera."""
-        with self._lock:
-            consentimiento = self._por_id.get(consentimiento_id)
-            if consentimiento is not None and consentimiento.revocado_en is None:
-                consentimiento.revocado_en = _ahora()
-            return consentimiento
+        revocado = self._una(
+            f"""
+            UPDATE consentimientos SET revocado_en = now()
+            WHERE id = %(id)s AND revocado_en IS NULL
+            RETURNING {_COLUMNAS}
+            """,
+            {"id": consentimiento_id},
+        )
+        return revocado if revocado is not None else self.obtener(consentimiento_id)
