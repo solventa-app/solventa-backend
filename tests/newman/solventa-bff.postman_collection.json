@@ -2781,6 +2781,228 @@
           }
         },
         {
+          "name": "reintentarCobro de un rechazado (1 de 3, la pasarela sigue rechazando)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('intento nuevo: sigue RECHAZADO y quedan 2', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  const c = cuerpo.data.reintentarCobro;",
+                  "  pm.expect(c.estado).to.eql('RECHAZADO');",
+                  "  pm.expect(c.motivo).to.eql('fondos_insuficientes');",
+                  "  pm.expect(c.reintentosRestantes).to.eql(2);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "CA-W05-02 (prototipo W05-01): un rechazado se reintenta a mano hasta 3 veces, cada vez con una referencia nueva ante la pasarela. Con la pasarela en `rechaza`, sigue RECHAZADO y quedan 2.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($id: ID!) {\\n  reintentarCobro(cobroId: $id) { id estado motivo intentos reintentosRestantes }\\n}\",\n  \"variables\": {\n    \"id\": \"{{id_rechazo}}\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "reintentarCobro de un rechazado (2 de 3, la pasarela sigue rechazando)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('intento nuevo: sigue RECHAZADO y quedan 1', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  const c = cuerpo.data.reintentarCobro;",
+                  "  pm.expect(c.estado).to.eql('RECHAZADO');",
+                  "  pm.expect(c.motivo).to.eql('fondos_insuficientes');",
+                  "  pm.expect(c.reintentosRestantes).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "CA-W05-02 (prototipo W05-01): un rechazado se reintenta a mano hasta 3 veces, cada vez con una referencia nueva ante la pasarela. Con la pasarela en `rechaza`, sigue RECHAZADO y quedan 1.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($id: ID!) {\\n  reintentarCobro(cobroId: $id) { id estado motivo intentos reintentosRestantes }\\n}\",\n  \"variables\": {\n    \"id\": \"{{id_rechazo}}\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "reintentarCobro de un rechazado (3 de 3, la pasarela sigue rechazando)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('intento nuevo: sigue RECHAZADO y quedan 0', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  const c = cuerpo.data.reintentarCobro;",
+                  "  pm.expect(c.estado).to.eql('RECHAZADO');",
+                  "  pm.expect(c.motivo).to.eql('fondos_insuficientes');",
+                  "  pm.expect(c.reintentosRestantes).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "CA-W05-02 (prototipo W05-01): un rechazado se reintenta a mano hasta 3 veces, cada vez con una referencia nueva ante la pasarela. Con la pasarela en `rechaza`, sigue RECHAZADO y quedan 0.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($id: ID!) {\\n  reintentarCobro(cobroId: $id) { id estado motivo intentos reintentosRestantes }\\n}\",\n  \"variables\": {\n    \"id\": \"{{id_rechazo}}\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "reintentarCobro de un rechazado sin reintentos: requiere otro medio de pago",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('error público: se agotaron los reintentos', () => {",
+                  "  pm.expect(cuerpo.errors[0].message).to.include('Se agotaron los 3 reintentos');",
+                  "  pm.expect(cuerpo.errors[0].message).to.include('otro medio de pago');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "Agotados los 3 reintentos: error claro, HTTP 200.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($id: ID!) {\\n  reintentarCobro(cobroId: $id) { id estado motivo intentos reintentosRestantes }\\n}\",\n  \"variables\": {\n    \"id\": \"{{id_rechazo}}\"\n  }\n}"
+            }
+          }
+        },
+        {
           "name": "Pasarela -> modo sano (restaurar)",
           "event": [
             {
@@ -2874,59 +3096,6 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"query\": \"query($poliza: ID, $estado: EstadoCobro) {\\n  cobros(polizaId: $poliza, estado: $estado) {\\n    id polizaId estado monto { valor moneda } actualizadoEn motivo intentos\\n  }\\n}\",\n  \"variables\": {\n    \"poliza\": \"{{poliza_cobro}}\",\n    \"estado\": \"RECHAZADO\"\n  }\n}"
-            }
-          }
-        },
-        {
-          "name": "reintentarCobro de un rechazado: requiere otro medio de pago",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "pm.test('error público con el motivo', () => {",
-                  "  pm.expect(cuerpo.errors[0].message).to.include('otro medio de pago');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_backoffice}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{bff_url}}/graphql/web",
-              "host": [
-                "{{bff_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "description": "Insistir con el mismo medio de pago no arregla un rechazo: error claro, HTTP 200.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($id: ID!) {\\n  reintentarCobro(cobroId: $id) { id estado motivo intentos }\\n}\",\n  \"variables\": {\n    \"id\": \"{{id_rechazo}}\"\n  }\n}"
             }
           }
         },

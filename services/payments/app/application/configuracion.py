@@ -12,6 +12,7 @@ class Configuracion:
     acl_timeout_segundos: float
     reintento_intervalo_segundos: float
     reintento_max_intentos: int
+    reintentos_rechazo_maximo: int
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -34,4 +35,7 @@ class Configuracion:
             # Tope de reintentos por cobro: agotados, queda `pendiente` para
             # seguimiento manual (no se reintenta para siempre).
             reintento_max_intentos=int(os.getenv("REINTENTO_COBRO_MAX_INTENTOS", "10")),
+            # Reintentos manuales de un cobro `rechazado` (CA-W05-02). 3 es el número del
+            # prototipo (W05-01): agotados, el cobro requiere otro medio de pago.
+            reintentos_rechazo_maximo=int(os.getenv("REINTENTOS_RECHAZO_MAXIMO", "3")),
         )

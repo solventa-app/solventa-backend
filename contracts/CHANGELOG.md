@@ -58,3 +58,13 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   ya exponía. Sin cambio de comportamiento: siguen siendo opcionales. Lo detectó la prueba de equivalencia
   esquema↔contrato al alinear `graphql-core` 3.3.0 en el CI.
 - Afecta al frontend: no.
+
+## v0.6 — 2026-10-17
+
+- KAN-28 (HU-W05, CA-W05-02): un cobro `RECHAZADO` se puede reintentar a mano **hasta 3 veces** (decisión del equipo
+  según el prototipo W05-01). `Cobro` suma `reintentosRestantes` (opcional). Solo cambios aditivos en el esquema.
+- Cambio de comportamiento: `reintentarCobro` sobre un `RECHAZADO` ya no responde "requiere otro medio de pago" de
+  entrada: hace un intento nuevo ante la pasarela (con su propia referencia) y devuelve el cobro. Solo al agotar los 3
+  responde el error "Se agotaron los 3 reintentos: el cobro requiere otro medio de pago.".
+- Afecta al frontend: sí (W05-01: el botón de reintentar va en los rechazados con `reintentosRestantes > 0`). Requiere el
+  PR gemelo en `solventa-frontend`.

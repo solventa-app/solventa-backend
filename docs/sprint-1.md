@@ -194,3 +194,9 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   360 meses y dirección) antes de consultar nada, y RATING usa el plazo y la ciudad de la dirección en la prima con
   factores **ilustrativos** (ver `services/rating/README.md`). El `consolidador-fuentes` verifica en AUTH que el
   consentimiento siga vigente antes de reintentar una fuente (regla #7). Sin cambios de contrato.
+- **Reintento de cobros rechazados (KAN-28, 2026-10-17, decidido con el equipo según el prototipo W05-01):** un cobro
+  `rechazado` se puede reintentar a mano hasta 3 veces; el `pendiente` lo sigue reintentando el sistema solo. Como la
+  pasarela es idempotente por referencia, cada reintento va con la suya (`{idIntentoCobro}-rN`, migración `0006` de
+  PAYMENTS). Contrato v0.6: `Cobro.reintentosRestantes`. No se construye captura de tarjeta (CA-W05-03): el prototipo no
+  la tiene y la prima se factura con la cuota del crédito (W03-02b). `scripts/sembrar_cobros.py` deja los datos de la demo.
+

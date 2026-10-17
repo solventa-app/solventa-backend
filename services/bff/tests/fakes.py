@@ -240,6 +240,8 @@ def cobro_de_payments(cobro_id: str, poliza_id: str, estado: str, **extra) -> di
         "referencia": None,
         "motivo": None,
         "intentos": 1,
+        "reintentos_rechazo": 0,
+        "reintentos_rechazo_restantes": 3,
         "creado_en": "2026-10-16T12:00:00+00:00",
         "actualizado_en": "2026-10-16T12:00:00+00:00",
         **extra,
@@ -247,8 +249,9 @@ def cobro_de_payments(cobro_id: str, poliza_id: str, estado: str, **extra) -> di
 
 
 class PaymentsFalso:
-    """Doble de PAYMENTS: reintentar un pendiente lo deja cobrado; un rechazado da
-    `SolicitudInvalida` (el 409 real); un cobrado se devuelve sin cambios."""
+    """Doble de PAYMENTS: reintentar un pendiente lo deja cobrado; un rechazado con
+    reintentos lo cobra y descuenta uno; sin reintentos da `SolicitudInvalida` (el 409
+    real); un cobrado se devuelve sin cambios."""
 
     def __init__(self, cobros: list[dict] | None = None, falla: bool = False) -> None:
         self.cobros = {c["id"]: dict(c) for c in (cobros or [])}
@@ -274,9 +277,18 @@ class PaymentsFalso:
         if cobro is None:
             return None
         if cobro["estado"] == "rechazado":
-            raise SolicitudInvalida(
-                "El cobro fue rechazado por la pasarela: requiere otro medio de pago."
+            if cobro["reintentos_rechazo_restantes"] == 0:
+                raise SolicitudInvalida(
+                    "Se agotaron los 3 reintentos: el cobro requiere otro medio de pago."
+                )
+            cobro.update(
+                estado="cobrado",
+                referencia="pg-reintento",
+                motivo=None,
+                reintentos_rechazo=cobro["reintentos_rechazo"] + 1,
+                reintentos_rechazo_restantes=cobro["reintentos_rechazo_restantes"] - 1,
             )
+            return cobro
         if cobro["estado"] == "pendiente":
             cobro.update(estado="cobrado", referencia="pg-reintento", motivo=None)
         return cobro

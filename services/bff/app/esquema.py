@@ -196,6 +196,7 @@ class Cobro:
     actualizado_en: datetime
     motivo: str | None  # por qué quedó pendiente o rechazado
     intentos: int | None
+    reintentos_restantes: int | None  # reintentos manuales de un rechazado (CA-W05-02)
     cliente: ClienteCobro | None
 
 
@@ -350,6 +351,7 @@ def _cobro(datos: dict, nombres: dict[str, str] | None = None) -> Cobro:
         actualizado_en=datetime.fromisoformat(datos["actualizado_en"]),
         motivo=datos.get("motivo"),
         intentos=datos.get("intentos"),
+        reintentos_restantes=datos.get("reintentos_rechazo_restantes"),
         cliente=(
             ClienteCobro(id=strawberry.ID(cliente_id), nombre=(nombres or {}).get(cliente_id))
             if cliente_id
