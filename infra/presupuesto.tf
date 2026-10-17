@@ -149,6 +149,18 @@ resource "google_project_iam_member" "frenar_gasto_build" {
   member  = "serviceAccount:${google_service_account.frenar_gasto_build[0].email}"
 }
 
+# El build lee el código desde un bucket que Cloud Functions crea y administra (no es de Terraform) y exige
+# Storage Object Viewer sobre él para la cuenta de build; `cloudbuild.builds.builder` no lo cubre. Se da sobre ESE
+# bucket y no sobre el proyecto: a nivel de proyecto también leería el bucket del estado de Terraform, que contiene
+# secretos. El bucket nace con el primer intento de desplegar una función 2ª generación en la región: en un proyecto
+# nuevo el primer `apply` falla aquí (y deja la función tainted) y el siguiente funciona.
+resource "google_storage_bucket_iam_member" "frenar_gasto_build_fuente" {
+  count  = var.crear_presupuesto ? 1 : 0
+  bucket = "gcf-v2-sources-${data.google_project.actual.number}-${var.region}"
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.frenar_gasto_build[0].email}"
+}
+
 # Recibir el evento del topic (Eventarc). run.admin ya cubre invocar la función.
 resource "google_project_iam_member" "frenar_gasto_eventos" {
   count   = var.crear_presupuesto ? 1 : 0
@@ -194,6 +206,7 @@ resource "google_cloudfunctions2_function" "frenar_gasto" {
   depends_on = [
     google_project_service.presupuesto_apis,
     google_project_iam_member.frenar_gasto_build,
+    google_storage_bucket_iam_member.frenar_gasto_build_fuente,
     google_project_iam_member.frenar_gasto_eventos,
   ]
 }

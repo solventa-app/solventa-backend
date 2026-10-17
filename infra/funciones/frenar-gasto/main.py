@@ -20,6 +20,7 @@ import json
 import logging
 import os
 
+import functions_framework
 from google.cloud import run_v2
 
 logging.basicConfig(level=logging.INFO)
@@ -28,8 +29,12 @@ logger = logging.getLogger(__name__)
 UMBRAL_FRENADO = 1.0  # 100% del presupuesto notificado
 
 
+@functions_framework.cloud_event
 def frenar_gasto(cloud_event):
-    """Punto de entrada de la Cloud Function (disparada por Pub/Sub, 2a generación)."""
+    """Punto de entrada de la Cloud Function (disparada por Pub/Sub, 2a generación).
+
+    El decorador es obligatorio: sin él el framework la toma por una función de eventos de 1a generación y la llama
+    con (data, context), lo que revienta con ``TypeError`` y la protección nunca se ejecutaría."""
     datos = _decodificar(cloud_event)
     umbral = datos.get("alertThresholdExceeded")
     nombre_presupuesto = datos.get("budgetDisplayName", "desconocido")
