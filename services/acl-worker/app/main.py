@@ -11,7 +11,7 @@ import redis
 import rq
 from fastapi import FastAPI, HTTPException
 from prometheus_fastapi_instrumentator import Instrumentator
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import BaseModel
 
 from app.adapters.open_data import FUENTES_SOPORTADAS as FUENTES_OPEN_DATA
 from app.adapters.open_data import AdaptadorOpenData
@@ -65,10 +65,7 @@ class DatosFuenteResponse(BaseModel):
 
 
 class OrdenCobroRequest(BaseModel):
-    # Transición (expandir/contraer): se acepta también el nombre anterior.
-    id_intento_cobro: str = Field(
-        validation_alias=AliasChoices("id_intento_cobro", "clave_idempotencia")
-    )
+    id_intento_cobro: str
     poliza_id: str
     monto: str
     moneda: str

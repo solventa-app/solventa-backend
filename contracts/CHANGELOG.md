@@ -35,3 +35,10 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   con token. El cliente genera `idIntentoCobro` (un UUID por intento) y lo reenvía igual si repite la orden.
 - Evento `cobro.estado-cambiado`: se agrega `idIntentoCobro`; `claveIdempotencia` queda obsoleta (mismo valor).
 - Afecta al frontend: sí (operación nueva; las existentes no cambian de forma).
+
+## v0.4 — 2026-10-17
+
+- KAN-28: **cambio incompatible, aprobado por el equipo.** El evento `cobro.estado-cambiado` pasa a `version: 2`: se
+  quita `claveIdempotencia` y `idIntentoCobro` es obligatorio. Es una excepción a las reglas 1 y 2 (no se esperó un
+  sprint con el campo obsoleto): el evento aún no tiene consumidores, porque no hay Pub/Sub real ni nada desplegado.
+- Afecta al frontend: no (el frontend no consume eventos).

@@ -39,11 +39,10 @@ class RepositorioCobrosPostgres:
             fila = conexion.execute(
                 f"""
                 INSERT INTO cobros
-                    (id, id_intento_cobro, clave_idempotencia, poliza_id, monto, moneda,
-                     token_medio_pago, estado)
+                    (id, id_intento_cobro, poliza_id, monto, moneda, token_medio_pago, estado)
                 VALUES
-                    (%(id)s, %(id_intento_cobro)s, %(id_intento_cobro)s, %(poliza_id)s, %(monto)s,
-                     %(moneda)s, %(token_medio_pago)s, 'cobrando')
+                    (%(id)s, %(id_intento_cobro)s, %(poliza_id)s, %(monto)s, %(moneda)s,
+                     %(token_medio_pago)s, 'cobrando')
                 ON CONFLICT (id_intento_cobro) DO NOTHING
                 RETURNING {_COLUMNAS}
                 """,

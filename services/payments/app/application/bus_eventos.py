@@ -37,19 +37,17 @@ logger = logging.getLogger("payments.eventos")
 def construir_evento_cobro_estado_cambiado(
     cobro_id: str, poliza_id: str, estado: str, id_intento_cobro: str
 ) -> dict[str, Any]:
-    """Construye el payload de `cobro.estado-cambiado` (contrato v1)."""
+    """Construye el payload de `cobro.estado-cambiado` (contrato v2)."""
     return {
         "eventId": str(uuid.uuid4()),
         "tipo": "cobro.estado-cambiado",
-        "version": 1,
+        "version": 2,
         "ocurridoEn": datetime.now(UTC).isoformat(),
         "datos": {
             "cobroId": cobro_id,
             "polizaId": poliza_id,
             "estado": estado,
             "idIntentoCobro": id_intento_cobro,
-            # Obsoleto (contrato v0.3): mismo valor, se retira en la contracción.
-            "claveIdempotencia": id_intento_cobro,
         },
     }
 

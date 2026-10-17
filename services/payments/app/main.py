@@ -14,7 +14,7 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException
 from prometheus_fastapi_instrumentator import Instrumentator
 from psycopg_pool import ConnectionPool
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import BaseModel, Field
 
 from app.application.bus_eventos import BusEventosLog
 from app.application.cliente_acl import ClienteAcl
@@ -34,10 +34,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 
 class OrdenCobroRequest(BaseModel):
     # Lo genera quien ordena el cobro y lo reenvía igual al repetir (CA-W05-04).
-    # Transición (expandir/contraer): se acepta también el nombre anterior.
-    id_intento_cobro: str = Field(
-        min_length=1, validation_alias=AliasChoices("id_intento_cobro", "clave_idempotencia")
-    )
+    id_intento_cobro: str = Field(min_length=1)
     poliza_id: str = Field(min_length=1)
     monto: str = Field(min_length=1)
     moneda: str = Field(min_length=1)

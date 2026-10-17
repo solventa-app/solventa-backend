@@ -40,13 +40,12 @@ def test_evento_lleva_los_campos_correctos() -> None:
     )
 
     assert evento["tipo"] == "cobro.estado-cambiado"
-    assert evento["version"] == 1
+    assert evento["version"] == 2
     assert evento["datos"] == {
         "cobroId": "cobro-123",
         "polizaId": "poliza-abc",
         "estado": "cobrado",
         "idIntentoCobro": "clave-1",
-        "claveIdempotencia": "clave-1",
     }
 
 

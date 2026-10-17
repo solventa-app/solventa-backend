@@ -83,13 +83,12 @@ def test_post_cobros_sin_id_intento_cobro_responde_422() -> None:
     assert r.status_code == 422
 
 
-def test_post_cobros_acepta_el_nombre_anterior_durante_la_transicion() -> None:
+def test_post_cobros_ya_no_acepta_el_nombre_anterior() -> None:
     orden = {k: v for k, v in ORDEN.items() if k != "id_intento_cobro"}
     with _cliente()[0] as client:
         r = client.post("/cobros", json={**orden, "clave_idempotencia": "clave-vieja-1"})
 
-    assert r.status_code == 200
-    assert r.json()["id_intento_cobro"] == "clave-vieja-1"
+    assert r.status_code == 422
 
 
 def test_get_balance_suma_solo_cobros_cobrados() -> None:
