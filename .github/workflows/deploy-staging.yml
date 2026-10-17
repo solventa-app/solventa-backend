@@ -196,7 +196,10 @@ jobs:
     # sirviendo: por eso toda migración debe ser compatible hacia atrás (expandir/contraer, ADR-07).
     # Se ejecuta como Cloud Run Job con la MISMA imagen que se va a desplegar.
     needs: [preparar, construir]
-    if: needs.preparar.outputs.migraciones != '[]'
+    # `!cancelled()` es imprescindible: sin una función de estado, GitHub añade `success()`, que cuenta también a los
+    # antecesores de `construir`. Con `infra` omitida (lo normal: casi ningún release toca infra/) saltaba `migrar`
+    # aunque hubiera migraciones, y `desplegar` seguía adelante sin migrar.
+    if: ${{ !cancelled() && needs.preparar.result == 'success' && needs.construir.result == 'success' && needs.preparar.outputs.migraciones != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: staging
@@ -224,8 +227,10 @@ jobs:
 
   desplegar:
     needs: [preparar, construir, migrar]
-    # `migrar` puede omitirse (ningún servicio con base cambió); si falló, no se despliega nada.
-    if: ${{ !cancelled() && needs.construir.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.migrar.result) }}
+    # Si hay migraciones, `migrar` debe haber TERMINADO BIEN: omitida o fallida, no se despliega nada (un servicio
+    # nuevo contra un esquema sin migrar es peor que no desplegar). Solo se acepta `migrar` omitida cuando no había
+    # ninguna migración que correr.
+    if: ${{ !cancelled() && needs.construir.result == 'success' && (needs.migrar.result == 'success' || (needs.migrar.result == 'skipped' && needs.preparar.outputs.migraciones == '[]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: staging
