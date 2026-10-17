@@ -1,12 +1,13 @@
 """Cobros del back-office en el GraphQL del BFF (KAN-28, CA-W05-01/02), con dobles."""
 
 import asyncio
+import logging
 
 import httpx
 from fakes import PaymentsFalso, clientes_falsos, cobro_de_payments, token_de_prueba
 from fastapi.testclient import TestClient
 
-from app.clientes import ClientePaymentsHttp
+from app.clientes import ClientePaymentsHttp, SolicitudInvalida
 from app.configuracion import Configuracion
 from app.main import create_app
 
@@ -18,6 +19,20 @@ COBROS = """query($poliza: ID, $estado: EstadoCobro) {
 REINTENTAR = """mutation($id: ID!) {
   reintentarCobro(cobroId: $id) { id estado motivo intentos }
 }"""
+
+CREAR = """mutation($e: CrearCobroInput!) {
+  crearCobro(entrada: $e) {
+    __typename
+    ... on Cobro { id polizaId estado monto { valor moneda } }
+    ... on ErrorCobro { mensaje }
+  }
+}"""
+ENTRADA_COBRO = {
+    "idIntentoCobro": "intento-bo-1",
+    "polizaId": "POL-CREAR-1",
+    "monto": {"valor": "80000.00", "moneda": "COP"},
+    "tokenMedioPago": "tok_secreto_1",
+}
 
 
 def _cliente(payments: PaymentsFalso) -> TestClient:
@@ -125,3 +140,72 @@ def test_la_poliza_nunca_viaja_en_la_url_hacia_payments() -> None:
     url, cuerpo = vistas[0]
     assert "POL-SECRETA-1" not in url
     assert b"POL-SECRETA-1" in cuerpo
+
+
+def test_crear_cobro_desde_el_back_office() -> None:
+    payments = PaymentsFalso()
+    with _cliente(payments) as client:
+        cobro = _post(client, CREAR, {"e": ENTRADA_COBRO})["data"]["crearCobro"]
+
+    assert cobro["__typename"] == "Cobro"
+    assert cobro["estado"] == "COBRADO"
+    assert cobro["monto"] == {"valor": "80000.00", "moneda": "COP"}
+    assert payments.ordenes[0]["id_intento_cobro"] == "intento-bo-1"
+
+
+def test_reenviar_el_mismo_intento_devuelve_el_mismo_cobro() -> None:
+    payments = PaymentsFalso()
+    with _cliente(payments) as client:
+        primero = _post(client, CREAR, {"e": ENTRADA_COBRO})["data"]["crearCobro"]
+        segundo = _post(client, CREAR, {"e": ENTRADA_COBRO})["data"]["crearCobro"]
+
+    assert primero["id"] == segundo["id"]
+    assert len(payments.ordenes) == 1
+
+
+def test_mismo_intento_con_otros_datos_da_error_cobro() -> None:
+    otra = {**ENTRADA_COBRO, "monto": {"valor": "1.00", "moneda": "COP"}}
+    with _cliente(PaymentsFalso()) as client:
+        _post(client, CREAR, {"e": ENTRADA_COBRO})
+        resultado = _post(client, CREAR, {"e": otra})["data"]["crearCobro"]
+
+    assert resultado["__typename"] == "ErrorCobro"
+    assert "otros datos" in resultado["mensaje"]
+
+
+def test_crear_cobro_con_payments_caido_da_error_publico() -> None:
+    with _cliente(PaymentsFalso(falla=True)) as client:
+        cuerpo = _post(client, CREAR, {"e": ENTRADA_COBRO})
+
+    assert cuerpo["errors"][0]["message"] == "No pudimos registrar el cobro. Intenta de nuevo."
+
+
+def test_crear_cobro_no_loguea_token_ni_poliza(caplog) -> None:
+    with caplog.at_level(logging.DEBUG), _cliente(PaymentsFalso()) as client:
+        _post(client, CREAR, {"e": ENTRADA_COBRO})
+
+    assert ENTRADA_COBRO["tokenMedioPago"] not in caplog.text
+    assert ENTRADA_COBRO["polizaId"] not in caplog.text
+
+
+def test_cliente_http_crear_cobro_traduce_409_y_422() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if b"conflicto" in request.content:
+            return httpx.Response(409, json={"detail": "ya se usó con otros datos"})
+        return httpx.Response(422, json={"detail": []})
+
+    async def probar() -> tuple[str, str]:
+        cliente = ClientePaymentsHttp(
+            httpx.AsyncClient(base_url="http://payments", transport=httpx.MockTransport(handler))
+        )
+        mensajes = []
+        for intento in ("conflicto", "vacio"):
+            try:
+                await cliente.crear_cobro({"id_intento_cobro": intento})
+            except SolicitudInvalida as error:
+                mensajes.append(str(error))
+        return tuple(mensajes)
+
+    conflicto, invalido = asyncio.run(probar())
+    assert conflicto == "ya se usó con otros datos"
+    assert invalido == "Los datos del cobro no son válidos."

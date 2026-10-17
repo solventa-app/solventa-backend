@@ -36,6 +36,11 @@ OPERACIONES = {
     "contactarAsesor": ('mutation { contactarAsesor(ofertaId: "o-1", canal: CHAT) { canal } }', {}),
     "cobros": ("{ cobros { id } }", {}),
     "usuarios": ("{ usuarios { id } }", {}),
+    "crearCobro": (
+        'mutation { crearCobro(entrada: {idIntentoCobro: "i-1", polizaId: "P-1", '
+        'monto: {valor: "100.00", moneda: "COP"}, tokenMedioPago: "tok_1"}) { __typename } }',
+        {},
+    ),
     "crearUsuario": (
         'mutation { crearUsuario(entrada: {usuario: "nuevo.uno", clave: "clave-segura-1", '
         "rol: CLIENTE}) { __typename } }",
@@ -76,6 +81,9 @@ MATRIZ = {
     ("cobros", "CLIENTE"): False,
     ("cobros", "ASESOR"): False,
     ("cobros", "BACKOFFICE"): True,
+    ("crearCobro", "CLIENTE"): False,
+    ("crearCobro", "ASESOR"): False,
+    ("crearCobro", "BACKOFFICE"): True,
     ("usuarios", "CLIENTE"): False,
     ("usuarios", "ASESOR"): False,
     ("usuarios", "BACKOFFICE"): True,
