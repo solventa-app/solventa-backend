@@ -63,6 +63,16 @@ del equipo (regla de costos de `CLAUDE.md`).
   `presupuesto_monto = 958332` (300 USD a la TRM de 3.194,44 del 10-oct-2026). El tope es una protección, no una
   conversión exacta: si el peso se aprecia mucho, conviene recalcularlo. La función `frenar-gasto` decide por umbral
   relativo (50/80/100 %), así que no depende de la moneda.
+- **Lo que dejó ver el primer `apply` real de la protección de gasto** (proyecto `solventa-511815`):
+  - La API de presupuestos exige un proyecto de cuota explícito con credenciales de usuario, y tus credenciales locales
+    pueden traer otro como cuota (`quota_project_id`). Por eso `google_billing_budget` usa el provider con alias
+    `google.facturacion` (`user_project_override` + `billing_project`, ver `versions.tf`), y solo ese recurso. No se
+    puso global: con `user_project_override` en todo, habilitar las APIs de un proyecto nuevo falla (403) hasta que
+    Cloud Resource Manager esté habilitada, que es una de las APIs que se habilitan ahí.
+  - En proyectos nuevos la cuenta de Compute por defecto ya no trae roles. La función `frenar-gasto` se construye con una
+    cuenta propia (`frenar-gasto-build`, `roles/cloudbuild.builds.builder`) y recibe el evento con la cuenta de la función
+    (`roles/eventarc.eventReceiver`); sin eso el build falla con "missing permission on the build service account".
+  - La API guarda el filtro del presupuesto con el **número** de proyecto; con el ID, cada `plan` mostraba una diferencia.
 - **Acceso entre servicios por IAM, no `allUsers` global.** `servicios.tf` crea una service account
   de runtime por servicio y solo otorga `roles/run.invoker` a quien el manifiesto declara en `llama`;
   `allUsers` solo se concede a los servicios marcados `publico: true` (hoy, `bff`). Más estricto que

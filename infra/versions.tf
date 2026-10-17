@@ -40,6 +40,18 @@ provider "google" {
   region  = var.region
 }
 
+# Solo para google_billing_budget: la API de presupuestos exige un proyecto de cuota explícito cuando se usan
+# credenciales de usuario (si no, responde 403 aunque la API esté habilitada). El resto de recursos NO lo usa:
+# con user_project_override global, habilitar las APIs de un proyecto nuevo fallaría hasta que Cloud Resource
+# Manager esté habilitada, que es justo una de las APIs que se habilitan ahí.
+provider "google" {
+  alias                 = "facturacion"
+  project               = var.project_id
+  region                = var.region
+  user_project_override = true
+  billing_project       = var.project_id
+}
+
 # Sin bloque de configuración: lee MONGODB_ATLAS_PUBLIC_KEY / MONGODB_ATLAS_PRIVATE_KEY del entorno.
 # No falla si no están definidas mientras ningún recurso de este provider se active (crear_mongo_atlas).
 provider "mongodbatlas" {}
