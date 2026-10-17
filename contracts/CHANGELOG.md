@@ -51,3 +51,11 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - El nombre es dato personal: AUTH lo guarda cifrado y solo sale por `cobros` (solo BACKOFFICE, con token). `Usuario` no
   lo expone. Si AUTH no responde, el cobro llega con `cliente.nombre` en `null`, nunca un error.
 - Afecta al frontend: sí (la tabla de cobros puede mostrar el cliente; el alta de CLIENTE puede pedir el nombre).
+
+## v0.6 — 2026-10-17
+
+- KAN-28: sin cambio de comportamiento. `CrearCobroInput.clienteId` y `CrearUsuarioInput.nombre` (opcionales desde la
+  v0.5) declaran `= null` de forma explícita, que es lo que ya imprime el BFF (Strawberry) para un campo opcional sin valor.
+  Para un cliente es lo mismo que omitirlos; el contrato no coincidía con el BFF y la prueba de equivalencia, que con
+  `graphql-core` 3.3 compara los valores por defecto de los campos de entrada, fallaba. Solo cambios aditivos.
+- Afecta al frontend: no (omitir el campo o mandar `null` sigue valiendo).
