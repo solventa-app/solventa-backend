@@ -1,6 +1,6 @@
 """Endpoints HTTP de sesiones y usuarios, con dobles (sin PostgreSQL)."""
 
-from fakes import HASHER_RAPIDO, RepositorioUsuariosMemoria
+from fakes import HASHER_RAPIDO, AlmacenConsentimientosMemoria, RepositorioUsuariosMemoria
 from fastapi.testclient import TestClient
 
 from app.configuracion import Configuracion
@@ -15,6 +15,7 @@ def _cliente() -> TestClient:
     repositorio = RepositorioUsuariosMemoria()
     config = Configuracion("postgresql://no-se-usa", "secreto-de-prueba-con-32-bytes-o-mas", 60)
     app = create_app(
+        almacen=AlmacenConsentimientosMemoria(),
         servicio_usuarios=ServicioUsuarios(repositorio, HASHER_RAPIDO),
         servicio_sesiones=ServicioSesiones(repositorio, HASHER_RAPIDO, config.jwt_secreto, 60),
         config=config,

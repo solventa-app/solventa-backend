@@ -1,7 +1,7 @@
 """AUTH: consentimiento, usuarios y sesiones.
 
-- Consentimiento: almacén **en memoria** (ver `app/consentimientos.py`), un mock hasta
-  T-W01-4. El contrato HTTP es el definitivo; solo cambiará el almacén.
+- Consentimiento (T-W01-4): PostgreSQL, tabla append-only `consentimientos` (ver
+  `app/consentimientos.py`).
 - Usuarios y sesiones (HU-M02): PostgreSQL, base `auth` (ver `app/usuarios.py` y
   `app/sesiones.py`).
 
@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from app.cifrado import CifradorAesGcm
 from app.configuracion import Configuracion
-from app.consentimientos import AlmacenConsentimientos, AlmacenConsentimientosMemoria
+from app.consentimientos import AlmacenConsentimientos, AlmacenConsentimientosPostgres
 from app.identificadores import id_opaco
 from app.sesiones import CredencialesInvalidas, ServicioSesiones
 from app.usuarios import (
@@ -104,18 +104,22 @@ def create_app(
     config: Configuracion | None = None,
 ) -> FastAPI:
     """Los parámetros permiten inyectar dobles de prueba (ver `tests/fakes.py`) sin
-    levantar PostgreSQL. Si se omiten, el lifespan arma todo desde `Configuracion`."""
-    almacen = almacen or AlmacenConsentimientosMemoria()
+    levantar PostgreSQL. Si se omiten, el lifespan arma todo desde `Configuracion`
+    (un solo pool para consentimientos, usuarios y sesiones)."""
     config = config or Configuracion.desde_entorno()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         pool: ConnectionPool | None = None
-        if servicio_usuarios is not None and servicio_sesiones is not None:
+        servicios_inyectados = servicio_usuarios is not None and servicio_sesiones is not None
+        if almacen is None or not servicios_inyectados:
+            pool = construir_pool(config.database_url)
+        if almacen is None:
+            app.state.consentimientos = AlmacenConsentimientosPostgres(pool)
+        if servicios_inyectados:
             app.state.usuarios = servicio_usuarios
             app.state.sesiones = servicio_sesiones
         else:
-            pool = construir_pool(config.database_url)
             repositorio = RepositorioUsuariosPostgres(pool)
             hasher = PasswordHasher()
             cifrador = CifradorAesGcm.desde_base64(config.cifrado_clave)
@@ -130,17 +134,22 @@ def create_app(
                 pool.close()
 
     app = FastAPI(title="solventa-auth", version="0.1.0", lifespan=lifespan)
+    if almacen is not None:
+        # Un doble inyectado sirve aunque el lifespan no corra (TestClient sin `with`).
+        app.state.consentimientos = almacen
 
     @app.get("/health", tags=["operacion"])
     def health() -> dict[str, str]:
         return {"servicio": "auth", "estado": "ok"}
 
-    # ---------- Consentimiento (mock en memoria) ----------
+    # ---------- Consentimiento (append-only en PostgreSQL) ----------
 
     @app.post("/consentimientos", tags=["consentimientos"], response_model=ConsentimientoResponse)
     def registrar(body: SolicitudConsentimiento) -> ConsentimientoResponse:
         actor = body.actor.model_dump() if body.actor else None
-        consentimiento = almacen.registrar(body.finalidad, body.version_texto, actor)
+        consentimiento = app.state.consentimientos.registrar(
+            body.finalidad, body.version_texto, actor
+        )
         logger.info("consentimiento registrado id=%s", id_opaco(consentimiento.id))
         return ConsentimientoResponse(**consentimiento.como_dict())
 
@@ -150,7 +159,7 @@ def create_app(
         response_model=ConsentimientoResponse,
     )
     def obtener(consentimiento_id: str) -> ConsentimientoResponse:
-        consentimiento = almacen.obtener(consentimiento_id)
+        consentimiento = app.state.consentimientos.obtener(consentimiento_id)
         if consentimiento is None:
             raise HTTPException(status_code=404, detail="consentimiento no encontrado")
         return ConsentimientoResponse(**consentimiento.como_dict())
@@ -161,7 +170,7 @@ def create_app(
         response_model=ConsentimientoResponse,
     )
     def revocar(consentimiento_id: str) -> ConsentimientoResponse:
-        consentimiento = almacen.revocar(consentimiento_id)
+        consentimiento = app.state.consentimientos.revocar(consentimiento_id)
         if consentimiento is None:
             raise HTTPException(status_code=404, detail="consentimiento no encontrado")
         logger.info("consentimiento revocado id=%s", id_opaco(consentimiento.id))
