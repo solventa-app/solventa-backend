@@ -46,7 +46,8 @@ ENTRADA = {
 CLAVE_ASESOR = "clave-humo-0001"
 
 INICIAR_SESION = """mutation($entrada: CredencialesInput!) { iniciarSesion(entrada: $entrada) {
-  __typename ... on Sesion { token usuario { id rol } } ... on ErrorAutenticacion { mensaje } } }"""
+  __typename ... on Sesion { token usuario { id rol nombre } }
+  ... on ErrorAutenticacion { mensaje } } }"""
 CREAR_USUARIO = """mutation($entrada: CrearUsuarioInput!) { crearUsuario(entrada: $entrada) {
   __typename ... on Usuario { id rol } ... on ErrorUsuario { mensaje } } }"""
 REGISTRAR = """mutation { registrarConsentimiento(
@@ -125,13 +126,22 @@ def main() -> int:
     alias_asesor = "asesor.humo." + "".join(random.choices(string.ascii_lowercase, k=8))
     creado = _graphql(
         CREAR_USUARIO,
-        {"entrada": {"usuario": alias_asesor, "clave": CLAVE_ASESOR, "rol": "ASESOR"}},
+        {
+            "entrada": {
+                "usuario": alias_asesor,
+                "clave": CLAVE_ASESOR,
+                "rol": "ASESOR",
+                "nombre": "Asesor Humo Prueba",
+            }
+        },
         token_backoffice,
     )["crearUsuario"]
     if creado["__typename"] != "Usuario":
         _fallar(f"no se pudo crear el ASESOR: {creado}")
     sesion_asesor = _iniciar_sesion(alias_asesor, CLAVE_ASESOR)
     token = sesion_asesor["token"]
+    if sesion_asesor["usuario"]["nombre"] != "Asesor Humo Prueba":
+        _fallar(f"el ASESOR debía ver su propio nombre al iniciar sesión: {sesion_asesor}")
     print(f"   -> ASESOR {alias_asesor} con sesión")
 
     print("1. registrarConsentimiento como ASESOR")
@@ -158,9 +168,7 @@ def main() -> int:
     _modo_open_finance("lento")
     try:
         oferta = _solicitar(consentimiento["id"], token)
-        sin_datos = _solicitar(
-            consentimiento["id"], token, documentoIdentidad=documento_sin_cache
-        )
+        sin_datos = _solicitar(consentimiento["id"], token, documentoIdentidad=documento_sin_cache)
     finally:
         _modo_open_finance("sano")
     if sin_datos["__typename"] != "ErrorOferta" or not sin_datos["puedeReintentar"]:
@@ -246,11 +254,13 @@ def main() -> int:
     print("   -> la tabla de cobros muestra el nombre del cliente (cifrado en AUTH)")
     referencia_pasarela = _http(f"{STUB_PASARELA}/v1/cobros/{clave}")["referencia"]
     reintento = _graphql(
-        "mutation($id: ID!) { reintentarCobro(cobroId: $id) { estado } }",
+        "mutation($id: ID!) { reintentarCobro(cobroId: $id) { estado idTransaccion } }",
         {"id": cobro["id"]},
         token_backoffice,
     )["reintentarCobro"]
     final = _http(f"{PAYMENTS}/cobros/{cobro['id']}")
+    if reintento["idTransaccion"] != referencia_pasarela:
+        _fallar(f"idTransaccion debía ser la referencia de la pasarela: {reintento}")
     if reintento["estado"] != "COBRADO" or final["referencia"] != referencia_pasarela:
         _fallar(f"el reintento debía conciliar con la pasarela sin cobrar de nuevo: {final}")
     print(f"   -> cobrado con la referencia original de la pasarela ({referencia_pasarela[:11]}…)")

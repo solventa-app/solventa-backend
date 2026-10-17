@@ -6,7 +6,7 @@ stack real de `docker compose`, sin escribir código.
 
 | Archivo | Contenido |
 |---|---|
-| `solventa-bff.postman_collection.json` | Colección: 57 peticiones y 130 aserciones, en 10 carpetas |
+| `solventa-bff.postman_collection.json` | Colección: 58 peticiones y 135 aserciones, en 10 carpetas |
 | `solventa-local.postman_environment.json` | Entorno local: `bff_url`, `auth_url`, `acl_url`, `payments_url`, `stub_open_finance_url`, `stub_pasarela_url` y las credenciales **solo locales** del BACKOFFICE (`usuario_backoffice`, `clave_backoffice`) |
 
 ## Qué cubre
@@ -14,7 +14,7 @@ stack real de `docker compose`, sin escribir código.
 | Carpeta | Qué verifica | Criterio / escenario |
 |---|---|---|
 | 0. Salud | `/health` y `/metrics` del BFF | — |
-| 1. Autenticación y usuarios | Login del BACKOFFICE, `yo`, alta de ASESOR y de CLIENTE con nombre (alias únicos por corrida; un ASESOR con nombre se rechaza), alias repetido o con forma de correo, clave errónea y login de cada rol; guarda los tokens | HU-M02 |
+| 1. Autenticación y usuarios | Login del BACKOFFICE, `yo`, alta de ASESOR y de CLIENTE con nombre (alias únicos por corrida; cualquier rol puede tener nombre; cada usuario ve el suyo al iniciar sesión y la lista de usuarios no expone nombres), alias repetido o con forma de correo, clave errónea y login de cada rol; guarda los tokens | HU-M02 |
 | 2. Consentimiento | `registrarConsentimiento` como ASESOR, y en AUTH que el actor es ese ASESOR | CA-W01-02, CA-W01-11 |
 | 3. Oferta con proveedores sanos | Oferta COMPLETA en los canales web y móvil, 5 fuentes, prima puntual, dinero como texto; `oferta(id)` devuelve `null` | CA-W01-03, CA-W01-06 |
 | 4. Degradación | Con Open Finance lento: oferta PRELIMINAR, rango de prima, fuentes en CACHE, sin error; con un documento sin caché, el historial crediticio no llega y sale `ErrorOferta` con reintento; luego restaura el stub y espera a que cierren los circuitos | CA-W01-04, CA-W01-05, EC009 / EC010 |
