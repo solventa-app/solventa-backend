@@ -317,6 +317,8 @@ ejecutado), el despliegue de imágenes reales, la deriva de atributos que el pip
 imagen, etiquetas, cliente y tráfico) y el primer arranque de los servicios con Cloud SQL, que solo se puede comprobar con
 la instancia creada (`crear_cloud_sql = false` hoy, así que los servicios con base de datos no pueden arrancar aún).
 
-**Pendiente conocido:** los servicios que usan Redis (`rating`, `acl-worker`, `consolidador-fuentes`) todavía no declaran
-`vpc_access` hacia el conector de `redis.tf`; hay que conectarlo antes de activar `crear_redis`, porque Memorystore solo
-tiene IP privada.
+**Redis:** los servicios que declaran un secreto `redis-url-*` (`rating`, `acl-worker`, `consolidador-fuentes`) llevan
+`vpc_access` hacia el conector de `redis.tf` cuando `crear_redis = true` (Memorystore solo tiene IP privada), y Terraform
+escribe las tres URLs `redis-url-*` en Secret Manager con la contraseña (AUTH) que genera Memorystore: no hay que cargar
+nada a mano. **Sin probar en ejecución:** conectividad real servicio → Memorystore, que solo se comprueba con Redis creado
+(`crear_redis = false` hoy; cuesta ~USD 0,12/h según este README).
