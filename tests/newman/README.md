@@ -6,7 +6,7 @@ stack real de `docker compose`, sin escribir código.
 
 | Archivo | Contenido |
 |---|---|
-| `solventa-bff.postman_collection.json` | Colección: 58 peticiones y 135 aserciones, en 10 carpetas |
+| `solventa-bff.postman_collection.json` | Colección: 61 peticiones y 141 aserciones, en 10 carpetas |
 | `solventa-local.postman_environment.json` | Entorno local: `bff_url`, `auth_url`, `acl_url`, `payments_url`, `stub_open_finance_url`, `stub_pasarela_url` y las credenciales **solo locales** del BACKOFFICE (`usuario_backoffice`, `clave_backoffice`) |
 
 ## Qué cubre
@@ -22,7 +22,7 @@ stack real de `docker compose`, sin escribir código.
 | 6. Contacto y revocación | `contactarAsesor`, `revocarConsentimiento`, y que la oferta se rechace después de revocar | CA-W01-07, CA-W01-08 |
 | 7. Autorización por rol | CLIENTE no lista usuarios ni cobros ni crea cobros, BACKOFFICE no cotiza, ASESOR no crea usuarios, token alterado y sin token | HU-M02 |
 | 8. Suspensión | El BACKOFFICE suspende al CLIENTE y su login se rechaza; suspender un id inexistente | HU-M02 |
-| 9. Cobros y conciliación | Pasarela lenta: `crearCobro` en el BFF deja el cobro `pendiente` en PAYMENTS aunque la pasarela sí cobró; `cobros(polizaId)` lo muestra; `reintentarCobro` concilia y queda `COBRADO` con **la misma referencia de la pasarela** (sin doble cobro); doble clic sin efecto; los cobros llevan `clienteId` y la tabla muestra el nombre del cliente; reenviar el mismo `idIntentoCobro` devuelve el mismo cobro y con otro monto da `ErrorCobro`; un rechazo con su motivo y que no se puede reintentar; `cobros` sin token exige sesión | CA-W05-01, CA-W05-02 |
+| 9. Cobros y conciliación | Pasarela lenta: `crearCobro` en el BFF deja el cobro `pendiente` en PAYMENTS aunque la pasarela sí cobró; `cobros(polizaId)` lo muestra; `reintentarCobro` concilia y queda `COBRADO` con **la misma referencia de la pasarela** (sin doble cobro); doble clic sin efecto; los cobros llevan `clienteId` y la tabla muestra el nombre del cliente; reenviar el mismo `idIntentoCobro` devuelve el mismo cobro y con otro monto da `ErrorCobro`; un rechazo con su motivo que se reintenta hasta 3 veces (cada vez con referencia nueva) y al cuarto da "requiere otro medio de pago"; `cobros` sin token exige sesión | CA-W05-01, CA-W05-02 |
 
 **Autenticación:** la colección usa por defecto el token del ASESOR (`Bearer {{token_asesor}}`, en la autenticación de
 la colección). Las peticiones que prueban otro rol lo indican en su propia autenticación, y las que no son del BFF

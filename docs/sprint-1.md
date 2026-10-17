@@ -14,7 +14,7 @@ Este archivo es el **resumen operativo para construir**; si el plan cambia, se a
 |---|---|---|---|
 | D-01 | Base de velocidad | Recálculo 27/27/44 y regla de recorte | Planning S1 |
 | D-02 | Read-your-writes RISK→RATING | Sesión causal: RISK devuelve el `operationTime` y RATING lee con `afterClusterTime`; lectura de la primaria como alternativa dentro de la misma solicitud | PF2-1 |
-| D-03 | Cobro antes o después de emitir | Mantener la definición del equipo (antes) y actualizar el Journey 2 | Planning S2 |
+| D-03 | Cobro antes o después de emitir | Mantener la definición del equipo (antes) y actualizar el Journey 2 | Planning S2 (preguntas abiertas en `docs/cobros-conciliacion.md`, sección 10) |
 | D-04 | Alcance de HA-SEG-002 | Cifrado de campo en la aplicación con Cloud KMS; CMEK nativo queda como mejora | PF2-1 |
 | D-05 | Proveedores externos | Stubs por contrato, adaptadores intercambiables; sandbox reales si aparecen | PF2-1 |
 | D-06 | Adelantar HU-W05 al Sprint 1 | Aprobar | Planning S1 |
@@ -194,7 +194,12 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   360 meses y dirección) antes de consultar nada, y RATING usa el plazo y la ciudad de la dirección en la prima con
   factores **ilustrativos** (ver `services/rating/README.md`). El `consolidador-fuentes` verifica en AUTH que el
   consentimiento siga vigente antes de reintentar una fuente (regla #7). Sin cambios de contrato.
-- **Nombre propio e `idTransaccion` (KAN-28, 2026-10-18):** cada usuario ve su nombre al iniciar sesión (`Usuario.nombre` en
-  `iniciarSesion` y `yo`, cifrado en AUTH y fuera del JWT) y el back-office ve la referencia de la pasarela (`Cobro.idTransaccion`).
+- **Reintento de cobros rechazados (KAN-28, 2026-10-17, decidido con el equipo según el prototipo W05-01):** un cobro
+  `rechazado` se puede reintentar a mano hasta 3 veces; el `pendiente` lo sigue reintentando el sistema solo. Como la
+  pasarela es idempotente por referencia, cada reintento va con la suya (`{idIntentoCobro}-rN`, migración `0006` de
+  PAYMENTS). Contrato v0.6: `Cobro.reintentosRestantes`. No se construye captura de tarjeta (CA-W05-03): el prototipo no
+  la tiene y la prima se factura con la cuota del crédito (W03-02b). `scripts/sembrar_cobros.py` deja los datos de la demo.
+- **Nombre propio (KAN-28, 2026-10-18):** cada usuario ve su nombre al iniciar sesión (`Usuario.nombre` en
+  `iniciarSesion` y `yo`, cifrado en AUTH y fuera del JWT). `Cobro.idTransaccion` llegó aparte con el reintento de rechazados.
   Los pagos siguen siendo solo del BACKOFFICE. Pedido por el front (KAN-207). **Tampoco estaba en el plan del sprint:**
   registrar las horas en Jira bajo KAN-28.

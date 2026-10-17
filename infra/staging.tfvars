@@ -16,6 +16,6 @@ presupuesto_monto  = 958332
 
 # Con costo por hora aunque no haya tráfico: se activan en su fase, con el cambio revisado en un PR.
 crear_kms         = false
-crear_redis       = false
+crear_redis       = true
 crear_cloud_sql   = true
 crear_mongo_atlas = false

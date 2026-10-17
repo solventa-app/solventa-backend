@@ -34,6 +34,12 @@ logger = logging.getLogger("payments.conciliacion")
 MOTIVO_CIRCUITO_ABIERTO = "circuito_abierto"
 
 
+def referencia_ante_pasarela(cobro: dict[str, Any]) -> str:
+    """Con qué referencia conoce la pasarela el intento vigente: la original
+    (`id_intento_cobro`) o la de un reintento manual de un rechazado (`…-rN`)."""
+    return cobro.get("referencia_pasarela") or cobro["id_intento_cobro"]
+
+
 def procesar_reintento(
     cobro: dict[str, Any],
     repositorio: "RepositorioCobros",
@@ -41,7 +47,7 @@ def procesar_reintento(
     bus: PuertoBusEventos,
 ) -> dict[str, Any]:
     """Concilia y, si hace falta, vuelve a cobrar. Devuelve el cobro actualizado."""
-    consulta = cliente_acl.consultar(cobro["id_intento_cobro"])
+    consulta = cliente_acl.consultar(referencia_ante_pasarela(cobro))
 
     if consulta.resultado == "encontrado":
         actualizado = repositorio.actualizar_estado(
@@ -51,7 +57,7 @@ def procesar_reintento(
     elif consulta.resultado == "no_encontrado":
         resultado = cliente_acl.cobrar(
             OrdenCobro(
-                id_intento_cobro=cobro["id_intento_cobro"],
+                id_intento_cobro=referencia_ante_pasarela(cobro),
                 poliza_id=cobro["poliza_id"],
                 monto=cobro["monto"],
                 moneda=cobro["moneda"],

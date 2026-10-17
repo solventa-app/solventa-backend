@@ -14,10 +14,11 @@ from app.main import create_app
 COBROS = """query($poliza: ID, $estado: EstadoCobro) {
   cobros(polizaId: $poliza, estado: $estado) {
     id polizaId estado monto { valor moneda } actualizadoEn motivo intentos
+    reintentosRestantes idTransaccion
   }
 }"""
 REINTENTAR = """mutation($id: ID!) {
-  reintentarCobro(cobroId: $id) { id estado motivo intentos }
+  reintentarCobro(cobroId: $id) { id estado motivo intentos reintentosRestantes }
 }"""
 
 CREAR = """mutation($e: CrearCobroInput!) {
@@ -68,6 +69,8 @@ def test_lista_cobros_con_el_formato_del_contrato() -> None:
             "actualizadoEn": "2026-10-16T12:00:00+00:00",
             "motivo": "pasarela_no_disponible",
             "intentos": 1,
+            "reintentosRestantes": 3,
+            "idTransaccion": None,
         }
     ]
 
@@ -89,12 +92,33 @@ def test_reintentar_un_pendiente_lo_deja_cobrado() -> None:
     assert cobro["estado"] == "COBRADO"
 
 
-def test_reintentar_un_rechazado_da_un_error_claro() -> None:
+def test_reintentar_un_rechazado_lo_cobra_y_descuenta_un_reintento() -> None:
     payments = PaymentsFalso([cobro_de_payments("c-1", "POL-1", "rechazado")])
     with _cliente(payments) as client:
+        cobro = _post(client, REINTENTAR, {"id": "c-1"})["data"]["reintentarCobro"]
+
+    assert cobro["estado"] == "COBRADO"
+    assert cobro["reintentosRestantes"] == 2
+
+
+def test_el_id_de_transaccion_es_la_referencia_de_la_pasarela() -> None:
+    cobrado = cobro_de_payments("c-1", "POL-1", "cobrado", referencia="pg-123")
+    with _cliente(PaymentsFalso([cobrado])) as client:
+        cobros = _post(client, COBROS, {})["data"]["cobros"]
+
+    assert cobros[0]["idTransaccion"] == "pg-123"
+
+
+def test_reintentar_un_rechazado_sin_reintentos_da_un_error_claro() -> None:
+    agotado = cobro_de_payments(
+        "c-1", "POL-1", "rechazado", reintentos_rechazo=3, reintentos_rechazo_restantes=0
+    )
+    with _cliente(PaymentsFalso([agotado])) as client:
         cuerpo = _post(client, REINTENTAR, {"id": "c-1"})
 
-    assert "otro medio de pago" in cuerpo["errors"][0]["message"]
+    assert cuerpo["errors"][0]["message"] == (
+        "Se agotaron los 3 reintentos: el cobro requiere otro medio de pago."
+    )
 
 
 def test_reintentar_un_cobro_inexistente() -> None:
