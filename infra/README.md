@@ -285,8 +285,19 @@ apagado**. Sin marca guardada se considera `encendido`.
 alguno sigue fallando, lanza *Deploy staging* solo para ese servicio. Mientras está apagado, los servicios que dependen de
 Cloud SQL o Redis no atienden: es lo esperado.
 
-**Apagado automático (opcional):** el workflow no se ejecuta solo. Para apagar cada noche, descomenta el bloque `schedule`
-de `.github/workflows/costos-staging.yml`.
+**Apagado automático:** por si se olvida apagarlo, el workflow **apaga solo todos los días a las 2:00 a.m. hora de
+Colombia** (`cron: '0 7 * * *'`, 07:00 UTC; Colombia no tiene horario de verano). Así, lo que se encienda para una
+prueba no sigue cobrando de un día para otro. Por eso cada mañana estará **apagado**: para usarlo, `encender`.
+Para quitarlo, borra el bloque `schedule` de `.github/workflows/costos-staging.yml`. Tres cosas a saber:
+
+- GitHub puede demorar unos minutos en lanzar una ejecución programada, y en un repositorio público las desactiva tras
+  60 días sin actividad.
+- Si alguien está trabajando pasadas las 2:00 a.m., se le apagará: basta con volver a ejecutar `encender`.
+- Mientras `main` no traiga este cambio, la ejecución programada se omite con un aviso (no falla cada noche).
+
+**Desplegar con los costos apagados:** un despliegue que tenga que migrar `auth` o `payments` mientras Cloud SQL está
+detenida **falla de inmediato con un mensaje claro** (*Cloud SQL está detenida… ejecuta Costos staging → encender*) en
+vez de un error de conexión. Enciende primero y vuelve a lanzar el despliegue. Un release no vuelve a encender lo apagado.
 
 **Primera vez:** el workflow aplica la infraestructura de `main`, así que solo funciona cuando `main` ya trae este cambio (lo
 dice con un error claro si no).

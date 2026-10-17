@@ -14,8 +14,10 @@ name: Costos staging
 # despliegue automático (deploy-staging.yml) lo respeta: un release no vuelve a encender lo que está apagado.
 # Solo toca Cloud SQL, Redis y el conector VPC: si el plan destruyera otra cosa, el workflow falla sin aplicar nada.
 #
-# NO se ejecuta solo. Para apagar cada noche, descomenta `schedule`. Si algo falla, infra/README.md explica cómo
-# hacer lo mismo a mano desde Cloud Shell.
+# SE APAGA SOLO todos los días a las 2:00 a.m. hora de Colombia (por si se olvida apagarlo): es el bloque `schedule`.
+# Para quitarlo, borra ese bloque. GitHub puede demorar unos minutos en lanzar las ejecuciones programadas, y en un
+# repositorio público las desactiva tras 60 días sin actividad. Si algo falla, infra/README.md explica cómo hacer lo
+# mismo a mano desde Cloud Shell.
 on:
   workflow_dispatch:
     inputs:
@@ -24,8 +26,9 @@ on:
         type: choice
         options: [estado, apagar, encender]
         default: estado
-  # schedule:
-  #   - cron: '0 5 * * *' # apagar cada noche a las 05:00 UTC (00:00 en Colombia)
+  schedule:
+    # 2:00 a.m. en Colombia (UTC-5, sin horario de verano) = 07:00 UTC. Siempre apaga.
+    - cron: '0 7 * * *'
 
 permissions:
   contents: read
@@ -36,11 +39,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  costos:
+  comprobar:
     # Como el resto del despliegue: no hace nada hasta que existan las variables y la protección de gasto.
+    # El horario corre desde `develop` (rama por defecto) pero lo que se aplica es la infraestructura de `main`: hasta
+    # que `main` traiga el apagado de costos, la ejecución programada se omite con un aviso en vez de fallar cada
+    # noche; la manual sí falla con un error claro.
     if: >-
       vars.GCP_PROJECT_ID != '' && vars.GCP_PROTECCION_GASTO == 'activa' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ok: ${{ steps.soporte.outputs.ok }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - name: ¿El Terraform de main ya sabe apagar y encender?
+        id: soporte
+        env:
+          EVENTO: ${{ github.event_name }}
+        run: |
+          if grep -q 'cloud_sql_encendida' infra/variables.tf; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+          if [ "$EVENTO" = "schedule" ]; then
+            echo "::notice title=Costos staging::main todavía no trae el apagado de costos; se omite el apagado programado."
+          else
+            echo "::error title=Costos staging::main todavía no trae el apagado de costos. Mezcla a main el release que incluye este workflow y vuelve a ejecutarlo."
+            exit 1
+          fi
+
+  costos:
+    needs: comprobar
+    if: needs.comprobar.outputs.ok == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: infra-staging
@@ -53,7 +87,7 @@ jobs:
       TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
       TF_VAR_billing_account_id: ${{ vars.GCP_BILLING_ACCOUNT_ID }}
       PROYECTO: ${{ vars.GCP_PROJECT_ID }}
-      # `schedule` (si se descomenta) siempre apaga.
+      # La ejecución programada (`schedule`) siempre apaga.
       ACCION: ${{ github.event_name == 'schedule' && 'apagar' || inputs.accion }}
     steps:
       # Las herramientas (la guardia de destrucciones) salen de la rama que se ejecuta; la infraestructura que se
@@ -73,12 +107,6 @@ jobs:
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_wrapper: false
-      - name: ¿El Terraform de main ya sabe apagar y encender?
-        run: |
-          if ! grep -q 'cloud_sql_encendida' codigo/infra/variables.tf; then
-            echo "::error title=Costos staging::main todavía no trae el apagado de costos. Mezcla a main el release que incluye este workflow y vuelve a ejecutarlo."
-            exit 1
-          fi
       - name: Terraform init
         working-directory: codigo/infra
         run: terraform init

@@ -105,10 +105,47 @@ jobs:
           fi
           grep '^infra=' "$GITHUB_OUTPUT"
 
+  costos:
+    # Lee la marca de costos («apagado» | «encendido», workflow `Costos staging`). Solo la cuenta de Terraform puede
+    # leer el bucket del estado (contiene secretos), así que se lee aquí y se comparte por salida: `infra` la usa para
+    # no volver a encender lo apagado y `migrar` para avisar con claridad si Cloud SQL está detenida.
+    needs: preparar
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: infra-staging
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      estado: ${{ steps.leer.outputs.estado }}
+    steps:
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_TERRAFORM_SA }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Leer la marca
+        id: leer
+        run: |
+          set -uo pipefail
+          url="gs://${PROYECTO}-tfstate/solventa-backend/costos/estado"
+          if salida=$(gcloud storage cat "$url" 2>&1); then
+            estado=$(printf '%s' "$salida" | tr -d '[:space:]')
+          elif printf '%s' "$salida" | grep -q -i -E 'matched no objects|not found|404'; then
+            estado=encendido
+          else
+            echo "::error title=Costos::No pude leer el estado de los costos: $salida"
+            exit 1
+          fi
+          echo "estado=$estado" >> "$GITHUB_OUTPUT"
+          if [ "$estado" = "apagado" ]; then
+            echo "### Costos de staging: **apagados** (Cloud SQL detenida y sin Redis). Para encenderlos: workflow *Costos staging*." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   infra:
     # Aplica la infraestructura (Terraform) con una identidad distinta y más potente que la de despliegue,
     # en su propio entorno de GitHub (`infra-staging`): ahí se pueden exigir revisores antes de cada apply.
-    needs: preparar
+    needs: [preparar, costos]
     if: needs.preparar.outputs.infra == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -136,29 +173,11 @@ jobs:
         with:
           terraform_wrapper: false
       - run: terraform init
-      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
       # Lo que cobra por hora (Cloud SQL, Redis) puede estar APAGADO a propósito (workflow `Costos staging`).
-      # Un release no debe volver a encenderlo: la marca guardada manda sobre `staging.tfvars`.
-      - name: ¿Los costos están apagados?
-        id: costos
-        run: |
-          set -uo pipefail
-          url="gs://${PROYECTO}-tfstate/solventa-backend/costos/estado"
-          if salida=$(gcloud storage cat "$url" 2>&1); then
-            estado=$(printf '%s' "$salida" | tr -d '[:space:]')
-          elif printf '%s' "$salida" | grep -q -i -E 'matched no objects|not found|404'; then
-            estado=encendido
-          else
-            echo "::error title=Costos::No pude leer el estado de los costos: $salida"
-            exit 1
-          fi
-          echo "estado=$estado" >> "$GITHUB_OUTPUT"
-          if [ "$estado" = "apagado" ]; then
-            echo "### Costos de staging: **apagados** (Cloud SQL detenida y sin Redis). Para encenderlos: workflow *Costos staging*." >> "$GITHUB_STEP_SUMMARY"
-          fi
+      # Un release no debe volver a encenderlo: la marca guardada (job `costos`) manda sobre `staging.tfvars`.
       - name: Plan
         env:
-          COSTOS: ${{ steps.costos.outputs.estado }}
+          COSTOS: ${{ needs.costos.outputs.estado }}
         run: |
           set -euo pipefail
           extra=()
@@ -180,9 +199,9 @@ jobs:
 
   construir:
     # Construir una vez: la imagen que pasó CI es la que llega a staging (etiqueta = SHA, nunca "latest").
-    needs: [preparar, infra]
+    needs: [preparar, infra, costos]
     # `infra` se omite cuando el merge no tocó Terraform; si falló, no se construye ni se despliega nada.
-    if: ${{ !cancelled() && needs.preparar.result == 'success' && needs.preparar.outputs.servicios != '[]' && contains(fromJSON('["success","skipped"]'), needs.infra.result) }}
+    if: ${{ !cancelled() && needs.preparar.result == 'success' && needs.preparar.outputs.servicios != '[]' && needs.costos.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.infra.result) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: staging
@@ -221,11 +240,11 @@ jobs:
     # La base se migra ANTES de que la revisión nueva reciba tráfico, mientras la anterior sigue
     # sirviendo: por eso toda migración debe ser compatible hacia atrás (expandir/contraer, ADR-07).
     # Se ejecuta como Cloud Run Job con la MISMA imagen que se va a desplegar.
-    needs: [preparar, construir]
+    needs: [preparar, construir, costos]
     # `!cancelled()` es imprescindible: sin una función de estado, GitHub añade `success()`, que cuenta también a los
     # antecesores de `construir`. Con `infra` omitida (lo normal: casi ningún release toca infra/) saltaba `migrar`
     # aunque hubiera migraciones, y `desplegar` seguía adelante sin migrar.
-    if: ${{ !cancelled() && needs.preparar.result == 'success' && needs.construir.result == 'success' && needs.preparar.outputs.migraciones != '[]' }}
+    if: ${{ !cancelled() && needs.preparar.result == 'success' && needs.construir.result == 'success' && needs.costos.result == 'success' && needs.preparar.outputs.migraciones != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: staging
@@ -237,6 +256,17 @@ jobs:
       matrix:
         servicio: ${{ fromJSON(needs.preparar.outputs.migraciones) }}
     steps:
+      # Con los costos apagados Cloud SQL está DETENIDA: migrar `auth` o `payments` fallaría con un error de conexión poco
+      # claro. Se avisa antes de gastar tiempo. (`risk` usa MongoDB Atlas, que no se apaga.)
+      - name: ¿Cloud SQL está apagada?
+        if: matrix.servicio == 'auth' || matrix.servicio == 'payments'
+        env:
+          COSTOS: ${{ needs.costos.outputs.estado }}
+        run: |
+          if [ "$COSTOS" = "apagado" ]; then
+            echo "::error title=Costos apagados::Cloud SQL está detenida y no se puede migrar. Ejecuta Actions > Costos staging > encender y vuelve a lanzar este despliegue."
+            exit 1
+          fi
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
