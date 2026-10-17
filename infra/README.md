@@ -312,10 +312,17 @@ jobs de migración, la cuenta y la federación del pipeline, y la protección de
 prueba por debajo del 100 % llega a la función y responde 200. El camino de bloqueo (≥ 100 %) se probó con CloudEvents
 simulados por HTTP, no en vivo, porque bloquearía el ingreso de todos los servicios.
 
-**Sin verificar todavía:** que el `apply` corra desde GitHub (la etapa `infra` y el entorno `infra-staging` no se han
-ejecutado), el despliegue de imágenes reales, la deriva de atributos que el pipeline modifica (por eso `servicios.tf` ignora
-imagen, etiquetas, cliente y tráfico) y el primer arranque de los servicios con Cloud SQL, que solo se puede comprobar con
-la instancia creada (`crear_cloud_sql = false` hoy, así que los servicios con base de datos no pueden arrancar aún).
+**Verificado después, desde GitHub (2026-10-17):** la etapa `infra` y el entorno `infra-staging` corrieron: login por
+federación, estado en GCS, `plan`, guardia y `apply` (5 creados, 12 modificados, 1 destruido). Siete servicios (`bff`, los
+tres stubs, `consolidador-fuentes`, `payments`, `risk`) ya sirven su imagen real. Ese `apply` destapó una deriva: los
+despliegues dejan `template.labels` (la etiqueta `commit-sha`) y `template.revision` en la plantilla de cada servicio, y sin
+ignorarlos cada `apply` de infra recreaba una revisión de TODOS los servicios. Ahora `servicios.tf` también ignora esos dos
+atributos; comprobado con un `plan` real contra el estado con deriva (sin la corrección aparecía el servicio como
+«modificar», con ella no).
+
+**Sin verificar todavía:** el primer arranque de los servicios con base de datos y caché (`auth`, `payments`, `risk`,
+`rating`, `acl-worker`), que solo se puede comprobar con Cloud SQL, MongoDB Atlas y Redis creados (`crear_cloud_sql`,
+`crear_mongo_atlas` y `crear_redis` están en `false` hoy).
 
 **Redis:** los servicios que declaran un secreto `redis-url-*` (`rating`, `acl-worker`, `consolidador-fuentes`) llevan
 `vpc_access` hacia el conector de `redis.tf` cuando `crear_redis = true` (Memorystore solo tiene IP privada), y Terraform
