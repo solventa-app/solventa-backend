@@ -37,6 +37,9 @@ resource "google_sql_database_instance" "principal" {
     edition           = "ENTERPRISE" # los niveles shared-core (db-f1-micro) solo existen en Enterprise, no en Enterprise Plus
     tier              = var.cloud_sql_tier
     availability_type = "ZONAL"
+    # Detener la instancia (NEVER) deja de cobrar la instancia y conserva datos y migraciones; borrarla las perdería
+    # (sin respaldos) y, según la documentación de Cloud SQL, su nombre no se puede reutilizar durante un tiempo.
+    activation_policy = var.cloud_sql_encendida ? "ALWAYS" : "NEVER"
     disk_autoresize   = true
     disk_size         = 10 # GB, mínimo
 

@@ -112,9 +112,15 @@ resource "google_cloud_run_v2_service" "servicio" {
   # las URL con etiqueta de revisión.
   custom_audiences = [each.key]
 
+  # Las versiones con el valor REAL de cada conexión (Cloud SQL, Redis, Atlas) deben existir antes de crear la revisión
+  # nueva: Cloud Run lee `latest` al arrancar y, si la real no está, lee el marcador y la revisión no arranca.
   depends_on = [
     google_secret_manager_secret_version.marcador,
     google_secret_manager_secret_iam_member.lectura,
+    google_secret_manager_secret_version.database_url_auth,
+    google_secret_manager_secret_version.database_url_payments,
+    google_secret_manager_secret_version.redis_url,
+    google_secret_manager_secret_version.mongo_uri,
   ]
 
   template {
