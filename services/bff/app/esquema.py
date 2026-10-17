@@ -405,6 +405,14 @@ async def _nombres_de_clientes(info: Info, cobros: list[dict]) -> dict[str, str]
     return nombres
 
 
+# Cómo se nombra cada canal en el resumen de `contactarAsesor` (CA-W01-07).
+RESUMEN_CANAL = {
+    CanalContacto.LLAMAR: "llamada",
+    CanalContacto.CHAT: "chat",
+    CanalContacto.AGENDAR: "llamada agendada",
+}
+
+
 @strawberry.type
 class Query:
     @strawberry.field
@@ -489,7 +497,11 @@ class Mutation:
     async def solicitar_oferta(self, info: Info, entrada: SolicitudOfertaInput) -> ResultadoOferta:
         exigir_rol(info, *CLIENTE_O_ASESOR)
         resultado = await info.context["servicio_oferta"].solicitar(
-            str(entrada.consentimiento_id), entrada.documento_identidad, entrada.valor_credito
+            str(entrada.consentimiento_id),
+            entrada.documento_identidad,
+            entrada.valor_credito,
+            entrada.plazo_meses,
+            entrada.direccion_inmueble,
         )
         if isinstance(resultado, ErrorOfertaDatos):
             return ErrorOferta(
@@ -502,11 +514,13 @@ class Mutation:
         self, info: Info, oferta_id: strawberry.ID, canal: CanalContacto
     ) -> ConfirmacionContacto:
         exigir_rol(info, *CLIENTE_O_ASESOR)
-        # MOCK (CA-W01-07): no hay servicio de asesores todavía; solo confirma.
+        # MOCK (CA-W01-07): no hay servicio de asesores todavía; solo confirma. El resumen no
+        # lleva el id de la oferta: no le dice nada al cliente y llega vacío cuando se pide un
+        # asesor desde la pantalla de error (W01-03c), donde no hubo oferta.
         return ConfirmacionContacto(
             canal=canal,
-            resumen=f"Recibimos tu solicitud ({canal.value}) sobre la oferta {oferta_id}. "
-            "Un asesor te contactará.",
+            resumen=f"Recibimos tu solicitud de {RESUMEN_CANAL[canal]}. "
+            "Un asesor te contactará para continuar tu cotización.",
         )
 
     @strawberry.mutation

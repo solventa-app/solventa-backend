@@ -238,10 +238,13 @@ services:
     ports: ["8006:8006"]
     environment:
       ACL_URL: http://acl-worker:8005
+      # Antes de reintentar una fuente verifica que el consentimiento siga vigente (regla #7).
+      AUTH_URL: http://auth:8001
       REDIS_URL: redis://redis:6379/2
     depends_on:
       redis: { condition: service_healthy }
       acl-worker: { condition: service_started }
+      auth: { condition: service_healthy }
 
   stub-open-finance:
     <<: *servicio

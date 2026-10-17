@@ -9,8 +9,9 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 
-from app.clientes import Clientes, ErrorServicio, SolicitudInvalida
+from app.clientes import Clientes, DatosInsuficientes, ErrorServicio, SolicitudInvalida
 from app.identificadores import cliente_id_desde_documento, id_opaco
 
 logger = logging.getLogger("bff.oferta")
@@ -30,6 +31,20 @@ MENSAJE_REINTENTAR = (
     "No pudimos calcular tu oferta en este momento. Intenta de nuevo o habla con un asesor."
 )
 MENSAJE_VALOR_INVALIDO = "El valor del crédito no es válido."
+MENSAJE_DOCUMENTO_INVALIDO = "El documento de identidad no es válido."
+MENSAJE_PLAZO_INVALIDO = "El plazo del crédito debe estar entre 1 y 360 meses."
+MENSAJE_DIRECCION_INVALIDA = "Ingresa la dirección del inmueble."
+MENSAJE_DATOS_INSUFICIENTES = (
+    "No pudimos consultar tu historial crediticio en este momento. "
+    "Intenta de nuevo o habla con un asesor."
+)
+
+# Mismos límites que el formulario W01-01 (solventa-frontend: SolicitudYConsentimiento.vue).
+MIN_DIGITOS_DOCUMENTO = 6
+MAX_LARGO_DOCUMENTO = 20
+PLAZO_MINIMO_MESES = 1
+PLAZO_MAXIMO_MESES = 360
+MAX_LARGO_DIRECCION = 200
 
 
 @dataclass
@@ -38,17 +53,53 @@ class ErrorOfertaDatos:
     puede_reintentar: bool
 
 
+def validar_solicitud(
+    documento_identidad: str, valor_credito: str, plazo_meses: int, direccion_inmueble: str
+) -> str | None:
+    """Mensaje para el usuario si la solicitud no es válida, o `None`. Se valida antes de
+    tocar el consentimiento o las fuentes: un dato mal escrito no gasta una consulta."""
+    documento = documento_identidad.strip()
+    digitos = sum(c.isdigit() for c in documento)
+    if digitos < MIN_DIGITOS_DOCUMENTO or len(documento) > MAX_LARGO_DOCUMENTO:
+        return MENSAJE_DOCUMENTO_INVALIDO
+    try:
+        valor = Decimal(valor_credito)
+    except InvalidOperation:
+        return MENSAJE_VALOR_INVALIDO
+    if not valor.is_finite() or valor <= 0:
+        return MENSAJE_VALOR_INVALIDO
+    if not PLAZO_MINIMO_MESES <= plazo_meses <= PLAZO_MAXIMO_MESES:
+        return MENSAJE_PLAZO_INVALIDO
+    direccion = direccion_inmueble.strip()
+    if not direccion or len(direccion) > MAX_LARGO_DIRECCION:
+        return MENSAJE_DIRECCION_INVALIDA
+    return None
+
+
 class ServicioOferta:
     def __init__(self, clientes: Clientes, cliente_id_clave: str) -> None:
         self._clientes = clientes
         self._clave = cliente_id_clave
 
     async def solicitar(
-        self, consentimiento_id: str, documento_identidad: str, valor_credito: str
+        self,
+        consentimiento_id: str,
+        documento_identidad: str,
+        valor_credito: str,
+        plazo_meses: int,
+        direccion_inmueble: str,
     ) -> dict | ErrorOfertaDatos:
         """Devuelve la oferta tal como la entrega RATING (ya en el camelCase del
-        contrato) o un `ErrorOfertaDatos`. `plazoMeses` y `direccionInmueble` del
-        contrato no los usa RATING todavía: no llegan aquí y nunca se loguean."""
+        contrato) o un `ErrorOfertaDatos`. El plazo y la dirección los usa RATING en la
+        prima; ni el documento ni la dirección se loguean nunca (regla #6)."""
+        # 0. Datos de la solicitud (B3): un error aquí no se arregla reintentando.
+        mensaje_invalido = validar_solicitud(
+            documento_identidad, valor_credito, plazo_meses, direccion_inmueble
+        )
+        if mensaje_invalido is not None:
+            logger.info("oferta rechazada: solicitud invalida")
+            return ErrorOfertaDatos(mensaje_invalido, puede_reintentar=False)
+
         # 1. Consentimiento ANTES de consultar cualquier fuente (regla #7, CA-W01-01/02).
         try:
             consentimiento = await self._clientes.auth.obtener_consentimiento(consentimiento_id)
@@ -78,8 +129,16 @@ class ServicioOferta:
         # 5. RATING calcula la oferta leyendo el perfil con sesión causal.
         try:
             oferta = await self._clientes.rating.generar_oferta(
-                cliente_id, perfil["operation_time"], valor_credito
+                cliente_id,
+                perfil["operation_time"],
+                valor_credito,
+                plazo_meses,
+                direccion_inmueble.strip(),
             )
+        except DatosInsuficientes:
+            # CA-W01-05: sin historial crediticio (ni en caché) no hay oferta posible.
+            logger.info("oferta rechazada: datos insuficientes cliente=%s", id_opaco(cliente_id))
+            return ErrorOfertaDatos(MENSAJE_DATOS_INSUFICIENTES, puede_reintentar=True)
         except SolicitudInvalida:
             return ErrorOfertaDatos(MENSAJE_VALOR_INVALIDO, puede_reintentar=False)
         except ErrorServicio as error:

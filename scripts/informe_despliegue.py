@@ -33,7 +33,7 @@ ALMACENES = (
 )
 
 ETAPAS = (
-    ("infra", "Terraform (infra)", "no cambió `infra/` ni el manifiesto de servicios"),
+    ("infra", "Terraform (infra)", "no se pidió o no cambió `infra/` ni el manifiesto"),
     ("construir", "Construir imágenes", "ningún servicio cambió"),
     ("migrar", "Migrar bases de datos", "ningún servicio con base de datos cambió"),
     ("desplegar", "Desplegar y promover", "ningún servicio cambió"),
@@ -87,10 +87,18 @@ def estado_servicio(manifiesto: dict, cr: dict | None, sha: str, objetivo: bool)
         for t in trafico
         if t.get("latestRevision") or (listo_rev and t.get("revisionName") == listo_rev)
     )
+    creada = estado.get("latestCreatedRevisionName") or listo_rev
     contenedores = cr.get("spec", {}).get("template", {}).get("spec", {}).get("containers", [{}])
     imagen = contenedores[0].get("image", "")
     datos = {**base, "url": estado.get("url", ""), "commit": commit, "imagen": imagen}
 
+    # `gcloud run deploy` deja la etiqueta commit-sha en el servicio aunque la revisión nueva no
+    # arranque, y la entrada de tráfico `latestRevision` apunta a la última LISTA, no a la nueva.
+    # Por eso la etiqueta sola no prueba nada: hay que comprobar que la creada llegó a estar lista.
+    if objetivo and commit == sha and listo_rev and creada != listo_rev:
+        return {**datos, "icono": "❌", "revision_fallida": creada,
+                "estado": f"la revisión nueva `{creada}` **no llegó a estar lista** (el contenedor "
+                          f"no arrancó); sigue sirviendo `{listo_rev}`"}
     if objetivo and commit == sha and en_ultima >= 100:
         return {**datos, "icono": "✅", "estado": "desplegado y promovido (100 % del tráfico)"}
     if objetivo and commit == sha:
@@ -121,9 +129,15 @@ def veredicto(needs: dict, servicios: list[dict], hay_objetivo: bool) -> tuple[s
 
 def tabla_etapas(needs: dict) -> list[str]:
     filas = ["| Etapa | Resultado |", "|---|---|"]
+    anteriores: list[tuple[str, str]] = []
     for clave, nombre, motivo_omitida in ETAPAS:
         res = resultado(needs, clave)
-        nota = f" ({motivo_omitida})" if res == "skipped" else ""
+        nota = ""
+        if res == "skipped":
+            # Si una etapa previa falló, esta se omitió por eso y no por falta de cambios.
+            rota = next((n for e, n in anteriores if resultado(needs, e) == "failure"), None)
+            nota = f" (se omitió porque falló «{rota}»)" if rota else f" ({motivo_omitida})"
+        anteriores.append((clave, nombre))
         filas.append(f"| {nombre} | {ICONO.get(res, '❔')} {TEXTO.get(res, res)}{nota} |")
     return filas
 
@@ -201,6 +215,23 @@ def que_hacer(ctx: dict) -> list[str]:
             "*Actions → Rollback staging* (elige la rama `main`). **No** revierte la "
             "infraestructura: para eso se revierte el PR."
         )
+
+    if resultado(needs, "infra") == "failure":
+        acciones.append(
+            "Si el log de «Revisar el plan» dice **«No se aplica: el plan destruye o reemplaza "
+            "recursos»**, es la guardia de `scripts/revisar_plan.py`: revisa la lista y, si es lo "
+            "esperado, relanza *Deploy staging* desde `main` con `infra` y `permitir_destruir` "
+            "activados. No se aplicó nada."
+        )
+    for s in ctx["servicios"]:
+        if s.get("revision_fallida"):
+            acciones.append(
+                f"**`{s['nombre']}` no arrancó.** Lee el motivo en los logs de la revisión: "
+                f"`gcloud logging read 'resource.labels.service_name=\"{s['nombre']}\" AND "
+                f"resource.labels.revision_name=\"{s['revision_fallida']}\"' --limit 40`. Si dice "
+                "«no se ha cargado en Secret Manager», falta el valor real de un secreto "
+                "(`infra/README.md`, «Cargar los secretos»)."
+            )
 
     # Servicios cuya base o caché no existe todavía.
     huerfanos: dict[str, list[str]] = {}

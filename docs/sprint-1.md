@@ -157,6 +157,11 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   `scripts/humo_bff.py` sobre el compose: COMPLETA ~130 ms en caliente; PRELIMINAR ~730-765 ms con Open Finance lento
   (lo fija el corte de 700 ms del ACL; la oferta degradada excede el p95 de 400 ms de CA-W01-03, a medir con k6 en
   PF2-2); `ErrorOferta` sin reintento tras revocar.
+- **T-W01-4 hecho (KAN-24, 2026-10-17):** el consentimiento deja de ser un mock en memoria. Tabla `consentimientos`
+  append-only en la base `auth` (migración `0004`), con un trigger que rechaza borrar o reescribir filas: solo se
+  puede fijar `revocado_en` una vez. Mismas rutas HTTP, así que el BFF y el frontend no cambian. Verificado en vivo:
+  `verificar-migraciones.sh auth`, humo, Newman y que un consentimiento sobreviva a reiniciar AUTH. Sigue pendiente
+  emitir `consentimiento.registrado`/`revocado` (no hay Pub/Sub).
 - **Autenticación de usuarios (HU-M02 simple para web, 2026-10-14, trazada a KAN-24 por CA-W01-11):** usuarios
   `CLIENTE`/`ASESOR`/`BACKOFFICE` en Postgres (base `auth`), inicio de sesión con JWT HS256 y permisos por rol en el BFF,
   con la bandera `AUTENTICACION_USUARIOS=opcional` para no romper al frontend. **CA-W01-11 queda cumplido en el
@@ -181,3 +186,11 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   solo el `cliente_id` y el BFF compone `cobros.cliente { id nombre }` en lotes. **Tampoco estaba en el plan del sprint:**
   registrar las horas en Jira bajo KAN-28. La relación póliza→cliente la declara quien ordena el cobro hasta que exista el
   servicio de pólizas.
+- **Reglas de la oferta de HU-W01 (KAN-24, 2026-10-17, decididas con el equipo):** CA-W01-05 ya no queda cubierto
+  solo por fallas de RISK/RATING. El **historial crediticio es la única fuente obligatoria**: si no llega ni en línea
+  ni de caché, RATING responde `datos_insuficientes` y el BFF devuelve `ErrorOferta` con reintento; si llega y falla
+  cualquier otra (incluidos los antecedentes judiciales), la oferta es PRELIMINAR. Las 5 fuentes se siguen consultando
+  en paralelo (en orden sumarían hasta 5 × 700 ms). Además, el BFF valida la solicitud (documento, valor, plazo de 1 a
+  360 meses y dirección) antes de consultar nada, y RATING usa el plazo y la ciudad de la dirección en la prima con
+  factores **ilustrativos** (ver `services/rating/README.md`). El `consolidador-fuentes` verifica en AUTH que el
+  consentimiento siga vigente antes de reintentar una fuente (regla #7). Sin cambios de contrato.

@@ -14,7 +14,7 @@ from pymongo import MongoClient
 from app.application.cache_score import CacheScore
 from app.application.configuracion import Configuracion
 from app.application.lector_perfiles import LectorPerfiles, LectorPerfilesMongo
-from app.application.servicio_oferta import ServicioOferta
+from app.application.servicio_oferta import DatosInsuficientes, ServicioOferta
 
 # Timeouts acotados (mismo presupuesto que `max_time_ms`) SOLO en el cliente
 # dedicado a la secundaria — hueco real encontrado al verificar en vivo con
@@ -34,6 +34,10 @@ from app.application.servicio_oferta import ServicioOferta
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 
+# Contrato con el BFF: 422 con este `detail` = falta una fuente obligatoria (CA-W01-05).
+DETALLE_DATOS_INSUFICIENTES = "datos_insuficientes"
+
+
 class SolicitudOferta(BaseModel):
     cliente_id: str
     # `operation_time`: el valor que RISK devolvió en `POST /perfiles` (D-02).
@@ -43,6 +47,10 @@ class SolicitudOferta(BaseModel):
     # el BFF (mismo patrón ya documentado para `operation_time`).
     operation_time: str
     cobertura: str
+    # Opcionales para no romper a un BFF anterior (expandir/contraer): sin ellos
+    # la prima se calcula como antes (factor 1.00). La dirección nunca se loguea.
+    plazo_meses: int | None = None
+    direccion_inmueble: str | None = None
 
 
 def create_app(
@@ -123,8 +131,15 @@ def create_app(
         (CA-W01-05)."""
         try:
             oferta, _score_de_cache = app.state.servicio_oferta.generar(
-                body.cliente_id, body.operation_time, body.cobertura
+                body.cliente_id,
+                body.operation_time,
+                body.cobertura,
+                body.plazo_meses,
+                body.direccion_inmueble,
             )
+        except DatosInsuficientes as error:
+            # CA-W01-05: el BFF lo traduce a `ErrorOferta` con reintento.
+            raise HTTPException(status_code=422, detail=DETALLE_DATOS_INSUFICIENTES) from error
         except (ValueError, InvalidOperation) as error:
             raise HTTPException(
                 status_code=400, detail=f"solicitud invalida: {error}"

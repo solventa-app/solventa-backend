@@ -1,11 +1,20 @@
 """Pruebas unitarias del cálculo de score/prima/oferta (T-W01-6 completo,
 HA-MOD-002, HA-LAT-001) — sin MongoDB ni Redis reales (dobles de prueba)."""
 
+from decimal import Decimal
+
+import pytest
 from fakes import AlmacenClaveValorFalso, LectorPerfilesFalso
 
 from app.application import servicio_oferta as modulo_oferta
 from app.application.cache_score import CacheScore
-from app.application.servicio_oferta import ServicioOferta, calcular_score
+from app.application.servicio_oferta import (
+    DatosInsuficientes,
+    ServicioOferta,
+    calcular_score,
+    factor_plazo,
+    factor_zona,
+)
 
 # Mismos valores por defecto que devuelven los stubs (ver
 # stubs/open-finance/app/main.py y stubs/open-data/app/main.py) para que el
@@ -140,7 +149,7 @@ def test_oferta_completa_con_prima_puntual_cuando_todas_las_fuentes_estan_fresca
 
 def test_oferta_preliminar_con_rango_cuando_una_fuente_esta_degradada() -> None:
     degradada = [
-        {**f, "datos": {}, "degradado": True} if f["fuente"] == "historial-crediticio" else f
+        {**f, "datos": {}, "degradado": True} if f["fuente"] == "afiliacion-pila" else f
         for f in FUENTES_SANAS
     ]
     lector = LectorPerfilesFalso(perfil=_perfil_con_fuentes(degradada))
@@ -151,12 +160,114 @@ def test_oferta_preliminar_con_rango_cuando_una_fuente_esta_degradada() -> None:
     assert oferta["tipo"] == "PRELIMINAR"
     assert oferta["prima"] is None
     assert oferta["rangoPrima"] == {
-        "minima": {"valor": "81792.00", "moneda": "COP"},
-        "maxima": {"valor": "122688.00", "moneda": "COP"},
+        "minima": {"valor": "83808.00", "moneda": "COP"},
+        "maxima": {"valor": "125712.00", "moneda": "COP"},
     }
-    fuente_fallo = next(f for f in oferta["fuentes"] if f["nombre"] == "historial-crediticio")
+    fuente_fallo = next(f for f in oferta["fuentes"] if f["nombre"] == "afiliacion-pila")
     assert fuente_fallo["estado"] == "FALLO"
     assert fuente_fallo["capturadoEn"] is None
+
+
+# ---------- CA-W01-05: fuente obligatoria ----------
+
+
+def test_sin_historial_crediticio_no_hay_oferta() -> None:
+    sin_historial = [
+        {**f, "datos": {}, "degradado": True} if f["fuente"] == "historial-crediticio" else f
+        for f in FUENTES_SANAS
+    ]
+    lector = LectorPerfilesFalso(perfil=_perfil_con_fuentes(sin_historial))
+    servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
+
+    with pytest.raises(DatosInsuficientes):
+        servicio.generar("cliente-1", "1700000001.1", "200000000")
+
+
+def test_historial_ausente_del_perfil_tambien_es_insuficiente() -> None:
+    sin_historial = [f for f in FUENTES_SANAS if f["fuente"] != "historial-crediticio"]
+    lector = LectorPerfilesFalso(perfil=_perfil_con_fuentes(sin_historial))
+    servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
+
+    with pytest.raises(DatosInsuficientes):
+        servicio.generar("cliente-1", "1700000001.1", "200000000")
+
+
+def test_historial_desde_cache_alcanza_para_una_preliminar() -> None:
+    historial_cache = [
+        {**f, "de_cache": True} if f["fuente"] == "historial-crediticio" else f
+        for f in FUENTES_SANAS
+    ]
+    lector = LectorPerfilesFalso(perfil=_perfil_con_fuentes(historial_cache))
+    servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
+
+    oferta, _ = servicio.generar("cliente-1", "1700000001.1", "200000000")
+
+    assert oferta["tipo"] == "PRELIMINAR"
+
+
+def test_antecedentes_judiciales_caidos_dan_preliminar_no_error() -> None:
+    sin_antecedentes = [
+        {**f, "datos": {}, "degradado": True} if f["fuente"] == "antecedentes-judiciales" else f
+        for f in FUENTES_SANAS
+    ]
+    lector = LectorPerfilesFalso(perfil=_perfil_con_fuentes(sin_antecedentes))
+    servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
+
+    oferta, _ = servicio.generar("cliente-1", "1700000001.1", "200000000")
+
+    assert oferta["tipo"] == "PRELIMINAR"
+
+
+def test_el_score_cacheado_sin_historial_tambien_es_insuficiente() -> None:
+    sin_historial = [
+        {**f, "datos": {}, "degradado": True} if f["fuente"] == "historial-crediticio" else f
+        for f in FUENTES_SANAS
+    ]
+    lector = LectorPerfilesFalso(perfil=_perfil_con_fuentes(sin_historial))
+    servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
+
+    for _ in range(2):  # la segunda sale del Cache-Aside del score
+        with pytest.raises(DatosInsuficientes):
+            servicio.generar("cliente-1", "1700000001.1", "200000000")
+
+
+# ---------- Plazo y ciudad en la prima ----------
+
+
+@pytest.mark.parametrize(
+    ("plazo", "esperado"),
+    [(None, "1"), (1, "0.95"), (60, "0.95"), (61, "1.00"), (180, "1.00"), (181, "1.05"),
+     (240, "1.05"), (241, "1.10"), (360, "1.10")],
+)
+def test_factor_plazo_por_tramos(plazo, esperado) -> None:
+    assert factor_plazo(plazo) == Decimal(esperado)
+
+
+@pytest.mark.parametrize(
+    ("direccion", "esperado"),
+    [
+        (None, "1"),
+        ("Calle 100 # 15-20, Bogotá D.C.", "1.00"),
+        ("Cra 43A # 1-50, MEDELLIN", "1.00"),
+        ("Av 6N # 23-10, Cali, Valle", "1.03"),
+        ("Calle 72 # 54-30, Barranquilla", "1.05"),
+        ("Calle 5 # 3-2", "1.05"),  # "Calle" no es "Cali"
+    ],
+)
+def test_factor_zona_por_ciudad_detectada(direccion, esperado) -> None:
+    assert factor_zona(direccion) == Decimal(esperado)
+
+
+def test_plazo_y_ciudad_cambian_la_prima_de_la_oferta_completa() -> None:
+    lector = LectorPerfilesFalso(perfil=PERFIL_SANO)
+    servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
+
+    oferta, _ = servicio.generar(
+        "cliente-1", "1700000001.1", "200000000", 200, "Av 6N # 23-10, Cali"
+    )
+
+    # 94680.00 (sin factores) x 1.05 (plazo 181-240) x 1.03 (Cali)
+    assert oferta["prima"] == {"valor": "102396.42", "moneda": "COP"}
 
 
 def test_oferta_preliminar_cuando_una_fuente_viene_de_cache() -> None:

@@ -19,7 +19,7 @@ ACL Worker, RISK y RATING y traduce al contrato de `contracts/graphql/schema.gra
 
 | Operación | Estado |
 |---|---|
-| `registrarConsentimiento` / `revocarConsentimiento` | AUTH (hoy un **mock en memoria**, ver `services/auth/README.md`) |
+| `registrarConsentimiento` / `revocarConsentimiento` | AUTH (tabla append-only en PostgreSQL, ver `services/auth/README.md`) |
 | `solicitarOferta` | Completo: ver el flujo abajo |
 | `oferta(id)` | Devuelve `null`: RATING no persiste ofertas todavía |
 | `contactarAsesor` | **MOCK**: solo confirma (no hay servicio de asesores) |
@@ -42,8 +42,14 @@ están en [`docs/autenticacion-usuarios.md`](../../docs/autenticacion-usuarios.m
    responde, la fuente va `degradado` y la oferta sale PRELIMINAR.
 4. RISK escribe el perfil y devuelve `operation_time`; RATING calcula la oferta con lectura causal (D-02).
 5. Cualquier falla de RISK/RATING → `ErrorOferta` con reintento; `valorCredito` inválido → sin reintento.
+   Sin historial crediticio (RATING responde 422 `datos_insuficientes`, CA-W01-05) → `ErrorOferta` con reintento.
 
-`plazoMeses` y `direccionInmueble` no los usa RATING todavía; nunca se loguean (tampoco el documento).
+Antes del paso 1 se valida la solicitud (mismos límites que el formulario W01-01): documento con al menos 6 dígitos
+y máximo 20 caracteres, `valorCredito` decimal mayor que 0, `plazoMeses` de 1 a 360 y `direccionInmueble` no vacía
+(máximo 200 caracteres). Si algo falla → `ErrorOferta` sin reintento, sin tocar AUTH ni las fuentes.
+
+`plazoMeses` y `direccionInmueble` viajan a RATING, que los usa en la prima (ver `services/rating/README.md`).
+Nunca se loguean (tampoco el documento).
 
 ## Variables de entorno
 

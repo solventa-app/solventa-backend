@@ -58,15 +58,36 @@ el contrato (`FactorScore`) no pide los subscores individuales, solo el peso de 
 ```
 tasa_base_mensual = 0.00045   # 0.045% del monto asegurado por mes — ilustrativo
 factor_riesgo = 2.2 - (score_total / 100) * 1.4   # 0.8 (score=100) .. 2.2 (score=0)
-prima_mensual = cobertura * tasa_base_mensual * factor_riesgo
+prima_mensual = cobertura * tasa_base_mensual * factor_riesgo * factor_plazo * factor_zona
 ```
+
+| `factor_plazo` (`plazo_meses`) | | `factor_zona` (ciudad en `direccion_inmueble`) | |
+|---|---|---|---|
+| hasta 60 | 0.95 | Bogotá | 1.00 |
+| 61 a 180 | 1.00 | Medellín | 1.00 |
+| 181 a 240 | 1.05 | Cali | 1.03 |
+| más de 240 | 1.10 | otra o no detectada | 1.05 |
+
+Ambos factores son **ilustrativos**, como el resto de la fórmula. La ciudad se busca como palabra
+completa, sin tildes ni mayúsculas ("Calle" no cuenta como "Cali"). Ninguna de las 5 fuentes describe
+el inmueble; en producción la zona saldría de una fuente de geocodificación detrás del ACL Worker
+(regla #2). Si `POST /ofertas` no trae `plazo_meses` o `direccion_inmueble` (un BFF anterior), ese factor
+vale 1.00. La dirección nunca se loguea ni entra en la caché del score.
 
 Redondeada a 2 decimales con `ROUND_HALF_UP`. Todo el camino usa `decimal.Decimal`, nunca `float`
 — la respuesta expone el monto como texto (`Monto.valor`), igual que en `payments`.
 
+### Datos insuficientes (CA-W01-05)
+
+`historial-crediticio` es la **única fuente obligatoria** (decisión del equipo, 2026-10-17). Si no llegó
+ni en línea ni de caché (estado `FALLO`), `POST /ofertas` responde **422** con
+`{"detail": "datos_insuficientes"}` y el BFF lo traduce a `ErrorOferta` con reintento. Las 5 fuentes se
+siguen consultando en paralelo: la importancia se aplica al calcular, no al consultar, para no pasarse
+del presupuesto de latencia (consultar en orden sumaría hasta 5 × 700 ms).
+
 ### Oferta preliminar vs completa (CA-W01-04)
 
-Si CUALQUIERA de las 5 fuentes no está fresca (falta, `de_cache=True` o `degradado=True`):
+Con el historial crediticio presente, si CUALQUIERA de las 5 fuentes no está fresca (falta, `de_cache=True` o `degradado=True`):
 `tipo=PRELIMINAR`, se devuelve `rangoPrima` (±20% alrededor de `prima_mensual`), sin `prima`
 puntual. Si las 5 están frescas: `tipo=COMPLETA`, se devuelve `prima` puntual, sin `rangoPrima`.
 

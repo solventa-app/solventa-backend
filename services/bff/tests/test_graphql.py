@@ -116,7 +116,21 @@ def test_contactar_asesor_confirma() -> None:
         confirmacion = _post(client, query)["data"]["contactarAsesor"]
 
     assert confirmacion["canal"] == "CHAT"
-    assert "o-1" in confirmacion["resumen"]
+    assert confirmacion["resumen"] == (
+        "Recibimos tu solicitud de chat. Un asesor te contactará para continuar tu cotización."
+    )
+    # El id interno de la oferta no se le muestra al cliente.
+    assert "o-1" not in confirmacion["resumen"]
+
+
+def test_contactar_asesor_sin_oferta_no_deja_el_texto_a_medias() -> None:
+    # Desde la pantalla de error (W01-03c) no hubo oferta: el frontend manda el id vacío.
+    query = 'mutation { contactarAsesor(ofertaId: "", canal: LLAMAR) { resumen } }'
+    with _cliente() as client:
+        resumen = _post(client, query)["data"]["contactarAsesor"]["resumen"]
+
+    assert resumen.startswith("Recibimos tu solicitud de llamada.")
+    assert "oferta ." not in resumen
 
 
 def test_errores_de_validacion_del_esquema_no_se_enmascaran() -> None:
