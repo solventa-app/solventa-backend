@@ -184,15 +184,32 @@ def main() -> int:
 
     print("6. crearCobro con la pasarela lenta y reintento conciliado (back-office)")
     clave = "cobro-humo-" + "".join(random.choices(string.ascii_lowercase, k=8))
+    nombre_cliente = "Cliente Humo Prueba"
+    cliente = _graphql(
+        CREAR_USUARIO,
+        {
+            "entrada": {
+                "usuario": "cliente.humo." + "".join(random.choices(string.ascii_lowercase, k=8)),
+                "clave": CLAVE_ASESOR,
+                "rol": "CLIENTE",
+                "nombre": nombre_cliente,
+            }
+        },
+        token_backoffice,
+    )["crearUsuario"]
+    if cliente["__typename"] != "Usuario":
+        _fallar(f"no se pudo crear el CLIENTE con nombre: {cliente}")
     _http(f"{STUB_PASARELA}/control/modo", {"modo": "lento"})
     try:
         cobro = _graphql(
             "mutation($e: CrearCobroInput!) { crearCobro(entrada: $e) { "
-            "__typename ... on Cobro { id estado } ... on ErrorCobro { mensaje } } }",
+            "__typename ... on Cobro { id estado cliente { id nombre } } "
+            "... on ErrorCobro { mensaje } } }",
             {
                 "e": {
                     "idIntentoCobro": clave,
                     "polizaId": "POL-HUMO-1",
+                    "clienteId": cliente["id"],
                     "monto": {"valor": "90000.00", "moneda": "COP"},
                     "tokenMedioPago": "tok_humo",
                 }
@@ -203,6 +220,16 @@ def main() -> int:
         _http(f"{STUB_PASARELA}/control/modo", {"modo": "sano"})
     if cobro.get("estado") != "PENDIENTE":
         _fallar(f"con la pasarela lenta el cobro debía quedar pendiente: {cobro}")
+    if cobro["cliente"] != {"id": cliente["id"], "nombre": nombre_cliente}:
+        _fallar(f"el cobro debía llegar con el nombre del cliente: {cobro}")
+    tabla = _graphql(
+        "query($p: ID) { cobros(polizaId: $p) { cliente { nombre } } }",
+        {"p": "POL-HUMO-1"},
+        token_backoffice,
+    )["cobros"]
+    if not any(c["cliente"] and c["cliente"]["nombre"] == nombre_cliente for c in tabla):
+        _fallar(f"la tabla de cobros debía mostrar el nombre del cliente: {tabla}")
+    print("   -> la tabla de cobros muestra el nombre del cliente (cifrado en AUTH)")
     referencia_pasarela = _http(f"{STUB_PASARELA}/v1/cobros/{clave}")["referencia"]
     reintento = _graphql(
         "mutation($id: ID!) { reintentarCobro(cobroId: $id) { estado } }",
