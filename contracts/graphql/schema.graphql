@@ -128,6 +128,8 @@ type Cobro {
   motivo: String # por qué quedó pendiente o rechazado (p. ej. pasarela_no_disponible)
   intentos: Int # cuántas veces se intentó cobrar
   cliente: ClienteCobro # null en cobros creados sin clienteId
+  # Referencia que asignó la pasarela de pagos al cobrar; null mientras el cobro no se haya cobrado.
+  idTransaccion: String
 }
 
 input MontoInput {
@@ -173,6 +175,9 @@ type Usuario {
   rol: RolUsuario!
   estado: EstadoUsuario!
   creadoEn: DateTime!
+  # Dato personal. Solo viene en `iniciarSesion` y `yo` (cada usuario ve el suyo); en `usuarios`,
+  # `crearUsuario` y los demás cambios va en null. Nunca viaja dentro del JWT.
+  nombre: String
 }
 
 type Sesion {
