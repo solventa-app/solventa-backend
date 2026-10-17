@@ -51,3 +51,10 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - El nombre es dato personal: AUTH lo guarda cifrado y solo sale por `cobros` (solo BACKOFFICE, con token). `Usuario` no
   lo expone. Si AUTH no responde, el cobro llega con `cliente.nombre` en `null`, nunca un error.
 - Afecta al frontend: sí (la tabla de cobros puede mostrar el cliente; el alta de CLIENTE puede pedir el nombre).
+
+## v0.5.1 — 2026-10-17
+
+- KAN-176: `CrearCobroInput.clienteId` y `CrearUsuarioInput.nombre` declaran su valor por defecto (`= null`), que el BFF
+  ya exponía. Sin cambio de comportamiento: siguen siendo opcionales. Lo detectó la prueba de equivalencia
+  esquema↔contrato al alinear `graphql-core` 3.3.0 en el CI.
+- Afecta al frontend: no.
