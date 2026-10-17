@@ -14,7 +14,7 @@ Este archivo es el **resumen operativo para construir**; si el plan cambia, se a
 |---|---|---|---|
 | D-01 | Base de velocidad | Recálculo 27/27/44 y regla de recorte | Planning S1 |
 | D-02 | Read-your-writes RISK→RATING | Sesión causal: RISK devuelve el `operationTime` y RATING lee con `afterClusterTime`; lectura de la primaria como alternativa dentro de la misma solicitud | PF2-1 |
-| D-03 | Cobro antes o después de emitir | Mantener la definición del equipo (antes) y actualizar el Journey 2 | Planning S2 |
+| D-03 | Cobro antes o después de emitir | Mantener la definición del equipo (antes) y actualizar el Journey 2 | Planning S2 (preguntas abiertas en `docs/cobros-conciliacion.md`, sección 10) |
 | D-04 | Alcance de HA-SEG-002 | Cifrado de campo en la aplicación con Cloud KMS; CMEK nativo queda como mejora | PF2-1 |
 | D-05 | Proveedores externos | Stubs por contrato, adaptadores intercambiables; sandbox reales si aparecen | PF2-1 |
 | D-06 | Adelantar HU-W05 al Sprint 1 | Aprobar | Planning S1 |

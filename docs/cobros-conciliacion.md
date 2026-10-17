@@ -316,5 +316,32 @@ POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios down -v
 
 ## 9. Fuera de alcance
 
-Que el CLIENTE pague su prima y la captura de tarjeta (CA-W05-03, frontend), Cloud Tasks real, eventos a Pub/Sub, la orden
+Que el CLIENTE pague su prima (ver la sección 10, Sprint 2) y la captura de tarjeta (CA-W05-03: el prototipo no la tiene), Cloud Tasks real, eventos a Pub/Sub, la orden
 de indemnización (CA-W05-07, Sprint 3) y el arranque frágil de Postgres en el primer `up` (un `fix(infra)` aparte).
+
+## 10. Pendiente para el Sprint 2: el primer cobro al firmar (HU-W03, decisión D-03)
+
+Revisado el 2026-10-17 contra el prototipo (Figma `Solventa-web-Final`, sección HU-W03):
+
+- **W03-02b "Confirmar firma y autorización de cobro"**: "Al firmar autorizas un cobro recurrente". La prima mensual "se
+  facturará junto con la cuota de tu crédito hipotecario durante 180 meses". Al confirmar se registra la firma, se
+  emite la póliza y "se activa el cobro de la prima".
+- Siguen **W03-03** Firma confirmada, **W03-04** Póliza emitida y **W03-05** Documento de póliza. **No hay pantalla del
+  resultado del cobro** (cobrado, pendiente o rechazado) ni de error de pago.
+- **No se pide tarjeta**: la prima va con la cuota del crédito, así que el medio de pago lo pone el banco del crédito.
+  Por eso no se construye la captura tokenizada de CA-W05-03; hay que ajustar su redacción en Jira.
+
+Lo que ya existe y sirve tal cual: `crearCobro` (recibe un `tokenMedioPago` opaco, sea de tarjeta o del banco),
+idempotencia por `idIntentoCobro`, estados `cobrando/cobrado/rechazado/pendiente`, reintento automático de pendientes y
+reintento manual de rechazados (hasta 3) desde W05-01.
+
+**Decisiones para el Planning del Sprint 2:**
+
+1. **D-03:** ¿la primera prima se cobra **al firmar, antes de emitir** (recomendación del plan) o la póliza se emite y el
+   cobro va por su lado?
+2. Si el primer cobro queda **rechazado** o **pendiente**: ¿se emite la póliza igual, queda en espera o se cancela?
+3. Qué ve el cliente después de firmar: diseñar en Figma la pantalla de resultado del pago (cobrado, en proceso o
+   rechazado con qué hacer). El plan del frontend ya lo marca como faltante (`solventa-frontend-web/docs/plan-frontend.md`).
+4. De dónde sale el `tokenMedioPago` cuando la prima va con la cuota del crédito (¿el banco del crédito vía Open
+   Finance, un convenio de recaudo?), y quién llama a `crearCobro`: hoy solo lo puede llamar un BACKOFFICE.
+
