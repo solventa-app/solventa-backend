@@ -138,7 +138,7 @@ gql '{"query":"{ yo { usuario rol estado } }"}' "$TOKEN_BO"
 ### Paso 4. Crear un ASESOR y un CLIENTE
 
 ```bash
-gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"asesor.demo\", clave:\"clave-demo-0001\", rol:ASESOR}) { __typename ... on Usuario { id rol } ... on ErrorUsuario { mensaje } } }"}' "$TOKEN_BO"
+gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"asesor.demo\", clave:\"clave-demo-0001\", rol:ASESOR, nombre:\"Asesora Demo\"}) { __typename ... on Usuario { id rol } ... on ErrorUsuario { mensaje } } }"}' "$TOKEN_BO"
 ID_CLIENTE=$(gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"cliente.demo\", clave:\"clave-demo-0001\", rol:CLIENTE}) { ... on Usuario { id } } }"}' "$TOKEN_BO" | campo data.crearUsuario.id)
 echo "$ID_CLIENTE"
 
@@ -154,10 +154,12 @@ gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"persona@correo.com\", 
 
 ```bash
 TOKEN_ASESOR=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"asesor.demo\", clave:\"clave-demo-0001\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
-gql '{"query":"{ yo { usuario rol } }"}' "$TOKEN_ASESOR"
+gql '{"query":"{ yo { usuario rol nombre } }"}' "$TOKEN_ASESOR"
 ```
 
-**Esperado:** `{"data":{"yo":{"usuario":"asesor.demo","rol":"ASESOR"}}}`
+**Esperado:** `{"data":{"yo":{"usuario":"asesor.demo","rol":"ASESOR","nombre":"Asesora Demo"}}}`
+El nombre es dato personal y cada usuario ve **solo el suyo** (en la lista `usuarios` siempre es `null`). **No viaja en el JWT:**
+el front lo pide con `yo { nombre }` tras iniciar sesión y, si llega `null`, muestra el alias.
 
 ### Paso 6. Pedir una oferta como ASESOR (CA-W01-11)
 

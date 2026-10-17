@@ -194,3 +194,7 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   360 meses y dirección) antes de consultar nada, y RATING usa el plazo y la ciudad de la dirección en la prima con
   factores **ilustrativos** (ver `services/rating/README.md`). El `consolidador-fuentes` verifica en AUTH que el
   consentimiento siga vigente antes de reintentar una fuente (regla #7). Sin cambios de contrato.
+- **Nombre propio e `idTransaccion` (KAN-28, 2026-10-18):** cada usuario ve su nombre al iniciar sesión (`Usuario.nombre` en
+  `iniciarSesion` y `yo`, cifrado en AUTH y fuera del JWT) y el back-office ve la referencia de la pasarela (`Cobro.idTransaccion`).
+  Los pagos siguen siendo solo del BACKOFFICE. Pedido por el front (KAN-207). **Tampoco estaba en el plan del sprint:**
+  registrar las horas en Jira bajo KAN-28.
