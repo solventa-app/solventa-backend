@@ -19,7 +19,15 @@
         "cobroId": { "type": "string" },
         "polizaId": { "type": "string" },
         "estado": { "enum": ["cobrando", "cobrado", "rechazado", "pendiente"] },
-        "claveIdempotencia": { "type": "string" }
+        "claveIdempotencia": {
+          "type": "string",
+          "deprecated": true,
+          "description": "Obsoleto: usar idIntentoCobro (mismo valor)."
+        },
+        "idIntentoCobro": {
+          "type": "string",
+          "description": "Identificador del intento de cobro que generó quien ordenó el cobro."
+        }
       }
     }
   }
