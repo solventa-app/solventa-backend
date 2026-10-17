@@ -197,6 +197,7 @@ class Cobro:
     motivo: str | None  # por qué quedó pendiente o rechazado
     intentos: int | None
     cliente: ClienteCobro | None
+    id_transaccion: str | None  # referencia de la pasarela; null mientras no se haya cobrado
 
 
 @strawberry.input
@@ -248,6 +249,9 @@ class Usuario:
     rol: RolUsuario
     estado: EstadoUsuario
     creado_en: datetime
+    # Dato personal: solo `iniciarSesion` y `yo` lo traen (cada quien, el suyo); AUTH lo
+    # deja en null en listas y altas. Nunca viaja dentro del JWT.
+    nombre: str | None = None
 
 
 @strawberry.type
@@ -350,6 +354,7 @@ def _cobro(datos: dict, nombres: dict[str, str] | None = None) -> Cobro:
         actualizado_en=datetime.fromisoformat(datos["actualizado_en"]),
         motivo=datos.get("motivo"),
         intentos=datos.get("intentos"),
+        id_transaccion=datos.get("referencia"),
         cliente=(
             ClienteCobro(id=strawberry.ID(cliente_id), nombre=(nombres or {}).get(cliente_id))
             if cliente_id
@@ -365,6 +370,7 @@ def _usuario(datos: dict) -> Usuario:
         rol=RolUsuario(datos["rol"]),
         estado=EstadoUsuario(datos["estado"]),
         creado_en=datetime.fromisoformat(datos["creado_en"]),
+        nombre=datos.get("nombre"),
     )
 
 

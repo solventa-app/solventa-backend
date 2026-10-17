@@ -226,3 +226,49 @@ def test_los_logs_no_llevan_clave_ni_token(caplog) -> None:
 
     assert "clave-segura-1" not in caplog.text
     assert token not in caplog.text
+
+
+def test_cada_usuario_ve_su_propio_nombre_en_el_login_y_en_yo() -> None:
+    auth = AuthFalso()
+    auth.nombres = {"u-1": "Laura Gómez"}
+    login = """mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "clave-segura-1"}) {
+        ... on Sesion { token usuario { nombre rol } } } }"""
+    with _cliente(auth=auth) as client:
+        sesion = _post(client, login)["data"]["iniciarSesion"]
+        yo = _post(client, "{ yo { nombre } }", token=sesion["token"])["data"]["yo"]
+
+    assert sesion["usuario"] == {"nombre": "Laura Gómez", "rol": "ASESOR"}
+    assert yo == {"nombre": "Laura Gómez"}
+
+
+def test_un_usuario_sin_nombre_recibe_null_y_el_front_muestra_el_alias() -> None:
+    with _cliente() as client:
+        yo = _post(client, "{ yo { usuario nombre } }", token=token_de_prueba("ASESOR", "u-1"))
+
+    assert yo["data"]["yo"] == {"usuario": "asesor.uno", "nombre": None}
+
+
+def test_el_nombre_no_viaja_en_el_jwt() -> None:
+    import jwt
+
+    auth = AuthFalso()
+    auth.nombres = {"u-1": "Laura Gómez"}
+    with _cliente(auth=auth) as client:
+        token = _post(
+            client,
+            """mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "clave-segura-1"}) {
+                ... on Sesion { token } } }""",
+        )["data"]["iniciarSesion"]["token"]
+
+    assert "nombre" not in jwt.decode(token, options={"verify_signature": False})
+
+
+def test_el_listado_de_usuarios_no_expone_nombres() -> None:
+    auth = AuthFalso()
+    auth.nombres = {"u-1": "Laura Gómez", "u-bo": "Admin Solventa"}
+    with _cliente(auth=auth) as client:
+        usuarios = _post(
+            client, "{ usuarios { usuario nombre } }", token=token_de_prueba("BACKOFFICE", "u-bo")
+        )["data"]["usuarios"]
+
+    assert all(u["nombre"] is None for u in usuarios)
