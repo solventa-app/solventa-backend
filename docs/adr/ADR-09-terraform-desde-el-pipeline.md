@@ -8,7 +8,7 @@
 
 Con dos caminos (un merge despliega las aplicaciones; la infraestructura se aplica a mano) pasa lo conocido: un servicio nuevo
 se despliega antes de que Terraform lo cree, o el código llega a staging y la infraestructura que necesita, no. El equipo
-decidió que **un merge a `develop` debe desplegarlo todo**, aplicaciones e infraestructura, y solo lo que falte.
+decidió que **un merge a `main` (un release o un hotfix) debe desplegarlo todo**, aplicaciones e infraestructura, y solo lo que falte. `develop` integra y no despliega ni aplica nada.
 
 ## Decisión
 
@@ -41,7 +41,7 @@ entorno `infra-staging` y, desde ahí, los cambios en `infra/` se aplican con el
 ## Consecuencias y riesgos
 
 - **Una cuenta de CI con permisos de propietario.** Un workflow comprometido, o un PR malicioso aprobado y mergeado, controla
-  el proyecto. Mitigaciones: la federación solo acepta este repositorio y el entorno `infra-staging`; `develop` exige PR, una
+  el proyecto. Mitigaciones: la federación solo acepta este repositorio y el entorno `infra-staging`; `main` (de donde se aplica) exige PR, una
   revisión y checks, sin excepciones ni para administradores; el guardia contra destrucciones; es un proyecto de staging con
   protección de gasto; y como Terraform ya administra el IAM del proyecto, un rol más acotado no cambiaría el riesgo de fondo
   (quien puede asignar roles puede asignarse propietario). **A revisar** si el proyecto pasa a manejar datos reales: exigir
@@ -52,8 +52,13 @@ entorno `infra-staging` y, desde ahí, los cambios en `infra/` se aplican con el
 - **Un solo `apply` a la vez:** el workflow comparte el grupo de concurrencia `deploy-staging` (sin cancelar) y el estado de GCS
   se bloquea durante el apply.
 - **Deshacer:** revertir el PR que cambió `infra/`. Si eso destruye algo, el guardia exige `permitir_destruir`.
-- **Heredado de ADR-07:** la detección de cambios compara el commit con su padre (`SHA^..SHA`), correcta con *squash*; con otro
-  tipo de merge hay que lanzar el workflow a mano.
+- **Heredado de ADR-07:** la detección de cambios compara el commit con su padre (`SHA^..SHA`). En `main` los releases y hotfixes
+  entran por merge commit, cuyo primer padre es `main` antes del merge, así que el diff es todo lo liberado; si algo entra de otra
+  forma, hay que lanzar el workflow a mano desde `main`.
+- **Los entornos no restringen la rama por sí solos:** en `workflow_run` GitHub toma como ref la rama por defecto (`develop`), así
+  que `staging` e `infra-staging` aceptan `main` y `develop`. Que solo `main` despliegue lo garantizan el filtro `branches: [main]`
+  del workflow y la condición de la ejecución manual. Lo que sí impiden los entornos es que una rama de trabajo o un PR asuma la
+  identidad de Terraform.
 
 ## Alternativas descartadas
 

@@ -1,6 +1,7 @@
 name: Deploy staging
 
-# Despliega a staging lo que cambió en `develop` (git-flow, ADR-08), SOLO después de que CI pase (workflow_run), o a mano.
+# Despliega a staging lo que llegó a `main` (un release o un hotfix, git-flow ADR-08), SOLO después de que CI pase
+# (workflow_run), o a mano desde `main`. `develop` integra pero NO despliega.
 # Flujo (ADR-07):  construir UNA vez (imagen = SHA)  ->  migrar la base (Cloud Run Job, misma imagen)
 #                  ->  revisión nueva SIN tráfico  ->  prueba de humo sobre ella  ->  promover.
 # Si algo falla antes de "promover", staging sigue sirviendo la revisión anterior.
@@ -18,7 +19,10 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-    branches: [develop]
+    # Solo `main`. Ojo: en workflow_run GitHub toma como ref la rama por defecto (develop), no la del CI, así que los
+    # entornos `staging` e `infra-staging` aceptan `main` y `develop`; que solo `main` despliegue lo garantiza este filtro
+    # y la condición de `preparar` para la ejecución manual, no el entorno.
+    branches: [main]
   workflow_dispatch:
     inputs:
       servicios:
@@ -46,14 +50,14 @@ env:
   PROYECTO: ${{ vars.GCP_PROJECT_ID }}
   REGION: ${{ vars.GCP_REGION || 'us-central1' }}
   REPOSITORIO: ${{ vars.GCP_REGISTRY_REPO || 'solventa-backend' }}
-  # En workflow_run, github.sha es el último commit de develop, no el que validó CI: se usa el de CI.
+  # En workflow_run, github.sha es el último commit de la rama por defecto (develop), no el que validó CI: se usa el de CI.
   SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   preparar:
     if: >-
       vars.GCP_PROJECT_ID != '' && vars.GCP_PROTECCION_GASTO == 'activa' &&
-      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/develop') ||
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -78,7 +82,8 @@ jobs:
           elif [ "$EVENTO" = "workflow_dispatch" ]; then
             python scripts/seleccionar_servicios.py lista "$ENTRADA" >> "$GITHUB_OUTPUT"
           else
-            # Squash merge: el padre del commit es develop antes del PR. Con otro tipo de merge, usa "Run workflow".
+            # Merge commit de un release o hotfix en main: su primer padre es main antes del merge, así que el diff es todo
+            # lo liberado. Si entra de otra forma (p. ej. un commit directo), usa "Run workflow" desde main.
             python scripts/seleccionar_servicios.py cambios "${SHA}^" "$SHA" >> "$GITHUB_OUTPUT"
           fi
           cat "$GITHUB_OUTPUT"

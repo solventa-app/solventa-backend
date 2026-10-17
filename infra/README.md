@@ -114,7 +114,7 @@ terraform plan -var-file=staging.tfvars    # solo lectura (necesita credenciales
 ```
 
 `staging.tfvars` es la configuración que aplica el pipeline y la que se usa a mano (ver [ADR-09](../docs/adr/ADR-09-terraform-desde-el-pipeline.md)).
-Desde el arranque, los cambios en `infra/` los aplica el merge a `develop`; **no** hagas `terraform apply` a mano salvo para
+Desde el arranque, los cambios en `infra/` los aplica el merge a `main` (un release o un hotfix); **no** hagas `terraform apply` a mano salvo para
 el arranque inicial o una emergencia, y siempre con el plan revisado y confirmado por el equipo.
 `terraform.tfvars.example` sigue sirviendo para quien monte un entorno propio con un `terraform.tfvars` local (ignorado por git).
 
@@ -155,8 +155,10 @@ según qué historia lo necesite.
 3. Estado en un bucket de GCS con versionado: ya hecho (ver "Estado de Terraform").
 4. `crear_pipeline = true` → `terraform apply` → copiar los outputs a GitHub (ver "Conectar GitHub con GCP").
 5. `crear_servicios = true` → `terraform apply` → **cargar el valor real de cada secreto** (ver "Cargar los secretos").
-6. Primer despliegue: Actions > *Deploy staging* > *Run workflow* con `servicios = todos` (los servicios nacen con la
-   imagen de ejemplo `imagen_inicial`; este paso pone las reales). Desde ahí, cada merge a `develop` despliega solo lo que cambió.
+6. Primer despliegue: Actions > *Deploy staging* > *Run workflow* **eligiendo la rama `main`** (por defecto GitHub propone
+   `develop`, que no despliega) con `servicios = todos` (los servicios nacen con la imagen de ejemplo `imagen_inicial`; este
+   paso pone las reales). Desde ahí, cada release o hotfix que llega a `main` despliega solo lo que cambió. Un merge a
+   `develop` no despliega nada.
 7. Si se va a usar `crear_mongo_atlas`: crear primero la cuenta/organización de MongoDB Atlas a mano
    (no se puede automatizar sin que exista ya) y exportar `MONGODB_ATLAS_PUBLIC_KEY` /
    `MONGODB_ATLAS_PRIVATE_KEY` en el shell que corre terraform. **Nadie ha hecho esto todavía.**
@@ -164,7 +166,7 @@ según qué historia lo necesite.
 ## Conectar GitHub con GCP
 
 Con `crear_pipeline = true`, `terraform output` entrega los valores. En GitHub: Settings > Environments > **New environment
-`staging`** (aquí se pueden exigir revisores y limitar a la rama `develop`), y en Settings > Secrets and variables > Actions >
+`staging`** (aquí se pueden exigir revisores; ver más abajo por qué admite `main` y `develop`), y en Settings > Secrets and variables > Actions >
 **Variables**:
 
 | Variable | Valor |
@@ -181,8 +183,11 @@ Hasta que las tres primeras y `GCP_PROTECCION_GASTO` existan, `deploy-staging.ym
 
 **Dos entornos de GitHub** (Settings > Environments): `staging` (despliegue de aplicaciones, identidad `GCP_DEPLOY_SA`) e
 `infra-staging` (Terraform, identidad `GCP_TERRAFORM_SA`, mucho más potente: propietario del proyecto de staging). En
-`infra-staging` se puede exigir revisores antes de cada apply y limitar a la rama `develop`. Si un entorno no existe, GitHub lo
-crea solo en el primer uso **sin reglas de protección**: créalos antes si quieres revisores o restricción de rama.
+`infra-staging` se puede exigir revisores antes de cada apply. Los dos están limitados a las ramas `main` y `develop`: en
+`workflow_run` GitHub toma como ref la rama por defecto (`develop`), así que restringirlos solo a `main` bloquearía el
+despliegue. Que solo `main` despliegue lo garantiza `deploy-staging.yml` (`branches: [main]` y la ejecución manual solo desde
+`main`); lo que el entorno impide es que una rama de trabajo o un PR asuma la identidad de Terraform. Si un entorno no existe,
+GitHub lo crea solo en el primer uso **sin reglas de protección**: créalos antes (ya están creados desde el 2026-10-17).
 
 **Arranque (una vez, a mano):** la cuenta de Terraform se crea con `crear_pipeline`, así que ese primer `apply` lo hace una
 persona desde su máquina con `terraform plan -var-file=staging.tfvars` revisado. Después, los cambios en `infra/` los aplica
@@ -267,7 +272,7 @@ key ring de KMS (no se puede borrar) ni los secretos si ya cargaste valores real
 ## Pipeline
 
 - `ci.yml` valida el Terraform (`fmt`, `init -backend=false`, `validate`) cuando cambia `infra/` o `.github/servicios.json`. No aplica nada.
-- `deploy-staging.yml`, tras el CI del merge a `develop` (o a mano con `workflow_dispatch`): **`infra`** (si cambió `infra/` o el
+- `deploy-staging.yml`, tras el CI del merge a `main` (o a mano desde `main` con `workflow_dispatch`; un merge a `develop` no dispara nada): **`infra`** (si cambió `infra/` o el
   manifiesto: plan → guardia → apply) → construir la imagen (tag = SHA) → migrar → desplegar sin tráfico → humo → promover. Si
   `infra` falla o el guardia bloquea, no se despliega nada. Para permitir una destrucción revisada: *Run workflow* con
   `permitir_destruir`.
