@@ -13,7 +13,7 @@ class RepositorioCobrosFalso:
     """Fake de `RepositorioCobros`. `crear_o_obtener` es thread-safe con un
     `Lock`, replicando la garantía real de la restricción UNIQUE de Postgres
     (bajo concurrencia real, una sola de las llamadas concurrentes con la
-    misma `clave_idempotencia` "gana" la inserción) — así la prueba de
+    mismo `id_intento_cobro` "gana" la inserción) — así la prueba de
     idempotencia concurrente no depende de un PostgreSQL real."""
 
     def __init__(self) -> None:
@@ -23,13 +23,13 @@ class RepositorioCobrosFalso:
 
     def crear_o_obtener(self, cobro_id: str, orden: dict[str, Any]) -> tuple[dict, bool]:
         with self._lock:
-            existente = self._por_clave.get(orden["clave_idempotencia"])
+            existente = self._por_clave.get(orden["id_intento_cobro"])
             if existente is not None:
                 return dict(existente), False
 
             cobro = {
                 "id": cobro_id,
-                "clave_idempotencia": orden["clave_idempotencia"],
+                "id_intento_cobro": orden["id_intento_cobro"],
                 "poliza_id": orden["poliza_id"],
                 "monto": orden["monto"],
                 "moneda": orden["moneda"],
@@ -41,7 +41,7 @@ class RepositorioCobrosFalso:
                 "creado_en": datetime.now(UTC),
                 "actualizado_en": datetime.now(UTC),
             }
-            self._por_clave[orden["clave_idempotencia"]] = cobro
+            self._por_clave[orden["id_intento_cobro"]] = cobro
             self._por_id[cobro_id] = cobro
             return dict(cobro), True
 
@@ -118,13 +118,13 @@ class ClienteAclFalso:
         self.consulta_desconocida = consulta_desconocida
         self.consultas: list[str] = []
 
-    def consultar(self, clave_idempotencia: str) -> ResultadoConsulta:
+    def consultar(self, id_intento_cobro: str) -> ResultadoConsulta:
         with self._lock:
-            self.consultas.append(clave_idempotencia)
+            self.consultas.append(id_intento_cobro)
             if self.consulta_desconocida:
                 return ResultadoConsulta(resultado="desconocido")
             return self.en_pasarela.get(
-                clave_idempotencia, ResultadoConsulta(resultado="no_encontrado")
+                id_intento_cobro, ResultadoConsulta(resultado="no_encontrado")
             )
 
     def cobrar(self, orden: OrdenCobro) -> ResultadoCobro:

@@ -1,12 +1,24 @@
 # Cobros en el back-office: conciliar y reintentar (HU-W05, KAN-28)
 
 Cómo el back-office ve los cobros de una póliza y reintenta los que no entraron, **sin cobrar dos veces**. Cubre
-CA-W05-01 (tabla de cobros por póliza con su estado) y CA-W05-02 (reintentar con la misma clave de idempotencia), y la
+CA-W05-01 (tabla de cobros por póliza con su estado) y CA-W05-02 (reintentar con el mismo `id_intento_cobro`), y la
 meta del Sprint 1: *"el back-office cobra y **concilia** pagos"*.
 
 Documentos relacionados: [README de PAYMENTS](../services/payments/README.md) · [README del ACL Worker](../services/acl-worker/README.md) ·
 [mock de la pasarela](../stubs/pasarela/README.md) · [contrato GraphQL](../contracts/graphql/schema.graphql) ·
 [autenticación](autenticacion-usuarios.md) · [pruebas Newman](../tests/newman/README.md).
+
+## Glosario: los tres identificadores de un cobro
+
+| Nombre | Quién lo genera | Para qué |
+|---|---|---|
+| `id` (cobro) | PAYMENTS (UUID) | Identifica el registro en Solventa: es el que usan `reintentarCobro` y `GET /cobros/{id}` |
+| `id_intento_cobro` (`idIntentoCobro` en GraphQL y en el evento) | Quien ordena el cobro (el frontend genera un UUID por intento) | Idempotencia: si la misma orden llega dos veces, se cobra una sola vez. Con otros datos, PAYMENTS responde 409 |
+| `referencia` (`pg-…`) | La pasarela | El comprobante del cobro en el proveedor |
+
+En la pasarela, el `id_intento_cobro` se llama `referencia_comercio`: el adaptador del ACL Worker traduce el nombre en
+la frontera. Antes se llamaba `clave_idempotencia`; se renombró en todo el producto (KAN-28, migraciones `0003` y `0004`
+de PAYMENTS y evento `cobro.estado-cambiado` v2).
 
 ## 1. El problema
 
@@ -24,11 +36,12 @@ Una demo en vivo (2026-10-16) dejó a la vista tres huecos en lo que ya existía
 |---|---|---|
 | **Conciliar antes de cobrar** | Cada reintento pregunta primero a la pasarela si ya tiene el cobro | Cierra el doble cobro del hueco 1 |
 | **Un solo camino** | El bucle automático y el botón del back-office usan la misma función (`services/payments/app/application/conciliacion.py`) | Los dos quedan protegidos igual |
-| **Consulta por referencia del comercio** | Se busca el cobro por la `clave_idempotencia` que Solventa envía | Así consultan las pasarelas reales (Wompi `reference`, PayU `referenceCode`): cambiar de pasarela sigue siendo solo un adaptador (CA-W05-06) |
+| **Consulta por referencia del comercio** | Se busca el cobro por el `id_intento_cobro` que Solventa envía (en la pasarela, `referencia_comercio`) | Así consultan las pasarelas reales (Wompi `reference`, PayU `referenceCode`): cambiar de pasarela sigue siendo solo un adaptador (CA-W05-06) |
 | **Intentos que no cuentan** | Si el circuito está abierto o la pasarela no responde a la consulta, no se gasta intento | Cierra el hueco 2 |
 | **Qué se reintenta** | Solo `pendiente`. `cobrado` o `cobrando` se devuelven sin tocarlos; `rechazado` da error | Un doble clic no cobra dos veces; un rechazo no se arregla insistiendo |
 | **Mock realista, sin base de datos** | La pasarela simulada recuerda cada cobro **en memoria** por clave, puede rechazar y se puede consultar | Imita a un proveedor real sin sobre-construir |
-| **Permisos** | `cobros` y `reintentarCobro`: solo `BACKOFFICE`, **siempre con token** (aun con la bandera en `opcional`) | Son datos de pagos |
+| **Crear cobros desde el BFF** | `crearCobro(entrada)`: el cliente envía `idIntentoCobro` y lo reenvía igual si repite; un conflicto llega como `ErrorCobro` | Un doble clic no crea otro cobro |
+| **Permisos** | `cobros`, `crearCobro` y `reintentarCobro`: solo `BACKOFFICE`, **siempre con token** (aun con la bandera en `opcional`) | Son datos de pagos |
 
 ## 3. Flujo del reintento
 
@@ -92,14 +105,16 @@ Cómo produce cada estado el mock de la pasarela, por modo:
 | **ACL Worker** | `PuertoPasarelaPagos.consultar`; `GET /pagos/cobros/{referencia_comercio}` (siempre 200); `motivo=circuito_abierto`; póliza enmascarada en logs |
 | **PAYMENTS** | `POST /cobros/buscar` (filtros en el cuerpo), `GET /cobros/{id}`, `POST /cobros/{id}/reintentar`; `procesar_reintento` concilia en el bucle y en el botón |
 | **BFF** | `cobros` y `reintentarCobro` reales, solo BACKOFFICE con token |
+| **Ajustes (2026-10-17)** | Contrato v0.3/v0.4: `crearCobro` en el BFF y evento v2 con `idIntentoCobro`; renombre a `id_intento_cobro` (mock: `referencia_comercio`); PAYMENTS responde 409 si el mismo intento llega con otros datos y 422 si falta un campo |
 
 ## 6. Pruebas
 
 | Nivel | Resultado |
 |---|---|
 | Unitarias | Mock 15, ACL Worker 65, PAYMENTS 39, BFF 90 (incluida la equivalencia con el contrato y que la póliza no viaje en la URL) |
+| Ajustes (2026-10-17) | Mock 15, ACL Worker 66, PAYMENTS 43, BFF 99. Newman: 54 peticiones y 122 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. Este paso a paso, verificado tal como está escrito |
 | Newman | 51 peticiones y 116 aserciones (carpeta nueva 9). En 6 corridas, 5 sin fallos y 1 con 4 fallas **en la oferta de HU-W01**, no en cobros (ver limitaciones) |
-| Humo | Paso 6: pasarela lenta → reintento conciliado con una sola referencia |
+| Humo | Paso 6: `crearCobro` con la pasarela lenta → reintento conciliado con una sola referencia |
 | En vivo | Pasarela lenta: **1 solo cobro** enviado y la misma referencia. Caída de 60 s: `intentos` siguió en 1 y el cobro quedó `cobrado` a los 3 s de volver la pasarela |
 
 ## 7. Cómo probarlo paso a paso
@@ -141,17 +156,28 @@ echo "${TOKEN_BO:0:20}..."
 
 ```bash
 CLAVE="demo-$(date +%s)"
+CREAR='mutation($e: CrearCobroInput!) { crearCobro(entrada: $e) { __typename ... on Cobro { id estado } ... on ErrorCobro { mensaje } } }'
+entrada() { echo '{"query":"'"$CREAR"'","variables":{"e":{"idIntentoCobro":"'"$1"'","polizaId":"'"$2"'","monto":{"valor":"'"$3"'","moneda":"COP"},"tokenMedioPago":"tok_demo"}}}'; }
 modo lento
-ID=$(curl -s -X POST "$PAY/cobros" -H 'Content-Type: application/json' \
-  -d "{\"clave_idempotencia\":\"$CLAVE\",\"poliza_id\":\"POL-DEMO-1\",\"monto\":\"90000.00\",\"moneda\":\"COP\",\"token_medio_pago\":\"tok_demo\"}" | campo id)
+ID=$(gql "$(entrada "$CLAVE" POL-DEMO-1 90000.00)" "$TOKEN_BO" | campo data.crearCobro.id)
 modo sano
 curl -s "$PAY/cobros/$ID" | campo estado
 curl -s "$PASARELA/v1/cobros/$CLAVE" | campo referencia
 ```
 
 **Esperado:** PAYMENTS dice `pendiente`, pero la pasarela devuelve una referencia `pg-…`: **la pasarela sí cobró**.
-**Demuestra:** el caso que antes terminaba en doble cobro. (La creación de cobros se hace directo en PAYMENTS porque
-el BFF no crea cobros en este alcance.)
+**Demuestra:** el caso que antes terminaba en doble cobro, con el cobro ordenado desde el BFF (`crearCobro`).
+
+### Paso 2b. Reenviar la misma orden
+
+```bash
+gql "$(entrada "$CLAVE" POL-DEMO-1 90000.00)" "$TOKEN_BO"
+gql "$(entrada "$CLAVE" POL-DEMO-1 1.00)" "$TOKEN_BO"
+```
+
+**Esperado:** la primera devuelve el **mismo** `id` (no se crea otro cobro); la segunda, con otro monto, un
+`ErrorCobro` con "Ese id_intento_cobro ya se usó con otros datos…".
+**Demuestra:** la idempotencia por `idIntentoCobro` y que un conflicto nunca se ignora en silencio.
 
 ### Paso 3. El back-office ve el cobro
 
@@ -179,8 +205,7 @@ el mismo cobro sin cambios.
 
 ```bash
 modo rechaza
-ID_R=$(curl -s -X POST "$PAY/cobros" -H 'Content-Type: application/json' \
-  -d "{\"clave_idempotencia\":\"rech-$(date +%s)\",\"poliza_id\":\"POL-DEMO-1\",\"monto\":\"90000.00\",\"moneda\":\"COP\",\"token_medio_pago\":\"tok_demo\"}" | campo id)
+ID_R=$(gql "$(entrada "rech-$(date +%s)" POL-DEMO-1 90000.00)" "$TOKEN_BO" | campo data.crearCobro.id)
 modo sano
 gql '{"query":"query { cobros(polizaId: \"POL-DEMO-1\", estado: RECHAZADO) { estado motivo } }"}' "$TOKEN_BO"
 gql '{"query":"mutation($id: ID!) { reintentarCobro(cobroId: $id) { estado } }","variables":{"id":"'"$ID_R"'"}}' "$TOKEN_BO"
@@ -194,7 +219,7 @@ gql '{"query":"mutation($id: ID!) { reintentarCobro(cobroId: $id) { estado } }",
 ```bash
 modo error
 ID_C=$(curl -s -X POST "$PAY/cobros" -H 'Content-Type: application/json' \
-  -d "{\"clave_idempotencia\":\"caida-$(date +%s)\",\"poliza_id\":\"POL-DEMO-2\",\"monto\":\"70000.00\",\"moneda\":\"COP\",\"token_medio_pago\":\"tok_demo\"}" | campo id)
+  -d "{\"id_intento_cobro\":\"caida-$(date +%s)\",\"poliza_id\":\"POL-DEMO-2\",\"monto\":\"70000.00\",\"moneda\":\"COP\",\"token_medio_pago\":\"tok_demo\"}" | campo id)
 sleep 60
 echo "tras 60 s de caída: intentos=$(curl -s "$PAY/cobros/$ID_C" | campo intentos), circuito=$(curl -s localhost:8005/circuitos | campo pasarela)"
 modo sano
@@ -232,7 +257,7 @@ npx --yes newman@6.2.2 run tests/newman/solventa-bff.postman_collection.json \
 POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios down -v
 ```
 
-**Esperado:** `OK: humo del BFF en verde` y Newman con 116 aserciones, 0 fallidas.
+**Esperado:** `OK: humo del BFF en verde` y Newman con 122 aserciones, 0 fallidas.
 
 ## 8. Limitaciones conocidas
 
@@ -247,5 +272,5 @@ POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios down -v
 
 ## 9. Fuera de alcance
 
-Crear cobros desde el BFF y la captura de tarjeta (CA-W05-03, frontend), Cloud Tasks real, eventos a Pub/Sub, la orden
+Que el CLIENTE pague su prima y la captura de tarjeta (CA-W05-03, frontend), Cloud Tasks real, eventos a Pub/Sub, la orden
 de indemnización (CA-W05-07, Sprint 3) y el arranque frágil de Postgres en el primer `up` (un `fix(infra)` aparte).

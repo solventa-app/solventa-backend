@@ -8,7 +8,7 @@ from app.main import app, create_app
 client = TestClient(app)
 
 ORDEN = {
-    "clave_idempotencia": "idem-1",
+    "referencia_comercio": "idem-1",
     "poliza_id": "pol-1",
     "monto": "150000.00",
     "moneda": "COP",
@@ -71,7 +71,7 @@ def test_health_no_obedece_el_modo() -> None:
 
 
 def _orden(clave: str | None = None) -> dict:
-    return {**ORDEN, "clave_idempotencia": clave or f"idem-{uuid.uuid4()}"}
+    return {**ORDEN, "referencia_comercio": clave or f"idem-{uuid.uuid4()}"}
 
 
 def test_misma_clave_devuelve_el_cobro_original_sin_cobrar_de_nuevo() -> None:
@@ -90,7 +90,7 @@ def test_lento_registra_el_cobro_aunque_responda_tarde() -> None:
     orden = _orden()
 
     cliente.post("/v1/cobros", json=orden, headers={"X-Modo-Simulado": "lento"})
-    consulta = cliente.get(f"/v1/cobros/{orden['clave_idempotencia']}")
+    consulta = cliente.get(f"/v1/cobros/{orden['referencia_comercio']}")
 
     assert consulta.status_code == 200
     assert consulta.json()["estado"] == "cobrado"
@@ -101,7 +101,7 @@ def test_error_no_registra_el_cobro() -> None:
     orden = _orden()
 
     assert cliente.post("/v1/cobros", json=orden, params={"modo": "error"}).status_code == 503
-    assert cliente.get(f"/v1/cobros/{orden['clave_idempotencia']}").status_code == 404
+    assert cliente.get(f"/v1/cobros/{orden['referencia_comercio']}").status_code == 404
 
 
 def test_rechaza_responde_200_con_estado_rechazado() -> None:

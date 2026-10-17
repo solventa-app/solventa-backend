@@ -65,7 +65,7 @@ class DatosFuenteResponse(BaseModel):
 
 
 class OrdenCobroRequest(BaseModel):
-    clave_idempotencia: str
+    id_intento_cobro: str
     poliza_id: str
     monto: str
     moneda: str
@@ -218,7 +218,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
     @app.post("/pagos/cobrar", tags=["pagos"], response_model=ResultadoCobroResponse)
     def cobrar(body: OrdenCobroRequest) -> ResultadoCobroResponse:
         orden = OrdenCobro(
-            clave_idempotencia=body.clave_idempotencia,
+            id_intento_cobro=body.id_intento_cobro,
             poliza_id=body.poliza_id,
             monto=body.monto,
             moneda=body.moneda,

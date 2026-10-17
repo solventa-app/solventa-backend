@@ -23,7 +23,9 @@ class AdaptadorPasarela:
         respuesta = self._cliente.post(
             "/v1/cobros",
             json={
-                "clave_idempotencia": orden.clave_idempotencia,
+                # Traducción de frontera: la pasarela llama "referencia del comercio" a lo
+                # que Solventa llama `id_intento_cobro` en su dominio.
+                "referencia_comercio": orden.id_intento_cobro,
                 "poliza_id": orden.poliza_id,
                 "monto": orden.monto,
                 "moneda": orden.moneda,

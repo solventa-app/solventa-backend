@@ -11,7 +11,7 @@ from app.application.servicio_cobros import ServicioCobros
 from app.main import create_app
 
 ORDEN = {
-    "clave_idempotencia": "clave-endpoint-1",
+    "id_intento_cobro": "clave-endpoint-1",
     "poliza_id": "poliza-endpoint-1",
     "monto": "200.00",
     "moneda": "COP",
@@ -46,7 +46,7 @@ def test_post_cobros_con_pasarela_caida_queda_pendiente_sin_5xx() -> None:
     assert r.json()["estado"] == "pendiente"
 
 
-def test_post_cobros_misma_clave_dos_veces_no_duplica_ni_llama_dos_veces_al_acl() -> None:
+def test_post_cobros_mismo_intento_dos_veces_no_duplica_ni_llama_dos_veces_al_acl() -> None:
     cliente, cliente_acl = _cliente()
     with cliente as client:
         primero = client.post("/cobros", json=ORDEN).json()
@@ -54,6 +54,41 @@ def test_post_cobros_misma_clave_dos_veces_no_duplica_ni_llama_dos_veces_al_acl(
 
     assert primero["id"] == segundo["id"]
     assert cliente_acl.llamadas == 1
+
+
+def test_post_cobros_mismo_intento_con_otros_datos_responde_409() -> None:
+    cliente, cliente_acl = _cliente()
+    with cliente as client:
+        client.post("/cobros", json=ORDEN)
+        r = client.post("/cobros", json={**ORDEN, "monto": "999.00"})
+
+    assert r.status_code == 409
+    assert "otros datos" in r.json()["detail"]
+    assert cliente_acl.llamadas == 1
+
+
+def test_post_cobros_mismo_monto_escrito_distinto_no_es_conflicto() -> None:
+    with _cliente()[0] as client:
+        primero = client.post("/cobros", json=ORDEN).json()
+        r = client.post("/cobros", json={**ORDEN, "monto": "200"})
+
+    assert r.status_code == 200
+    assert r.json()["id"] == primero["id"]
+
+
+def test_post_cobros_sin_id_intento_cobro_responde_422() -> None:
+    with _cliente()[0] as client:
+        r = client.post("/cobros", json={**ORDEN, "id_intento_cobro": ""})
+
+    assert r.status_code == 422
+
+
+def test_post_cobros_ya_no_acepta_el_nombre_anterior() -> None:
+    orden = {k: v for k, v in ORDEN.items() if k != "id_intento_cobro"}
+    with _cliente()[0] as client:
+        r = client.post("/cobros", json={**orden, "clave_idempotencia": "clave-vieja-1"})
+
+    assert r.status_code == 422
 
 
 def test_get_balance_suma_solo_cobros_cobrados() -> None:
@@ -80,8 +115,8 @@ def test_buscar_cobros_filtra_por_poliza_y_estado() -> None:
         ClienteAclFalso([ResultadoCobro(estado="pendiente", motivo="pasarela_no_disponible")])
     )
     with cliente as client:
-        client.post("/cobros", json={**ORDEN, "clave_idempotencia": "k-a", "poliza_id": "POL-A"})
-        client.post("/cobros", json={**ORDEN, "clave_idempotencia": "k-b", "poliza_id": "POL-B"})
+        client.post("/cobros", json={**ORDEN, "id_intento_cobro": "k-a", "poliza_id": "POL-A"})
+        client.post("/cobros", json={**ORDEN, "id_intento_cobro": "k-b", "poliza_id": "POL-B"})
 
         por_poliza = client.post("/cobros/buscar", json={"poliza_id": "POL-A"}).json()
         por_estado = client.post("/cobros/buscar", json={"estado": "cobrado"}).json()
@@ -112,7 +147,7 @@ def test_post_reintentar_resuelve_un_pendiente() -> None:
 
     assert r.status_code == 200
     assert r.json()["estado"] == "cobrado"
-    assert r.json()["clave_idempotencia"] == ORDEN["clave_idempotencia"]
+    assert r.json()["id_intento_cobro"] == ORDEN["id_intento_cobro"]
 
 
 def test_post_reintentar_un_rechazado_responde_409_con_mensaje() -> None:

@@ -187,6 +187,29 @@ class Cobro:
     intentos: int | None
 
 
+@strawberry.input
+class MontoInput:
+    valor: str  # decimal como texto, nunca float
+    moneda: str
+
+
+@strawberry.input
+class CrearCobroInput:
+    # Lo genera el cliente (un UUID por intento) y lo reenvía igual si repite la orden.
+    id_intento_cobro: strawberry.ID
+    poliza_id: strawberry.ID
+    monto: MontoInput
+    token_medio_pago: str  # token del proveedor PCI-DSS; nunca datos de tarjeta
+
+
+@strawberry.type
+class ErrorCobro:
+    mensaje: str
+
+
+ResultadoCobro = Annotated[Cobro | ErrorCobro, strawberry.union("ResultadoCobro")]
+
+
 # ---------- Usuarios y sesión (HU-M02) ----------
 
 
@@ -452,6 +475,28 @@ class Mutation:
             raise ErrorPublico(MENSAJE_COBROS_NO_DISPONIBLES) from error
         if datos is None:
             raise ErrorPublico("Cobro no encontrado.")
+        return _cobro(datos)
+
+    @strawberry.mutation
+    async def crear_cobro(self, info: Info, entrada: CrearCobroInput) -> ResultadoCobro:
+        """KAN-28: el back-office ordena un cobro en PAYMENTS. Reenviar el mismo
+        `idIntentoCobro` devuelve el mismo cobro sin cobrar de nuevo. Ni el token del
+        medio de pago ni la póliza se loguean."""
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        try:
+            datos = await info.context["clientes"].payments.crear_cobro(
+                {
+                    "id_intento_cobro": str(entrada.id_intento_cobro),
+                    "poliza_id": str(entrada.poliza_id),
+                    "monto": entrada.monto.valor,
+                    "moneda": entrada.monto.moneda,
+                    "token_medio_pago": entrada.token_medio_pago,
+                }
+            )
+        except SolicitudInvalida as error:
+            return ErrorCobro(mensaje=str(error))
+        except ErrorServicio as error:
+            raise ErrorPublico("No pudimos registrar el cobro. Intenta de nuevo.") from error
         return _cobro(datos)
 
     # ---------- Usuarios y sesión (HU-M02) ----------

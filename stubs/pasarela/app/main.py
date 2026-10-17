@@ -6,8 +6,8 @@ cobro), fijados en caliente vía `/control/modo` o por llamada vía query param
 `modo`/header `X-Modo-Simulado`.
 
 Como una pasarela real, **recuerda cada cobro por su referencia del comercio**
-(la `clave_idempotencia` que envía Solventa): repetir un cobro con la misma
-clave devuelve el resultado original sin cobrar de nuevo, y
+(`referencia_comercio`): repetir un cobro con la misma referencia devuelve el
+resultado original sin cobrar de nuevo, y
 `GET /v1/cobros/{referencia_comercio}` permite consultarlo (conciliación,
 KAN-28). La memoria vive en el proceso: se reinicia limpia con el contenedor.
 
@@ -49,7 +49,10 @@ class SolicitudModo(BaseModel):
 
 
 class SolicitudCobro(BaseModel):
-    clave_idempotencia: str
+    # "Comercio" es el punto de vista de la pasarela: el comercio somos nosotros.
+    # Solventa la llama `id_intento_cobro` en su propio dominio, y el adaptador del
+    # ACL Worker (`AdaptadorPasarela`) traduce entre los dos nombres.
+    referencia_comercio: str
     poliza_id: str
     monto: str
     moneda: str
@@ -59,7 +62,7 @@ class SolicitudCobro(BaseModel):
 def create_app() -> FastAPI:
     app = FastAPI(title="solventa-stub-pasarela", version="0.1.0")
     estado = {"modo": "sano"}
-    # Cobros registrados por referencia del comercio (= clave_idempotencia de Solventa).
+    # Cobros registrados por `referencia_comercio`.
     cobros: dict[str, dict] = {}
     candado = asyncio.Lock()
 
@@ -108,7 +111,7 @@ def create_app() -> FastAPI:
         modo_efectivo = _modo_efectivo(modo, x_modo_simulado)
         await _fallar_si_corresponde(modo_efectivo)
         async with candado:
-            resultado = cobros.get(body.clave_idempotencia)
+            resultado = cobros.get(body.referencia_comercio)
             if resultado is None:
                 # Cobro nuevo. Se registra ANTES de la espera de `lento`: si el
                 # cliente corta, el cobro igual quedó hecho (como en la vida real).
@@ -124,8 +127,8 @@ def create_app() -> FastAPI:
                         "referencia": f"pg-{uuid.uuid4()}",
                         "motivo": None,
                     }
-                resultado["detalle"] = {"clave_idempotencia": body.clave_idempotencia}
-                cobros[body.clave_idempotencia] = resultado
+                resultado["detalle"] = {"referencia_comercio": body.referencia_comercio}
+                cobros[body.referencia_comercio] = resultado
         await _esperar_respuesta(modo_efectivo)
         return resultado
 
@@ -136,7 +139,7 @@ def create_app() -> FastAPI:
         x_modo_simulado: str | None = Header(default=None),
     ) -> dict:
         """Conciliación: ¿la pasarela tiene un cobro con esta referencia del comercio
-        (la `clave_idempotencia` de Solventa)? 404 si no. Obedece el modo simulado."""
+        (`referencia_comercio`)? 404 si no. Obedece el modo simulado."""
         await _aplicar_modo(_modo_efectivo(modo, x_modo_simulado))
         resultado = cobros.get(referencia_comercio)
         if resultado is None:

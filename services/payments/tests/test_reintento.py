@@ -9,7 +9,7 @@ from app.application.reintento import ejecutar_una_pasada
 from app.application.servicio_cobros import ServicioCobros
 
 ORDEN = {
-    "clave_idempotencia": "clave-reintento-1",
+    "id_intento_cobro": "clave-reintento-1",
     "poliza_id": "poliza-9",
     "monto": "50.00",
     "moneda": "COP",
@@ -31,7 +31,7 @@ def test_reintento_reutiliza_la_misma_clave_de_idempotencia() -> None:
     procesados = ejecutar_una_pasada(repositorio, cliente_acl_reintento, bus, max_intentos=10)
 
     assert procesados == 1
-    assert cliente_acl_reintento.ordenes[0].clave_idempotencia == ORDEN["clave_idempotencia"]
+    assert cliente_acl_reintento.ordenes[0].id_intento_cobro == ORDEN["id_intento_cobro"]
     assert bus.eventos[-1]["datos"]["estado"] == "cobrado"
 
 
