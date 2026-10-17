@@ -207,7 +207,7 @@ input CrearUsuarioInput {
   usuario: String!
   clave: String!
   rol: RolUsuario!
-  nombre: String = null # solo para CLIENTE (2 a 100 caracteres); se guarda cifrado y no se devuelve
+  nombre: String = null # cualquier rol (2 a 100 caracteres); se guarda cifrado y `crearUsuario` no lo devuelve
 }
 
 # ---------- Operaciones ----------

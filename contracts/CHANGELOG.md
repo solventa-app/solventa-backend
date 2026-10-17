@@ -58,3 +58,15 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   ya exponía. Sin cambio de comportamiento: siguen siendo opcionales. Lo detectó la prueba de equivalencia
   esquema↔contrato al alinear `graphql-core` 3.3.0 en el CI.
 - Afecta al frontend: no.
+
+## v0.6 — 2026-10-18
+
+- KAN-28: cada usuario ve su propio nombre y el back-office ve la referencia de la pasarela. `Usuario` suma `nombre`
+  (opcional): solo lo llenan `iniciarSesion` y `yo`, y cada quien recibe el suyo; en `usuarios` y `crearUsuario` va en
+  `null`. `Cobro` suma `idTransaccion` (opcional): la referencia de la pasarela, `null` mientras no se haya cobrado.
+  Solo cambios aditivos.
+- `CrearUsuarioInput.nombre` pasa a admitirse en **cualquier rol** (en v0.5 era solo CLIENTE). Es más permisivo, no rompe
+  a nadie.
+- El nombre **no viaja en el JWT** (va en base64, sin cifrar y vale 60 minutos): el front lo pide por GraphQL tras
+  iniciar sesión. Si es `null`, mostrar el alias (`usuario`). Los pagos siguen siendo solo del BACKOFFICE.
+- Afecta al frontend: sí (saludo con el nombre; columna "ID de transacción" de W05-01).
