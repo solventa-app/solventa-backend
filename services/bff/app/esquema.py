@@ -250,6 +250,9 @@ class Usuario:
     rol: RolUsuario
     estado: EstadoUsuario
     creado_en: datetime
+    # Dato personal: solo `iniciarSesion` y `yo` lo traen (cada quien, el suyo); AUTH lo
+    # deja en null en listas y altas. Nunca viaja dentro del JWT.
+    nombre: str | None = None
 
 
 @strawberry.type
@@ -369,6 +372,7 @@ def _usuario(datos: dict) -> Usuario:
         rol=RolUsuario(datos["rol"]),
         estado=EstadoUsuario(datos["estado"]),
         creado_en=datetime.fromisoformat(datos["creado_en"]),
+        nombre=datos.get("nombre"),
     )
 
 

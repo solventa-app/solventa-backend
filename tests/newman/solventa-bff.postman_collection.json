@@ -332,7 +332,7 @@
           }
         },
         {
-          "name": "crearUsuario ASESOR con nombre: solo los clientes tienen nombre",
+          "name": "crearUsuario ASESOR con nombre: cualquier rol puede tener nombre",
           "event": [
             {
               "listen": "test",
@@ -341,9 +341,9 @@
                 "exec": [
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const r = pm.response.json().data.crearUsuario;",
-                  "pm.test('ErrorUsuario con mensaje', () => {",
-                  "  pm.expect(r.__typename).to.eql('ErrorUsuario');",
-                  "  pm.expect(r.mensaje).to.include('Solo los clientes');",
+                  "pm.test('crea el usuario y no devuelve el nombre', () => {",
+                  "  pm.expect(r.__typename).to.eql('Usuario');",
+                  "  pm.expect(r.nombre).to.be.null;",
                   "});"
                 ]
               }
@@ -369,9 +369,9 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}x\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\",\n      \"nombre\": \"Cliente Newman Prueba\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn nombre }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}x\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\",\n      \"nombre\": \"Asesora Newman Prueba\"\n    }\n  }\n}"
             },
-            "description": "El nombre es solo de los clientes: para un ASESOR AUTH responde 400 y el BFF lo devuelve como ErrorUsuario.",
+            "description": "El nombre se admite en cualquier rol. `crearUsuario` no lo devuelve (va en null).",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -381,6 +381,52 @@
                   "type": "string"
                 }
               ]
+            }
+          }
+        },
+        {
+          "name": "iniciarSesion del ASESOR con nombre: ve el suyo, y la lista no expone nombres",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json().data.iniciarSesion;",
+                  "pm.test('el ASESOR recibe su propio nombre', () => {",
+                  "  pm.expect(r.__typename).to.eql('Sesion');",
+                  "  pm.expect(r.usuario.nombre).to.eql('Asesora Newman Prueba');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CredencialesInput!) {\\n  iniciarSesion(entrada: $entrada) {\\n    __typename\\n    ... on Sesion { token expiraEn usuario { id usuario rol estado nombre } }\\n    ... on ErrorAutenticacion { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}x\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
+            },
+            "description": "Cada usuario ve su propio nombre al iniciar sesión.",
+            "auth": {
+              "type": "noauth"
             }
           }
         },
@@ -619,54 +665,10 @@
                   "pm.test('la respuesta no trae la clave ni su hash', () => {",
                   "  pm.expect(JSON.stringify(r.usuario)).to.not.include('clave');",
                   "});",
-                  "pm.collectionVariables.set('token_cliente', r.token);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{bff_url}}/graphql/web",
-              "host": [
-                "{{bff_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CredencialesInput!) {\\n  iniciarSesion(entrada: $entrada) {\\n    __typename\\n    ... on Sesion { token expiraEn usuario { id usuario rol estado } }\\n    ... on ErrorAutenticacion { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
-            },
-            "description": "Guarda el token del CLIENTE.",
-            "auth": {
-              "type": "noauth"
-            }
-          }
-        },
-        {
-          "name": "usuarios (BACKOFFICE) incluye al ASESOR nuevo",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "pm.test('el ASESOR creado aparece en la lista', () => {",
-                  "  const alias = cuerpo.data.usuarios.map(u => u.usuario);",
-                  "  pm.expect(alias).to.include(pm.collectionVariables.get('alias_asesor'));",
-                  "  cuerpo.data.usuarios.forEach(u => pm.expect(u.rol).to.eql('ASESOR'));",
+                  "pm.collectionVariables.set('token_cliente', r.token);",
+                  "pm.test('el CLIENTE recibe su propio nombre (y no viaja en el JWT)', () => {",
+                  "  pm.expect(r.usuario.nombre).to.eql('Cliente Newman Prueba');",
+                  "  pm.expect(atob(r.token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).to.not.include('nombre');",
                   "});"
                 ]
               }
@@ -692,7 +694,58 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query {\\n  usuarios(rol: ASESOR) { id usuario rol }\\n}\"\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CredencialesInput!) {\\n  iniciarSesion(entrada: $entrada) {\\n    __typename\\n    ... on Sesion { token expiraEn usuario { id usuario rol estado nombre } }\\n    ... on ErrorAutenticacion { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
+            },
+            "description": "Guarda el token del CLIENTE.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "usuarios (BACKOFFICE) incluye al ASESOR nuevo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('el ASESOR creado aparece en la lista', () => {",
+                  "  const alias = cuerpo.data.usuarios.map(u => u.usuario);",
+                  "  pm.expect(alias).to.include(pm.collectionVariables.get('alias_asesor'));",
+                  "  cuerpo.data.usuarios.forEach(u => pm.expect(u.rol).to.eql('ASESOR'));",
+                  "});",
+                  "pm.test('la lista no expone nombres de nadie', () => {",
+                  "  pm.response.json().data.usuarios.forEach(u => pm.expect(u.nombre).to.be.null);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  usuarios(rol: ASESOR) { id usuario rol nombre }\\n}\"\n}"
             },
             "description": "El BACKOFFICE lista usuarios filtrando por rol.",
             "auth": {
@@ -2443,6 +2496,9 @@
                   "pm.test('queda COBRADO, sin errores', () => {",
                   "  pm.expect(cuerpo.errors).to.be.undefined;",
                   "  pm.expect(cuerpo.data.reintentarCobro.estado).to.eql('COBRADO');",
+                  "});",
+                  "pm.test('idTransaccion es la referencia de la pasarela', () => {",
+                  "  pm.expect(cuerpo.data.reintentarCobro.idTransaccion).to.eql(pm.collectionVariables.get('referencia_pasarela'));",
                   "});"
                 ]
               }
@@ -2479,7 +2535,7 @@
             "description": "CA-W05-02: PAYMENTS pregunta a la pasarela, la encuentra cobrada y toma ese resultado sin volver a cobrar.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($id: ID!) {\\n  reintentarCobro(cobroId: $id) { id estado motivo intentos }\\n}\",\n  \"variables\": {\n    \"id\": \"{{id_cobro}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($id: ID!) {\\n  reintentarCobro(cobroId: $id) { id estado motivo intentos idTransaccion }\\n}\",\n  \"variables\": {\n    \"id\": \"{{id_cobro}}\"\n  }\n}"
             }
           }
         },

@@ -199,4 +199,7 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   pasarela es idempotente por referencia, cada reintento va con la suya (`{idIntentoCobro}-rN`, migración `0006` de
   PAYMENTS). Contrato v0.6: `Cobro.reintentosRestantes`. No se construye captura de tarjeta (CA-W05-03): el prototipo no
   la tiene y la prima se factura con la cuota del crédito (W03-02b). `scripts/sembrar_cobros.py` deja los datos de la demo.
-
+- **Nombre propio (KAN-28, 2026-10-18):** cada usuario ve su nombre al iniciar sesión (`Usuario.nombre` en
+  `iniciarSesion` y `yo`, cifrado en AUTH y fuera del JWT). `Cobro.idTransaccion` llegó aparte con el reintento de rechazados.
+  Los pagos siguen siendo solo del BACKOFFICE. Pedido por el front (KAN-207). **Tampoco estaba en el plan del sprint:**
+  registrar las horas en Jira bajo KAN-28.

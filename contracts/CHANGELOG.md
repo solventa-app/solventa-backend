@@ -69,3 +69,14 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   responde el error "Se agotaron los 3 reintentos: el cobro requiere otro medio de pago.".
 - Afecta al frontend: sí (W05-01: el botón de reintentar va en los rechazados con `reintentosRestantes > 0`). Requiere el
   PR gemelo en `solventa-frontend`.
+
+## v0.7 — 2026-10-18
+
+- KAN-28: cada usuario ve su propio nombre. `Usuario` suma `nombre` (opcional): solo lo llenan `iniciarSesion` y `yo`, y
+  cada quien recibe el suyo; en `usuarios` y `crearUsuario` va en `null`. Solo cambios aditivos. (`Cobro.idTransaccion`,
+  que se había pedido junto con esto, ya llegó en la v0.6.)
+- `CrearUsuarioInput.nombre` pasa a admitirse en **cualquier rol** (en v0.5 era solo CLIENTE). Es más permisivo, no rompe
+  a nadie.
+- El nombre **no viaja en el JWT** (va en base64, sin cifrar y vale 60 minutos): el front lo pide por GraphQL tras
+  iniciar sesión. Si es `null`, mostrar el alias (`usuario`). Los pagos siguen siendo solo del BACKOFFICE.
+- Afecta al frontend: sí (saludo con el nombre).

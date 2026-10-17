@@ -177,6 +177,9 @@ type Usuario {
   rol: RolUsuario!
   estado: EstadoUsuario!
   creadoEn: DateTime!
+  # Dato personal. Solo viene en `iniciarSesion` y `yo` (cada usuario ve el suyo); en `usuarios`,
+  # `crearUsuario` y los demás cambios va en null. Nunca viaja dentro del JWT.
+  nombre: String
 }
 
 type Sesion {
@@ -206,7 +209,7 @@ input CrearUsuarioInput {
   usuario: String!
   clave: String!
   rol: RolUsuario!
-  nombre: String = null # solo para CLIENTE (2 a 100 caracteres); se guarda cifrado y no se devuelve
+  nombre: String = null # cualquier rol (2 a 100 caracteres); se guarda cifrado y `crearUsuario` no lo devuelve
 }
 
 # ---------- Operaciones ----------

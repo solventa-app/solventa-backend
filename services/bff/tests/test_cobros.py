@@ -342,3 +342,14 @@ def test_crear_cliente_con_nombre_lo_manda_a_auth() -> None:
 
     assert creado["__typename"] == "Usuario"
     assert auth.nombres[creado["id"]] == "Luis Mora"
+
+
+def test_cobros_trae_el_id_de_transaccion_de_la_pasarela() -> None:
+    cobros = [
+        cobro_de_payments("c-1", "POL-1", "cobrado", referencia="pg-abc-123"),
+        cobro_de_payments("c-2", "POL-2", "pendiente"),
+    ]
+    with _cliente(PaymentsFalso(cobros)) as client:
+        lista = _post(client, "{ cobros { id idTransaccion } }", {})["data"]["cobros"]
+
+    assert {c["id"]: c["idTransaccion"] for c in lista} == {"c-1": "pg-abc-123", "c-2": None}

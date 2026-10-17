@@ -25,10 +25,16 @@ de PAYMENTS y evento `cobro.estado-cambiado` v2).
 
 El back-office ve **quién es el cliente** de cada cobro. El nombre es dato personal, así que:
 
-- **Vive en AUTH**, cifrado por campo (AES-256-GCM, `services/auth/app/cifrado.py`), en `usuarios.nombre_cifrado`. Solo los
-  usuarios CLIENTE tienen nombre. PAYMENTS guarda únicamente el `cliente_id` (escritor único: cada servicio escribe lo suyo).
-- **Sale solo por `cobros`, `crearCobro` y `reintentarCobro`**, que son solo BACKOFFICE y siempre con token. `Usuario` no
-  lo expone y `crearUsuario` no lo devuelve.
+- **Vive en AUTH**, cifrado por campo (AES-256-GCM, `services/auth/app/cifrado.py`), en `usuarios.nombre_cifrado`. Cualquier
+  rol puede tener nombre; en los cobros se muestra el de los CLIENTE. PAYMENTS guarda únicamente el `cliente_id` (escritor único: cada servicio escribe lo suyo).
+- **Sale solo por dos caminos:**
+  1. **El nombre del cliente en un cobro:** `cobros`, `crearCobro` y `reintentarCobro`, que son solo BACKOFFICE y siempre
+     con token. El ASESOR y el CLIENTE no entran a pagos.
+  2. **El nombre propio:** `Usuario.nombre` en `iniciarSesion` y `yo`, y cada usuario recibe únicamente el suyo. En
+     `usuarios` (la lista) y en `crearUsuario` va en `null`.
+
+  El nombre **no viaja en el JWT**: va en base64, sin cifrar, y valdría 60 minutos aunque cambiara. El front lo pide por
+  GraphQL tras iniciar sesión y, si llega `null`, muestra el alias.
 - **El BFF compone la respuesta:** pide a AUTH los nombres de **todos** los clientes de la lista en una sola llamada (de
   a 200, el máximo de AUTH), no uno por cobro. Si AUTH no responde, los cobros llegan igual con `cliente.nombre` en
   `null`: ver el cobro importa más que ver el nombre.
@@ -124,6 +130,7 @@ Cómo produce cada estado el mock de la pasarela, por modo:
 | **ACL Worker** | `PuertoPasarelaPagos.consultar`; `GET /pagos/cobros/{referencia_comercio}` (siempre 200); `motivo=circuito_abierto`; póliza enmascarada en logs |
 | **PAYMENTS** | `POST /cobros/buscar` (filtros en el cuerpo), `GET /cobros/{id}`, `POST /cobros/{id}/reintentar`; `procesar_reintento` concilia en el bucle y en el botón |
 | **BFF** | `cobros` y `reintentarCobro` reales, solo BACKOFFICE con token |
+| **Nombre propio e `idTransaccion` (2026-10-18)** | Contrato v0.6: `Usuario.nombre` (propio) y `Cobro.idTransaccion`; AUTH admite nombre en cualquier rol y lo descifra solo para el propio usuario |
 | **Nombre del cliente (2026-10-17)** | Contrato v0.5; AUTH guarda `nombre_cifrado` (migración `0003`) y expone `POST /usuarios/nombres`; PAYMENTS guarda `cliente_id` (migración `0005`); el BFF compone `cobros.cliente { id nombre }` en lotes |
 | **Ajustes (2026-10-17)** | Contrato v0.3/v0.4: `crearCobro` en el BFF y evento v2 con `idIntentoCobro`; renombre a `id_intento_cobro` (mock: `referencia_comercio`); PAYMENTS responde 409 si el mismo intento llega con otros datos y 422 si falta un campo |
 
@@ -132,6 +139,7 @@ Cómo produce cada estado el mock de la pasarela, por modo:
 | Nivel | Resultado |
 |---|---|
 | Unitarias | Mock 15, ACL Worker 65, PAYMENTS 39, BFF 90 (incluida la equivalencia con el contrato y que la póliza no viaje en la URL) |
+| Nombre propio e `idTransaccion` (2026-10-18) | AUTH 81, PAYMENTS 47, BFF 133. Newman: 58 peticiones y 135 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. `Cobro.idTransaccion` es la referencia de la pasarela (la misma que PAYMENTS guarda en `referencia`) |
 | Nombre del cliente (2026-10-17) | AUTH 74, PAYMENTS 47, BFF 109. Newman: 55 peticiones y 126 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. Nombre ilegible en la base y 0 apariciones en logs |
 | Ajustes (2026-10-17) | Mock 15, ACL Worker 66, PAYMENTS 43, BFF 99. Newman: 54 peticiones y 122 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. Este paso a paso, verificado tal como está escrito |
 | Newman | 51 peticiones y 116 aserciones (carpeta nueva 9). En 6 corridas, 5 sin fallos y 1 con 4 fallas **en la oferta de HU-W01**, no en cobros (ver limitaciones) |
@@ -301,7 +309,7 @@ npx --yes newman@6.2.2 run tests/newman/solventa-bff.postman_collection.json \
 POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios down -v
 ```
 
-**Esperado:** `OK: humo del BFF en verde` y Newman con 126 aserciones, 0 fallidas.
+**Esperado:** `OK: humo del BFF en verde` y Newman con 135 aserciones, 0 fallidas.
 
 ## 8. Limitaciones conocidas
 
