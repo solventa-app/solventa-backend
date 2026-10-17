@@ -199,6 +199,15 @@ usuario vuelve a iniciar sesión), no pierde datos:
 openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add clave-jwt --data-file=-
 ```
 
+`clave-cifrado` es la llave AES-256 (32 bytes en base64) con la que AUTH cifra el nombre de los clientes (KAN-28).
+AUTH se niega a arrancar en Cloud Run con el valor marcador o con la llave local. **Rotarla sin migrar los datos deja
+los nombres ilegibles** (los cobros saldrían sin nombre): antes de rotar hay que re-cifrar. Pendiente: pasar a Cloud KMS
+(decisión D-04) detrás de la misma interfaz:
+
+```bash
+openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n' | gcloud secrets versions add clave-cifrado --data-file=-
+```
+
 **Primer usuario BACKOFFICE en staging (pendiente, manual, NO probado):** la API exige un BACKOFFICE para crear
 usuarios, así que el primero se crea con la misma imagen de AUTH, en un Cloud Run Job temporal que se borra al terminar
 (así la clave no queda guardada en la configuración del job):

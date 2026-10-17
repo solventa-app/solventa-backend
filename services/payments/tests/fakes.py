@@ -31,6 +31,7 @@ class RepositorioCobrosFalso:
                 "id": cobro_id,
                 "id_intento_cobro": orden["id_intento_cobro"],
                 "poliza_id": orden["poliza_id"],
+                "cliente_id": orden.get("cliente_id"),
                 "monto": orden["monto"],
                 "moneda": orden["moneda"],
                 "token_medio_pago": orden["token_medio_pago"],

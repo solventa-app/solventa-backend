@@ -6,7 +6,7 @@ stack real de `docker compose`, sin escribir código.
 
 | Archivo | Contenido |
 |---|---|
-| `solventa-bff.postman_collection.json` | Colección: 54 peticiones y 122 aserciones, en 10 carpetas |
+| `solventa-bff.postman_collection.json` | Colección: 55 peticiones y 126 aserciones, en 10 carpetas |
 | `solventa-local.postman_environment.json` | Entorno local: `bff_url`, `auth_url`, `acl_url`, `payments_url`, `stub_open_finance_url`, `stub_pasarela_url` y las credenciales **solo locales** del BACKOFFICE (`usuario_backoffice`, `clave_backoffice`) |
 
 ## Qué cubre
@@ -14,7 +14,7 @@ stack real de `docker compose`, sin escribir código.
 | Carpeta | Qué verifica | Criterio / escenario |
 |---|---|---|
 | 0. Salud | `/health` y `/metrics` del BFF | — |
-| 1. Autenticación y usuarios | Login del BACKOFFICE, `yo`, alta de ASESOR y CLIENTE (alias únicos por corrida), alias repetido o con forma de correo, clave errónea y login de cada rol; guarda los tokens | HU-M02 |
+| 1. Autenticación y usuarios | Login del BACKOFFICE, `yo`, alta de ASESOR y de CLIENTE con nombre (alias únicos por corrida; un ASESOR con nombre se rechaza), alias repetido o con forma de correo, clave errónea y login de cada rol; guarda los tokens | HU-M02 |
 | 2. Consentimiento | `registrarConsentimiento` como ASESOR, y en AUTH que el actor es ese ASESOR | CA-W01-02, CA-W01-11 |
 | 3. Oferta con proveedores sanos | Oferta COMPLETA en los canales web y móvil, 5 fuentes, prima puntual, dinero como texto; `oferta(id)` devuelve `null` | CA-W01-03, CA-W01-06 |
 | 4. Degradación | Con Open Finance lento: oferta PRELIMINAR, rango de prima, fuentes en CACHE, sin error; luego restaura el stub y espera a que cierren los circuitos | CA-W01-04, EC009 / EC010 |
@@ -22,7 +22,7 @@ stack real de `docker compose`, sin escribir código.
 | 6. Contacto y revocación | `contactarAsesor`, `revocarConsentimiento`, y que la oferta se rechace después de revocar | CA-W01-07, CA-W01-08 |
 | 7. Autorización por rol | CLIENTE no lista usuarios ni cobros ni crea cobros, BACKOFFICE no cotiza, ASESOR no crea usuarios, token alterado y sin token | HU-M02 |
 | 8. Suspensión | El BACKOFFICE suspende al CLIENTE y su login se rechaza; suspender un id inexistente | HU-M02 |
-| 9. Cobros y conciliación | Pasarela lenta: `crearCobro` en el BFF deja el cobro `pendiente` en PAYMENTS aunque la pasarela sí cobró; `cobros(polizaId)` lo muestra; `reintentarCobro` concilia y queda `COBRADO` con **la misma referencia de la pasarela** (sin doble cobro); doble clic sin efecto; reenviar el mismo `idIntentoCobro` devuelve el mismo cobro y con otro monto da `ErrorCobro`; un rechazo con su motivo y que no se puede reintentar; `cobros` sin token exige sesión | CA-W05-01, CA-W05-02 |
+| 9. Cobros y conciliación | Pasarela lenta: `crearCobro` en el BFF deja el cobro `pendiente` en PAYMENTS aunque la pasarela sí cobró; `cobros(polizaId)` lo muestra; `reintentarCobro` concilia y queda `COBRADO` con **la misma referencia de la pasarela** (sin doble cobro); doble clic sin efecto; los cobros llevan `clienteId` y la tabla muestra el nombre del cliente; reenviar el mismo `idIntentoCobro` devuelve el mismo cobro y con otro monto da `ErrorCobro`; un rechazo con su motivo y que no se puede reintentar; `cobros` sin token exige sesión | CA-W05-01, CA-W05-02 |
 
 **Autenticación:** la colección usa por defecto el token del ASESOR (`Bearer {{token_asesor}}`, en la autenticación de
 la colección). Las peticiones que prueban otro rol lo indican en su propia autenticación, y las que no son del BFF

@@ -91,6 +91,39 @@ def test_post_cobros_ya_no_acepta_el_nombre_anterior() -> None:
     assert r.status_code == 422
 
 
+def test_post_cobros_guarda_y_devuelve_el_cliente_id() -> None:
+    with _cliente()[0] as client:
+        creado = client.post("/cobros", json={**ORDEN, "cliente_id": "u-cliente-1"}).json()
+        leido = client.get(f"/cobros/{creado['id']}").json()
+
+    assert creado["cliente_id"] == "u-cliente-1"
+    assert leido["cliente_id"] == "u-cliente-1"
+
+
+def test_post_cobros_sin_cliente_id_sigue_funcionando() -> None:
+    with _cliente()[0] as client:
+        r = client.post("/cobros", json=ORDEN)
+
+    assert r.status_code == 200
+    assert r.json()["cliente_id"] is None
+
+
+def test_post_cobros_mismo_intento_con_otro_cliente_responde_409() -> None:
+    with _cliente()[0] as client:
+        client.post("/cobros", json={**ORDEN, "cliente_id": "u-cliente-1"})
+        r = client.post("/cobros", json={**ORDEN, "cliente_id": "u-cliente-2"})
+
+    assert r.status_code == 409
+
+
+def test_la_respuesta_nunca_trae_el_token_del_medio_de_pago() -> None:
+    with _cliente()[0] as client:
+        r = client.post("/cobros", json=ORDEN)
+
+    assert "token_medio_pago" not in r.json()
+    assert ORDEN["token_medio_pago"] not in r.text
+
+
 def test_get_balance_suma_solo_cobros_cobrados() -> None:
     with _cliente()[0] as client:
         client.post("/cobros", json=ORDEN)

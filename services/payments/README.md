@@ -6,7 +6,7 @@ PAYMENTS: cobros con pasarela tokenizada.
 
 PAYMENTS procesa el cobro de primas e indemnizaciones con **pasarela tokenizada** (HU-W05). Ningún dato de tarjeta toca servidores propios (EC031): `token_medio_pago` es el token opaco del proveedor PCI-DSS, no un dato de tarjeta real.
 
-- `POST /cobros`: recibe `id_intento_cobro`, `poliza_id`, `monto` (texto decimal, nunca float), `moneda`, `token_medio_pago` — el mismo shape que ya acepta `acl-worker` en `POST /pagos/cobrar` (`OrdenCobro`); no se inventa un contrato nuevo entre PAYMENTS y el ACL Worker.
+- `POST /cobros`: recibe `id_intento_cobro`, `poliza_id`, `cliente_id` (opcional: solo el id del CLIENTE en AUTH; el nombre nunca se guarda aquí), `monto` (texto decimal, nunca float), `moneda`, `token_medio_pago` — el mismo shape que ya acepta `acl-worker` en `POST /pagos/cobrar` (`OrdenCobro`); no se inventa un contrato nuevo entre PAYMENTS y el ACL Worker.
 - **Idempotencia real a nivel de base de datos (CA-W05-04):** un mismo intento recibido dos veces (incluso en paralelo) se ejecuta una sola vez. `id_intento_cobro` es `UNIQUE` en PostgreSQL; el `INSERT ... ON CONFLICT (id_intento_cobro) DO NOTHING RETURNING ...` es correcto bajo concurrencia real (ver "Diseño" abajo), no solo un `SELECT` seguido de un `INSERT`.
 - Estados de cobro: `cobrando` → `cobrado` / `rechazado` / `pendiente` (PostgreSQL, base `payments`, única que escribe esta tabla — regla de escritor único).
 - `GET /polizas/{poliza_id}/balance`: suma los `monto` de los cobros en estado `cobrado` de esa póliza. No cubre balances de indemnización (Sprint 3, HU-W04/HU-M04).

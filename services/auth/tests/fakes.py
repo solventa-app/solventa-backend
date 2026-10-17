@@ -4,6 +4,11 @@ from datetime import UTC, datetime
 
 from argon2 import PasswordHasher
 
+from app.cifrado import CifradorAesGcm
+
+# Llave fija de pruebas (32 bytes); no es la local ni una real.
+CIFRADOR_PRUEBAS = CifradorAesGcm(b"0123456789abcdef0123456789abcdef")
+
 # argon2 con costo mínimo: mismas reglas, pero las pruebas no tardan segundos.
 HASHER_RAPIDO = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
 
@@ -14,7 +19,14 @@ class RepositorioUsuariosMemoria:
     def __init__(self) -> None:
         self.filas: dict[str, dict] = {}
 
-    def crear(self, usuario_id: str, alias: str, hash_clave: str, rol: str) -> dict | None:
+    def crear(
+        self,
+        usuario_id: str,
+        alias: str,
+        hash_clave: str,
+        rol: str,
+        nombre_cifrado: str | None = None,
+    ) -> dict | None:
         if any(f["usuario"] == alias for f in self.filas.values()):
             return None
         fila = {
@@ -26,9 +38,19 @@ class RepositorioUsuariosMemoria:
             "intentos_fallidos": 0,
             "bloqueado_hasta": None,
             "creado_en": datetime.now(UTC),
+            "nombre_cifrado": nombre_cifrado,
         }
         self.filas[usuario_id] = fila
         return dict(fila)
+
+    def nombres_cifrados(self, ids: list[str]) -> dict[str, str]:
+        return {
+            i: self.filas[i]["nombre_cifrado"]
+            for i in ids
+            if i in self.filas
+            and self.filas[i]["rol"] == "CLIENTE"
+            and self.filas[i]["nombre_cifrado"] is not None
+        }
 
     def obtener(self, usuario_id: str) -> dict | None:
         fila = self.filas.get(usuario_id)

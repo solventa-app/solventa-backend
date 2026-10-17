@@ -89,6 +89,9 @@ class AuthFalso:
         )
         self.falla = falla
         self.actores: list[dict | None] = []
+        # Nombres de CLIENTE por id y las consultas hechas (para probar el lote).
+        self.nombres: dict[str, str] = {}
+        self.consultas_de_nombres: list[list[str]] = []
         # Usuarios conocidos por id; `claves` guarda alias -> clave (solo en el doble).
         self.usuarios: dict[str, dict] = {
             "u-1": _usuario_publico("u-1", "asesor.uno", "ASESOR"),
@@ -140,7 +143,15 @@ class AuthFalso:
     async def listar_usuarios(self, rol: str | None) -> list[dict]:
         return [u for u in self.usuarios.values() if rol is None or u["rol"] == rol]
 
-    async def crear_usuario(self, usuario: str, clave: str, rol: str) -> dict:
+    async def nombres_de_clientes(self, ids: list[str]) -> dict[str, str]:
+        if self.falla:
+            raise ErrorServicio("caido")
+        self.consultas_de_nombres.append(list(ids))
+        return {i: self.nombres[i] for i in ids if i in self.nombres}
+
+    async def crear_usuario(
+        self, usuario: str, clave: str, rol: str, nombre: str | None = None
+    ) -> dict:
         if "@" in usuario:
             raise SolicitudInvalida("El usuario no puede ser un correo ni un número de documento.")
         if any(u["usuario"] == usuario for u in self.usuarios.values()):
@@ -148,6 +159,8 @@ class AuthFalso:
         nuevo = _usuario_publico(str(uuid.uuid4()), usuario, rol)
         self.usuarios[nuevo["id"]] = nuevo
         self.claves[usuario] = clave
+        if nombre is not None:
+            self.nombres[nuevo["id"]] = nombre
         return nuevo
 
     async def cambiar_rol_usuario(self, usuario_id: str, rol: str) -> dict | None:
@@ -273,6 +286,7 @@ class PaymentsFalso:
             orden["poliza_id"],
             "cobrado",
             id_intento_cobro=orden["id_intento_cobro"],
+            cliente_id=orden.get("cliente_id"),
             monto=orden["monto"],
             moneda=orden["moneda"],
         )

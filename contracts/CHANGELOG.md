@@ -42,3 +42,12 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   quita `claveIdempotencia` y `idIntentoCobro` es obligatorio. Es una excepción a las reglas 1 y 2 (no se esperó un
   sprint con el campo obsoleto): el evento aún no tiene consumidores, porque no hay Pub/Sub real ni nada desplegado.
 - Afecta al frontend: no (el frontend no consume eventos).
+
+## v0.5 — 2026-10-17
+
+- KAN-28: el back-office ve el nombre del cliente en los cobros. Tipo nuevo `ClienteCobro { id, nombre }`; `Cobro` suma
+  `cliente` (opcional); `CrearCobroInput` suma `clienteId` (opcional); `CrearUsuarioInput` suma `nombre` (opcional, solo
+  para CLIENTE). Solo cambios aditivos.
+- El nombre es dato personal: AUTH lo guarda cifrado y solo sale por `cobros` (solo BACKOFFICE, con token). `Usuario` no
+  lo expone. Si AUTH no responde, el cobro llega con `cliente.nombre` en `null`, nunca un error.
+- Afecta al frontend: sí (la tabla de cobros puede mostrar el cliente; el alta de CLIENTE puede pedir el nombre).

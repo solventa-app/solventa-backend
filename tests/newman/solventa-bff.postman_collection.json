@@ -316,9 +316,62 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Prueba\"\n    }\n  }\n}"
             },
-            "description": "El BACKOFFICE crea un CLIENTE.",
+            "description": "El BACKOFFICE crea un CLIENTE con nombre. AUTH lo guarda cifrado y el usuario no lo devuelve.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "crearUsuario ASESOR con nombre: solo los clientes tienen nombre",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json().data.crearUsuario;",
+                  "pm.test('ErrorUsuario con mensaje', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorUsuario');",
+                  "  pm.expect(r.mensaje).to.include('Solo los clientes');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}x\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\",\n      \"nombre\": \"Cliente Newman Prueba\"\n    }\n  }\n}"
+            },
+            "description": "El nombre es solo de los clientes: para un ASESOR AUTH responde 400 y el BFF lo devuelve como ErrorUsuario.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -2081,7 +2134,11 @@
                   "  pm.expect(c.__typename).to.eql('Cobro');",
                   "  pm.expect(c.estado).to.eql('PENDIENTE');",
                   "});",
-                  "pm.collectionVariables.set('id_cobro', c.id);"
+                  "pm.collectionVariables.set('id_cobro', c.id);",
+                  "pm.test('trae el cliente con su nombre', () => {",
+                  "  pm.expect(c.cliente.id).to.eql(pm.collectionVariables.get('id_cliente'));",
+                  "  pm.expect(c.cliente.nombre).to.eql('Cliente Newman Prueba');",
+                  "});"
                 ]
               }
             }
@@ -2117,7 +2174,7 @@
             "description": "El back-office ordena el cobro desde el BFF. El ACL corta a los 700 ms y PAYMENTS lo registra pendiente, aunque la pasarela sí cobró.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id estado monto { valor moneda } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_cobro}}\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"monto\": {\n        \"valor\": \"90000.00\",\n        \"moneda\": \"COP\"\n      },\n      \"tokenMedioPago\": \"tok_newman\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id cliente { id nombre } estado monto { valor moneda } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_cobro}}\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"monto\": {\n        \"valor\": \"90000.00\",\n        \"moneda\": \"COP\"\n      },\n      \"tokenMedioPago\": \"tok_newman\",\n      \"clienteId\": \"{{id_cliente}}\"\n    }\n  }\n}"
             }
           }
         },
@@ -2225,6 +2282,9 @@
                   "pm.test('trae monto como texto decimal y fecha', () => {",
                   "  pm.expect(lista[0].monto).to.eql({ valor: '90000.00', moneda: 'COP' });",
                   "  pm.expect(lista[0].actualizadoEn).to.be.a('string');",
+                  "});",
+                  "pm.test('la tabla muestra el nombre del cliente (dato personal, solo BACKOFFICE)', () => {",
+                  "  pm.expect(lista[0].cliente.nombre).to.eql('Cliente Newman Prueba');",
                   "});"
                 ]
               }
@@ -2261,7 +2321,7 @@
             "description": "La tabla de cobros por póliza (CA-W05-01). Puede verse PENDIENTE o ya COBRADO si el bucle automático (cada 5 s) se adelantó al botón.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($poliza: ID, $estado: EstadoCobro) {\\n  cobros(polizaId: $poliza, estado: $estado) {\\n    id polizaId estado monto { valor moneda } actualizadoEn motivo intentos\\n  }\\n}\",\n  \"variables\": {\n    \"poliza\": \"{{poliza_cobro}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($poliza: ID, $estado: EstadoCobro) {\\n  cobros(polizaId: $poliza, estado: $estado) {\\n    id polizaId estado monto { valor moneda } actualizadoEn motivo intentos cliente { id nombre }\\n  }\\n}\",\n  \"variables\": {\n    \"poliza\": \"{{poliza_cobro}}\"\n  }\n}"
             }
           }
         },
@@ -2463,7 +2523,7 @@
             "description": "Un doble clic o un reintento del frontend no crea otro cobro ni vuelve a cobrar.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id estado monto { valor moneda } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_cobro}}\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"monto\": {\n        \"valor\": \"90000.00\",\n        \"moneda\": \"COP\"\n      },\n      \"tokenMedioPago\": \"tok_newman\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id cliente { id nombre } estado monto { valor moneda } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_cobro}}\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"monto\": {\n        \"valor\": \"90000.00\",\n        \"moneda\": \"COP\"\n      },\n      \"tokenMedioPago\": \"tok_newman\",\n      \"clienteId\": \"{{id_cliente}}\"\n    }\n  }\n}"
             }
           }
         },
@@ -2518,7 +2578,7 @@
             "description": "PAYMENTS responde 409 y el BFF lo traduce a ErrorCobro con un mensaje para el usuario.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id estado monto { valor moneda } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_cobro}}\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"monto\": {\n        \"valor\": \"1.00\",\n        \"moneda\": \"COP\"\n      },\n      \"tokenMedioPago\": \"tok_newman\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id cliente { id nombre } estado monto { valor moneda } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_cobro}}\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"monto\": {\n        \"valor\": \"1.00\",\n        \"moneda\": \"COP\"\n      },\n      \"tokenMedioPago\": \"tok_newman\",\n      \"clienteId\": \"{{id_cliente}}\"\n    }\n  }\n}"
             }
           }
         },
@@ -2612,7 +2672,7 @@
             "description": "Con la pasarela en modo rechaza, el cobro queda rechazado con su motivo.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id estado monto { valor moneda } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_rechazo}}\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"monto\": {\n        \"valor\": \"90000.00\",\n        \"moneda\": \"COP\"\n      },\n      \"tokenMedioPago\": \"tok_newman\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id cliente { id nombre } estado monto { valor moneda } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_rechazo}}\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"monto\": {\n        \"valor\": \"90000.00\",\n        \"moneda\": \"COP\"\n      },\n      \"tokenMedioPago\": \"tok_newman\",\n      \"clienteId\": \"{{id_cliente}}\"\n    }\n  }\n}"
             }
           }
         },

@@ -36,6 +36,8 @@ class OrdenCobroRequest(BaseModel):
     # Lo genera quien ordena el cobro y lo reenvía igual al repetir (CA-W05-04).
     id_intento_cobro: str = Field(min_length=1)
     poliza_id: str = Field(min_length=1)
+    # El usuario CLIENTE de AUTH a quien se le cobra. Solo el id: el nombre vive en AUTH.
+    cliente_id: str | None = Field(default=None, min_length=1)
     monto: str = Field(min_length=1)
     moneda: str = Field(min_length=1)
     token_medio_pago: str = Field(min_length=1)
@@ -49,6 +51,7 @@ class CobroResponse(BaseModel):
     id: str
     id_intento_cobro: str
     poliza_id: str
+    cliente_id: str | None = None
     monto: str
     moneda: str
     estado: str

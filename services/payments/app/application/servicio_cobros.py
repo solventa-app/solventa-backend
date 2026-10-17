@@ -42,6 +42,7 @@ def _mismo_monto(a: str, b: str) -> bool:
 def _misma_orden(cobro: dict[str, Any], orden: dict[str, Any]) -> bool:
     return (
         cobro["poliza_id"] == orden["poliza_id"]
+        and cobro.get("cliente_id") == orden.get("cliente_id")
         and cobro["moneda"] == orden["moneda"]
         and cobro["token_medio_pago"] == orden["token_medio_pago"]
         and _mismo_monto(cobro["monto"], orden["monto"])

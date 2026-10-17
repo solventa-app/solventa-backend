@@ -25,7 +25,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 _COLUMNAS = (
-    "id, id_intento_cobro, poliza_id, monto, moneda, token_medio_pago, "
+    "id, id_intento_cobro, poliza_id, cliente_id, monto, moneda, token_medio_pago, "
     "estado, referencia, motivo, intentos, creado_en, actualizado_en"
 )
 
@@ -39,14 +39,15 @@ class RepositorioCobrosPostgres:
             fila = conexion.execute(
                 f"""
                 INSERT INTO cobros
-                    (id, id_intento_cobro, poliza_id, monto, moneda, token_medio_pago, estado)
+                    (id, id_intento_cobro, poliza_id, cliente_id, monto, moneda,
+                     token_medio_pago, estado)
                 VALUES
-                    (%(id)s, %(id_intento_cobro)s, %(poliza_id)s, %(monto)s, %(moneda)s,
-                     %(token_medio_pago)s, 'cobrando')
+                    (%(id)s, %(id_intento_cobro)s, %(poliza_id)s, %(cliente_id)s, %(monto)s,
+                     %(moneda)s, %(token_medio_pago)s, 'cobrando')
                 ON CONFLICT (id_intento_cobro) DO NOTHING
                 RETURNING {_COLUMNAS}
                 """,
-                {"id": cobro_id, **orden},
+                {"id": cobro_id, "cliente_id": None, **orden},
             ).fetchone()
             if fila is not None:
                 return dict(fila), True

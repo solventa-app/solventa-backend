@@ -47,7 +47,7 @@ Tabla `usuarios` en la base `auth`: `id`, `usuario` (alias único), `hash_clave`
 | `registrarConsentimiento`, `revocarConsentimiento` | ✅ | ✅ (en nombre del cliente) | ❌ | ✅ como antes |
 | `solicitarOferta`, `oferta`, `contactarAsesor` | ✅ | ✅ | ❌ | ✅ como antes |
 | `cobros`, `crearCobro`, `reintentarCobro` (KAN-28, datos de pagos) | ❌ | ❌ | ✅ | ❌ siempre exige token |
-| `usuarios`, `crearUsuario`, `cambiarRolUsuario`, `suspenderUsuario` | ❌ | ❌ | ✅ | ❌ siempre exige token |
+| `usuarios`, `crearUsuario` (con `nombre` para CLIENTE), `cambiarRolUsuario`, `suspenderUsuario` | ❌ | ❌ | ✅ | ❌ siempre exige token |
 | `yo` | ✅ | ✅ | ✅ | ❌ siempre exige token |
 | `iniciarSesion` | pública | pública | pública | pública |
 

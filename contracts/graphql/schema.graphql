@@ -112,6 +112,13 @@ enum EstadoCobro {
   PENDIENTE
 }
 
+# Quién es el cliente de un cobro. El nombre es dato personal: solo lo ve el BACKOFFICE
+# y puede venir vacío si AUTH no responde o el cliente no tiene nombre registrado.
+type ClienteCobro {
+  id: ID!
+  nombre: String
+}
+
 type Cobro {
   id: ID!
   polizaId: ID!
@@ -120,6 +127,7 @@ type Cobro {
   actualizadoEn: DateTime!
   motivo: String # por qué quedó pendiente o rechazado (p. ej. pasarela_no_disponible)
   intentos: Int # cuántas veces se intentó cobrar
+  cliente: ClienteCobro # null en cobros creados sin clienteId
 }
 
 input MontoInput {
@@ -132,6 +140,9 @@ input CrearCobroInput {
   # así un doble clic o un reintento no cobra dos veces.
   idIntentoCobro: ID!
   polizaId: ID!
+  # El cliente (usuario CLIENTE de AUTH) a quien se le cobra. Mientras no exista el servicio de
+  # pólizas, nada valida que la póliza sea de ese cliente.
+  clienteId: ID
   monto: MontoInput!
   tokenMedioPago: String! # token del proveedor PCI-DSS; nunca datos de tarjeta
 }
@@ -191,6 +202,7 @@ input CrearUsuarioInput {
   usuario: String!
   clave: String!
   rol: RolUsuario!
+  nombre: String # solo para CLIENTE (2 a 100 caracteres); se guarda cifrado y no se devuelve
 }
 
 # ---------- Operaciones ----------
