@@ -184,10 +184,28 @@ resource "google_cloud_run_v2_service" "servicio" {
           memory = "512Mi"
         }
         cpu_idle = true
+        # Más CPU solo mientras arranca el contenedor: acorta el arranque en frío (mínimo 0 instancias).
+        startup_cpu_boost = true
       }
 
       dynamic "env" {
         for_each = try(each.value.entorno, {})
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      # Disparadores externos (tareas.tf): quién dispara el trabajo de fondo, y lo que Cloud Tasks necesita para
+      # firmar y dirigir la tarea. Solo con `crear_tareas` y en los servicios que lo declaran.
+      dynamic "env" {
+        for_each = contains(keys(local.con_disparador_externo), each.key) ? {
+          DISPARADOR    = "externo"
+          GCP_PROYECTO  = var.project_id
+          GCP_REGION    = var.region
+          URL_PROPIA    = local.url[each.key]
+          TAREAS_CUENTA = google_service_account.runtime[each.key].email
+        } : {}
         content {
           name  = env.key
           value = env.value

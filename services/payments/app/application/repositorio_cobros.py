@@ -24,6 +24,8 @@ transacciones en Python."""
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
+from app.application.cifrado import CifradorCampos
+
 _COLUMNAS = (
     "id, id_intento_cobro, poliza_id, cliente_id, monto, moneda, token_medio_pago, "
     "estado, referencia, motivo, intentos, reintentos_rechazo, referencia_pasarela, "
@@ -32,10 +34,26 @@ _COLUMNAS = (
 
 
 class RepositorioCobrosPostgres:
-    def __init__(self, pool: ConnectionPool) -> None:
+    """`cifrador`: el `token_medio_pago` se guarda cifrado (HA-SEG-002, EC022) y se descifra al
+    leer, así que quien usa el repositorio siempre ve el token en claro. Se omite solo en
+    pruebas."""
+
+    def __init__(self, pool: ConnectionPool, cifrador: CifradorCampos | None = None) -> None:
         self._pool = pool
+        self._cifrador = cifrador
+
+    def _a_cobro(self, fila: dict) -> dict:
+        cobro = dict(fila)
+        if self._cifrador is not None:
+            cobro["token_medio_pago"] = self._cifrador.descifrar(
+                cobro["token_medio_pago"], cobro["id"]
+            )
+        return cobro
 
     def crear_o_obtener(self, cobro_id: str, orden: dict) -> tuple[dict, bool]:
+        token = orden["token_medio_pago"]
+        if self._cifrador is not None:
+            token = self._cifrador.cifrar(token, cobro_id)
         with self._pool.connection() as conexion:
             fila = conexion.execute(
                 f"""
@@ -48,16 +66,16 @@ class RepositorioCobrosPostgres:
                 ON CONFLICT (id_intento_cobro) DO NOTHING
                 RETURNING {_COLUMNAS}
                 """,
-                {"id": cobro_id, "cliente_id": None, **orden},
+                {"id": cobro_id, "cliente_id": None, **orden, "token_medio_pago": token},
             ).fetchone()
             if fila is not None:
-                return dict(fila), True
+                return self._a_cobro(fila), True
 
             fila_existente = conexion.execute(
                 f"SELECT {_COLUMNAS} FROM cobros WHERE id_intento_cobro = %(id_intento_cobro)s",
                 {"id_intento_cobro": orden["id_intento_cobro"]},
             ).fetchone()
-            return dict(fila_existente), False
+            return self._a_cobro(fila_existente), False
 
     def actualizar_estado(
         self, cobro_id: str, estado: str, referencia: str | None, motivo: str | None
@@ -73,7 +91,7 @@ class RepositorioCobrosPostgres:
                 """,
                 {"id": cobro_id, "estado": estado, "referencia": referencia, "motivo": motivo},
             ).fetchone()
-            return dict(fila)
+            return self._a_cobro(fila)
 
     def actualizar_estado_y_contar_intento(
         self, cobro_id: str, estado: str, referencia: str | None, motivo: str | None
@@ -92,7 +110,7 @@ class RepositorioCobrosPostgres:
                 """,
                 {"id": cobro_id, "estado": estado, "referencia": referencia, "motivo": motivo},
             ).fetchone()
-            return dict(fila)
+            return self._a_cobro(fila)
 
     def iniciar_reintento_rechazo(self, cobro_id: str, maximo: int) -> dict | None:
         """Reintento manual de un `rechazado` (CA-W05-02). En una sola sentencia: lo pasa a
@@ -112,7 +130,7 @@ class RepositorioCobrosPostgres:
                 """,
                 {"id": cobro_id, "maximo": maximo},
             ).fetchone()
-            return dict(fila) if fila is not None else None
+            return self._a_cobro(fila) if fila is not None else None
 
     def listar_pendientes(self, max_intentos: int) -> list[dict]:
         with self._pool.connection() as conexion:
@@ -124,14 +142,29 @@ class RepositorioCobrosPostgres:
                 """,
                 {"max_intentos": max_intentos},
             ).fetchall()
-            return [dict(fila) for fila in filas]
+            return [self._a_cobro(fila) for fila in filas]
+
+    def listar_atascados(self, minutos: float) -> list[dict]:
+        """Cobros que quedaron en `cobrando` porque el proceso se cayó a mitad del cobro: ya pasaron
+        más de `minutos` desde su último cambio, mucho más de lo que tarda una llamada al ACL."""
+        with self._pool.connection() as conexion:
+            filas = conexion.execute(
+                f"""
+                SELECT {_COLUMNAS} FROM cobros
+                WHERE estado = 'cobrando'
+                  AND actualizado_en < now() - make_interval(secs => %(segundos)s)
+                ORDER BY creado_en ASC
+                """,
+                {"segundos": minutos * 60},
+            ).fetchall()
+            return [self._a_cobro(fila) for fila in filas]
 
     def obtener(self, cobro_id: str) -> dict | None:
         with self._pool.connection() as conexion:
             fila = conexion.execute(
                 f"SELECT {_COLUMNAS} FROM cobros WHERE id = %(id)s", {"id": cobro_id}
             ).fetchone()
-            return dict(fila) if fila is not None else None
+            return self._a_cobro(fila) if fila is not None else None
 
     def listar(self, poliza_id: str | None, estado: str | None) -> list[dict]:
         """Para la tabla del back-office (CA-W05-01); ambos filtros son opcionales."""
@@ -145,7 +178,7 @@ class RepositorioCobrosPostgres:
                 """,
                 {"poliza_id": poliza_id, "estado": estado},
             ).fetchall()
-            return [dict(fila) for fila in filas]
+            return [self._a_cobro(fila) for fila in filas]
 
     def balance_poliza(self, poliza_id: str) -> str:
         with self._pool.connection() as conexion:
@@ -161,6 +194,8 @@ class RepositorioCobrosPostgres:
 
 
 def construir_pool(database_url: str) -> ConnectionPool:
+    if not database_url:
+        raise ValueError("Falta DATABASE_URL")
     return ConnectionPool(
         database_url,
         min_size=1,

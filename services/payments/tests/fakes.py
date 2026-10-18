@@ -3,7 +3,7 @@ levantar PostgreSQL ni el ACL Worker reales (mismo patrón de las pruebas de
 `acl-worker`/`risk`: fakes en vez de mocks)."""
 
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.application.cliente_acl import OrdenCobro, ResultadoCobro, ResultadoConsulta
@@ -90,6 +90,22 @@ class RepositorioCobrosFalso:
                 for cobro in self._por_id.values()
                 if cobro["estado"] == "pendiente" and cobro["intentos"] < max_intentos
             ]
+
+    def listar_atascados(self, minutos: float) -> list[dict]:
+        limite = datetime.now(UTC) - timedelta(minutes=minutos)
+        with self._lock:
+            return [
+                dict(cobro)
+                for cobro in self._por_id.values()
+                if cobro["estado"] == "cobrando" and cobro["actualizado_en"] < limite
+            ]
+
+    def envejecer(self, cobro_id: str, minutos: float) -> None:
+        """Solo para pruebas: hace que el último cambio del cobro sea de hace `minutos`."""
+        with self._lock:
+            self._por_id[cobro_id]["actualizado_en"] = datetime.now(UTC) - timedelta(
+                minutes=minutos
+            )
 
     def obtener(self, cobro_id: str) -> dict | None:
         with self._lock:

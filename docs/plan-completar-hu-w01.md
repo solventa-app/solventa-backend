@@ -33,6 +33,7 @@
 | 21 | Revocar el consentimiento | El titular **debe poder revocar** (Ley 1581 de 2012; CA-W01-08 y el plan de pruebas: revocación en < 5 min). Como el prototipo no tiene esa pantalla, en el Sprint 1 se cumple en el **backend** (`revocarConsentimiento`, ya existe) con su prueba de los 5 minutos. La pantalla se agrega cuando exista en Figma (Sprint 2). |
 | 22 | Decisiones del Planning | D-02 (sesión causal), D-05 (stubs) y D-06 (W05 en el Sprint 1) **cerradas**: ya están hechas. D-04 cerrada en la decisión 6. Solo **D-01** (base de velocidad) sigue abierta para el Planning; D-03 es del Sprint 2. |
 | 23 | Vencimiento del consentimiento | Hoy no vence nunca (vigente = no revocado). Se agrega **vencimiento de 30 días** (configurable con `CONSENTIMIENTO_VIGENCIA_DIAS`) en el bloque 4: columna `vence_en` en la base de AUTH, fijada al otorgarlo; vigente = no revocado **y** antes de `vence_en`. Se calcula al leer: no hace falta un cron. |
+| 24 | Trabajo en segundo plano | La sonda del circuito (LAT-002) y la reconciliación de fuentes del consolidador no corren en Cloud Run con `cpu_idle = true`. Se disparan con Cloud Scheduler y Cloud Tasks: lo construye el **bloque 0 del plan de W05** (`docs/plan-completar-hu-w05.md`, decisión W05-7). |
 
 Basado en la revisión de pendientes de HU-W01 (18 puntos, numerados P1–P3 abajo) y en las restricciones que puso el equipo el 2026-10-18:
 
@@ -86,7 +87,11 @@ OpenTelemetry hacia Cloud Trace. `tests/k6/README.md` ya lista los tres guiones 
 |---|---|
 | back | `tests/k6/perfilamiento-baseline.js` (EC003 p95 ≤ 400 ms, EC004 p99 ≤ 800 ms, ritmo de 20.000 req/h), `tests/k6/falla-proveedor.js` (EC009/EC010: stub en `lento`/`caido`, corte a 700 ms, 0 % de 5xx; copiado del Experimento 1) y `tests/k6/lectura-replica.js` (EC011/EC012 y lag; del Experimento 2). |
 | back | `scripts/correr_k6.sh`: corre los guiones contra la URL pública de staging (la del gateway cuando exista el bloque 10; antes, la del BFF) y guarda el resumen. |
-| back | Tableros `observabilidad/gcp/dashboards/hu-w01.json` y `hu-w05.json`: los paneles del tablero Servicios filtrados a los servicios de cada historia (W01: BFF, AUTH, ACL, RISK, RATING y stubs; W05: BFF, PAYMENTS, ACL y pasarela). Sin infraestructura nueva. |
+| back · compose | **Seguridad:** `grafana-gcp` solo en tu máquina: `ports: ["127.0.0.1:3200:3000"]` (hoy queda abierto a la red con acceso anónimo de administrador y tus credenciales de GCP). |
+| back · tableros | Tablero Servicios: los umbrales de 400/800 ms (EC003/EC004) solo sobre el **BFF** (y el gateway cuando exista); variable `servicio` de selección múltiple y dos enlaces, **W01** (BFF, AUTH, ACL, RISK, RATING y stubs) y **W05** (BFF, PAYMENTS, ACL y pasarela), en lugar de archivos duplicados por historia. |
+| back · tableros | Panel de peticiones por código de respuesta (4xx y 5xx), para ver el 422 de datos insuficientes y el 409 de idempotencia: el de 5xx solo queda vacío por diseño (regla 4). |
+| back · infra | **Métricas basadas en logs** en Terraform (capa gratuita de Cloud Monitoring): ofertas por tipo (COMPLETA, PRELIMINAR, ERROR), cambios de estado del circuito y cobros por estado, con sus paneles. Los servicios ya escriben esos eventos en el log, sin datos personales. |
+| back · tableros | Con el bloque 10: latencia y códigos del API Gateway (EC001/EC002). |
 | back | `docs/evidencias/EC003-EC004-<fecha>.md`, `EC009-EC010-<fecha>.md`, `EC011-EC012-<fecha>.md` y la corrida de Newman (`tests/newman/`, FC-06), con comando, cifras, límites y captura del tablero o de la traza. |
 
 ### Bloque 2 · Caché del score y journey degradado (P1 #3, #4)
@@ -138,7 +143,7 @@ Memorystore cuestan lo mismo que hoy y Atlas sigue gratis (M0). No hay que subir
 | Repo | Cambio |
 |---|---|
 | back | Un solo archivo de fuentes (`nombre`, `origen`, `peso`, `obligatoria`) que leen el BFF, el ACL y RATING; agregar una fuente es un adaptador más una fila. |
-| back | Prueba de EC031: cambiar el adaptador de la pasarela por otro que cumple el mismo puerto, sin tocar PAYMENTS ni el BFF; evidencia en `docs/evidencias/`. |
+| back | EC031 (cambiar la pasarela sin tocar el Core) lo lleva el plan de W05, bloque 2 (`docs/plan-completar-hu-w05.md`). |
 
 ### Bloque 6 · Seguridad en CI/CD (P2 #12)
 

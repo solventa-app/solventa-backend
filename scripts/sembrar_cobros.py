@@ -12,7 +12,10 @@ cobro para cada uno, usando el modo del stub de la pasarela para dejar cada esta
 Es idempotente: los alias y los `idIntentoCobro` son fijos, así que correrlo dos veces no
 duplica nada (los usuarios se reutilizan y los cobros se devuelven como estaban).
 
-Solo para local: necesita el stub de la pasarela (`STUB_PASARELA_URL`). Datos ficticios.
+Necesita el stub de la pasarela (`STUB_PASARELA_URL`) para poner cada cobro en su estado. Datos
+ficticios. En staging el stub es privado: pasa `TOKEN_PASARELA` (o deja que lo pida a `gcloud`) y
+apunta `BFF_URL` a la URL del gateway, con `USUARIO_BACKOFFICE` y `CLAVE_BACKOFFICE` de un operador
+real de staging (sus claves quedan en Secret Manager, ver `scripts/crear_usuarios.py`).
 
 Uso (con `docker compose --profile servicios up -d`):
     python3 scripts/sembrar_cobros.py
@@ -20,6 +23,7 @@ Uso (con `docker compose --profile servicios up -d`):
 
 import json
 import os
+import subprocess
 import sys
 import urllib.request
 
@@ -59,8 +63,29 @@ def _graphql(query: str, variables: dict, token: str | None = None) -> dict:
     return cuerpo["data"]
 
 
+def _token_pasarela() -> str | None:
+    """El stub de staging es privado (Cloud Run): pide un token de identidad. Local: ninguno."""
+    if os.getenv("TOKEN_PASARELA"):
+        return os.environ["TOKEN_PASARELA"]
+    if not STUB_PASARELA.startswith("https://"):
+        return None
+    try:
+        return subprocess.run(
+            ["gcloud", "auth", "print-identity-token", "--audiences=stub-pasarela"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        raise SystemExit(
+            "El stub de la pasarela es privado: define TOKEN_PASARELA "
+            "(gcloud auth print-identity-token --audiences=stub-pasarela)."
+        ) from None
+
+
 def _modo_pasarela(modo: str) -> None:
-    _http(f"{STUB_PASARELA}/control/modo", {"modo": modo})
+    _http(f"{STUB_PASARELA}/control/modo", {"modo": modo}, _token_pasarela())
 
 
 def _cliente(alias: str, nombre: str, token: str, existentes: dict[str, str]) -> str:

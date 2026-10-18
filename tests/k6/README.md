@@ -17,6 +17,20 @@ titular) vive en `lib/preparar.js`. Un BACKOFFICE **no** puede registrar consent
 `docs/autenticacion-usuarios.md`), por eso se usa un ASESOR. Si la preparación falla, la corrida se aborta: medir
 respuestas de error con HTTP 200 daría números sin sentido.
 
+Guiones de cobros (HU-W05, FC-10, plan de HU-W05 bloque 4). Prueba **reducida** (minutos, no horas): lo que se mide es
+la corrección (0 duplicados, 0 5xx) y la latencia del corte, no el rendimiento sostenido. Comparten `lib/cobros.js`.
+
+| Guion | Escenario | Qué verifica | Umbral |
+|---|---|---|---|
+| `cobros-idempotencia.js` | FC-10 / CA-W05-04 | 20 usuarios mandan el MISMO `idIntentoCobro` a la vez | exactamente 1 cobro en la base; 0 5xx |
+| `cobros-pasarela-lenta.js` | FC-10 / CA-W05-05 (EC009/EC010 en cobros) | 2 min con la pasarela en `lento`, luego `sano` | 0 % de 5xx y de `ErrorCobro`; p99 de `crearCobro` < 1,5 s; ≥ 95 % de los pendientes cobrados solos |
+
+Variables: `BFF_URL` (en staging, la del gateway), `USUARIO_BACKOFFICE`, `CLAVE_BACKOFFICE`, y para la pasarela lenta
+`STUB_PASARELA_URL` y `TOKEN_PASARELA` (`gcloud auth print-identity-token --audiences=stub-pasarela`). Ninguna clave va al repo.
+Antes de correr contra staging: *Costos staging → encender*, y `python3 scripts/sembrar_cobros.py` si hace falta el operador.
+
+Reglas:
+
 ## Cómo correrlos
 
 `scripts/correr_k6.sh` corre los cuatro guiones, guarda los JSON crudos en `tests/k6/resultados-crudos/` (ignorado

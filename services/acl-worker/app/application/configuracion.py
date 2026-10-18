@@ -20,6 +20,19 @@ class Configuracion:
     cola_reconciliacion_redis_url: str
     # "ninguna" en local; "id_token" en Cloud Run (los stubs de proveedores son privados).
     autenticacion_servicios: str = "ninguna"
+    # Qué adaptador de pasarela se usa (EC031): "estandar" o "alterna". Cambiar de proveedor es
+    # esto.
+    proveedor_pasarela: str = "estandar"
+    # Quién dispara la sonda: "bucle" (local y CI) o "externo" (Cloud Scheduler, en Cloud Run).
+    disparador: str = "bucle"
+    # Solo con DISPARADOR=externo (los fija Terraform): la cola de reconciliación de Cloud Tasks y a
+    # llama (el consolidador), con qué cuenta se firma la tarea.
+    tareas_proyecto: str = ""
+    tareas_region: str = ""
+    tareas_cola_reconciliacion: str = "reconciliacion-fuentes"
+    tareas_cuenta: str = ""
+    consolidador_url: str = ""
+
     # Bloque 2: servir caché en TTL y presupuesto reducido con caché (EC010 <= 500 ms).
     cache_servir_en_ttl: bool = False
     presupuesto_con_cache_ms: int = 300
@@ -50,6 +63,20 @@ class Configuracion:
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
         timeout_ms_default = os.getenv("TIMEOUT_MS", "700")
+        proveedor_pasarela = os.getenv("PROVEEDOR_PASARELA", "estandar")
+        if proveedor_pasarela not in ("estandar", "alterna"):
+            raise ValueError("PROVEEDOR_PASARELA debe ser 'estandar' o 'alterna'")
+        disparador = os.getenv("DISPARADOR", "bucle")
+        if disparador not in ("bucle", "externo"):
+            raise ValueError("DISPARADOR debe ser 'bucle' o 'externo'")
+        if disparador == "externo":
+            faltan = [
+                nombre
+                for nombre in ("GCP_PROYECTO", "GCP_REGION", "TAREAS_CUENTA", "CONSOLIDADOR_URL")
+                if not os.getenv(nombre)
+            ]
+            if faltan:
+                raise ValueError(f"DISPARADOR=externo exige {', '.join(faltan)}")
         return cls(
             redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/1"),
             open_finance_url=os.getenv("OPEN_FINANCE_URL", "http://localhost:8101"),
@@ -75,4 +102,13 @@ class Configuracion:
             presupuesto_ms_open_data=int(os.getenv("PRESUPUESTO_MS_OPEN_DATA", timeout_ms_default)),
             presupuesto_ms_pasarela=int(os.getenv("PRESUPUESTO_MS_PASARELA", timeout_ms_default)),
             fuentes_config_path=os.getenv("FUENTES_CONFIG_PATH") or None,
+            proveedor_pasarela=proveedor_pasarela,
+            disparador=disparador,
+            tareas_proyecto=os.getenv("GCP_PROYECTO", ""),
+            tareas_region=os.getenv("GCP_REGION", ""),
+            tareas_cola_reconciliacion=os.getenv(
+                "TAREAS_COLA_RECONCILIACION", "reconciliacion-fuentes"
+            ),
+            tareas_cuenta=os.getenv("TAREAS_CUENTA", ""),
+            consolidador_url=os.getenv("CONSOLIDADOR_URL", ""),
         )

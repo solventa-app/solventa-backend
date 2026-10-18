@@ -196,6 +196,11 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   pasarela es idempotente por referencia, cada reintento va con la suya (`{idIntentoCobro}-rN`, migración `0006` de
   PAYMENTS). Contrato v0.6: `Cobro.reintentosRestantes`. No se construye captura de tarjeta (CA-W05-03): el prototipo no
   la tiene y la prima se factura con la cuota del crédito (W03-02b). `scripts/sembrar_cobros.py` deja los datos de la demo.
+- **Cierre de HU-W05 (KAN-28, 2026-10-18, plan de HU-W05):** CA-W05-03 se entiende como «PAYMENTS solo recibe un token
+  opaco del proveedor y nunca datos de tarjeta» (sin pantalla de captura, como el prototipo); CA-W05-07 (orden de pago de
+  indemnización y balance en GraphQL) pasa al Sprint 3 con siniestros. Se agregan: token del medio de pago cifrado en la
+  base (HA-SEG-002, migración `0007`), reintento de cobros por Cloud Tasks y recuperación de cobros atascados (CA-W05-05),
+  y el segundo adaptador de pasarela que demuestra EC031 (CA-W05-06). Evidencia en `docs/evidencias/`.
 - **Nombre propio (KAN-28, 2026-10-18):** cada usuario ve su nombre al iniciar sesión (`Usuario.nombre` en
   `iniciarSesion` y `yo`, cifrado en AUTH y fuera del JWT). `Cobro.idTransaccion` llegó aparte con el reintento de rechazados.
   Los pagos siguen siendo solo del BACKOFFICE. Pedido por el front (KAN-207). **Tampoco estaba en el plan del sprint:**

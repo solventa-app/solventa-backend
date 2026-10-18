@@ -31,3 +31,7 @@ crear_metricas_logs     = true
 crear_batch             = true
 crear_gateway           = true
 calentar_camino_critico = false # poner en true solo durante la sesión de medición con k6
+
+# Disparadores externos (plan de HU-W05, bloque 0): Cloud Tasks para el reintento de cobros y Cloud Scheduler para la
+# sonda del circuito. Capa gratuita. Sin esto, en Cloud Run no corren los bucles de fondo.
+crear_tareas = true

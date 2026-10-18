@@ -50,6 +50,19 @@ class SolicitudModo(BaseModel):
     modo: Modo
 
 
+ESTADOS_ALTERNA = {"cobrado": "APPROVED", "rechazado": "DECLINED", "pendiente": "PENDING"}
+
+
+class SolicitudCobroAlterna(BaseModel):
+    """Segundo proveedor simulado (EC031): otra API, otros nombres de campos y otros estados."""
+
+    reference: str
+    policy: str
+    amount: str
+    currency: str
+    payment_token: str
+
+
 class SolicitudCobro(BaseModel):
     # "Comercio" es el punto de vista de la pasarela: el comercio somos nosotros.
     # Solventa la llama `id_intento_cobro` en su propio dominio, y el adaptador del
@@ -104,20 +117,16 @@ def create_app() -> FastAPI:
         estado["modo"] = body.modo
         return {"modo": estado["modo"]}
 
-    @app.post("/v1/cobros", tags=["proveedor"])
-    async def cobrar(
-        body: SolicitudCobro,
-        modo: str | None = None,
-        x_modo_simulado: str | None = Header(default=None),
-    ) -> dict:
-        modo_efectivo = _modo_efectivo(modo, x_modo_simulado)
-        await _fallar_si_corresponde(modo_efectivo)
+    async def _registrar_cobro(referencia: str, modo: str) -> dict:
+        """Registra el cobro por su referencia (una vez) y espera la respuesta simulada. Lo
+        comparten las dos APIs del stub: repetir la referencia devuelve el resultado original."""
+        await _fallar_si_corresponde(modo)
         async with candado:
-            resultado = cobros.get(body.referencia_comercio)
+            resultado = cobros.get(referencia)
             if resultado is None:
                 # Cobro nuevo. Se registra ANTES de la espera de `lento`: si el
                 # cliente corta, el cobro igual quedó hecho (como en la vida real).
-                if modo_efectivo == "rechaza":
+                if modo == "rechaza":
                     resultado = {
                         "estado": "rechazado",
                         "referencia": None,
@@ -129,10 +138,19 @@ def create_app() -> FastAPI:
                         "referencia": f"pg-{uuid.uuid4()}",
                         "motivo": None,
                     }
-                resultado["detalle"] = {"referencia_comercio": body.referencia_comercio}
-                cobros[body.referencia_comercio] = resultado
-        await _esperar_respuesta(modo_efectivo)
+                resultado["detalle"] = {"referencia_comercio": referencia}
+                cobros[referencia] = resultado
+        await _esperar_respuesta(modo)
         return resultado
+
+    @app.post("/v1/cobros", tags=["proveedor"])
+    async def cobrar(
+        body: SolicitudCobro,
+        modo: str | None = None,
+        x_modo_simulado: str | None = Header(default=None),
+    ) -> dict:
+        modo_efectivo = _modo_efectivo(modo, x_modo_simulado)
+        return await _registrar_cobro(body.referencia_comercio, modo_efectivo)
 
     @app.get("/v1/cobros/{referencia_comercio}", tags=["proveedor"])
     async def consultar_cobro(
@@ -147,6 +165,46 @@ def create_app() -> FastAPI:
         if resultado is None:
             raise HTTPException(status_code=404, detail="cobro no encontrado")
         return resultado
+
+    # --- Segundo proveedor (EC031): misma memoria de cobros y mismos modos, otra API ---
+
+    def _a_alterna(referencia: str, resultado: dict) -> dict:
+        return {
+            "status": ESTADOS_ALTERNA[resultado["estado"]],
+            "transaction_id": resultado["referencia"],
+            "decline_code": resultado["motivo"],
+            "reference": referencia,
+        }
+
+    @app.post("/alterna/v2/charges", tags=["proveedor-alterno"])
+    async def cobrar_alterna(
+        body: SolicitudCobroAlterna,
+        modo: str | None = None,
+        x_modo_simulado: str | None = Header(default=None),
+    ) -> dict:
+        modo_efectivo = _modo_efectivo(modo, x_modo_simulado)
+        resultado = await _registrar_cobro(body.reference, modo_efectivo)
+        return _a_alterna(body.reference, resultado)
+
+    @app.get("/alterna/v2/charges/{reference}", tags=["proveedor-alterno"])
+    async def consultar_cobro_alterna(
+        reference: str,
+        modo: str | None = None,
+        x_modo_simulado: str | None = Header(default=None),
+    ) -> dict:
+        await _aplicar_modo(_modo_efectivo(modo, x_modo_simulado))
+        resultado = cobros.get(reference)
+        if resultado is None:
+            raise HTTPException(status_code=404, detail="charge_not_found")
+        return _a_alterna(reference, resultado)
+
+    @app.get("/alterna/v2/status", tags=["proveedor-alterno"])
+    async def estado_alterna(
+        modo: str | None = None,
+        x_modo_simulado: str | None = Header(default=None),
+    ) -> dict:
+        await _aplicar_modo(_modo_efectivo(modo, x_modo_simulado))
+        return {"ok": True}
 
     @app.get("/v1/estado", tags=["proveedor"])
     async def estado_proveedor(

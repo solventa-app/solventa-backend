@@ -49,9 +49,9 @@ class Configuracion:
             if not usa_sobre_kms and cifrado_clave in (CIFRADO_CLAVE_LOCAL, VALOR_MARCADOR):
                 raise ValueError("CIFRADO_CLAVE no se ha cargado en Secret Manager")
         return cls(
-            # Sin contraseña a propósito: compose y Cloud Run fijan DATABASE_URL completa;
-            # fuera de ellos la contraseña va en PGPASSWORD (libpq la lee), no en el código.
-            database_url=os.getenv("DATABASE_URL", "postgresql://postgres@localhost:5432/auth"),
+            # Sin valor por defecto: compose y Cloud Run fijan DATABASE_URL completa, y una URL
+            # escrita aquí llevaría la contraseña (o ninguna). `construir_pool` falla claro.
+            database_url=os.getenv("DATABASE_URL", ""),
             jwt_secreto=secreto,
             jwt_vigencia_minutos=int(os.getenv("JWT_VIGENCIA_MINUTOS", "60")),
             cifrado_clave=cifrado_clave,

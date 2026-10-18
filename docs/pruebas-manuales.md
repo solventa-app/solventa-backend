@@ -257,6 +257,7 @@ los pasos anteriores.
 
 ```bash
 python3 scripts/humo_bff.py                                  # humo de punta a punta (necesita el stack arriba)
+python3 scripts/probar_cobros.py                              # HU-W05 de punta a punta: cobros y conciliación (también --staging, ver docs/cobros-conciliacion.md)
 npx --yes newman@6.2.2 run tests/newman/solventa-bff.postman_collection.json \
   -e tests/newman/solventa-local.postman_environment.json    # toda la colección contra el BFF (Node 18+)
 ```
