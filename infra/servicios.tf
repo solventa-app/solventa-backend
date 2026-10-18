@@ -72,6 +72,15 @@ resource "google_service_account" "runtime" {
   display_name = "Runtime de ${each.key}"
 }
 
+# Trazas distribuidas: cada servicio escribe las suyas en Cloud Trace (OpenTelemetry → API de Telemetry). Se activan con la
+# variable TRAZAS_GCP del servicio (.github/servicios.json). Solo escritura: la lectura es de las personas del equipo.
+resource "google_project_iam_member" "trazas" {
+  for_each = local.activos
+  project  = var.project_id
+  role     = "roles/telemetry.tracesWriter"
+  member   = "serviceAccount:${google_service_account.runtime[each.key].email}"
+}
+
 # --------------------------------------------------------------------------------------------- secretos
 # Terraform crea el contenedor del secreto (y una versión marcadora) pero NUNCA su valor real: este se carga
 # a mano con `gcloud secrets versions add` (infra/README.md) y no pasa por el estado de Terraform. La

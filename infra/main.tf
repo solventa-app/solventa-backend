@@ -9,6 +9,9 @@ locals {
     "artifactregistry.googleapis.com",
     "secretmanager.googleapis.com",
     "pubsub.googleapis.com",
+    # Trazas distribuidas (OpenTelemetry → API de Telemetry); sin costo en el volumen de staging.
+    "telemetry.googleapis.com",
+    "cloudtrace.googleapis.com",
     # Identidad del pipeline (WIF) y lectura del número de proyecto: no tienen costo.
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",

@@ -6,3 +6,9 @@ prometheus-fastapi-instrumentator==7.0.0
 purgatory==3.0.1
 redis==5.2.1
 rq==2.12.0
+opentelemetry-sdk==1.45.1
+opentelemetry-exporter-otlp-proto-http==1.45.1
+google-auth==2.62.0
+requests==2.34.2
+opentelemetry-instrumentation-httpx==0.66b1
+opentelemetry-instrumentation-redis==0.66b1

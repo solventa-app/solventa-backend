@@ -13,10 +13,13 @@ from app.application.bus_eventos import BusEventosLog
 from app.application.configuracion import Configuracion
 from app.application.repositorio_perfiles import RepositorioPerfilesMongo
 from app.application.servicio_perfiles import ServicioPerfiles
+from app.observabilidad import configurar_trazas
 
 # Sin esto, los logs INFO de app.application.servicio_perfiles/bus_eventos se
 # descartan en silencio (mismo motivo documentado en acl-worker/app/main.py).
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+configurar_trazas("risk", instrumentos=("httpx", "pymongo"))
 
 
 class DatosFuenteEntrada(BaseModel):
