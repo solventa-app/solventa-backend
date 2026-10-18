@@ -18,8 +18,15 @@ from pydantic import BaseModel, Field
 
 from app.application.autenticacion_servicios import autenticacion_para
 from app.application.bus_eventos import BusEventosLog
+from app.application.cifrado import cifrador_desde_entorno
 from app.application.cliente_acl import ClienteAcl
 from app.application.configuracion import Configuracion
+from app.application.disparador import (
+    BusConReintento,
+    PlanificadorCloudTasks,
+    PlanificadorNulo,
+    PuertoPlanificador,
+)
 from app.application.reintento import ReintentoCobrosPendientes
 from app.application.repositorio_cobros import RepositorioCobrosPostgres, construir_pool
 from app.application.servicio_cobros import (
@@ -85,6 +92,23 @@ class BalanceResponse(BaseModel):
     balance: str
 
 
+def _planificador(config: Configuracion) -> PuertoPlanificador:
+    if config.disparador != "externo":
+        return PlanificadorNulo()
+    return PlanificadorCloudTasks(
+        config.tareas_proyecto,
+        config.tareas_region,
+        config.tareas_cola,
+        config.url_propia,
+        config.tareas_cuenta,
+    )
+
+
+class PasadaResponse(BaseModel):
+    procesados: int
+    por_reintentar: int
+
+
 def create_app(
     config: Configuracion | None = None,
     servicio_cobros: ServicioCobros | None = None,
@@ -107,13 +131,17 @@ def create_app(
             app.state.reintento = reintento
         else:
             pool = construir_pool(config.database_url)
-            repositorio = RepositorioCobrosPostgres(pool)
+            repositorio = RepositorioCobrosPostgres(pool, cifrador_desde_entorno())
             cliente_acl = ClienteAcl(
                 config.acl_url,
                 config.acl_timeout_segundos,
                 autenticacion_para(config.autenticacion_servicios, "acl-worker"),
             )
+            planificador = _planificador(config)
             bus = BusEventosLog()
+            if config.disparador == "externo":
+                # Un cobro que queda `pendiente` programa su reintento en Cloud Tasks.
+                bus = BusConReintento(bus, planificador, config.reintento_intervalo_segundos)
             app.state.servicio_cobros = ServicioCobros(
                 repositorio, cliente_acl, bus, config.reintentos_rechazo_maximo
             )
@@ -123,9 +151,12 @@ def create_app(
                 bus,
                 config.reintento_intervalo_segundos,
                 config.reintento_max_intentos,
+                planificador,
+                config.minutos_cobro_atascado,
             )
 
-        if app.state.reintento is not None:
+        # Con DISPARADOR=externo no hay bucle: Cloud Tasks llama a POST /cobros/_reintentar.
+        if app.state.reintento is not None and config.disparador == "bucle":
             app.state.reintento.iniciar()
 
         try:
@@ -160,6 +191,16 @@ def create_app(
         except IntentoCobroEnConflicto as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         return _respuesta(cobro)
+
+    @app.post("/cobros/_reintentar", tags=["operacion"], response_model=PasadaResponse)
+    def reintentar_pendientes() -> PasadaResponse:
+        """La llama Cloud Tasks (`DISPARADOR=externo`): una pasada del reintento de cobros
+        `pendiente` y de los atascados en `cobrando`. Es privada (IAM de Cloud Run) y nunca
+        responde 5xx por la pasarela: lo que no se pudo reintentar sigue `pendiente`."""
+        reintento = app.state.reintento
+        if reintento is None:
+            raise HTTPException(status_code=404, detail="reintento no disponible")
+        return PasadaResponse(**reintento.una_pasada_externa())
 
     @app.post("/cobros/buscar", tags=["cobros"], response_model=list[CobroResponse])
     def buscar_cobros(filtro: FiltroCobros) -> list[CobroResponse]:

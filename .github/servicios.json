@@ -50,15 +50,17 @@
     "url_env": "PAYMENTS_URL",
     "migracion": ["alembic", "upgrade", "head"],
     "llama": ["acl-worker"],
+    "disparador_externo": true,
     "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
-    "secretos": { "DATABASE_URL": "database-url-payments" }
+    "secretos": { "DATABASE_URL": "database-url-payments", "CIFRADO_CLAVE": "clave-cifrado" }
   },
   {
     "nombre": "acl-worker",
     "ruta": "services/acl-worker",
     "puerto": 8005,
     "url_env": "ACL_URL",
-    "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela"],
+    "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela", "consolidador-fuentes"],
+    "disparador_externo": true,
     "entorno": { "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": {
       "REDIS_URL": "redis-url-acl",
@@ -69,6 +71,8 @@
     "nombre": "consolidador-fuentes",
     "ruta": "services/consolidador-fuentes",
     "puerto": 8006,
+    "url_env": "CONSOLIDADOR_URL",
+    "disparador_externo": true,
     "llama": ["acl-worker", "auth"],
     "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": { "REDIS_URL": "redis-url-cola-reconciliacion" }

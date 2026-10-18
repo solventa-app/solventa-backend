@@ -195,6 +195,22 @@ resource "google_cloud_run_v2_service" "servicio" {
         }
       }
 
+      # Disparadores externos (tareas.tf): quién dispara el trabajo de fondo, y lo que Cloud Tasks necesita para
+      # firmar y dirigir la tarea. Solo con `crear_tareas` y en los servicios que lo declaran.
+      dynamic "env" {
+        for_each = contains(keys(local.con_disparador_externo), each.key) ? {
+          DISPARADOR    = "externo"
+          GCP_PROYECTO  = var.project_id
+          GCP_REGION    = var.region
+          URL_PROPIA    = local.url[each.key]
+          TAREAS_CUENTA = google_service_account.runtime[each.key].email
+        } : {}
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
       dynamic "env" {
         for_each = toset(try(each.value.llama, []))
         content {

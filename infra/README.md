@@ -20,6 +20,7 @@ agrega nada hasta que alguien las enciende.
 | Cloud KMS (key ring + llave de cifrado de campo) | `crear_kms` | ~USD 0,06/mes por versión de llave | un key ring **no se puede borrar** |
 | Workload Identity Federation (GitHub) + service account de despliegue + sus permisos | `crear_pipeline` | $0 | `cicd.tf`; sin llaves; limitada a este repo y al entorno `staging` |
 | Un servicio de Cloud Run por entrada de `.github/servicios.json`, sus jobs de migración, una service account por servicio y los secretos | `crear_servicios` | ~$0 en reposo | `servicios.tf`; máx. `max_instancias` por servicio |
+| Cola de Cloud Tasks `reintento-cobros` + trabajo de Cloud Scheduler `sonda-acl` y `DISPARADOR=externo` en PAYMENTS y el ACL Worker | `crear_tareas` | $0 (capa gratuita: 1 M de operaciones de Cloud Tasks; 3 trabajos de Scheduler por cuenta) | `tareas.tf`. En Cloud Run los bucles de fondo no corren de forma confiable (`cpu_idle = true`, mínimo 0). Ver «Disparadores externos» |
 | Memorystore Redis (BASIC, 1GB) + conector VPC | `crear_redis` | **~USD 0,12/h juntos** (estimación estándar de GCP; no se verificó empíricamente en ningún experimento de `solventa-arquitectura` — ese repo no tiene Redis en Terraform, solo en docker-compose local) | **no escala a cero**: crear y destruir por sesión |
 | Cloud SQL PostgreSQL (`db-f1-micro`, 1 instancia, bases `auth` + `payments`) | `crear_cloud_sql` | ~USD 9-12/mes (instancia shared-core + 10GB disco; sin respaldos automáticos para no sumarles costo) | **no escala a cero**: cobra por hora aunque no haya tráfico |
 | MongoDB Atlas M0 (RISK) | `crear_mongo_atlas` | $0 (nivel gratuito) | requiere cuenta/organización de Atlas y API keys que **no existen todavía** (ver más abajo) |
@@ -102,6 +103,24 @@ del equipo (regla de costos de `CLAUDE.md`).
   `payments`) y sus jobs de migración montan el socket de Cloud SQL en `/cloudsql`, y solo sus cuentas
   `rt-<servicio>` reciben `roles/cloudsql.client`. Sin ese montaje la URL `...@/auth?host=/cloudsql/...` no
   conecta y la migración falla antes de aplicar nada.
+
+## Disparadores externos (Cloud Tasks y Cloud Scheduler)
+
+Decisión W05-7. Con `crear_tareas = true` (hoy encendida en `staging.tfvars`), Terraform crea la cola `reintento-cobros`
+y el trabajo `sonda-acl` y pone `DISPARADOR=externo` (más `URL_PROPIA`, `GCP_PROYECTO`, `GCP_REGION` y `TAREAS_CUENTA`) en
+los servicios con `"disparador_externo": true` en `.github/servicios.json` (PAYMENTS y ACL Worker). Sin la bandera, esos
+servicios siguen con su bucle (`DISPARADOR=bucle`), que en Cloud Run no es fiable.
+
+| Qué | Quién lo dispara | Endpoint (privado, IAM de Cloud Run) |
+|---|---|---|
+| Reintento de cobros `pendiente` y recuperación de los atascados en `cobrando` | PAYMENTS programa una tarea de Cloud Tasks cuando un cobro queda `pendiente`; cada pasada programa la siguiente si aún queda alguno | `POST /cobros/_reintentar` de PAYMENTS (token OIDC de su propia cuenta de runtime) |
+| Sonda de recuperación del circuito (regla #5) | Cloud Scheduler, cada minuto | `POST /sonda/ejecutar` del ACL Worker |
+| Reconciliación de fuentes degradadas (W01) | El ACL Worker encola una tarea en la cola `reconciliacion-fuentes` en vez del job de `rq`; la cola reintenta (5 intentos, 10 a 300 s) mientras el consolidador responda 503 | `POST /reconciliar` del consolidador (token OIDC de la cuenta del ACL Worker) |
+
+Límites que conviene saber: el estado de los circuitos vive en la memoria de cada instancia, así que la sonda revisa los de
+la instancia que recibe la llamada; y una tarea de reconciliación que agota sus 5 intentos se descarta (no hay un registro de
+fallidos como el `FailedJobRegistry` de `rq`). Si Cloud Tasks falla al programar, el cobro sigue `pendiente` (se registra una advertencia) y el botón del
+back-office lo recupera: nunca se tumba un cobro por eso.
 
 ## Uso
 

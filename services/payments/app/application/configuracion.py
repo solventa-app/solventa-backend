@@ -17,9 +17,31 @@ class Configuracion:
     reintentos_rechazo_maximo: int
     # "ninguna" en local; "id_token" en Cloud Run (el ACL Worker es privado).
     autenticacion_servicios: str
+    # Quién dispara el reintento de pendientes: "bucle" (local y CI) o "externo" (Cloud Tasks, en
+    # Cloud Run).
+    disparador: str = "bucle"
+    # Pasado este tiempo en `cobrando`, un cobro se considera atascado (el proceso se cayó a mitad).
+    minutos_cobro_atascado: float = 2.0
+    # Solo con DISPARADOR=externo (los fija Terraform): dónde está la cola y quién firma las tareas.
+    tareas_proyecto: str = ""
+    tareas_region: str = ""
+    tareas_cola: str = "reintento-cobros"
+    tareas_cuenta: str = ""
+    url_propia: str = ""
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
+        disparador = os.getenv("DISPARADOR", "bucle")
+        if disparador not in ("bucle", "externo"):
+            raise ValueError("DISPARADOR debe ser 'bucle' o 'externo'")
+        if disparador == "externo":
+            faltan = [
+                nombre
+                for nombre in ("GCP_PROYECTO", "GCP_REGION", "TAREAS_CUENTA", "URL_PROPIA")
+                if not os.getenv(nombre)
+            ]
+            if faltan:
+                raise ValueError(f"DISPARADOR=externo exige {', '.join(faltan)}")
         return cls(
             # Sin valor por defecto: compose y Cloud Run fijan DATABASE_URL completa, y una URL
             # escrita aquí llevaría la contraseña (o ninguna). `construir_pool` falla claro.
@@ -30,8 +52,8 @@ class Configuracion:
             # Worker; este timeout cubre que el propio ACL Worker esté
             # inalcanzable por red.
             acl_timeout_segundos=float(os.getenv("PAYMENTS_ACL_TIMEOUT_SEGUNDOS", "3.0")),
-            # Placeholder local de Cloud Tasks (T-W05-4, ver app/application/reintento.py):
-            # cada cuántos segundos se revisan los cobros `pendiente`.
+            # Con el bucle local: cada cuántos segundos se revisan los cobros `pendiente`. Con
+            # DISPARADOR=externo: cuánto espera Cloud Tasks entre una pasada y la siguiente.
             reintento_intervalo_segundos=float(
                 os.getenv("REINTENTO_COBRO_INTERVALO_SEGUNDOS", "5")
             ),
@@ -42,4 +64,11 @@ class Configuracion:
             # prototipo (W05-01): agotados, el cobro requiere otro medio de pago.
             reintentos_rechazo_maximo=int(os.getenv("REINTENTOS_RECHAZO_MAXIMO", "3")),
             autenticacion_servicios=modo_desde_entorno(),
+            disparador=disparador,
+            minutos_cobro_atascado=float(os.getenv("COBRO_ATASCADO_MINUTOS", "2")),
+            tareas_proyecto=os.getenv("GCP_PROYECTO", ""),
+            tareas_region=os.getenv("GCP_REGION", ""),
+            tareas_cola=os.getenv("TAREAS_COLA", "reintento-cobros"),
+            tareas_cuenta=os.getenv("TAREAS_CUENTA", ""),
+            url_propia=os.getenv("URL_PROPIA", ""),
         )

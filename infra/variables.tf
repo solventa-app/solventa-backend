@@ -178,3 +178,9 @@ variable "presupuesto_correos_alerta" {
   type        = list(string)
   default     = []
 }
+
+variable "crear_tareas" {
+  description = "Crea la cola de Cloud Tasks del reintento de cobros (`reintento-cobros`) y el trabajo de Cloud Scheduler que dispara la sonda del circuito del ACL Worker, y pone `DISPARADOR=externo` en los servicios que lo declaran (`disparador_externo` en .github/servicios.json). En Cloud Run los bucles de fondo no corren de forma confiable (CPU limitada fuera de una petición, escala a cero). Capa gratuita: 1 millón de operaciones de Cloud Tasks al mes y 3 trabajos de Scheduler por cuenta de facturación."
+  type        = bool
+  default     = false
+}

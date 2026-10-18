@@ -19,6 +19,7 @@ from app.adapters.open_data import AdaptadorOpenData
 from app.adapters.open_finance import FUENTES_SOPORTADAS as FUENTES_OPEN_FINANCE
 from app.adapters.open_finance import AdaptadorOpenFinance
 from app.adapters.pasarela import AdaptadorPasarela
+from app.adapters.pasarela_alterna import AdaptadorPasarelaAlterna
 from app.application.cache import CacheFuentes
 from app.application.circuitos import (
     NOMBRE_CIRCUITO_OPEN_DATA,
@@ -26,6 +27,7 @@ from app.application.circuitos import (
     NOMBRE_CIRCUITO_PASARELA,
     construir_fabrica,
 )
+from app.application.cola_tareas import ColaReconciliacionCloudTasks
 from app.application.configuracion import Configuracion
 from app.application.reconciliacion import (
     NOMBRE_COLA,
@@ -143,9 +145,21 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         # db de Redis separado (db 2) del de la caché (db 1): productor de la
         # reconciliación diferida que consume `services/consolidador-fuentes`.
         redis_cola = redis.Redis.from_url(config.cola_reconciliacion_redis_url)
-        cola_rq = rq.Queue(NOMBRE_COLA, connection=redis_cola)
+        # Con DISPARADOR=externo (Cloud Run) la reconciliación va por Cloud Tasks al consolidador;
+        # la marca de dedup sigue en Redis. En local y CI sigue la cola `rq`.
+        if config.disparador == "externo":
+            cola_reconciliacion = ColaReconciliacionCloudTasks(
+                config.tareas_proyecto,
+                config.tareas_region,
+                config.tareas_cola_reconciliacion,
+                config.consolidador_url,
+                config.tareas_cuenta,
+            )
+        else:
+            cola_rq = rq.Queue(NOMBRE_COLA, connection=redis_cola)
+            cola_reconciliacion = ColaReconciliacionRQ(cola_rq, REINTENTOS_RECONCILIACION)
         productor_reconciliacion = ProductorReconciliacion(
-            cola=ColaReconciliacionRQ(cola_rq, REINTENTOS_RECONCILIACION),
+            cola=cola_reconciliacion,
             dedup=MarcaDedupRedis(redis_cola),
         )
 
@@ -153,7 +167,13 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             _construir_servicios_fuentes(config, fabrica, cache_redis, productor_reconciliacion)
         )
 
-        adaptador_pasarela = AdaptadorPasarela(
+        # EC031: cambiar de proveedor de pagos es elegir otro adaptador; nada más cambia.
+        clase_pasarela = (
+            AdaptadorPasarelaAlterna
+            if config.proveedor_pasarela == "alterna"
+            else AdaptadorPasarela
+        )
+        adaptador_pasarela = clase_pasarela(
             config.pasarela_url,
             config.timeout_s,
             auth=autenticacion_para(config.autenticacion_servicios, "stub-pasarela"),
@@ -171,8 +191,11 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             },
             intervalo_s=config.sonda_intervalo_segundos,
         )
-        sonda.iniciar()
+        # Con DISPARADOR=externo no hay bucle: Cloud Scheduler llama a POST /sonda/ejecutar.
+        if config.disparador == "bucle":
+            sonda.iniciar()
 
+        app.state.sonda = sonda
         app.state.fabrica_circuitos = fabrica
         app.state.servicios_por_fuente = servicios_por_fuente
         app.state.servicio_cobro = servicio_cobro
@@ -209,6 +232,15 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             NOMBRE_CIRCUITO_PASARELA,
         )
         return {nombre: fabrica.get_breaker(nombre).context.state for nombre in nombres}
+
+    @app.post("/sonda/ejecutar", tags=["operacion"])
+    async def ejecutar_sonda() -> dict[str, str]:
+        """La llama Cloud Scheduler (`DISPARADOR=externo`): una pasada de la sonda de recuperación,
+        fuera del camino síncrono del usuario (regla #5). Es privada (IAM de Cloud Run) y
+        devuelve el estado de cada circuito después de sondear. Nota: el estado de los circuitos
+        vive en la memoria de cada instancia, así que sondea los de la instancia que recibe la
+        llamada."""
+        return await app.state.sonda.una_pasada()
 
     @app.post("/fuentes/consultar", tags=["fuentes"], response_model=DatosFuenteResponse)
     def consultar_fuente(body: ConsultaFuenteRequest) -> DatosFuenteResponse:
