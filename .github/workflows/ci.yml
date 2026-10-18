@@ -27,6 +27,7 @@ jobs:
       pull-requests: read
     outputs:
       servicios: ${{ steps.matriz.outputs.servicios }}
+      todos: ${{ steps.matriz.outputs.todos }}
       migraciones: ${{ steps.matriz.outputs.migraciones }}
       humo: ${{ steps.matriz.outputs.humo }}
       contratos: ${{ steps.f.outputs.contratos }}
@@ -113,6 +114,7 @@ jobs:
           fi
           {
             echo "servicios=$servicios"
+            echo "todos=$(jq -c '[.[].ruta]' .github/servicios.json)"
             echo "migraciones=$migraciones"
             echo "humo=$humo"
           } >> "$GITHUB_OUTPUT"
@@ -150,6 +152,48 @@ jobs:
         run: python -m pytest
       - name: Construir imagen
         run: docker build -t ${{ matrix.servicio }}:ci .
+
+  cobertura:
+    # Solo en los push a develop y main. Sonar mide el proyecto entero en cada análisis: un servicio sin
+    # informe cuenta como 0 % cubierto, así que se corren las pruebas de TODOS (no solo de los que
+    # cambiaron). Las migraciones no entran: se ejercen contra el almacén real en `migraciones`.
+    needs: cambios
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        servicio: ${{ fromJSON(needs.cambios.outputs.todos) }}
+    defaults:
+      run:
+        working-directory: ${{ matrix.servicio }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: |
+            ${{ matrix.servicio }}/requirements.txt
+            requirements-dev.txt
+      - name: Instalar dependencias
+        run: |
+          pip install -r requirements.txt
+          pip install -r ${{ github.workspace }}/requirements-dev.txt
+      - name: Pruebas con cobertura
+        run: python -m pytest --cov=app --cov-report=xml:coverage.xml
+      - name: Rutas desde la raíz del repo
+        # coverage.py escribe los archivos relativos a `app/` (main.py); Sonar los resuelve desde la raíz del
+        # proyecto (services/auth/app/main.py), así que se antepone la ruta y se fija la raíz.
+        run: |
+          sed -i 's|filename="|filename="${{ matrix.servicio }}/app/|g' coverage.xml
+          sed -i 's|<source>[^<]*</source>|<source>${{ github.workspace }}</source>|g' coverage.xml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cobertura-${{ strategy.job-index }}
+          path: ${{ matrix.servicio }}/coverage.xml
+          retention-days: 1
 
   migraciones:
     # Las migraciones corren contra el almacén REAL (Postgres / MongoDB de docker compose) y con la imagen
@@ -270,7 +314,7 @@ jobs:
 
   sonar:
     # Se activa solo cuando el repo tiene los secretos SONAR_TOKEN y SONAR_HOST_URL.
-    needs: [servicio]
+    needs: [servicio, cobertura]
     if: always() && github.event_name == 'push' && needs.servicio.result != 'failure'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -281,6 +325,11 @@ jobs:
         if: env.SONAR_TOKEN != ''
         with:
           fetch-depth: 0 # Sonar atribuye el código nuevo con el historial completo
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: env.SONAR_TOKEN != '' && needs.cobertura.result == 'success'
+        with:
+          pattern: cobertura-*
+          path: cobertura
       - uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8
         if: env.SONAR_TOKEN != ''
         env:
