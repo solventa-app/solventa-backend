@@ -110,6 +110,14 @@ acl-worker (ServicioConsultaFuentes)        consolidador-fuentes (worker rq en h
   para que `work()` retorne sola y el apagado (`detener()`) sea acotado en el tiempo. Ver
   `services/consolidador-fuentes/app/worker.py`.
 
+## Trabajo en segundo plano en Cloud Run
+
+Cloud Run limita la CPU fuera de una petición y escala a cero, así que un bucle `asyncio` en segundo plano no corre de forma
+fiable. Lo que necesita correr solo se dispara desde fuera, sin cambiar su lógica (`DISPARADOR=externo`): el reintento de
+cobros por **Cloud Tasks** (`POST /cobros/_reintentar` de PAYMENTS) y la sonda del circuito por **Cloud Scheduler**
+(`POST /sonda/ejecutar` del ACL Worker). En local y CI siguen los bucles. Pendiente: la reconciliación de fuentes del
+consolidador. Ver `infra/README.md` («Disparadores externos»).
+
 ## Variables de entorno (propuesta)
 
 | Servicio | Variables |

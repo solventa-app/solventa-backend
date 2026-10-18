@@ -87,8 +87,10 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
 - Endpoints internos (backend-a-backend, no forman parte de `contracts/`):
   - `POST /fuentes/consultar` `{cliente_id, consentimiento_id, fuente}` → `{fuente, datos, capturado_en, de_cache, degradado}`.
   - `POST /pagos/cobrar` `{id_intento_cobro, poliza_id, monto, moneda, token_medio_pago}` → `{estado, referencia, motivo, detalle}`.
+  - `POST /sonda/ejecutar` → una pasada de la sonda; la llama Cloud Scheduler con `DISPARADOR=externo` (en Cloud Run no hay bucle fiable). Devuelve el estado de cada circuito. El estado de los circuitos vive en la memoria de cada instancia.
   - `GET /pagos/cobros/{referencia_comercio}` → siempre 200 con `{resultado: encontrado|no_encontrado|desconocido, estado, referencia, motivo}`.
-- Variables de entorno: `REDIS_URL`, `OPEN_FINANCE_URL`, `OPEN_DATA_URL`, `PASARELA_URL`,
+- **Cambiar de pasarela (EC031, CA-W05-06):** `PROVEEDOR_PASARELA=estandar|alterna` elige el adaptador. Para sumar un proveedor: una clase en `app/adapters/` que cumpla `PuertoPasarelaPagos` (`cobrar`, `consultar`, `sondear`, `cerrar`), una línea en la elección de `app/main.py` y su prueba de contrato en `tests/test_ec031_pasarela.py`. `AdaptadorPasarelaAlterna` es el ejemplo (otra API, otros campos y estados). PAYMENTS y el BFF no cambian.
+- Variables de entorno: `DISPARADOR` (`bucle`; `externo` desactiva el bucle de la sonda), `PROVEEDOR_PASARELA` (`estandar`), `REDIS_URL`, `OPEN_FINANCE_URL`, `OPEN_DATA_URL`, `PASARELA_URL`,
   `TIMEOUT_MS` (700), `BREAKER_UMBRAL_FALLOS` (3), `BREAKER_TTL_SEGUNDOS` (5),
   `SONDA_INTERVALO_SEGUNDOS` (2), `CACHE_TTL_SEGUNDOS` (300),
   `COLA_RECONCILIACION_REDIS_URL` (`redis://localhost:6379/2`, db de Redis distinta a la de la
