@@ -33,9 +33,15 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
   (`X-Consentimiento-Id`, `X-Finalidad`), query params y cuerpo; el stub responde `403` si
   alguno falta o viene vacío.
 - **Fuentes por configuración (`contracts/fuentes.json`, EC033) y modificabilidad (EC031):**
-  `app/application/fuentes_config.py` carga el catálogo desde `contracts/fuentes.json` (o
-  `FUENTES_CONFIG_PATH`, con fallback a las 5 fuentes por defecto si no está montado en el
-  contenedor). Pruebas automatizadas en `tests/test_ec031_y_ec033.py`.
+  `app/application/fuentes_config.py` carga el catálogo de la ruta dada, de `FUENTES_CONFIG_PATH`, de la
+  **copia que lleva la imagen** (`app/fuentes.json`, idéntica a `contracts/fuentes.json`: la imagen se
+  construye solo con esta carpeta y no ve `contracts/`) o del contrato en el repo; sin ninguno, las 5
+  fuentes por defecto. `python scripts/sincronizar_fuentes.py` deja las copias iguales y el CI verifica que
+  lo estén. Pruebas automatizadas en `tests/test_ec031_y_ec033.py` y `tests/test_fuentes_copia.py`.
+- **Tiempo por proveedor (EC008):** la métrica `acl_proveedor_duracion_segundos{proveedor,resultado}`
+  (histograma de Prometheus, `GET /metrics`) mide cada llamada **en vivo** a un proveedor (resultado `ok`,
+  `timeout`, `error` o `circuito_abierto`); lo servido desde la caché no cuenta. Las etiquetas no llevan datos
+  personales. `tests/k6/gateway-presupuesto.js` mide el presupuesto de ≤ 120 ms contra este servicio.
 - **T-W01-10 (Circuit Breaker, Retry, degradación y EC010 ≤ 500 ms):** un breaker por proveedor
   (`ServicioConsultaFuentes`/`ServicioCobro`), retry acotado al presupuesto por proveedor
   (`PRESUPUESTO_MS_*` acotado por `TIMEOUT_MS`, p. ej. 120 ms para EC008 o 700 ms por defecto),

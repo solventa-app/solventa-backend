@@ -157,7 +157,8 @@ de verdad (sesión, `read_preference`, `maxTimeMS`) se verifica en vivo (ver aba
   `perfilRiesgo: {score, nivelRiesgo, fechaVigencia}` junto a los campos top-level `score` y
   `desgloseScore` (reutilizando `nivel_riesgo` y `fecha_vigencia` persistidos por RISK o
   calculándolos como fallback). Pesos, orígenes y obligatoriedad se cargan desde
-  `contracts/fuentes.json`.
+  `contracts/fuentes.json` o, dentro de la imagen, de su copia `app/fuentes.json` (idéntica;
+  `scripts/sincronizar_fuentes.py`).
 - **Suscriptor de `perfil.actualizado` (`POST /eventos/perfil-actualizado`):** acepta tanto el
   evento directo como el sobre push de Cloud Pub/Sub (`message.data` en base64) e invalida las
   claves `oferta:{id_opaco}:*` en Redis (`CacheScore.invalidar_cliente`).

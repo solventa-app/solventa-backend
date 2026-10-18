@@ -10,18 +10,19 @@ Arquitectura: [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md). Co
 
 ## Estado (2026-10-18)
 
-- **Sprint 1 completo en código (HU-W01 / KAN-24 y HU-W05 / KAN-28):** todos los servicios del Sprint 1 (`bff`, `auth`, `acl-worker`, `risk`, `rating`, `payments`, `consolidador-fuentes` y los 3 stubs) están construidos y probados, junto con los 10 bloques de [`docs/plan-completar-hu-w01.md`](docs/plan-completar-hu-w01.md):
-  - **Bloque 1 (Medición):** guiones de k6 (`tests/k6/`), `scripts/correr_k6.sh`, tableros `hu-w01.json` y `hu-w05.json` en `observabilidad/gcp/dashboards/` y evidencias en `docs/evidencias/`.
+- **Sprint 1 completo en código (HU-W01 / KAN-24 y HU-W05 / KAN-28):** todos los servicios del Sprint 1 (`bff`, `auth`, `acl-worker`, `risk`, `rating`, `payments`, `consolidador-fuentes` y los 3 stubs) están construidos y probados, junto con los 10 bloques de [`docs/plan-completar-hu-w01.md`](docs/plan-completar-hu-w01.md). **Lo que falta es la medición contra staging**, no código (ver abajo).
+  - **Bloque 1 (Medición):** guiones de k6 (`tests/k6/`, con `lib/preparar.js`), `scripts/correr_k6.sh`, tableros `hu-w01.json` y `hu-w05.json`, paneles del gateway y de métricas basadas en logs (`infra/metricas-logs.tf`, `crear_metricas_logs`), y `grafana-gcp` solo en `127.0.0.1:3200`. Hay corridas **locales reales** en `docs/evidencias/` (cada informe dice que no son de staging).
   - **Bloque 2 (Caché del score y EC010 ≤ 500 ms):** `ScoreCacheado` escrito en Redis desde RISK y leído en RATING; presupuesto con caché de 300 ms y `CACHE_SERVIR_EN_TTL` en el ACL Worker.
-  - **Bloque 3 (Cifrado en reposo, D-04 / EC022):** cifrado AES-GCM por campo + sobre con Cloud KMS (`KMS_KEY_NAME` + `CIFRADO_CLAVE_ENVUELTA`) en `auth`, `risk` (`fuentes[].datos` + migración `v0002`) y `rating`, con CMEK opcional en Terraform.
-  - **Bloque 4 (Consentimiento con titular y vencimiento 30 días, CE 004/2024):** migración `0005` en AUTH (`titular_id` opaco, `vence_en`, `estado`), validación del titular en el BFF, `ErrorOferta.motivo` y validación de `consentimiento_id` + `finalidad` en el stub de Open Finance.
-  - **Bloque 5 (Fuentes por configuración, EC031 / EC033):** `contracts/fuentes.json` compartido por BFF, ACL Worker, RISK y RATING.
-  - **Bloque 6 (Seguridad en CI/CD):** Bandit, `pip-audit`, Trivy y OWASP ZAP baseline en `.github/workflows/ci.yml` (`continue-on-error: true`).
-  - **Bloque 7 (Revocación de consentimiento, CA-W01-08):** invalidación inmediata de caché en el ACL Worker (`POST /fuentes/invalidar-cache`) al revocar desde el BFF.
-  - **Bloque 8 (Pendientes de diseño):** `Oferta.perfilRiesgo` (`score`, `nivelRiesgo`, `fechaVigencia`) en el contrato v0.8, Pub/Sub `perfil-actualizado` (`infra/pubsub.tf`, publicador en RISK y suscriptor en RATING).
-  - **Bloque 9 (Batch nocturno, HA-ESC-004 / EC017):** `services/risk/app/batch_reproceso.py`, Cloud Run Job + Cloud Scheduler en `infra/batch.tf` y `scripts/sembrar_perfiles.py`.
-  - **Bloque 10 (API Gateway delante del BFF, HA-LAT-004):** `infra/gateway/openapi.yaml`, `infra/gateway/envoy.yaml` (`:8080` en Compose), `infra/gateway.tf`, BFF privado en Cloud Run, `X-Forwarded-Authorization` y `PRESUPUESTO_MS_*` en el ACL Worker.
-- **Decisiones del Planning:** D-02 (sesión causal `afterClusterTime`), D-04 (campo + Secret Manager envuelto por KMS), D-05 (stubs por contrato) y D-06 (HU-W05 en el Sprint 1) están **cerradas** (2026-10-18). Sigue abierta **D-01** (base de velocidad) para el Planning; D-03 (cobro antes o después de emitir) y guardar la oferta pasan al Sprint 2 (HU-W03).
+  - **Bloque 3 (Cifrado en reposo, D-04 / EC022):** cifrado AES-GCM por campo + sobre con Cloud KMS en `auth`, `risk` y `rating`. Verificado en local con bases reales; **Cloud KMS real y CMEK de Cloud SQL/Memorystore sin probar** (CMEK desactivado en `staging.tfvars`).
+  - **Bloque 4 (Consentimiento con titular y vencimiento 30 días):** migración `0005` en AUTH, validación del titular en el BFF y `ErrorOferta.motivo`.
+  - **Bloque 5 (Fuentes por configuración, EC031 / EC033):** `contracts/fuentes.json` es la fuente de verdad; cada imagen lleva su copia `app/fuentes.json` (`scripts/sincronizar_fuentes.py`, verificado en el CI).
+  - **Bloque 6 (Seguridad en CI/CD):** Bandit, `pip-audit`, Trivy y ZAP integrados en `ci.yml` (informativos). **Aún sin resultados revisados.**
+  - **Bloque 7 (Revocación de consentimiento, CA-W01-08):** `POST /fuentes/invalidar-cache` en el ACL al revocar desde el BFF. La invalidación activa quedó **sin verificar en vivo**.
+  - **Bloque 8 (Pendientes de diseño):** `Oferta.perfilRiesgo` (contrato v0.8 del plan), Pub/Sub `perfil-actualizado` (RISK publica, RATING suscrito).
+  - **Bloque 9 (Batch nocturno, EC017):** `batch_reproceso.py` con reparto entre tareas (`batch_tareas`). **Sin medir**: `docs/evidencias/EC017-*.md` está pendiente.
+  - **Bloque 10 (API Gateway, HA-LAT-004):** Envoy `:8080` en Compose, `infra/gateway*`; el humo del CI pasa por el gateway.
+- **Mediciones reales locales (2026-10-18) y qué dicen:** EC003 ✅ (p95 305 ms), **EC004 ❌** (el pico de 3× satura el BFF de un solo proceso: 57 % de 504), EC009/EC010 ✅, EC011/EC012 ✅, EC001/EC002 ✅ y **EC008 ❌** (p95 por dependencia 126 ms vs 120 ms; el stub «sano» ya tarda hasta 120 ms). Hallazgos abiertos: el BFF no cancela el trabajo que el gateway ya cortó (cola de ~1 min tras el pico) y un `PoolTimeout` permanente del BFF hacia el ACL visto una vez. Detalle en `docs/evidencias/`.
+- **Decisiones del Planning:** D-02, D-04, D-05 y D-06 **cerradas** (2026-10-18). Sigue abierta **D-01** (base de velocidad); D-03 y guardar la oferta pasan al Sprint 2 (HU-W03).
 - GitHub: organización `solventa-app` (`origin` = https://github.com/solventa-app/solventa-backend.git). Proyecto GCP de staging: `solventa-511815` (ver `infra/README.md`).
 
 ## Stack y decisiones ya tomadas (ADR-01 a ADR-05 del documento de arquitectura)

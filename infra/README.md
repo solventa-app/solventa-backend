@@ -26,6 +26,7 @@ agrega nada hasta que alguien las enciende.
 | MongoDB Atlas M0 (RISK y RATING) | `crear_mongo_atlas` | $0 (nivel gratuito) | sin CMEK en M0 (CMEK exige M10 ~USD 57/mes): cubierto por el cifrado de campo AES-GCM con llave de KMS |
 | Pub/Sub (`perfil-actualizado` + suscripción de `rating`) | `crear_pubsub` | $0 (capa gratuita hasta 10 GB/mes) | `pubsub.tf`; `risk` publica y `rating` invalida la caché del score |
 | Batch nocturno (`risk-reproceso` Cloud Run Job + Cloud Scheduler `30 23 * * *`) | `crear_batch` | $0 Scheduler (capa gratuita) + minutos de Job | `batch.tf`; corre a las 23:30 America/Bogota, antes del apagado automático de las 2:00 a.m. |
+| Métricas basadas en logs (ofertas por tipo, circuito abierto y cobros por estado) | `crear_metricas_logs` | ~$0 (volumen mínimo, capa gratuita de Cloud Monitoring) | `metricas-logs.tf`; las leen los paneles de `hu-w01.json` y `hu-w05.json`. Los filtros asumen el log como `textPayload`: verificar en Logs Explorer tras aplicar |
 | API Gateway delante del BFF (`solventa-gateway`, deadline duro de 700 ms) + cuenta `gateway-bff` | `crear_gateway` | $0 hasta 2 M llamadas/mes | `gateway.tf` + `gateway/openapi.yaml`; el BFF deja de ser público y la salida `gateway_url` es la única puerta pública |
 | Presupuesto + Pub/Sub + función `frenar-gasto` | `crear_presupuesto` | ~$0 (capa gratuita de Cloud Functions; solo paga las pocas invocaciones que dispara el presupuesto) | requiere `billing_account_id`; debe estar activo **antes** de cualquier despliegue real (regla 2 de `CLAUDE.md`) |
 
@@ -318,7 +319,7 @@ se vuelve a poner en `false`.
   únicamente a `rt-rating` para invalidar el score cacheado cuando cambia el perfil.
 - **`crear_batch = true` (`batch.tf`, HA-ESC-004 / EC017):** crea el Cloud Run Job `risk-reproceso` (`python -m app.batch_reproceso`,
   con la imagen y cuenta de `risk`) y la tarea de Cloud Scheduler `risk-reproceso-nocturno` programada a las `30 23 * * *`
-  (`America/Bogota`), para que termine antes del apagado automático de costos de las 2:00 a.m.
+  (`America/Bogota`), para que termine antes del apagado automático de costos de las 2:00 a.m. `batch_tareas` (default `1`) fija `task_count`: cada tarea procesa una partición de los perfiles, así que para 10 M de perfiles en < 2 h se escala subiendo `batch_tareas` (la cifra sale de la medición de `docs/evidencias/EC017-2026-10-18.md`).
 
 ### Secretos de SonarCloud en GitHub Actions (Bloque 6)
 

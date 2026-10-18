@@ -20,8 +20,8 @@ RISK es el **único escritor del perfil de riesgo** (MongoDB primaria, réplica 
   riesgo ponderado (`score_total`), clasifica `nivel_riesgo` (`ALTO` 0-39, `MEDIO` 40-69, `BAJO`
   70-100), calcula `fecha_vigencia` (+30 días ISO-8601), persiste los 4 campos junto al perfil en
   MongoDB y escribe el `ScoreCacheado` en Redis (`oferta:{id_opaco}:{perfil_version}:{version_reglas}`).
-  Carga pesos, orígenes y obligatoriedad desde `contracts/fuentes.json` (con fallback a constantes
-  si no está montado).
+  Carga pesos, orígenes y obligatoriedad desde `contracts/fuentes.json` o, dentro de la imagen, de su
+  copia `app/fuentes.json` (idéntica; `scripts/sincronizar_fuentes.py`), con fallback a constantes.
 - **Cifrado de campo + sobre KMS (SEG-002 / D-04 / CA-W01-10 / EC022):** antes de insertar en
   MongoDB, cifra cada `fuente.datos` con AES-256-GCM y sobre KMS (`datos_cifrados`) y persiste
   `datos: {}` en reposo.
@@ -30,7 +30,11 @@ RISK es el **único escritor del perfil de riesgo** (MongoDB primaria, réplica 
   `nivelRiesgo`, `fechaVigencia` y `versionReglas`.
 - **Batch nocturno `risk-reproceso` (HA-ESC-004, EC017):** ejecutable como
   `python -m app.batch_reproceso` para recalcular perfiles vencidos o con `version_reglas`
-  anterior en lotes idempotentes sin contención con el tráfico interactivo.
+  anterior en lotes idempotentes sin contención con el tráfico interactivo. **Reparto entre tareas:** con
+  `task_count = N` (variable `batch_tareas` de Terraform), cada tarea toma solo los perfiles cuyo hash de
+  `cliente_id` cae en su partición (`CLOUD_RUN_TASK_INDEX` / `CLOUD_RUN_TASK_COUNT`, `construir_filtro`): las
+  particiones son disjuntas y el caudal crece casi lineal con N. Sembrar perfiles para probarlo:
+  `scripts/sembrar_perfiles.py`.
 - Logs sin datos personales: `cliente_id` nunca se loguea en crudo (hash opaco, mismo patrón que
   `acl-worker/app/application/identificadores.py`).
 

@@ -37,7 +37,7 @@ están en [`docs/autenticacion-usuarios.md`](../../docs/autenticacion-usuarios.m
 
 1. AUTH: consentimiento vigente **antes** de consultar nada (regla #7). Si no existe, fue revocado o venció (`vence_en` > 30 días), o si su `titular_id` no coincide con el `cliente_id` derivado del `documentoIdentidad` de la solicitud → `ErrorOferta` sin reintento con `motivo: CONSENTIMIENTO_NO_VIGENTE`.
 2. `cliente_id` opaco = HMAC-SHA256 del documento con `CLIENTE_ID_CLAVE` (`app/identificadores.py`).
-3. ACL Worker: las fuentes definidas en `contracts/fuentes.json` en paralelo (enviando `consentimiento_id` y `finalidad`). El ACL ya degrada solo (caché o valor por defecto); si el ACL mismo no
+3. ACL Worker: las fuentes definidas en `contracts/fuentes.json` (dentro de la imagen, su copia `app/fuentes.json`, idéntica: `scripts/sincronizar_fuentes.py`) en paralelo (enviando `consentimiento_id` y `finalidad`). El ACL ya degrada solo (caché o valor por defecto); si el ACL mismo no
    responde, la fuente va `degradado` y la oferta sale PRELIMINAR.
 4. RISK escribe el perfil cifrado, guarda `ScoreCacheado` en Redis y devuelve `operation_time`; RATING calcula la oferta con lectura causal (D-02) e incluye `perfilRiesgo { score nivelRiesgo fechaVigencia }`.
 5. Cualquier falla de RISK/RATING → `ErrorOferta` con reintento y `motivo: FUENTES_NO_DISPONIBLES`; `valorCredito` inválido → sin reintento (`motivo: DATOS_INSUFICIENTES`).

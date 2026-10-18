@@ -200,7 +200,7 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   `iniciarSesion` y `yo`, cifrado en AUTH y fuera del JWT). `Cobro.idTransaccion` llegó aparte con el reintento de rechazados.
   Los pagos siguen siendo solo del BACKOFFICE. Pedido por el front (KAN-207). **Tampoco estaba en el plan del sprint:**
   registrar las horas en Jira bajo KAN-28.
-- **Cierre completo de HU-W01 y habilitadoras (KAN-24, 2026-10-18, Bloques 1 a 10 de `docs/plan-completar-hu-w01.md`):**
+- **Cierre en código de HU-W01 y habilitadoras (KAN-24, 2026-10-18, Bloques 1 a 10 de `docs/plan-completar-hu-w01.md`):**
   1. **Bloque 1 (Medición):** guiones de k6 (`perfilamiento-baseline.js`, `falla-proveedor.js`, `lectura-replica.js`, `gateway-presupuesto.js`), `scripts/correr_k6.sh`, tableros `hu-w01.json` y `hu-w05.json` en Cloud Monitoring y reportes en `docs/evidencias/`.
   2. **Bloque 2 (Caché del score y EC010 ≤ 500 ms):** `ScoreCacheado` se escribe en Redis desde RISK al registrar el perfil y RATING lo consume en modo Cache-Aside; el ACL Worker acota la espera a 300 ms cuando ya hay dato en caché y soporta `CACHE_SERVIR_EN_TTL`.
   3. **Bloque 3 (Cifrado en reposo, D-04 / EC022):** cifrado de sobre con Cloud KMS (`KMS_KEY_NAME` + `CIFRADO_CLAVE_ENVUELTA`) en AUTH, RISK y RATING, cifrado AES-GCM de `fuentes[].datos` en RISK + migración `v0002`, y soporte CMEK en Terraform.
@@ -211,3 +211,9 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   8. **Bloque 8 (Pendientes de diseño):** `Oferta.perfilRiesgo` (`score`, `nivelRiesgo`, `fechaVigencia`) en el contrato v0.8, publicación de `PerfilActualizado` en Pub/Sub desde RISK e invalidación de caché en RATING (`POST /eventos/perfil-actualizado`).
   9. **Bloque 9 (Batch nocturno, HA-ESC-004 / EC017):** `services/risk/app/batch_reproceso.py` idempotente por lotes, Cloud Run Job + Cloud Scheduler en `infra/batch.tf` y `scripts/sembrar_perfiles.py`.
   10. **Bloque 10 (API Gateway delante del BFF, HA-LAT-004 / EC001-EC002-EC008):** `infra/gateway/openapi.yaml` y `envoy.yaml` con corte duro de 700 ms, `infra/gateway.tf`, BFF privado en Cloud Run, lectura de `X-Forwarded-Authorization` y presupuesto por proveedor (`PRESUPUESTO_MS_*`) en el ACL Worker.
+  **Estado de las mediciones de esos bloques (honesto):** el código está hecho y probado (pytest, humo por el gateway y Newman en
+  verde), pero **ningún escenario de calidad se ha medido todavía contra staging**. Hay corridas **locales** reales
+  (`docs/evidencias/`): EC003 ✅, **EC004 ❌** (el pico de 3× satura el BFF), EC009/EC010 ✅, EC011/EC012 ✅, EC001/EC002 ✅ y
+  **EC008 ❌** (p95 por dependencia 126 ms contra 120 ms). EC017 (batch), el informe de seguridad y la exploratoria FC-01 están
+  **pendientes**; EC022 y CA-W01-08 están verificados solo hasta donde lo dice cada informe (sin Cloud KMS real ni staging).
+  Una versión anterior de esos informes traía cifras que no provenían de ninguna medición; se retiraron.
