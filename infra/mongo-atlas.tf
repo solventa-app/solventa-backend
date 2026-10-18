@@ -64,7 +64,7 @@ resource "mongodbatlas_project_ip_access_list" "abierta" {
 
 # El contenedor del secreto `mongo-uri-risk` lo crea servicios.tf (único dueño; ver cloud-sql.tf). Aquí solo se
 # agrega la versión con el valor real, y solo si los servicios existen. RATING usa su propio secreto
-# (`mongo-uri-rating`, usuario de solo lectura) que se carga a mano. El acceso a los secretos se da por secreto
+# (`mongo-uri-rating`, usuario de SOLO LECTURA) que también escribe Terraform (abajo). El acceso a los secretos se da por secreto
 # a la cuenta de cada servicio en servicios.tf, no a nivel de proyecto.
 resource "google_secret_manager_secret_version" "mongo_uri" {
   count      = (var.crear_mongo_atlas && var.crear_servicios) ? 1 : 0
@@ -72,4 +72,34 @@ resource "google_secret_manager_secret_version" "mongo_uri" {
   depends_on = [google_secret_manager_secret_version.marcador]
 
   secret_data = "mongodb+srv://risk-service:${random_password.mongo_atlas[0].result}@${replace(mongodbatlas_cluster.risk[0].srv_address, "mongodb+srv://", "")}/risk?retryWrites=true&w=majority"
+}
+
+# RATING nunca escribe en Riesgo (regla 1 de CLAUDE.md): su usuario es de SOLO LECTURA sobre la base `risk`. La URL no
+# lleva readPreference porque rating la fija en el código (secundaria + sesión causal, D-02). La contraseña vive en
+# Secret Manager; matiz de ADR-09: también queda en el estado de Terraform.
+resource "random_password" "mongo_atlas_rating" {
+  count   = var.crear_mongo_atlas ? 1 : 0
+  length  = 24
+  special = false
+}
+
+resource "mongodbatlas_database_user" "rating" {
+  count              = var.crear_mongo_atlas ? 1 : 0
+  username           = "rating-service"
+  password           = random_password.mongo_atlas_rating[0].result
+  project_id         = mongodbatlas_project.risk[0].id
+  auth_database_name = "admin"
+
+  roles {
+    role_name     = "read"
+    database_name = "risk"
+  }
+}
+
+resource "google_secret_manager_secret_version" "mongo_uri_rating" {
+  count      = (var.crear_mongo_atlas && var.crear_servicios) ? 1 : 0
+  secret     = google_secret_manager_secret.secreto["mongo-uri-rating"].id
+  depends_on = [google_secret_manager_secret_version.marcador]
+
+  secret_data = "mongodb+srv://rating-service:${random_password.mongo_atlas_rating[0].result}@${replace(mongodbatlas_cluster.risk[0].srv_address, "mongodb+srv://", "")}/risk?retryWrites=false&w=majority"
 }

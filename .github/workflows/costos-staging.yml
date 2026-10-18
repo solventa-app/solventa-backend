@@ -86,6 +86,7 @@ jobs:
       TF_IN_AUTOMATION: "1"
       TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
       TF_VAR_billing_account_id: ${{ vars.GCP_BILLING_ACCOUNT_ID }}
+      TF_VAR_mongodb_atlas_org_id: ${{ vars.MONGODB_ATLAS_ORG_ID }}
       PROYECTO: ${{ vars.GCP_PROJECT_ID }}
       # La ejecución programada (`schedule`) siempre apaga.
       ACCION: ${{ github.event_name == 'schedule' && 'apagar' || inputs.accion }}
@@ -110,6 +111,22 @@ jobs:
       - name: Terraform init
         working-directory: codigo/infra
         run: terraform init
+      # Las claves de API de MongoDB Atlas viven SOLO en Secret Manager (el equipo las carga una vez; ver
+      # infra/README.md, «MongoDB Atlas»). Se leen aquí, se enmascaran y se pasan a Terraform. Si todavía no
+      # existen, no pasa nada mientras `crear_mongo_atlas` siga en `false`.
+      - name: Credenciales de MongoDB Atlas (desde Secret Manager)
+        run: |
+          set -uo pipefail
+          for par in MONGODB_ATLAS_PUBLIC_KEY:mongodb-atlas-public-key MONGODB_ATLAS_PRIVATE_KEY:mongodb-atlas-private-key; do
+            variable=${par%%:*}
+            secreto=${par#*:}
+            if valor=$(gcloud secrets versions access latest --secret="$secreto" --project="$PROYECTO" 2>/dev/null); then
+              echo "::add-mask::$valor"
+              echo "$variable=$valor" >> "$GITHUB_ENV"
+            else
+              echo "No hay $secreto en Secret Manager (solo hace falta si crear_mongo_atlas = true)."
+            fi
+          done
       - name: Estado actual
         working-directory: codigo/infra
         run: |
