@@ -19,7 +19,8 @@
 | 10 | Guardar la oferta | **No se guarda en W01.** Se calcula, se muestra y se recalcula si el cliente vuelve. Pasa al **Sprint 2 con HU-W03**: se guarda la oferta que el cliente **acepta**. Avisar cuando una preliminar pase a completa no está en ninguna HU. |
 | 11 | Exploratoria FC-01 | Plantilla en `docs/evidencias/exploratoria-FC-01.md`; la sesión la hace una persona contra staging. |
 | 12 | HU-W05 | Opción A del prototipo: RECHAZADO se reintenta a mano hasta 3 veces (referencia `id_intento_cobro-rN`); PENDIENTE lo reintenta el sistema. Sin captura de tarjeta (detalle en `docs/cobros-conciliacion.md`). |
-| 13 | Costos | Solo los aprobados: Cloud KMS (centavos al mes) y Pub/Sub en capa gratuita. Nada más sin confirmación. |
+| 13 | Costos | Solo los aprobados: Cloud KMS (centavos al mes) y Pub/Sub, Cloud Scheduler y Cloud Tasks en capa gratuita. Nada más sin confirmación. |
+| 14 | Pruebas a escala | No se repiten los experimentos. Se prueba con menos tiempo (10 min en vez de 1 h) o menos volumen (EC017 a 1/20 en 5 min) y se proyecta con regla de tres, diciendo en la evidencia qué se midió y qué se proyectó. |
 
 Basado en la revisión de pendientes de HU-W01 (18 puntos, numerados P1–P3 abajo) y en las restricciones que puso el equipo el 2026-10-18:
 
@@ -179,6 +180,37 @@ que el cliente **acepta**, con precio, plazo y si fue completa o preliminar; ah�
 | back · infra | **Pub/Sub, solo el evento `PerfilActualizado`.** Tema y suscripción en Terraform detrás de una bandera `crear_pubsub` (capa gratuita: 10 GB/mes). RISK publica al actualizar el perfil; RATING se suscribe y borra su caché del score. Esquema del evento en `contracts/eventos/`. Los demás eventos, cuando una historia los pida. |
 | back | **Plantilla de la exploratoria de FC-01 y de los indicadores** en `docs/evidencias/exploratoria-FC-01.md`: misión, tiempo, datos usados, hallazgos y tabla de indicadores (defectos por severidad, casos ejecutados, cobertura, escenarios EC cumplidos). La sesión la hace una persona (ver "Lo que hace felipe a mano"). |
 
+### Bloque 9 · Batch nocturno de reprocesamiento (HA-ESC-004, EC017), a escala reducida
+
+**Qué pide:** RISK reprocesa en masa los perfiles fuera de horario pico (≥ 10 millones en < 2 h) sin afectar el tráfico en
+línea. **No existe hoy.** Según `docs/sprint-1.md` va en el **Sprint 3, reducida**; queda planeado aquí para no olvidarlo.
+
+| Repo | Cambio |
+|---|---|
+| back · infra | **Cloud Scheduler** (el "cron", 3 tareas gratis al mes) que de noche lanza un **Cloud Run Job** `risk-reproceso`, aislado del servicio en línea (otra instancia, su propio límite de instancias). Si hace falta repartir el trabajo, por **Cloud Tasks** (1 millón de operaciones gratis al mes). Detrás de una bandera `crear_batch`. |
+| back · RISK | El job lee perfiles por lotes, recalcula y escribe con el mismo escritor único (RISK). Idempotente: si se corta, retoma donde iba. |
+| back | `scripts/sembrar_perfiles.py` para cargar perfiles sintéticos en staging y la prueba de EC017 a escala reducida (abajo). Evidencia en `docs/evidencias/EC017-<fecha>.md`. |
+
+## Cómo se prueba a escala sin gastar (regla de tres)
+
+Los experimentos más importantes ya se hicieron (`solventa-arquitectura@11e4be6`); aquí no se repiten, se verifica que
+el producto cumple lo mismo. Se prueba con **menos volumen o menos tiempo** y se proyecta, dejando escrito en la evidencia
+qué se midió y qué se proyectó.
+
+| Escenario | Meta real | Cómo se prueba | Qué se mide de verdad |
+|---|---|---|---|
+| EC003/EC004 (oferta) | 20.000 req/h | Mismo ritmo (5,6 req/s) durante **10 minutos** en vez de 1 hora (~3.300 peticiones, suficientes para p95/p99) | p95 y p99 reales |
+| EC009/EC010 (proveedor caído) | 0 % de 5xx y corte a 700 ms | 5 minutos con el stub en `lento` y `caido` | Cortes, 5xx y latencia reales |
+| EC011/EC012 (réplica) | p95 ≤ 150 ms | 10 minutos al ritmo de EC003 | Latencia y lag reales |
+| EC017 (batch) | 10 M perfiles en < 2 h = **~1.390 perfiles/s** | **5 minutos** a escala reducida (p. ej. 1/20: ~70 perfiles/s, ~21.000 perfiles) mientras k6 manda el tráfico de EC003 | Perfiles/s por instancia y p95 en línea durante el batch |
+
+**Proyección de EC017:** instancias necesarias = 1.390 ÷ (perfiles/s por instancia medidos). Se cumple si ese número cabe en
+el límite de instancias del job y el p95 en línea no se movió durante la prueba. La escala completa **no se puede**
+probar en staging aunque se quisiera: Atlas M0 tiene 512 MB y un tope de operaciones por segundo; 10 millones de
+perfiles no caben. Por eso la evidencia dice "medido a 1/20 y proyectado".
+
+**Costo:** Cloud Run Job unos minutos, Cloud Scheduler y Cloud Tasks dentro de la capa gratuita.
+
 ## Documentos que actualiza cada bloque
 
 Regla: **cada PR de un bloque actualiza en el mismo PR los documentos que dice esta tabla**, para que el repo nunca
@@ -193,6 +225,7 @@ contradiga estas decisiones. Al cerrar un bloque se marca aquí como hecho.
 | 5 · Fuentes | README del `acl-worker`, `docs/arquitectura-backend.md` |
 | 6 · Seguridad en CI | `docs/convenciones.md` (escaneos informativos y cuándo pasan a obligatorios), `infra/README.md` (secretos de Sonar) |
 | 7 · Front | `docs/convenciones.md` y README del repo del front |
+| 9 · Batch | `infra/README.md` (bandera `crear_batch`, Scheduler y Job), `docs/arquitectura-backend.md`, `docs/evidencias/EC017-<fecha>.md` |
 | 8 · Diseño | `contracts/` + CHANGELOG (evento `PerfilActualizado`), `infra/README.md` (bandera `crear_pubsub`), `docs/arquitectura-backend.md` (Pub/Sub solo para ese evento; la oferta se guarda en W03), `docs/evidencias/exploratoria-FC-01.md` |
 | Al terminar todo | `CLAUDE.md` → sección **Estado** con la fecha nueva y lo que quedó hecho |
 
