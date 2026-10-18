@@ -26,7 +26,7 @@
 | 14 | Pruebas a escala | Para **todas** las historias de arquitectura: no se repiten los experimentos; se prueba con menos tiempo, menos volumen o picos cortos y se proyecta con regla de tres, diciendo en la evidencia qué se midió y qué se proyectó. Todo en una sola sesión contra staging. Ver "Cómo se prueban todas las historias de arquitectura sin gastar". |
 | 15 | Batch nocturno (HA-ESC-004) | Se adelanta del Sprint 3 al **Sprint 1** (bloque 9). |
 | 16 | API Gateway (HA-LAT-004) | Se monta **en el Sprint 1** un API Gateway de GCP delante del BFF, con plazo duro de 700 ms. El BFF deja de ser público: solo el gateway lo invoca. El presupuesto ≤ 120 ms por proveedor vive en el ACL (es quien llama a los proveedores). Bloque 10. |
-| 17 | JWT en el gateway | En el Sprint 1 el JWT lo sigue validando el BFF (HS256). Pasarlo al gateway exige ES256 + JWKS en AUTH: Sprint 2. |
+| 17 | JWT en el gateway | En el Sprint 1 **no se pierde la autenticación**: el gateway deja pasar el JWT del usuario y el BFF lo sigue validando (HS256), como hoy. Pasar la validación al gateway exige ES256 + JWKS en AUTH: Sprint 2. |
 | 18 | ESC-001 | Se queda en el **Sprint 2** (ya tendrá el gateway montado). |
 | 19 | Sonar | **SonarCloud** (gratis para repos públicos). Se activa con los secretos de cada repo. |
 | 20 | Consentimiento ligado al titular (bloque 4) | **Entra en el Sprint 1.** No hay pantalla nueva: se usa el checkbox de W01-01; `useCotizacion` manda además el documento y los campos fijos (`tipoDato`, `fuenteDatos`, `canal`). La consulta a Open Finance lleva `consentimiento_id` y finalidad (CE 004/2024). |
@@ -232,6 +232,17 @@ Local:  navegador → Vite (proxy /graphql)     → gateway local :8080 (Envoy, 
 Ese presupuesto se pone donde están esas llamadas: en el **ACL Worker**, con un plazo configurable por proveedor
 (`PRESUPUESTO_MS_<PROVEEDOR>`), y se mide por dependencia en la corrida de k6 (EC008).
 
+**Autenticación en el Sprint 1 (decisión 17):** sigue igual que hoy, con una capa más.
+- **El usuario:** inicia sesión con AUTH, recibe su JWT y lo manda en `Authorization: Bearer`. El gateway **no** lo valida
+  todavía; lo deja pasar y el BFF lo valida como hoy (firma, vencimiento y rol). Ninguna ruta queda sin autenticación.
+- **El gateway ante el BFF:** como el BFF deja de ser público, el gateway se identifica con su cuenta `gateway-bff`. Para
+  eso ESPv2 **reemplaza la cabecera `Authorization`** por su propio token de Google y mueve la del usuario a
+  **`X-Forwarded-Authorization`**. Por eso el BFF (`app/autenticacion_usuarios.py`) lee el JWT del usuario de
+  `X-Forwarded-Authorization` cuando existe y, si no, de `Authorization` (local y CI, donde Envoy no la cambia). Es seguro
+  porque al BFF privado solo puede llamarlo el gateway. Prueba en pytest de los dos casos.
+- **Sprint 2:** AUTH firma con ES256 y publica JWKS, el gateway valida el JWT antes de llegar al BFF y el BFF deja de
+  verificarlo.
+
 **Riesgos y cómo se cubren:**
 1. **Hoy la oferta preliminar tarda ~730 ms** y el gateway la cortaría en 700 ms con un 504. Por eso el **bloque 2
    (EC010 ≤ 500 ms) entra antes o junto con este bloque**.
@@ -251,10 +262,11 @@ Ese presupuesto se pone donde están esas llamadas: en el **ACL Worker**, con un
 | back · compose | Servicio `gateway` (Envoy) en `docker-compose.yml` y `infra/gateway/envoy.yaml`. |
 | back · CI (`ci.yml`) | El job `humo` pasa por el gateway local (`:8080`) y prueba el corte: con el stub en `lento`, la respuesta llega antes de 700 ms y nunca como 5xx crudo. El job `infra` valida `openapi.yaml` y corre `validar_gateway.py`. |
 | back · deploy (`deploy-staging.yml`) | La humo de la revisión nueva sigue yendo directo al BFF con token de identidad (ya funciona). Se agrega una humo final contra `gateway_url/health` después de promover, y el informe del despliegue muestra la URL del gateway. |
+| back · BFF | Leer el JWT del usuario de `X-Forwarded-Authorization` si existe, si no de `Authorization` (decisión 17). |
 | back · ACL | Plazo por proveedor configurable (`PRESUPUESTO_MS_*`, 120 ms por defecto para EC008) dentro del corte duro de 700 ms. |
 | back | k6 de EC001/EC002/EC008 contra `gateway_url` (prueba reducida, abajo). Evidencia en `docs/evidencias/EC001-EC002-EC008-<fecha>.md`. |
 
-**Lo que no cambia:** el código del BFF y el contrato GraphQL. Lo que le toca al front (rewrite de Vercel, 504 como
+**Lo que no cambia:** el contrato GraphQL y la forma de iniciar sesión (el BFF solo cambia de qué cabecera lee el JWT). Lo que le toca al front (rewrite de Vercel, 504 como
 reintento, gateway local) está en el plan del front.
 
 ## Cómo se prueban todas las historias de arquitectura sin gastar
