@@ -1,0 +1,32 @@
+# Fuentes de datos de Grafana hacia Google Cloud (lo que ven los servicios desplegados en staging).
+# Autenticación: credenciales por defecto de la aplicación (ADC), las de `gcloud auth application-default login`, que el
+# compose monta de solo lectura. Nada de claves de cuenta de servicio en el repo.
+apiVersion: 1
+datasources:
+  - name: GCP Monitoring
+    uid: gcp_monitoring
+    type: stackdriver
+    access: proxy
+    isDefault: true
+    editable: false
+    jsonData:
+      authenticationType: gce
+      defaultProject: ${GCP_PROYECTO}
+
+  - name: GCP Logging
+    uid: gcp_logging
+    type: googlecloud-logging-datasource
+    access: proxy
+    editable: false
+    jsonData:
+      authenticationType: gce
+      defaultProject: ${GCP_PROYECTO}
+
+  - name: GCP Trace
+    uid: gcp_trace
+    type: googlecloud-trace-datasource
+    access: proxy
+    editable: false
+    jsonData:
+      authenticationType: gce
+      defaultProject: ${GCP_PROYECTO}
