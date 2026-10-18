@@ -138,7 +138,7 @@ Memorystore cuestan lo mismo que hoy y Atlas sigue gratis (M0). No hay que subir
 | Repo | Cambio |
 |---|---|
 | back | Un solo archivo de fuentes (`nombre`, `origen`, `peso`, `obligatoria`) que leen el BFF, el ACL y RATING; agregar una fuente es un adaptador más una fila. |
-| back | Prueba de EC031: cambiar el adaptador de la pasarela por otro que cumple el mismo puerto, sin tocar PAYMENTS ni el BFF; evidencia en `docs/evidencias/`. |
+| back | EC031 (cambiar la pasarela sin tocar el Core) lo lleva el plan de W05, bloque 2 (`docs/plan-completar-hu-w05.md`). |
 
 ### Bloque 6 · Seguridad en CI/CD (P2 #12)
 
