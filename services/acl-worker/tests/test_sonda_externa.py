@@ -67,13 +67,13 @@ def test_la_configuracion_valida_el_disparador_y_el_proveedor_de_pasarela(monkey
     monkeypatch.setenv("DISPARADOR", "magia")
     with pytest.raises(ValueError, match="DISPARADOR"):
         Configuracion.desde_entorno()
-    monkeypatch.setenv("DISPARADOR", "externo")
+    monkeypatch.setenv("DISPARADOR", "bucle")
     monkeypatch.setenv("PROVEEDOR_PASARELA", "otra")
     with pytest.raises(ValueError, match="PROVEEDOR_PASARELA"):
         Configuracion.desde_entorno()
     monkeypatch.setenv("PROVEEDOR_PASARELA", "alterna")
     config = Configuracion.desde_entorno()
-    assert (config.disparador, config.proveedor_pasarela) == ("externo", "alterna")
+    assert (config.disparador, config.proveedor_pasarela) == ("bucle", "alterna")
 
 
 def test_el_proveedor_alterno_se_elige_por_configuracion() -> None:

@@ -27,6 +27,7 @@ from app.application.circuitos import (
     NOMBRE_CIRCUITO_PASARELA,
     construir_fabrica,
 )
+from app.application.cola_tareas import ColaReconciliacionCloudTasks
 from app.application.configuracion import Configuracion
 from app.application.reconciliacion import (
     NOMBRE_COLA,
@@ -144,9 +145,21 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         # db de Redis separado (db 2) del de la caché (db 1): productor de la
         # reconciliación diferida que consume `services/consolidador-fuentes`.
         redis_cola = redis.Redis.from_url(config.cola_reconciliacion_redis_url)
-        cola_rq = rq.Queue(NOMBRE_COLA, connection=redis_cola)
+        # Con DISPARADOR=externo (Cloud Run) la reconciliación va por Cloud Tasks al consolidador;
+        # la marca de dedup sigue en Redis. En local y CI sigue la cola `rq`.
+        if config.disparador == "externo":
+            cola_reconciliacion = ColaReconciliacionCloudTasks(
+                config.tareas_proyecto,
+                config.tareas_region,
+                config.tareas_cola_reconciliacion,
+                config.consolidador_url,
+                config.tareas_cuenta,
+            )
+        else:
+            cola_rq = rq.Queue(NOMBRE_COLA, connection=redis_cola)
+            cola_reconciliacion = ColaReconciliacionRQ(cola_rq, REINTENTOS_RECONCILIACION)
         productor_reconciliacion = ProductorReconciliacion(
-            cola=ColaReconciliacionRQ(cola_rq, REINTENTOS_RECONCILIACION),
+            cola=cola_reconciliacion,
             dedup=MarcaDedupRedis(redis_cola),
         )
 

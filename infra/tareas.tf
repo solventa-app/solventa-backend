@@ -9,7 +9,9 @@
 #   - Sonda de recuperación del circuito (regla de arquitectura #5): Cloud Scheduler cada minuto llama a
 #     `POST /sonda/ejecutar` del ACL Worker.
 #
-# Pendiente (mismo patrón, otro PR): la reconciliación de fuentes degradadas del consolidador.
+#   - Reconciliación de fuentes degradadas (W01): Cloud Tasks. El ACL Worker encola una tarea HTTP hacia
+#     `POST /reconciliar` del consolidador (en lugar de la cola `rq`, cuyo trabajador es un hilo de fondo), y la
+#     cola reintenta con backoff mientras el consolidador responda 503 (la fuente sigue degradada).
 #
 # Solo `variables de entorno` + estos recursos: el código de los servicios no cambia entre local (bucle) y nube.
 # Gate: var.crear_tareas (default false) y var.crear_servicios.
@@ -85,6 +87,46 @@ resource "google_cloud_run_v2_service_iam_member" "payments_se_invoca" {
   name     = google_cloud_run_v2_service.servicio["payments"].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.runtime["payments"].email}"
+}
+
+# --------------------------------------------------------------- reconciliación de fuentes (Cloud Tasks)
+resource "google_cloud_tasks_queue" "reconciliacion_fuentes" {
+  count      = local.hay_tareas ? 1 : 0
+  depends_on = [google_project_service.tareas_apis]
+  project    = var.project_id
+  name       = "reconciliacion-fuentes"
+  location   = var.region
+
+  rate_limits {
+    max_dispatches_per_second = 2
+    max_concurrent_dispatches = 2
+  }
+
+  # Mismo backoff que el `rq.Retry` original: 5 intentos, de 10 s a 300 s. Agotados, la tarea se descarta.
+  retry_config {
+    max_attempts  = 5
+    min_backoff   = "10s"
+    max_backoff   = "300s"
+    max_doublings = 5
+  }
+}
+
+# El ACL Worker crea las tareas...
+resource "google_cloud_tasks_queue_iam_member" "acl_encola_reconciliacion" {
+  count    = local.hay_tareas ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_tasks_queue.reconciliacion_fuentes[0].name
+  role     = "roles/cloudtasks.enqueuer"
+  member   = "serviceAccount:${google_service_account.runtime["acl-worker"].email}"
+}
+
+# ...firmadas con su propia identidad (la que ya puede invocar al consolidador por `llama` en el manifiesto).
+resource "google_service_account_iam_member" "acl_firma_tareas" {
+  count              = local.hay_tareas ? 1 : 0
+  service_account_id = google_service_account.runtime["acl-worker"].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.runtime["acl-worker"].email}"
 }
 
 # ------------------------------------------------------------------ sonda del circuito (Cloud Scheduler)

@@ -123,3 +123,12 @@ curl -s -X POST localhost:8005/fuentes/consultar \
 - Estado del trabajador en memoria del proceso, sin alta disponibilidad: si el contenedor se
   reinicia con un job en vuelo, `rq` lo reintenta según su propio mecanismo de recuperación de
   jobs huérfanos (no se agregó lógica propia encima).
+
+## Con `DISPARADOR=externo` (Cloud Run): `POST /reconciliar`
+
+En Cloud Run el trabajador de `rq` (un hilo de fondo) no corre de forma fiable, así que con `DISPARADOR=externo` no se
+arranca y el ACL Worker encola el trabajo en Cloud Tasks (cola `reconciliacion-fuentes`, `infra/tareas.tf`), que llama a
+`POST /reconciliar` con el mismo contenido del job (`fuente`, `cliente_id`, `consentimiento_id`, `encolado_en`).
+`200` = resuelto o descartado por consentimiento no vigente; `503` = la fuente sigue degradada o AUTH/ACL no respondieron,
+y la cola reintenta (5 intentos, de 10 s a 300 s). La lógica es la misma (`app/tareas.py`); solo cambia quién la dispara.
+Es privado (IAM de Cloud Run). En local y CI (`DISPARADOR=bucle`, por defecto) sigue el trabajador de `rq`.

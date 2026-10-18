@@ -140,7 +140,7 @@ Cómo produce cada estado el mock de la pasarela, por modo:
 | Nivel | Resultado |
 |---|---|
 | Unitarias | Mock 15, ACL Worker 65, PAYMENTS 39, BFF 90 (incluida la equivalencia con el contrato y que la póliza no viaje en la URL) |
-| Token cifrado, reintento externo y atascados (2026-10-18) | PAYMENTS 90, ACL Worker 92, mock de la pasarela 24 (pytest, local). Sin correr todavía: la migración `0007` contra Postgres real (`scripts/verificar-migraciones.sh payments` en el CI), Cloud Tasks y Cloud Scheduler reales, y los k6 de cobros contra staging |
+| Token cifrado, reintento externo y atascados (2026-10-18) | PAYMENTS 90, ACL Worker 96, consolidador 26, mock de la pasarela 24 (pytest, local). Sin correr todavía: la migración `0007` contra Postgres real (`scripts/verificar-migraciones.sh payments` en el CI), Cloud Tasks y Cloud Scheduler reales, y los k6 de cobros contra staging |
 | Nombre propio e `idTransaccion` (2026-10-18) | AUTH 81, PAYMENTS 47, BFF 133. Newman: 58 peticiones y 135 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. `Cobro.idTransaccion` es la referencia de la pasarela (la misma que PAYMENTS guarda en `referencia`) |
 | Nombre del cliente (2026-10-17) | AUTH 74, PAYMENTS 47, BFF 109. Newman: 55 peticiones y 126 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. Nombre ilegible en la base y 0 apariciones en logs |
 | Ajustes (2026-10-17) | Mock 15, ACL Worker 66, PAYMENTS 43, BFF 99. Newman: 54 peticiones y 122 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. Este paso a paso, verificado tal como está escrito |

@@ -115,10 +115,11 @@ servicios siguen con su bucle (`DISPARADOR=bucle`), que en Cloud Run no es fiabl
 |---|---|---|
 | Reintento de cobros `pendiente` y recuperación de los atascados en `cobrando` | PAYMENTS programa una tarea de Cloud Tasks cuando un cobro queda `pendiente`; cada pasada programa la siguiente si aún queda alguno | `POST /cobros/_reintentar` de PAYMENTS (token OIDC de su propia cuenta de runtime) |
 | Sonda de recuperación del circuito (regla #5) | Cloud Scheduler, cada minuto | `POST /sonda/ejecutar` del ACL Worker |
+| Reconciliación de fuentes degradadas (W01) | El ACL Worker encola una tarea en la cola `reconciliacion-fuentes` en vez del job de `rq`; la cola reintenta (5 intentos, 10 a 300 s) mientras el consolidador responda 503 | `POST /reconciliar` del consolidador (token OIDC de la cuenta del ACL Worker) |
 
 Límites que conviene saber: el estado de los circuitos vive en la memoria de cada instancia, así que la sonda revisa los de
-la instancia que recibe la llamada; y la reconciliación de fuentes del consolidador (cola `rq`) sigue pendiente de pasar al
-mismo patrón. Si Cloud Tasks falla al programar, el cobro sigue `pendiente` (se registra una advertencia) y el botón del
+la instancia que recibe la llamada; y una tarea de reconciliación que agota sus 5 intentos se descarta (no hay un registro de
+fallidos como el `FailedJobRegistry` de `rq`). Si Cloud Tasks falla al programar, el cobro sigue `pendiente` (se registra una advertencia) y el botón del
 back-office lo recupera: nunca se tumba un cobro por eso.
 
 ## Uso
