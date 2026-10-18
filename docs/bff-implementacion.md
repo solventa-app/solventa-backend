@@ -150,7 +150,7 @@ docker compose --profile servicios down -v
 | Tema | Detalle |
 |---|---|
 | **Latencia de la oferta degradada** | Una oferta PRELIMINAR tarda ~750 ms porque el ACL espera su corte de 700 ms. Supera el p95 de 400 ms de CA-W01-03. Se mide con k6 (EC003 / EC004) en PF2-2 |
-| **Token entre servicios** | PAYMENTS → ACL y `consolidador-fuentes` → ACL todavía no envían token: en Cloud Run recibirían 403. Hay que corregirlo antes del primer despliegue |
+| ~~**Token entre servicios**~~ | **Resuelto (KAN-176, 2026-10-17):** PAYMENTS, el ACL Worker (hacia los stubs) y `consolidador-fuentes` ya envían el token de identidad con `AUTENTICACION_SERVICIOS=id_token` |
 | ~~**Mock de AUTH en staging**~~ | **Resuelto con T-W01-4 (2026-10-17):** el consentimiento vive en PostgreSQL y lo comparten todas las instancias |
 | **Revocación (CA-W01-08)** | El BFF valida el consentimiento en cada solicitud, pero la caché del ACL (300 s) no se invalida activamente |
 | **`cliente_id`** | Provisional hasta que AUTH tenga la tabla de identidad (punto REWIRE en `identificadores.py`) |

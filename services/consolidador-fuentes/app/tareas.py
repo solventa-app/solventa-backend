@@ -35,6 +35,7 @@ import os
 
 import httpx
 
+from app.autenticacion_servicios import autenticacion_para, modo_desde_entorno
 from app.identificadores import id_opaco
 
 logger = logging.getLogger("consolidador_fuentes.tareas")
@@ -44,6 +45,10 @@ AUTH_URL = os.getenv("AUTH_URL", "http://localhost:8001")
 # Más holgado que el presupuesto de 700 ms del camino síncrono (EC009/EC010):
 # esta llamada corre fuera del camino de usuario, en un job de fondo.
 TIMEOUT_S = float(os.getenv("ACL_TIMEOUT_S", "3"))
+# Token de identidad hacia AUTH y el ACL Worker en Cloud Run (servicios privados); nada en local.
+_MODO_AUTENTICACION = modo_desde_entorno()
+AUTH_HACIA_AUTH = autenticacion_para(_MODO_AUTENTICACION, "auth")
+AUTH_HACIA_ACL = autenticacion_para(_MODO_AUTENTICACION, "acl-worker")
 
 
 class FuenteSigueDegradadaError(Exception):
@@ -54,7 +59,9 @@ class FuenteSigueDegradadaError(Exception):
 def consentimiento_vigente(consentimiento_id: str) -> bool:
     """`False` si AUTH dice que no existe (404) o que ya no está vigente. Cualquier
     otra falla de AUTH se propaga: sin confirmación no se consulta."""
-    respuesta = httpx.get(f"{AUTH_URL}/consentimientos/{consentimiento_id}", timeout=TIMEOUT_S)
+    respuesta = httpx.get(
+        f"{AUTH_URL}/consentimientos/{consentimiento_id}", timeout=TIMEOUT_S, auth=AUTH_HACIA_AUTH
+    )
     if respuesta.status_code == 404:
         return False
     respuesta.raise_for_status()
@@ -81,6 +88,7 @@ def reconciliar_fuente(
             "fuente": fuente,
         },
         timeout=TIMEOUT_S,
+        auth=AUTH_HACIA_ACL,
     )
     respuesta.raise_for_status()
     cuerpo = respuesta.json()
