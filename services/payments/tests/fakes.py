@@ -39,6 +39,8 @@ class RepositorioCobrosFalso:
                 "referencia": None,
                 "motivo": None,
                 "intentos": 1,
+                "reintentos_rechazo": 0,
+                "referencia_pasarela": None,
                 "creado_en": datetime.now(UTC),
                 "actualizado_en": datetime.now(UTC),
             }
@@ -65,6 +67,20 @@ class RepositorioCobrosFalso:
             cobro["referencia"] = referencia
             cobro["motivo"] = motivo
             cobro["intentos"] += 1
+            return dict(cobro)
+
+    def iniciar_reintento_rechazo(self, cobro_id: str, maximo: int) -> dict | None:
+        with self._lock:
+            cobro = self._por_id[cobro_id]
+            if cobro["estado"] != "rechazado" or cobro["reintentos_rechazo"] >= maximo:
+                return None
+            cobro["reintentos_rechazo"] += 1
+            cobro["referencia_pasarela"] = (
+                f"{cobro['id_intento_cobro']}-r{cobro['reintentos_rechazo']}"
+            )
+            cobro["estado"] = "cobrando"
+            cobro["referencia"] = None
+            cobro["motivo"] = None
             return dict(cobro)
 
     def listar_pendientes(self, max_intentos: int) -> list[dict]:

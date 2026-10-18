@@ -26,7 +26,8 @@ from psycopg_pool import ConnectionPool
 
 _COLUMNAS = (
     "id, id_intento_cobro, poliza_id, cliente_id, monto, moneda, token_medio_pago, "
-    "estado, referencia, motivo, intentos, creado_en, actualizado_en"
+    "estado, referencia, motivo, intentos, reintentos_rechazo, referencia_pasarela, "
+    "creado_en, actualizado_en"
 )
 
 
@@ -92,6 +93,26 @@ class RepositorioCobrosPostgres:
                 {"id": cobro_id, "estado": estado, "referencia": referencia, "motivo": motivo},
             ).fetchone()
             return dict(fila)
+
+    def iniciar_reintento_rechazo(self, cobro_id: str, maximo: int) -> dict | None:
+        """Reintento manual de un `rechazado` (CA-W05-02). En una sola sentencia: lo pasa a
+        `cobrando`, suma un reintento y le da su propia referencia ante la pasarela
+        (`{id_intento_cobro}-rN`). Si el cobro ya no está `rechazado` (otro clic ganó) o agotó
+        `maximo`, no toca nada y devuelve `None`: dos clics a la vez no cobran dos veces."""
+        with self._pool.connection() as conexion:
+            fila = conexion.execute(
+                f"""
+                UPDATE cobros
+                SET estado = 'cobrando',
+                    reintentos_rechazo = reintentos_rechazo + 1,
+                    referencia_pasarela = id_intento_cobro || '-r' || (reintentos_rechazo + 1),
+                    referencia = NULL, motivo = NULL, actualizado_en = now()
+                WHERE id = %(id)s AND estado = 'rechazado' AND reintentos_rechazo < %(maximo)s
+                RETURNING {_COLUMNAS}
+                """,
+                {"id": cobro_id, "maximo": maximo},
+            ).fetchone()
+            return dict(fila) if fila is not None else None
 
     def listar_pendientes(self, max_intentos: int) -> list[dict]:
         with self._pool.connection() as conexion:

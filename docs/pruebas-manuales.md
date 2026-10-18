@@ -98,13 +98,13 @@ TOKEN_BO=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"admin.solv
 echo "${TOKEN_BO:0:20}..."
 # Sufijo de letras: un alias con 6 o más dígitos seguidos se rechaza por parecer un documento.
 SUFIJO=$(python3 -c "import random,string;print(''.join(random.choices(string.ascii_lowercase,k=8)))")
-gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"asesor.'"$SUFIJO"'\", clave:\"clave-demo-0001\", rol:ASESOR}) { __typename ... on Usuario { id rol estado } ... on ErrorUsuario { mensaje } } }"}' "$TOKEN_BO"
+gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"asesor.'"$SUFIJO"'\", clave:\"clave-demo-0001\", rol:ASESOR, nombre:\"Asesora Demo\"}) { __typename ... on Usuario { id rol estado } ... on ErrorUsuario { mensaje } } }"}' "$TOKEN_BO"
 TOKEN_ASESOR=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"asesor.'"$SUFIJO"'\", clave:\"clave-demo-0001\"}) { ... on Sesion { token usuario { rol } } } }"}' | campo data.iniciarSesion.token)
-gql '{"query":"{ yo { usuario rol estado } }"}' "$TOKEN_ASESOR"
+gql '{"query":"{ yo { usuario rol estado nombre } }"}' "$TOKEN_ASESOR"
 ```
 
 **Esperado:** un JWT, el usuario creado con `"rol":"ASESOR"` y `"estado":"ACTIVO"`, y `yo` devolviendo ese mismo
-usuario. El JWT lleva el rol dentro (puedes pegarlo en jwt.io para verlo); el BFF lo verifica en cada petición.
+usuario **con su propio nombre** (`Asesora Demo`; cada usuario ve solo el suyo y el JWT no lo lleva). El JWT lleva el rol dentro (puedes pegarlo en jwt.io para verlo); el BFF lo verifica en cada petición.
 
 ### Paso 4. Un intento prohibido
 
@@ -216,13 +216,13 @@ tardó más de 700 ms y Solventa lo registró como pendiente. Es el caso que ant
 
 ```bash
 gql '{"query":"{ cobros(polizaId:\"POL-MANUAL-1\") { id estado motivo cliente { nombre } } }"}' "$TOKEN_BO"
-gql '{"query":"mutation { reintentarCobro(cobroId:\"'"$ID"'\") { estado } }"}' "$TOKEN_BO"
+gql '{"query":"mutation { reintentarCobro(cobroId:\"'"$ID"'\") { estado idTransaccion } }"}' "$TOKEN_BO"
 echo "PAYMENTS: $(curl -s $PAY/cobros/$ID | campo referencia)"
 echo "Pasarela: $(curl -s $PASARELA/v1/cobros/$CLAVE | campo referencia)"
 gql "$(entrada "$CLAVE" 1.00)" "$TOKEN_BO"
 ```
 
-**Esperado:** la tabla muestra el cobro con el nombre del cliente; el reintento lo deja `COBRADO`; **las dos referencias son
+**Esperado:** la tabla muestra el cobro con el nombre del cliente; el reintento lo deja `COBRADO` y su `idTransaccion` es la referencia de la pasarela; **las dos referencias son
 idénticas** (no hubo un segundo cobro); y reenviar el mismo `idIntentoCobro` con otro monto da `ErrorCobro`
 ("ya se usó con otros datos"). Un CLIENTE o un ASESOR que lo intente recibe "No tienes permiso".
 

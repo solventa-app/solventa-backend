@@ -25,10 +25,16 @@ de PAYMENTS y evento `cobro.estado-cambiado` v2).
 
 El back-office ve **quién es el cliente** de cada cobro. El nombre es dato personal, así que:
 
-- **Vive en AUTH**, cifrado por campo (AES-256-GCM, `services/auth/app/cifrado.py`), en `usuarios.nombre_cifrado`. Solo los
-  usuarios CLIENTE tienen nombre. PAYMENTS guarda únicamente el `cliente_id` (escritor único: cada servicio escribe lo suyo).
-- **Sale solo por `cobros`, `crearCobro` y `reintentarCobro`**, que son solo BACKOFFICE y siempre con token. `Usuario` no
-  lo expone y `crearUsuario` no lo devuelve.
+- **Vive en AUTH**, cifrado por campo (AES-256-GCM, `services/auth/app/cifrado.py`), en `usuarios.nombre_cifrado`. Cualquier
+  rol puede tener nombre; en los cobros se muestra el de los CLIENTE. PAYMENTS guarda únicamente el `cliente_id` (escritor único: cada servicio escribe lo suyo).
+- **Sale solo por dos caminos:**
+  1. **El nombre del cliente en un cobro:** `cobros`, `crearCobro` y `reintentarCobro`, que son solo BACKOFFICE y siempre
+     con token. El ASESOR y el CLIENTE no entran a pagos.
+  2. **El nombre propio:** `Usuario.nombre` en `iniciarSesion` y `yo`, y cada usuario recibe únicamente el suyo. En
+     `usuarios` (la lista) y en `crearUsuario` va en `null`.
+
+  El nombre **no viaja en el JWT**: va en base64, sin cifrar, y valdría 60 minutos aunque cambiara. El front lo pide por
+  GraphQL tras iniciar sesión y, si llega `null`, muestra el alias.
 - **El BFF compone la respuesta:** pide a AUTH los nombres de **todos** los clientes de la lista en una sola llamada (de
   a 200, el máximo de AUTH), no uno por cobro. Si AUTH no responde, los cobros llegan igual con `cliente.nombre` en
   `null`: ver el cobro importa más que ver el nombre.
@@ -55,7 +61,8 @@ Una demo en vivo (2026-10-16) dejó a la vista tres huecos en lo que ya existía
 | **Un solo camino** | El bucle automático y el botón del back-office usan la misma función (`services/payments/app/application/conciliacion.py`) | Los dos quedan protegidos igual |
 | **Consulta por referencia del comercio** | Se busca el cobro por el `id_intento_cobro` que Solventa envía (en la pasarela, `referencia_comercio`) | Así consultan las pasarelas reales (Wompi `reference`, PayU `referenceCode`): cambiar de pasarela sigue siendo solo un adaptador (CA-W05-06) |
 | **Intentos que no cuentan** | Si el circuito está abierto o la pasarela no responde a la consulta, no se gasta intento | Cierra el hueco 2 |
-| **Qué se reintenta** | Solo `pendiente`. `cobrado` o `cobrando` se devuelven sin tocarlos; `rechazado` da error | Un doble clic no cobra dos veces; un rechazo no se arregla insistiendo |
+| **Qué se reintenta** | `pendiente` (conciliar y cobrar con la misma clave) y, desde el 2026-10-17, `rechazado` **hasta 3 veces** a mano (prototipo W05-01). `cobrado` o `cobrando` se devuelven sin tocarlos | Un doble clic no cobra dos veces; agotados los 3, "requiere otro medio de pago" |
+| **Referencia por reintento de un rechazado** | Cada reintento manual de un rechazado va a la pasarela con su propia referencia: `{idIntentoCobro}-r1`, `-r2`, `-r3` | La pasarela es idempotente por referencia: con la original devolvería el mismo rechazo |
 | **Mock realista, sin base de datos** | La pasarela simulada recuerda cada cobro **en memoria** por clave, puede rechazar y se puede consultar | Imita a un proveedor real sin sobre-construir |
 | **Crear cobros desde el BFF** | `crearCobro(entrada)`: el cliente envía `idIntentoCobro` y lo reenvía igual si repite; un conflicto llega como `ErrorCobro` | Un doble clic no crea otro cobro |
 | **Permisos** | `cobros`, `crearCobro` y `reintentarCobro`: solo `BACKOFFICE`, **siempre con token** (aun con la bandera en `opcional`) | Son datos de pagos |
@@ -68,7 +75,8 @@ Back-office ─► BFF  reintentarCobro(cobroId)         solo BACKOFFICE, con to
                 ▼
             PAYMENTS  POST /cobros/{id}/reintentar
                 │  ¿estado?  cobrado/cobrando → devolver tal cual
-                │            rechazado        → error "requiere otro medio de pago"
+                │            rechazado        → intento nuevo con referencia …-rN (hasta 3);
+                │                               agotados → error "requiere otro medio de pago"
                 │            pendiente        ↓
                 ▼
             ACL Worker  GET /pagos/cobros/{clave}     conciliar (mismo Circuit Breaker, 700 ms)
@@ -92,7 +100,7 @@ El bucle automático de PAYMENTS (cada 5 s, hasta 10 intentos) hace exactamente 
 |---|---|---|---|
 | `cobrando` | PAYMENTS | Recién creado, mientras se llama a la pasarela | Se devuelve tal cual |
 | `cobrado` | La pasarela | Cobró (lo informa al cobrar o se detecta al conciliar) | Se devuelve tal cual |
-| `rechazado` | La pasarela | Respondió, pero rechazó el cobro (p. ej. fondos insuficientes) | No: requiere otro medio de pago |
+| `rechazado` | La pasarela | Respondió, pero rechazó el cobro (p. ej. fondos insuficientes) | **Sí, a mano, hasta 3 veces** (`reintentosRestantes`); después requiere otro medio de pago |
 | `pendiente` | El ACL Worker | La pasarela no respondió: HTTP 503, más de 700 ms o circuito abierto | **Sí** |
 
 **La pasarela solo responde `cobrado` o `rechazado`**, siempre con HTTP 200. Cuando tiene problemas no devuelve un
@@ -122,6 +130,7 @@ Cómo produce cada estado el mock de la pasarela, por modo:
 | **ACL Worker** | `PuertoPasarelaPagos.consultar`; `GET /pagos/cobros/{referencia_comercio}` (siempre 200); `motivo=circuito_abierto`; póliza enmascarada en logs |
 | **PAYMENTS** | `POST /cobros/buscar` (filtros en el cuerpo), `GET /cobros/{id}`, `POST /cobros/{id}/reintentar`; `procesar_reintento` concilia en el bucle y en el botón |
 | **BFF** | `cobros` y `reintentarCobro` reales, solo BACKOFFICE con token |
+| **Nombre propio e `idTransaccion` (2026-10-18)** | Contrato v0.6: `Usuario.nombre` (propio) y `Cobro.idTransaccion`; AUTH admite nombre en cualquier rol y lo descifra solo para el propio usuario |
 | **Nombre del cliente (2026-10-17)** | Contrato v0.5; AUTH guarda `nombre_cifrado` (migración `0003`) y expone `POST /usuarios/nombres`; PAYMENTS guarda `cliente_id` (migración `0005`); el BFF compone `cobros.cliente { id nombre }` en lotes |
 | **Ajustes (2026-10-17)** | Contrato v0.3/v0.4: `crearCobro` en el BFF y evento v2 con `idIntentoCobro`; renombre a `id_intento_cobro` (mock: `referencia_comercio`); PAYMENTS responde 409 si el mismo intento llega con otros datos y 422 si falta un campo |
 
@@ -130,6 +139,7 @@ Cómo produce cada estado el mock de la pasarela, por modo:
 | Nivel | Resultado |
 |---|---|
 | Unitarias | Mock 15, ACL Worker 65, PAYMENTS 39, BFF 90 (incluida la equivalencia con el contrato y que la póliza no viaje en la URL) |
+| Nombre propio e `idTransaccion` (2026-10-18) | AUTH 81, PAYMENTS 47, BFF 133. Newman: 58 peticiones y 135 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. `Cobro.idTransaccion` es la referencia de la pasarela (la misma que PAYMENTS guarda en `referencia`) |
 | Nombre del cliente (2026-10-17) | AUTH 74, PAYMENTS 47, BFF 109. Newman: 55 peticiones y 126 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. Nombre ilegible en la base y 0 apariciones en logs |
 | Ajustes (2026-10-17) | Mock 15, ACL Worker 66, PAYMENTS 43, BFF 99. Newman: 54 peticiones y 122 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. Este paso a paso, verificado tal como está escrito |
 | Newman | 51 peticiones y 116 aserciones (carpeta nueva 9). En 6 corridas, 5 sin fallos y 1 con 4 fallas **en la oferta de HU-W01**, no en cobros (ver limitaciones) |
@@ -232,11 +242,18 @@ modo rechaza
 ID_R=$(gql "$(entrada "rech-$(date +%s)" POL-DEMO-1 90000.00 "$ID_CL")" "$TOKEN_BO" | campo data.crearCobro.id)
 modo sano
 gql '{"query":"query { cobros(polizaId: \"POL-DEMO-1\", estado: RECHAZADO) { estado motivo } }"}' "$TOKEN_BO"
-gql '{"query":"mutation($id: ID!) { reintentarCobro(cobroId: $id) { estado } }","variables":{"id":"'"$ID_R"'"}}' "$TOKEN_BO"
+gql '{"query":"mutation($id: ID!) { reintentarCobro(cobroId: $id) { estado reintentosRestantes } }","variables":{"id":"'"$ID_R"'"}}' "$TOKEN_BO"
 ```
 
-**Esperado:** el cobro `RECHAZADO` con `"motivo":"fondos_insuficientes"`, y el reintento con el error
-"El cobro fue rechazado por la pasarela: requiere otro medio de pago." (HTTP 200, nunca un 5xx).
+**Esperado:** el cobro `RECHAZADO` con `"motivo":"fondos_insuficientes"`, y el reintento (con la pasarela ya sana)
+`COBRADO` con `reintentosRestantes: 2`: fue un intento nuevo, con la referencia `…-r1`. Con la pasarela en `rechaza`,
+el cuarto reintento responde "Se agotaron los 3 reintentos: el cobro requiere otro medio de pago." (HTTP 200, nunca un 5xx).
+
+### Datos de ejemplo para la pantalla W05-01
+
+`python3 scripts/sembrar_cobros.py` crea por el BFF los 5 clientes del prototipo y un cobro para cada uno: 2 `COBRADO`,
+1 `RECHAZADO` (para probar el reintento) y 2 `PENDIENTE` que el reintento automático deja `COBRADO` a los pocos segundos.
+Es idempotente (alias e `idIntentoCobro` fijos) y solo sirve en local (usa el stub de la pasarela).
 
 ### Paso 6. Una caída larga ya no agota el cobro
 
@@ -292,7 +309,7 @@ npx --yes newman@6.2.2 run tests/newman/solventa-bff.postman_collection.json \
 POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios down -v
 ```
 
-**Esperado:** `OK: humo del BFF en verde` y Newman con 126 aserciones, 0 fallidas.
+**Esperado:** `OK: humo del BFF en verde` y Newman con 135 aserciones, 0 fallidas.
 
 ## 8. Limitaciones conocidas
 
@@ -307,5 +324,32 @@ POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios down -v
 
 ## 9. Fuera de alcance
 
-Que el CLIENTE pague su prima y la captura de tarjeta (CA-W05-03, frontend), Cloud Tasks real, eventos a Pub/Sub, la orden
+Que el CLIENTE pague su prima (ver la sección 10, Sprint 2) y la captura de tarjeta (CA-W05-03: el prototipo no la tiene), Cloud Tasks real, eventos a Pub/Sub, la orden
 de indemnización (CA-W05-07, Sprint 3) y el arranque frágil de Postgres en el primer `up` (un `fix(infra)` aparte).
+
+## 10. Pendiente para el Sprint 2: el primer cobro al firmar (HU-W03, decisión D-03)
+
+Revisado el 2026-10-17 contra el prototipo (Figma `Solventa-web-Final`, sección HU-W03):
+
+- **W03-02b "Confirmar firma y autorización de cobro"**: "Al firmar autorizas un cobro recurrente". La prima mensual "se
+  facturará junto con la cuota de tu crédito hipotecario durante 180 meses". Al confirmar se registra la firma, se
+  emite la póliza y "se activa el cobro de la prima".
+- Siguen **W03-03** Firma confirmada, **W03-04** Póliza emitida y **W03-05** Documento de póliza. **No hay pantalla del
+  resultado del cobro** (cobrado, pendiente o rechazado) ni de error de pago.
+- **No se pide tarjeta**: la prima va con la cuota del crédito, así que el medio de pago lo pone el banco del crédito.
+  Por eso no se construye la captura tokenizada de CA-W05-03; hay que ajustar su redacción en Jira.
+
+Lo que ya existe y sirve tal cual: `crearCobro` (recibe un `tokenMedioPago` opaco, sea de tarjeta o del banco),
+idempotencia por `idIntentoCobro`, estados `cobrando/cobrado/rechazado/pendiente`, reintento automático de pendientes y
+reintento manual de rechazados (hasta 3) desde W05-01.
+
+**Decisiones para el Planning del Sprint 2:**
+
+1. **D-03:** ¿la primera prima se cobra **al firmar, antes de emitir** (recomendación del plan) o la póliza se emite y el
+   cobro va por su lado?
+2. Si el primer cobro queda **rechazado** o **pendiente**: ¿se emite la póliza igual, queda en espera o se cancela?
+3. Qué ve el cliente después de firmar: diseñar en Figma la pantalla de resultado del pago (cobrado, en proceso o
+   rechazado con qué hacer). El plan del frontend ya lo marca como faltante (`solventa-frontend-web/docs/plan-frontend.md`).
+4. De dónde sale el `tokenMedioPago` cuando la prima va con la cuota del crédito (¿el banco del crédito vía Open
+   Finance, un convenio de recaudo?), y quién llama a `crearCobro`: hoy solo lo puede llamar un BACKOFFICE.
+

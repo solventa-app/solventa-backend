@@ -118,17 +118,90 @@ def test_reintentar_un_cobrado_lo_devuelve_tal_cual() -> None:
     assert acl.llamadas == 0 and acl.consultas == []  # doble clic seguro
 
 
-def test_reintentar_un_rechazado_no_se_permite() -> None:
-    repositorio = RepositorioCobrosFalso()
-    rechazo = ResultadoCobro(estado="rechazado", motivo="fondos_insuficientes")
-    rechazado = ServicioCobros(
-        repositorio, ClienteAclFalso([rechazo]), BusEventosFalso()
-    ).crear_cobro(dict(ORDEN))
+RECHAZO = ResultadoCobro(estado="rechazado", motivo="fondos_insuficientes")
 
-    with pytest.raises(NoReintentable, match="otro medio de pago"):
-        ServicioCobros(repositorio, ClienteAclFalso(), BusEventosFalso()).reintentar(
-            rechazado["id"]
-        )
+
+def _cobro_rechazado() -> tuple[RepositorioCobrosFalso, dict]:
+    repositorio = RepositorioCobrosFalso()
+    rechazado = ServicioCobros(
+        repositorio, ClienteAclFalso([RECHAZO]), BusEventosFalso()
+    ).crear_cobro(dict(ORDEN))
+    return repositorio, rechazado
+
+
+# ---------- reintento manual de un rechazado (hasta 3, prototipo W05-01)
+
+
+def test_reintentar_un_rechazado_cobra_con_una_referencia_nueva() -> None:
+    repositorio, rechazado = _cobro_rechazado()
+    acl = ClienteAclFalso([ResultadoCobro(estado="cobrado", referencia="pg-r1")])
+    bus = BusEventosFalso()
+
+    actualizado = ServicioCobros(repositorio, acl, bus).reintentar(rechazado["id"])
+
+    assert actualizado["estado"] == "cobrado"
+    assert actualizado["referencia"] == "pg-r1"
+    assert actualizado["reintentos_rechazo"] == 1
+    # La pasarela es idempotente por referencia: con la original devolvería el mismo rechazo.
+    assert acl.ordenes[0].id_intento_cobro == "clave-concilia-1-r1"
+    assert [e["datos"]["estado"] for e in bus.eventos] == ["cobrando", "cobrado"]
+
+
+def test_un_rechazado_se_puede_reintentar_hasta_3_veces() -> None:
+    repositorio, rechazado = _cobro_rechazado()
+    acl = ClienteAclFalso([RECHAZO])
+    servicio = ServicioCobros(repositorio, acl, BusEventosFalso())
+
+    for _ in range(3):
+        assert servicio.reintentar(rechazado["id"])["estado"] == "rechazado"
+    with pytest.raises(NoReintentable, match="Se agotaron los 3 reintentos"):
+        servicio.reintentar(rechazado["id"])
+
+    assert [o.id_intento_cobro for o in acl.ordenes] == [
+        "clave-concilia-1-r1",
+        "clave-concilia-1-r2",
+        "clave-concilia-1-r3",
+    ]
+    assert servicio.reintentos_restantes(repositorio.obtener(rechazado["id"])) == 0
+
+
+def test_el_maximo_de_reintentos_de_un_rechazado_es_configurable() -> None:
+    repositorio, rechazado = _cobro_rechazado()
+    servicio = ServicioCobros(
+        repositorio, ClienteAclFalso([RECHAZO]), BusEventosFalso(), reintentos_rechazo_maximo=1
+    )
+
+    servicio.reintentar(rechazado["id"])
+    with pytest.raises(NoReintentable, match="Se agotaron los 1 reintentos"):
+        servicio.reintentar(rechazado["id"])
+
+
+def test_dos_clics_a_la_vez_sobre_un_rechazado_cobran_una_sola_vez() -> None:
+    """El primer clic deja el cobro en `cobrando`; el segundo lo encuentra así y no cobra."""
+    repositorio, rechazado = _cobro_rechazado()
+    acl = ClienteAclFalso([ResultadoCobro(estado="cobrado", referencia="pg-r1")])
+    servicio = ServicioCobros(repositorio, acl, BusEventosFalso())
+    primero = repositorio.iniciar_reintento_rechazo(rechazado["id"], 3)  # el otro clic ganó
+
+    segundo = servicio.reintentar(rechazado["id"])
+
+    assert primero is not None
+    assert segundo["estado"] == "cobrando"
+    assert acl.llamadas == 0
+
+
+def test_un_reintento_que_quedo_pendiente_se_concilia_con_su_propia_referencia() -> None:
+    repositorio, rechazado = _cobro_rechazado()
+    servicio = ServicioCobros(repositorio, ClienteAclFalso([PENDIENTE]), BusEventosFalso())
+    pendiente = servicio.reintentar(rechazado["id"])
+    ya_cobrado = ResultadoConsulta(resultado="encontrado", estado="cobrado", referencia="pg-r1")
+    acl = ClienteAclFalso(en_pasarela={"clave-concilia-1-r1": ya_cobrado})
+
+    actualizado = ServicioCobros(repositorio, acl, BusEventosFalso()).reintentar(pendiente["id"])
+
+    assert acl.consultas == ["clave-concilia-1-r1"]
+    assert actualizado["estado"] == "cobrado"
+    assert acl.llamadas == 0
 
 
 def test_reintentar_un_cobro_inexistente_devuelve_none() -> None:

@@ -70,7 +70,7 @@ class SolicitudUsuario(BaseModel):
     usuario: str
     clave: str
     rol: str
-    nombre: str | None = None  # solo CLIENTE; se guarda cifrado y no se devuelve
+    nombre: str | None = None  # cualquier rol; se guarda cifrado y no se devuelve al crear
 
 
 class SolicitudNombres(BaseModel):
@@ -89,6 +89,9 @@ class UsuarioResponse(BaseModel):
     rol: str
     estado: str
     creado_en: datetime
+    # Solo lo llenan `POST /sesiones` y `GET /usuarios/{id}` (el propio usuario); en listas,
+    # altas y cambios va en null para no exponer nombres ajenos.
+    nombre: str | None = None
 
 
 class SesionResponse(BaseModel):
@@ -184,6 +187,7 @@ def create_app(
             sesion = app.state.sesiones.iniciar_sesion(body.usuario, body.clave)
         except CredencialesInvalidas as error:
             raise HTTPException(status_code=401, detail=str(error)) from error
+        sesion["usuario"]["nombre"] = app.state.usuarios.nombre_de(sesion["usuario"]["id"])
         return SesionResponse(**sesion)
 
     # ---------- Usuarios ----------
@@ -222,10 +226,11 @@ def create_app(
 
     @app.get("/usuarios/{usuario_id}", tags=["usuarios"], response_model=UsuarioResponse)
     def obtener_usuario(usuario_id: str) -> UsuarioResponse:
+        """Incluye el nombre: el BFF solo lo llama con el id del propio usuario (`yo`)."""
         usuario = app.state.usuarios.obtener(usuario_id)
         if usuario is None:
             raise HTTPException(status_code=404, detail="usuario no encontrado")
-        return UsuarioResponse(**usuario)
+        return UsuarioResponse(**usuario, nombre=app.state.usuarios.nombre_de(usuario_id))
 
     @app.post("/usuarios/{usuario_id}/rol", tags=["usuarios"], response_model=UsuarioResponse)
     def cambiar_rol(usuario_id: str, body: SolicitudRol) -> UsuarioResponse:
