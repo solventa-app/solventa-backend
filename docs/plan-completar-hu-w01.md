@@ -29,6 +29,7 @@
 | 20 | Consentimiento ligado al titular (bloque 4) | **Entra en el Sprint 1.** No hay pantalla nueva: se usa el checkbox de W01-01; `useCotizacion` manda además el documento y los campos fijos (`tipoDato`, `fuenteDatos`, `canal`). La consulta a Open Finance lleva `consentimiento_id` y finalidad (CE 004/2024). |
 | 21 | Revocar el consentimiento | El titular **debe poder revocar** (Ley 1581 de 2012; CA-W01-08 y el plan de pruebas: revocación en < 5 min). Como el prototipo no tiene esa pantalla, en el Sprint 1 se cumple en el **backend** (`revocarConsentimiento`, ya existe) con su prueba de los 5 minutos. La pantalla se agrega cuando exista en Figma (Sprint 2). |
 | 22 | Decisiones del Planning | D-02 (sesión causal), D-05 (stubs) y D-06 (W05 en el Sprint 1) **cerradas**: ya están hechas. D-04 cerrada en la decisión 6. Solo **D-01** (base de velocidad) sigue abierta para el Planning; D-03 es del Sprint 2. |
+| 23 | Vencimiento del consentimiento | Hoy no vence nunca (vigente = no revocado). Se agrega **vencimiento de 30 días** (configurable con `CONSENTIMIENTO_VIGENCIA_DIAS`) en el bloque 4: columna `vence_en` en la base de AUTH, fijada al otorgarlo; vigente = no revocado **y** antes de `vence_en`. Se calcula al leer: no hace falta un cron. |
 
 Basado en la revisión de pendientes de HU-W01 (18 puntos, numerados P1–P3 abajo) y en las restricciones que puso el equipo el 2026-10-18:
 
@@ -128,6 +129,9 @@ Memorystore cuestan lo mismo que hoy y Atlas sigue gratis (M0). No hay que subir
 | back · AUTH | Migración que agrega esas columnas y el titular (hash opaco del documento, nunca el documento en claro). |
 | back · BFF | `solicitarOferta` exige que el consentimiento sea del mismo titular que el documento. |
 | back · ACL + stub | La consulta a Open Finance lleva `consentimiento_id` y `finalidad`; el stub responde 403 sin ellos (CE 004/2024). |
+| back · AUTH | **Vencimiento (decisión 23):** migración aditiva que agrega `vence_en` (`otorgado_en + 30 días`; a las filas viejas se les calcula igual). El trigger append-only no deja cambiarla después. `vigente` pasa a ser `revocado_en IS NULL AND now() < vence_en`, así que vence sola, sin cron ni proceso nocturno. |
+| back · contrato | `Consentimiento.venceEn: DateTime!` (aditivo, anotado en el CHANGELOG). |
+| back · BFF/consolidador | Un consentimiento vencido se trata igual que uno revocado: no se consulta ninguna fuente y la oferta responde `ErrorOferta` pidiendo autorizar de nuevo. Prueba en pytest con el reloj adelantado. |
 | front | `useCotizacion` manda los campos nuevos al registrar el consentimiento; sincronizar contrato y mocks. |
 
 ### Bloque 5 · Fuentes por configuración y EC031 (P2 #10, #11)
