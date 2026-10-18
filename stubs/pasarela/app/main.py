@@ -17,6 +17,22 @@ el ACL Worker corta a los 700 ms, el cobro igual quedó hecho en la pasarela
 almacena datos de tarjeta: solo un `token_medio_pago` opaco (ya tokenizado
 por el proveedor PCI-DSS), como exige CA-W05-03 y la regla de arquitectura #6.
 
+**Tokenización (KAN-208).** `POST /v1/tokens` hace lo que una pasarela real con su formulario
+de captura: recibe la tarjeta (solo tarjetas de prueba, validadas con Luhn) y devuelve un token
+opaco con la marca y los últimos 4 dígitos. El número y el CVV **no se guardan, no se devuelven
+ni se escriben en ningún log**; los errores de validación tampoco los repiten. El token se deriva
+de la tarjeta para que tokenizar la misma tarjeta de prueba dé siempre el mismo token (la
+siembra de la demo es repetible, aunque el contenedor se reinicie). Eso es solo del simulador.
+Un token que el simulador no conoce se sigue aceptando al cobrar (compatibilidad con las
+pruebas y los cobros anteriores).
+
+Controles de la demo, siempre bajo `/control`:
+- `POST /control/tokens/{token}/estado`: cambia a mano el estado de una tarjeta
+  (`activa`, `fondos_insuficientes`, `bloqueada`, `vencida`). Un cobro con una tarjeta que no
+  está `activa` se **rechaza** con su motivo, sin importar el modo global.
+- `POST /control/latencia`: fija cuánto tarda en responder la pasarela (milisegundos). Por
+  encima de los 700 ms del ACL Worker equivale a una falla por timeout. `DELETE` la restaura.
+
 Expone además `GET /v1/estado`, que **sí obedece el modo simulado** (a
 diferencia de `/health`, que siempre responde ok como liveness del
 contenedor). `/v1/estado` es lo que usa la sonda de recuperación del circuito
@@ -26,11 +42,15 @@ ya respondió.
 """
 
 import asyncio
+import hashlib
 import random
 import uuid
+from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 
@@ -46,6 +66,62 @@ LATENCIA_SANA_MAX_MS = 120
 
 class SolicitudModo(BaseModel):
     modo: Modo
+
+
+EstadoTarjeta = Literal["activa", "fondos_insuficientes", "bloqueada", "vencida"]
+# Motivo con el que la pasarela rechaza un cobro según el estado de la tarjeta.
+MOTIVO_POR_ESTADO = {
+    "fondos_insuficientes": "fondos_insuficientes",
+    "bloqueada": "tarjeta_bloqueada",
+    "vencida": "tarjeta_vencida",
+}
+LATENCIA_MAXIMA_MS = 120_000
+
+
+class SolicitudTarjeta(BaseModel):
+    """Solo tarjetas de prueba. Estos campos no se guardan ni se devuelven jamás."""
+
+    numero: str
+    vencimiento_mes: int
+    vencimiento_anio: int
+    cvv: str
+    titular: str | None = None
+
+
+class SolicitudEstadoTarjeta(BaseModel):
+    estado: EstadoTarjeta
+
+
+class SolicitudLatencia(BaseModel):
+    minimo_ms: int
+    maximo_ms: int
+
+
+def _luhn_valido(numero: str) -> bool:
+    suma = 0
+    for posicion, digito in enumerate(reversed(numero)):
+        valor = int(digito)
+        if posicion % 2 == 1:
+            valor *= 2
+            if valor > 9:
+                valor -= 9
+        suma += valor
+    return suma % 10 == 0
+
+
+def _marca(numero: str) -> str:
+    if numero.startswith("4"):
+        return "visa"
+    if numero[:2] in {"51", "52", "53", "54", "55"} or 2221 <= int(numero[:4]) <= 2720:
+        return "mastercard"
+    if numero[:2] in {"34", "37"}:
+        return "amex"
+    return "otra"
+
+
+def _token_de(numero: str, mes: int, anio: int) -> str:
+    """Token determinista (solo del simulador): la misma tarjeta de prueba da el mismo token."""
+    return "tok_" + hashlib.sha256(f"{numero}:{mes}:{anio}".encode()).hexdigest()[:24]
 
 
 class SolicitudCobro(BaseModel):
@@ -64,7 +140,17 @@ def create_app() -> FastAPI:
     estado = {"modo": "sano"}
     # Cobros registrados por `referencia_comercio`.
     cobros: dict[str, dict] = {}
+    # Tarjetas tokenizadas: token -> marca, últimos 4, vencimiento y estado. Nunca el número.
+    tokens: dict[str, dict] = {}
+    # Si está fijada, reemplaza la espera de todos los modos (excepto `caido`).
+    latencia: dict[str, int | None] = {"minimo_ms": None, "maximo_ms": None}
     candado = asyncio.Lock()
+
+    @app.exception_handler(RequestValidationError)
+    async def solicitud_invalida(_: Request, error: RequestValidationError) -> JSONResponse:
+        """422 sin repetir lo recibido: FastAPI incluiría `input`, y ahí viajaría la tarjeta."""
+        detalle = [{"loc": e["loc"], "msg": e["msg"], "type": e["type"]} for e in error.errors()]
+        return JSONResponse(status_code=422, content={"detail": detalle})
 
     def _modo_efectivo(modo_qp: str | None, modo_header: str | None) -> str:
         modo = modo_qp or modo_header or estado["modo"]
@@ -80,7 +166,9 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=503, detail="pasarela_no_disponible")
 
     async def _esperar_respuesta(modo: str) -> None:
-        if modo == "lento":
+        if latencia["minimo_ms"] is not None:
+            await asyncio.sleep(random.uniform(latencia["minimo_ms"], latencia["maximo_ms"]) / 1000)
+        elif modo == "lento":
             await asyncio.sleep(random.uniform(LATENCIA_LENTA_MIN_MS, LATENCIA_LENTA_MAX_MS) / 1000)
         else:
             await asyncio.sleep(random.uniform(LATENCIA_SANA_MIN_MS, LATENCIA_SANA_MAX_MS) / 1000)
@@ -102,6 +190,79 @@ def create_app() -> FastAPI:
         estado["modo"] = body.modo
         return {"modo": estado["modo"]}
 
+    @app.get("/control/latencia", tags=["control"])
+    def obtener_latencia() -> dict:
+        return {"minimo_ms": latencia["minimo_ms"], "maximo_ms": latencia["maximo_ms"]}
+
+    @app.post("/control/latencia", tags=["control"])
+    def fijar_latencia(body: SolicitudLatencia) -> dict:
+        """Cuánto tarda en responder la pasarela, en milisegundos (entre `minimo_ms` y `maximo_ms`).
+        Por encima de los 700 ms del ACL Worker equivale a una falla por timeout."""
+        if not 0 <= body.minimo_ms <= body.maximo_ms <= LATENCIA_MAXIMA_MS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"se requiere 0 <= minimo_ms <= maximo_ms <= {LATENCIA_MAXIMA_MS}",
+            )
+        latencia.update(minimo_ms=body.minimo_ms, maximo_ms=body.maximo_ms)
+        return {"minimo_ms": latencia["minimo_ms"], "maximo_ms": latencia["maximo_ms"]}
+
+    @app.delete("/control/latencia", tags=["control"])
+    def restaurar_latencia() -> dict:
+        """Vuelve a la latencia propia de cada modo."""
+        latencia.update(minimo_ms=None, maximo_ms=None)
+        return {"minimo_ms": None, "maximo_ms": None}
+
+    @app.get("/control/tokens", tags=["control"])
+    def listar_tokens() -> list[dict]:
+        return [{"token": token, **datos} for token, datos in tokens.items()]
+
+    @app.post("/control/tokens/{token}/estado", tags=["control"])
+    def fijar_estado_tarjeta(token: str, body: SolicitudEstadoTarjeta) -> dict:
+        """Cambia a mano el estado de una tarjeta: un cobro con una tarjeta que no está `activa`
+        se rechaza con su motivo, sin importar el modo global."""
+        if token not in tokens:
+            raise HTTPException(status_code=404, detail="token no encontrado")
+        tokens[token]["estado"] = body.estado
+        return {"token": token, **tokens[token]}
+
+    @app.post("/v1/tokens", tags=["proveedor"])
+    async def tokenizar(
+        body: SolicitudTarjeta,
+        modo: str | None = None,
+        x_modo_simulado: str | None = Header(default=None),
+    ) -> dict:
+        """Tokeniza una tarjeta de PRUEBA. Idempotente: la misma tarjeta da el mismo token y
+        conserva su estado. El número y el CVV no se guardan ni se devuelven."""
+        await _aplicar_modo(_modo_efectivo(modo, x_modo_simulado))
+        numero = "".join(c for c in body.numero if c not in " -")
+        if not numero.isdigit() or not 13 <= len(numero) <= 19 or not _luhn_valido(numero):
+            raise HTTPException(status_code=422, detail="numero_invalido")
+        if not body.cvv.isdigit() or len(body.cvv) not in (3, 4):
+            raise HTTPException(status_code=422, detail="cvv_invalido")
+        if not 1 <= body.vencimiento_mes <= 12:
+            raise HTTPException(status_code=422, detail="vencimiento_invalido")
+        hoy = datetime.now(UTC)
+        if (body.vencimiento_anio, body.vencimiento_mes) < (hoy.year, hoy.month):
+            raise HTTPException(status_code=422, detail="tarjeta_vencida")
+        token = _token_de(numero, body.vencimiento_mes, body.vencimiento_anio)
+        tokens.setdefault(
+            token,
+            {
+                "marca": _marca(numero),
+                "ultimos4": numero[-4:],
+                "vencimiento_mes": body.vencimiento_mes,
+                "vencimiento_anio": body.vencimiento_anio,
+                "estado": "activa",
+            },
+        )
+        return {"token": token, **tokens[token]}
+
+    @app.get("/v1/tokens/{token}", tags=["proveedor"])
+    async def consultar_token(token: str) -> dict:
+        if token not in tokens:
+            raise HTTPException(status_code=404, detail="token no encontrado")
+        return {"token": token, **tokens[token]}
+
     @app.post("/v1/cobros", tags=["proveedor"])
     async def cobrar(
         body: SolicitudCobro,
@@ -115,7 +276,14 @@ def create_app() -> FastAPI:
             if resultado is None:
                 # Cobro nuevo. Se registra ANTES de la espera de `lento`: si el
                 # cliente corta, el cobro igual quedó hecho (como en la vida real).
-                if modo_efectivo == "rechaza":
+                tarjeta = tokens.get(body.token_medio_pago)
+                if tarjeta is not None and tarjeta["estado"] != "activa":
+                    resultado = {
+                        "estado": "rechazado",
+                        "referencia": None,
+                        "motivo": MOTIVO_POR_ESTADO[tarjeta["estado"]],
+                    }
+                elif modo_efectivo == "rechaza":
                     resultado = {
                         "estado": "rechazado",
                         "referencia": None,
