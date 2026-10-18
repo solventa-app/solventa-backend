@@ -37,7 +37,7 @@ locals {
   # Cloud Run llega a ella únicamente a través del conector VPC de redis.tf.
   con_redis = {
     for n, s in local.activos : n => s
-    if var.crear_redis && anytrue([for id in values(try(s.secretos, {})) : startswith(id, "redis-url-")])
+    if var.crear_redis && var.redis_encendida && anytrue([for id in values(try(s.secretos, {})) : startswith(id, "redis-url-")])
   }
 
   # URL determinista de cada servicio: evita la referencia circular entre servicios que se llaman.

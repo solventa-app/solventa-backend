@@ -34,8 +34,8 @@ output "urls_servicios" {
 }
 
 output "redis_host" {
-  description = "Host privado de Memorystore (null si crear_redis = false; solo alcanzable desde el conector VPC)."
-  value       = var.crear_redis ? google_redis_instance.cache[0].host : null
+  description = "Host privado de Memorystore (null si Redis no existe o está apagado; solo alcanzable desde el conector VPC)."
+  value       = (var.crear_redis && var.redis_encendida) ? google_redis_instance.cache[0].host : null
 }
 
 output "cloud_sql_connection_name" {

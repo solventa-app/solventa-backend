@@ -200,7 +200,7 @@ jobs:
           set -euo pipefail
           extra=()
           if [ "$COSTOS" = "apagado" ]; then
-            extra=(-var=cloud_sql_encendida=false -var=crear_redis=false)
+            extra=(-var=cloud_sql_encendida=false -var=redis_encendida=false)
           fi
           terraform plan -var-file=staging.tfvars "${extra[@]}" -out=plan.bin
           terraform show -json plan.bin > plan.json
