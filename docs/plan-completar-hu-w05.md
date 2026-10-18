@@ -153,6 +153,23 @@ Lo que **no** cambia: el contrato GraphQL de cobros, la semilla y el flujo de de
 | 4 | En la sesión | Correr Newman y k6 cuando te pase los comandos, con Grafana abierto | Tu terminal |
 | 5 | Al terminar | *Costos staging → apagar* | GitHub → Actions |
 
+## Estado de implementación (2026-10-18, rama `feat/KAN-28-completar-hu-w05`, PR por abrir)
+
+Hecho y probado con pruebas automáticas locales (PAYMENTS 90, ACL Worker 92, mock de la pasarela 24; ruff y
+`terraform validate` limpios). **Nada de esto se ha corrido contra staging ni se ha aplicado en GCP.**
+
+| Bloque | Estado | Detalle |
+|---|---|---|
+| 0 · Disparadores externos | **Parcial** | PAYMENTS: reintento por Cloud Tasks (`DISPARADOR=externo`, `POST /cobros/_reintentar`). ACL: sonda por Cloud Scheduler (`POST /sonda/ejecutar`). Terraform en `infra/tareas.tf` con `crear_tareas = true`, sin aplicar. **Pendiente:** la reconciliación de fuentes del consolidador (hoy cola `rq`) |
+| 1 · Cifrado del token | Hecho | `enc:v1:` AES-256-GCM, migración `0007` (idempotente, con `downgrade`); la migración contra Postgres real la verifica el CI (`verificar-migraciones.sh payments`). Falta la envoltura con KMS cuando entre el bloque 3 de W01 |
+| 2 · Cambio de pasarela (EC031) | Hecho en pruebas | `AdaptadorPasarelaAlterna`, stub con segunda API, pruebas de contrato parametrizadas. **Pendiente:** correr el stack con `PROVEEDOR_PASARELA=alterna` y Newman (`docs/evidencias/EC031-pasarela-2026-10-18.md`, sección 4) |
+| 3 · Atascados | **Parcial** | Los `cobrando` viejos se concilian y se cobran una vez. **No se hizo** el `SELECT … FOR UPDATE SKIP LOCKED`: bucle y botón a la vez no cobran dos veces (concilia + la pasarela es idempotente); solo pueden contar dos intentos |
+| 4 · Pruebas FC-10 | **Preparado, sin correr** | `tests/k6/cobros-idempotencia.js`, `cobros-pasarela-lenta.js`, semilla adaptada a staging y `docs/evidencias/FC-10-plantilla.md` (solo plantilla, sin cifras) |
+| 5 · Tableros | Pendiente | Depende de los tableros por historia de HU-W01 |
+
+Límite conocido del bloque 0: el estado de los circuitos vive en la memoria de cada instancia, así que la sonda por Scheduler
+revisa los de la instancia que recibe la llamada. Compartir ese estado (Redis) queda para después.
+
 ## Para después
 
 - **Sprint 2:** D-03 (cobro antes o después de emitir) y el primer cobro al firmar, con HU-W03.
