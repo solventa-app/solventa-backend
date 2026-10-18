@@ -408,6 +408,17 @@ key ring de KMS (no se puede borrar) ni los secretos si ya cargaste valores real
   manifiesto: plan → guardia → apply) → construir la imagen (tag = SHA) → migrar → desplegar sin tráfico → humo → promover. Si
   `infra` falla o el guardia bloquea, no se despliega nada. Para permitir una destrucción revisada: *Run workflow* con
   `permitir_destruir`.
+- **Falso positivo del guardia al agregar una API.** Si el cambio suma una API a `google_project_service.apis` (por ejemplo
+  `telemetry` y `cloudtrace` en el release #167), el plan marca como **reemplazar**
+  `google_storage_bucket_iam_member.frenar_gasto_build_fuente[0]` y el guardia bloquea el `apply` ("el plan destruye o
+  reemplaza recursos"). No es una destrucción real: `data.google_project.actual` depende de esas APIs, no se lee hasta
+  aplicarlas, y el nombre del bucket (que lleva el número del proyecto) queda "desconocido" en el plan. El permiso que se
+  recrea es el mismo, el de lectura que la cuenta de build de la función `frenar-gasto` tiene sobre su bucket de código, y
+  solo importaría si esa función se recompilara en esos segundos. `google_billing_budget.presupuesto` aparece como
+  *modificar* por la misma causa. **Qué hacer:** revisa que el plan solo tenga eso como reemplazo y vuelve a correr el
+  workflow a mano desde `main`: *Run workflow* con `servicios=todos`, `infra` y `permitir_destruir` activados. Cualquier otro
+  reemplazo o destrucción en el plan sí es real: no lo permitas sin revisarlo. No se quitó el `depends_on` del dato porque en un
+  proyecto nuevo la lectura del proyecto debe esperar a que las APIs estén habilitadas.
 - **Informe de despliegue** (último job de `deploy-staging.yml`, `informe`): corre siempre que el despliegue arrancó, también si
   una etapa falló, y deja un Markdown con el resultado de cada etapa, lo que quedó corriendo en Cloud Run (servicio, commit,
   acceso y URL, leídos del estado real y no de lo previsto), cómo llamar al BFF y a los servicios privados, y **qué debes hacer**
