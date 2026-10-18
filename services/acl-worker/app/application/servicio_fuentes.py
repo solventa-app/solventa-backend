@@ -40,21 +40,40 @@ class ServicioConsultaFuentes:
         presupuesto_s: float,
         productor_reconciliacion: ProductorReconciliacion | ProductorReconciliacionNulo
         | None = None,
+        presupuesto_con_cache_s: float | None = None,
+        servir_cache_en_ttl: bool = False,
     ) -> None:
         self._adaptador = adaptador
         self._fabrica = fabrica_circuitos
         self._nombre_circuito = nombre_circuito
         self._cache = cache
         self._presupuesto_s = presupuesto_s
+        self._presupuesto_con_cache_s = (
+            presupuesto_con_cache_s
+            if presupuesto_con_cache_s is not None
+            else min(presupuesto_s, 0.3)
+        )
+        self._servir_cache_en_ttl = servir_cache_en_ttl
         self._productor_reconciliacion = productor_reconciliacion or ProductorReconciliacionNulo()
 
-    def consultar(self, consulta: ConsultaFuente) -> DatosFuente:
+    def consultar(
+        self, consulta: ConsultaFuente, forzar_proveedor: bool = False
+    ) -> DatosFuente:
         cliente_opaco = id_opaco(consulta.cliente_id)
+        cacheado = self._cache.obtener(consulta.fuente, consulta.cliente_id)
+        forzar = forzar_proveedor or getattr(consulta, "forzar_proveedor", False)
+        if self._servir_cache_en_ttl and cacheado is not None and not forzar:
+            cacheado.de_cache = True
+            return cacheado
+
+        presupuesto = (
+            self._presupuesto_con_cache_s if cacheado is not None else self._presupuesto_s
+        )
         try:
             with self._fabrica.get_breaker(self._nombre_circuito):
                 datos = con_reintento(
                     lambda t: self._adaptador.consultar(consulta, timeout_s=t),
-                    self._presupuesto_s,
+                    presupuesto,
                 )
             self._cache.guardar(consulta.fuente, consulta.cliente_id, datos)
             return datos
@@ -82,7 +101,8 @@ class ServicioConsultaFuentes:
             consulta.fuente, consulta.cliente_id, consulta.consentimiento_id
         )
 
-        cacheado = self._cache.obtener(consulta.fuente, consulta.cliente_id)
+        if cacheado is None:
+            cacheado = self._cache.obtener(consulta.fuente, consulta.cliente_id)
         if cacheado is not None:
             cacheado.de_cache = True
             return cacheado
@@ -93,3 +113,4 @@ class ServicioConsultaFuentes:
             capturado_en=datetime.now(UTC),
             degradado=True,
         )
+

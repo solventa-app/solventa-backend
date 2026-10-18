@@ -39,6 +39,14 @@ class AlmacenClaveValorFalso:
     def set(self, nombre: str, valor: str, ex: int | None = None) -> None:
         self.valores[nombre] = valor
 
+    def delete(self, *nombres: str) -> int:
+        eliminadas = 0
+        for nombre in nombres:
+            if nombre in self.valores:
+                del self.valores[nombre]
+                eliminadas += 1
+        return eliminadas
+
 
 class ServicioOfertaFalso:
     """Doble de `ServicioOferta` para probar solo la plumbería HTTP de
@@ -54,6 +62,7 @@ class ServicioOfertaFalso:
         self.score_de_cache = score_de_cache
         self.error = error
         self.llamadas: list[tuple[str, str, str, int | None, str | None]] = []
+        self.invalidaciones: list[tuple[str, int | None]] = []
 
     def generar(
         self,
@@ -69,3 +78,10 @@ class ServicioOfertaFalso:
         if self.error is not None:
             raise self.error
         return self.oferta, self.score_de_cache
+
+    def invalidar_cache_cliente(
+        self, cliente_id: str, perfil_version: int | None = None
+    ) -> int:
+        self.invalidaciones.append((cliente_id, perfil_version))
+        return 1
+

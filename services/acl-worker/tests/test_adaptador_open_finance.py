@@ -19,7 +19,15 @@ def _cliente_mock(handler) -> httpx.Client:
 def test_mapea_respuesta_exitosa() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/v1/fuentes/cuentas-bancarias/consulta"
-        assert json.loads(request.content) == {"cliente_id": "c-1"}
+        assert request.headers["x-consentimiento-id"] == "k-1"
+        assert request.headers["x-finalidad"] == "perfilamiento"
+        assert request.url.params["consentimiento_id"] == "k-1"
+        assert request.url.params["finalidad"] == "perfilamiento"
+        assert json.loads(request.content) == {
+            "cliente_id": "c-1",
+            "consentimiento_id": "k-1",
+            "finalidad": "perfilamiento",
+        }
         return httpx.Response(
             200, json={"fuente": "cuentas-bancarias", "datos": {"saldo": 100}}
         )
@@ -34,6 +42,30 @@ def test_mapea_respuesta_exitosa() -> None:
     assert datos.degradado is False
 
 
+def test_rechazo_403_sin_consentimiento_ni_finalidad_se_propaga() -> None:
+    """CE 004/2024: si falta `consentimiento_id` o `finalidad`, el proveedor Open
+    Finance rechaza con 403 y el adaptador propaga `HTTPStatusError`."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        consentimiento = request.headers.get("x-consentimiento-id", "").strip()
+        finalidad = request.headers.get("x-finalidad", "").strip()
+        if not consentimiento or not finalidad:
+            return httpx.Response(
+                403,
+                json={"detail": "consentimiento_id y finalidad son obligatorios (CE 004/2024)"},
+            )
+        return httpx.Response(200, json={"fuente": "cuentas-bancarias", "datos": {}})
+
+    cliente = _cliente_mock(handler)
+    adaptador = AdaptadorOpenFinance("http://stub-open-finance", 0.7, cliente=cliente)
+    consulta_sin_consentimiento = ConsultaFuente(
+        cliente_id="c-1", consentimiento_id="", fuente="cuentas-bancarias", finalidad=""
+    )
+    with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        adaptador.consultar(consulta_sin_consentimiento)
+    assert exc_info.value.response.status_code == 403
+
+
 def test_propaga_error_5xx_como_excepcion() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, json={"error": "proveedor_no_disponible"})
@@ -42,6 +74,7 @@ def test_propaga_error_5xx_como_excepcion() -> None:
     adaptador = AdaptadorOpenFinance("http://stub-open-finance", 0.7, cliente=cliente)
     with pytest.raises(httpx.HTTPStatusError):
         adaptador.consultar(CONSULTA)
+
 
 
 def test_respeta_el_timeout_duro_con_proveedor_caido(servidor_caido: str) -> None:

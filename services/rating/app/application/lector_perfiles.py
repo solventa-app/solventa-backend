@@ -40,6 +40,7 @@ quedan fuera de alcance de esta tarea (T-W01-6 completo, Sprint 2 por el
 README de este servicio): este módulo solo lee el documento de perfil tal
 cual RISK lo escribió."""
 
+import json
 import logging
 from collections.abc import Callable
 from typing import Any, Protocol
@@ -53,6 +54,7 @@ from pymongo.errors import (
 )
 from pymongo.read_preferences import Secondary
 
+from app.application.cifrado import CifradorAesGcm, CifradorCampos, ErrorDeCifrado
 from app.application.identificadores import id_opaco
 from app.application.tiempo_causal import deserializar_operation_time
 
@@ -93,6 +95,26 @@ def leer_con_fallback_a_primaria[T](
         return leer_de_primaria(), False
 
 
+def descifrar_fuentes_perfil(
+    fuentes: list[dict[str, Any]], cifrador: CifradorCampos | None
+) -> list[dict[str, Any]]:
+    """Si una fuente trae `datos_cifrados`, la descifra con `CifradorAesGcm` y
+    restaura `datos` en memoria (Bloque 3, EC022)."""
+    resultado: list[dict[str, Any]] = []
+    for fuente in fuentes:
+        copia = dict(fuente)
+        datos_cifrados = copia.pop("datos_cifrados", None)
+        if datos_cifrados:
+            if cifrador is None:
+                raise ErrorDeCifrado(
+                    "No hay cifrador configurado para descifrar datos_cifrados"
+                )
+            texto_json = cifrador.descifrar(datos_cifrados)
+            copia["datos"] = json.loads(texto_json)
+        resultado.append(copia)
+    return resultado
+
+
 class LectorPerfiles(Protocol):
     def leer(self, cliente_id: str, operation_time: str) -> dict[str, Any] | None: ...
 
@@ -110,6 +132,9 @@ class LectorPerfilesMongo:
         cliente_primaria: MongoClient,
         cliente_secundaria: MongoClient,
         max_time_ms: int,
+        cifrador: CifradorCampos | None = None,
+        *,
+        descifrar_campos: bool = True,
     ) -> None:
         self._coleccion_primaria = cliente_primaria[NOMBRE_BASE][COLECCION_PERFILES]
         self._coleccion_secundaria = cliente_secundaria[NOMBRE_BASE][
@@ -117,6 +142,10 @@ class LectorPerfilesMongo:
         ].with_options(read_preference=Secondary())
         self._cliente_secundaria = cliente_secundaria
         self._max_time_ms = max_time_ms
+        if not descifrar_campos:
+            self._cifrador: CifradorCampos | None = None
+        else:
+            self._cifrador = cifrador or CifradorAesGcm.desde_entorno()
 
     def leer(self, cliente_id: str, operation_time: str) -> dict[str, Any] | None:
         punto_corte = deserializar_operation_time(operation_time)
@@ -152,9 +181,21 @@ class LectorPerfilesMongo:
         if documento is None:
             return None
 
-        return {
+        fuentes = descifrar_fuentes_perfil(documento["fuentes"], self._cifrador)
+        perfil: dict[str, Any] = {
             "cliente_id": documento["cliente_id"],
             "perfil_version": documento["perfil_version"],
-            "fuentes": documento["fuentes"],
+            "fuentes": fuentes,
             "leido_de_secundaria": de_secundaria,
         }
+        for campo_opcional in (
+            "score_total",
+            "nivel_riesgo",
+            "fecha_vigencia",
+            "version_reglas",
+            "creado_en",
+        ):
+            if campo_opcional in documento and documento[campo_opcional] is not None:
+                perfil[campo_opcional] = documento[campo_opcional]
+        return perfil
+

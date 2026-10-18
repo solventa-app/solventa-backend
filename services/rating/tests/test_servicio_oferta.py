@@ -341,3 +341,54 @@ def test_cambiar_version_de_reglas_invalida_el_hit_de_cache(monkeypatch) -> None
 
     _, tercera_de_cache = servicio.generar("cliente-1", "1700000001.1", "200000000")
     assert tercera_de_cache is False  # version distinta -> clave distinta -> no hit
+
+
+def test_oferta_incluye_perfil_riesgo_con_score_nivel_y_fecha_vigencia() -> None:
+    lector = LectorPerfilesFalso(perfil=PERFIL_SANO)
+    servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
+
+    oferta, _ = servicio.generar("cliente-1", "1700000001.1", "200000000")
+
+    assert oferta["perfilRiesgo"]["score"] == 82
+    assert oferta["perfilRiesgo"]["nivelRiesgo"] == "BAJO"
+    assert oferta["perfilRiesgo"]["fechaVigencia"]
+
+
+def test_usa_score_cacheado_por_risk_en_redis_bajo_clave_score() -> None:
+    from app.application.identificadores import id_opaco
+
+    lector = LectorPerfilesFalso(perfil=PERFIL_SANO)
+    almacen = AlmacenClaveValorFalso()
+    cache = CacheScore(almacen, ttl_segundos=300)
+    cache.guardar(
+        f"score:{id_opaco('cliente-1')}:v1",
+        {
+            "score_total": 82,
+            "nivel_riesgo": "BAJO",
+            "fecha_vigencia": "2026-11-17T00:00:00+00:00",
+            "version_reglas": "v1",
+            "perfil_version": 1,
+            "desglose_score": [{"nombre": "historial-crediticio", "peso": 0.3}],
+            "tipo": "COMPLETA",
+            "fuentes": [
+                {
+                    "id": "historial-crediticio",
+                    "nombre": "historial-crediticio",
+                    "origen": "OPEN_FINANCE",
+                    "estado": "OK",
+                    "capturadoEn": None,
+                }
+            ],
+        },
+    )
+    servicio = ServicioOferta(lector, cache)
+
+    oferta, score_de_cache = servicio.generar("cliente-1", "1700000001.1", "200000000")
+
+    assert score_de_cache is True
+    assert oferta["perfilRiesgo"] == {
+        "score": 82,
+        "nivelRiesgo": "BAJO",
+        "fechaVigencia": "2026-11-17T00:00:00+00:00",
+    }
+

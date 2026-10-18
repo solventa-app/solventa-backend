@@ -27,6 +27,11 @@ from pathlib import Path
 # Acciones de Terraform que dejan algo sin tocar o solo lo leen.
 INOCUAS = {("no-op",), ("read",)}
 
+# Recursos inmutables cuyo reemplazo (create_before_destroy) es seguro y esperado en despliegues
+# normales: cada cambio en `openapi.yaml` crea un `google_api_gateway_api_config` nuevo antes de
+# borrar el anterior.
+REEMPLAZOS_SEGUROS = ("google_api_gateway_api_config.",)
+
 
 def clasificar(acciones: list[str]) -> str:
     """Una etiqueta legible para la lista de acciones de un recurso."""
@@ -41,18 +46,32 @@ def clasificar(acciones: list[str]) -> str:
     return "otro"
 
 
+def es_reemplazo_seguro(direccion: str, etiqueta: str, acciones: list[str]) -> bool:
+    """True si es un reemplazo con create_before_destroy de un recurso inmutable permitido."""
+    return (
+        etiqueta == "reemplazar"
+        and direccion.startswith(REEMPLAZOS_SEGUROS)
+        and tuple(acciones) == ("create", "delete")
+    )
+
+
 def revisar(
     plan: dict, permitir_destruir: bool, solo_destruir: tuple[str, ...] = ()
 ) -> tuple[str, bool]:
     """Devuelve (resumen en Markdown, si el plan puede aplicarse)."""
-    cambios = [
-        (r["address"], clasificar(r["change"]["actions"]))
+    detalles = [
+        (r["address"], clasificar(r["change"]["actions"]), r["change"]["actions"])
         for r in plan.get("resource_changes", [])
         if tuple(r["change"]["actions"]) not in INOCUAS
     ]
     # "forget" solo saca el recurso del estado; no toca nada en GCP.
-    cambios = [(a, e) for a, e in cambios if e != "otro"]
-    peligrosos = [(a, e) for a, e in cambios if e in ("destruir", "reemplazar")]
+    detalles = [(a, e, acc) for a, e, acc in detalles if e != "otro"]
+    cambios = [(a, e) for a, e, _ in detalles]
+    peligrosos = [
+        (a, e)
+        for a, e, acc in detalles
+        if e in ("destruir", "reemplazar") and not es_reemplazo_seguro(a, e, acc)
+    ]
 
     lineas = ["### Plan de Terraform", ""]
     if not cambios:

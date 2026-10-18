@@ -28,8 +28,9 @@ locals {
   servicios  = { for s in local.manifiesto : s.nombre => s }
   activos    = { for n, s in local.servicios : n => s if var.crear_servicios }
 
-  con_migracion = { for n, s in local.activos : n => s if try(s.migracion, null) != null }
-  publicos      = { for n, s in local.activos : n => s if try(s.publico, false) }
+  con_migracion  = { for n, s in local.activos : n => s if try(s.migracion, null) != null }
+  publicos       = { for n, s in local.activos : n => s if try(s.publico, false) }
+  camino_critico = toset(["bff", "auth", "acl-worker", "risk", "rating", "stub-open-finance", "stub-open-data"])
 
   # Servicios que hablan con Postgres: los que declaran un secreto `database-url-*` (su URL usa el socket
   # /cloudsql, que Cloud Run solo monta si se pide). Vale para el servicio y para su job de migración.
@@ -143,7 +144,7 @@ resource "google_cloud_run_v2_service" "servicio" {
     service_account = google_service_account.runtime[each.key].email
 
     scaling {
-      min_instance_count = 0
+      min_instance_count = (var.calentar_camino_critico && contains(local.camino_critico, each.key)) ? 1 : 0
       max_instance_count = var.max_instancias
     }
 

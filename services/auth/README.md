@@ -16,23 +16,20 @@ AUTH es el **único escritor del almacén de identidad** (PostgreSQL, regla de e
 Eventos que emitirá: `consentimiento.registrado`, `consentimiento.revocado` (ver `contracts/events/`). **Pendiente:**
 no hay Pub/Sub todavía, así que hoy no se emiten.
 
-## Consentimiento: tabla append-only en PostgreSQL (T-W01-4)
+## Consentimiento: tabla append-only en PostgreSQL (T-W01-4, KAN-24)
 
-Tabla `consentimientos` de la base `auth` (migración `0004_consentimientos`, `app/consentimientos.py`):
+Tabla `consentimientos` de la base `auth` (migraciones `0004_consentimientos` y `0005_consentimiento_titular_y_vencimiento`, `app/consentimientos.py`):
 
 | Método | Ruta | Respuesta |
 |---|---|---|
-| `POST` | `/consentimientos` `{finalidad, version_texto, actor?}` | `{id, finalidad, version_texto, otorgado_en, revocado_en, vigente, actor}` |
-| `GET` | `/consentimientos/{id}` | el consentimiento, o `404` |
+| `POST` | `/consentimientos` `{finalidad, version_texto, titular_id?, documento_identidad?, tipo_dato?, fuente_datos?, canal?, actor?}` | `{id, finalidad, version_texto, otorgado_en, vence_en, revocado_en, estado, vigente, titular_id, tipo_dato, fuente_datos, canal, actor}` |
+| `GET` | `/consentimientos/{id}` | el consentimiento (con `estado` y `vigente` calculados al leer), o `404` |
 | `POST` | `/consentimientos/{id}/revocar` | marca `revocado_en` (append-only: nunca borra); idempotente; `404` si no existe |
 
-**Append-only en la base, no solo en el código:** un trigger (`trg_consentimientos_append_only`) rechaza cualquier
-`DELETE` y cualquier `UPDATE` que no sea fijar `revocado_en` por primera vez. Verificado en vivo: borrar, re-revocar o
-cambiar la finalidad fallan con `consentimientos es append-only`, y un consentimiento sobrevive a reiniciar AUTH.
-Las rutas son las mismas que tenía el mock en memoria (hoy un doble en `tests/fakes.py`), así que el BFF no cambió.
-
-`actor` (opcional) es `{rol, usuario_id}` del usuario autenticado que otorgó el consentimiento; lo envía el BFF
-(CA-W01-02, CA-W01-11). Sin sesión queda en `null`.
+- **Titular opaco (`titular_id`):** si la solicitud envía `documento_identidad` y no `titular_id`, AUTH deriva `titular_id` con `HMAC-SHA256(CLIENTE_ID_CLAVE, documento_identidad)` (`app/identificadores.py`). El documento en claro nunca se persiste ni se registra en logs.
+- **Vigencia de 30 días (`vence_en`):** al registrar, `vence_en = otorgado_en + CONSENTIMIENTO_VIGENCIA_DIAS` (por defecto 30 días, CA-W01-09). El estado (`VIGENTE`, `VENCIDO` o `REVOCADO`) y `vigente` se calculan al leer sin mutar la fila cuando vence.
+- **Append-only en la base, no solo en el código:** un trigger (`trg_consentimientos_append_only`) rechaza cualquier `DELETE` y cualquier `UPDATE` que no sea fijar `revocado_en` por primera vez (protege también `titular_id`, `tipo_dato`, `fuente_datos`, `canal` y `vence_en`).
+- `actor` (opcional) es `{rol, usuario_id}` del usuario autenticado que otorgó el consentimiento; lo envía el BFF (CA-W01-02, CA-W01-11). Sin sesión queda en `null`.
 
 ## Usuarios y sesiones (HU-M02, PostgreSQL)
 
@@ -53,7 +50,9 @@ los llama el BFF, que ya validó el token y el rol.
 - JWT **HS256** (`pyjwt`), 60 min, con `sub`, `rol`, `scopes`, `iat`, `exp` y `jti`. Secreto `JWT_SECRETO`
   (`clave-jwt` en Secret Manager, el mismo que lee el BFF). En Cloud Run no arranca con el valor local, el marcador de
   Terraform ni uno de menos de 32 bytes.
-- El alias no puede ser un correo ni un documento. El único dato personal es el **nombre** de cualquier rol (KAN-28): va cifrado por campo (AES-256-GCM con el id del usuario como dato asociado, `app/cifrado.py`), con la llave `CIFRADO_CLAVE` (local no secreta; en la nube, `clave-cifrado`, y no arranca con la local). Rotarla sin re-cifrar deja los nombres ilegibles.
+- El alias no puede ser un correo ni un documento. El único dato personal es el **nombre** de cualquier rol (KAN-28): va cifrado por campo (AES-256-GCM con el id del usuario como dato asociado, `app/cifrado.py`).
+  - **Cifrado por sobre (envelope encryption) con KMS (HA-SEG-002, EC022):** si se configuran `KMS_KEY_NAME` y `CIFRADO_CLAVE_ENVUELTA` (DEK envuelta en base64 desde Secret Manager), AUTH desenvuelve la DEK al iniciar mediante Cloud KMS (`DesenvolvedorGoogleKms`). Si la versión de llave en KMS está deshabilitada o inaccesible, falla de inmediato con `ErrorDeCifrado` sin degradar a texto plano ni clave local.
+  - **Fallback local:** sin configuración KMS, usa `CIFRADO_CLAVE` (local no secreta; en Cloud Run exige sobre KMS válido o `CIFRADO_CLAVE` de producción). Rotarla sin re-cifrar deja los nombres ilegibles.
 - Primer BACKOFFICE: `CLAVE_INICIAL=... python -m app.crear_usuario --usuario <alias> --rol BACKOFFICE` (idempotente).
   En compose lo hace la tarea `crear-backoffice` con credenciales **solo locales**: `admin.solventa` / `admin-local-solventa`.
 - Un CLIENTE, un ASESOR y un operador de prueba, por el BFF: `python scripts/crear_usuarios.py`. El primer BACKOFFICE de
@@ -73,5 +72,4 @@ PostgreSQL `auth` (este servicio es su único escritor). Alembic con SQL explíc
 - Aplicar: `alembic upgrade head` (necesita `DATABASE_URL`). En `docker compose` lo hace `migrar-auth` antes de arrancar el servicio; en staging, el Cloud Run Job `migrar-auth` con la misma imagen.
 - Nueva migración: `alembic revision -m "texto" --rev-id 0002`, escribir `upgrade` **y** `downgrade`, y verificar con `bash ../../scripts/verificar-migraciones.sh auth` (una sola cabeza; subir, bajar a base y subir).
 - Compatibles hacia atrás: agregar sí; renombrar o borrar en dos despliegues (ADR-07). Nunca edites una migración ya integrada a `main`.
-- `0002_usuarios` crea la tabla de usuarios (HU-M02) y `0004_consentimientos` la de consentimiento (append-only,
-  T-W01-4).
+- `0002_usuarios` crea la tabla de usuarios (HU-M02), `0004_consentimientos` la de consentimiento (append-only, T-W01-4) y `0005_consentimiento_titular_y_vencimiento` agrega `titular_id`, `tipo_dato`, `fuente_datos`, `canal` y `vence_en`.

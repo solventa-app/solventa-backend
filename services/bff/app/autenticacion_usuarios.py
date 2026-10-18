@@ -3,9 +3,11 @@
 AUTH emite el JWT (HS256) al iniciar sesión; aquí se verifica con el mismo secreto
 (`JWT_SECRETO`, secreto `clave-jwt`) en cada petición.
 
-Este módulo es **el único punto** que se movería al API Gateway si llega (Sprint 2):
-entonces se pasaría a ES256 + JWKS y el gateway validaría el token en el borde (ver
-`docs/autenticacion-usuarios.md`). Los resolutores solo llaman a `exigir_rol`.
+Con el API Gateway delante del BFF (HA-LAT-004, decisión 17), ESPv2 usa `Authorization`
+para su propio token de identidad (`gateway-bff`) y mueve la cabecera original del usuario
+a `X-Forwarded-Authorization`. Por eso `extraer_cabecera_autorizacion` lee primero
+`X-Forwarded-Authorization` cuando existe y, si no, `Authorization` (local y CI con Envoy).
+Pasar la validación criptográfica del JWT al gateway (ES256 + JWKS) queda en el Sprint 2.
 
 Modo de la bandera `AUTENTICACION_USUARIOS`:
 - `opcional` (valor actual): las operaciones existentes aceptan peticiones sin token,
@@ -15,6 +17,7 @@ La gestión de usuarios y `yo` exigen token siempre.
 
 Nunca se loguea el token."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import jwt
@@ -36,6 +39,15 @@ class UsuarioActual:
 
 class TokenInvalido(Exception):
     """La cabecera trae un token, pero no es válido: firma, formato o vencimiento."""
+
+
+def extraer_cabecera_autorizacion(cabeceras: Mapping[str, str]) -> str | None:
+    """Lee el JWT del usuario de `X-Forwarded-Authorization` (cuando la petición
+    pasó por GCP API Gateway / ESPv2) y, si no viene o está vacía, de `Authorization`."""
+    reenviada = cabeceras.get("x-forwarded-authorization")
+    if reenviada and reenviada.strip():
+        return reenviada
+    return cabeceras.get("authorization")
 
 
 def leer_usuario(autorizacion: str | None, secreto: str) -> UsuarioActual | None:
@@ -60,3 +72,4 @@ def leer_usuario(autorizacion: str | None, secreto: str) -> UsuarioActual | None
     return UsuarioActual(
         id=claims["sub"], rol=claims["rol"], scopes=tuple(claims.get("scopes", []))
     )
+

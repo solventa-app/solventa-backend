@@ -81,6 +81,75 @@ def test_jwt_local_sigue_rechazado_en_la_nube(monkeypatch) -> None:
         Configuracion.desde_entorno()
 
 
+def test_cifrado_de_sobre_kms_desenvuelve_dek_al_arrancar() -> None:
+    import base64
+    from types import SimpleNamespace
+
+    from app.cifrado import DesenvolvedorGoogleKms, construir_cifrador
+
+    dek_32 = b"k" * 32
+    envuelta_b64 = base64.urlsafe_b64encode(b"ciphertext-envuelto-por-kms").decode("ascii")
+    llamadas: list[dict] = []
+
+    class ClienteKmsFalso:
+        def decrypt(self, request: dict):
+            llamadas.append(request)
+            return SimpleNamespace(plaintext=dek_32)
+
+    config = Configuracion(
+        database_url="postgresql://no-se-usa",
+        jwt_secreto="secreto-de-prueba-con-32-bytes-o-mas",
+        jwt_vigencia_minutos=60,
+        kms_key_name="projects/solventa/locations/us-central1/keyRings/sr/cryptoKeys/campos",
+        cifrado_clave_envuelta=envuelta_b64,
+    )
+    desenvolvedor = DesenvolvedorGoogleKms(config.kms_key_name, cliente=ClienteKmsFalso())
+    cifrador = construir_cifrador(config, desenvolvedor=desenvolvedor)
+
+    assert len(llamadas) == 1
+    assert llamadas[0]["name"] == config.kms_key_name
+    cifrado = cifrador.cifrar(NOMBRE, "u-1")
+    assert cifrador.descifrar(cifrado, "u-1") == NOMBRE
+
+
+def test_ec022_llave_kms_deshabilitada_impide_construir_cifrador_y_descifrar() -> None:
+    import base64
+
+    from app.cifrado import DesenvolvedorGoogleKms, ErrorCifrado, construir_cifrador
+
+    envuelta_b64 = base64.urlsafe_b64encode(b"ciphertext-envuelto-por-kms").decode("ascii")
+
+    class ClienteKmsDeshabilitado:
+        def decrypt(self, request: dict):
+            raise PermissionError("CryptoKeyVersion is DISABLED")
+
+    config = Configuracion(
+        database_url="postgresql://no-se-usa",
+        jwt_secreto="secreto-de-prueba-con-32-bytes-o-mas",
+        jwt_vigencia_minutos=60,
+        kms_key_name="projects/solventa/locations/us-central1/keyRings/sr/cryptoKeys/campos",
+        cifrado_clave_envuelta=envuelta_b64,
+    )
+    desenvolvedor = DesenvolvedorGoogleKms(config.kms_key_name, cliente=ClienteKmsDeshabilitado())
+
+    with pytest.raises(ErrorCifrado, match="DISABLED"):
+        construir_cifrador(config, desenvolvedor=desenvolvedor)
+
+
+def test_en_la_nube_arranca_con_sobre_kms_sin_cifrado_clave_en_claro(monkeypatch) -> None:
+    monkeypatch.setenv("K_SERVICE", "auth")
+    monkeypatch.setenv("JWT_SECRETO", "un-secreto-real-de-mas-de-32-bytes-ok")
+    monkeypatch.delenv("CIFRADO_CLAVE", raising=False)
+    monkeypatch.setenv(
+        "KMS_KEY_NAME", "projects/solventa/locations/us-central1/keyRings/sr/cryptoKeys/campos"
+    )
+    monkeypatch.setenv("CIFRADO_CLAVE_ENVUELTA", "Y2lwaGVydGV4dC1lbnZ1ZWx0bw==")
+
+    cfg = Configuracion.desde_entorno()
+    assert cfg.kms_key_name is not None
+    assert cfg.cifrado_clave_envuelta == "Y2lwaGVydGV4dC1lbnZ1ZWx0bw=="
+
+
 # ---------- servicio
 
 

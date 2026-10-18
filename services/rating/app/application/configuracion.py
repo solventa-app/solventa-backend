@@ -5,6 +5,8 @@ código). Nombres y defaults documentados en `README.md` y en
 import os
 from dataclasses import dataclass
 
+from app.application.cifrado import CIFRADO_CLAVE_LOCAL
+
 
 @dataclass(frozen=True)
 class Configuracion:
@@ -12,6 +14,9 @@ class Configuracion:
     redis_url: str
     max_time_ms: int
     oferta_cache_ttl_segundos: int
+    cifrado_clave: str = CIFRADO_CLAVE_LOCAL
+    kms_key_name: str = ""
+    cifrado_clave_envuelta: str = ""
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -29,4 +34,8 @@ class Configuracion:
             # la fórmula se sube `VERSION_REGLAS` en servicio_oferta.py; la
             # caché vieja queda huérfana y expira sola dentro de este TTL.
             oferta_cache_ttl_segundos=int(os.getenv("OFERTA_CACHE_TTL_SEGUNDOS", "300")),
+            cifrado_clave=os.getenv("CIFRADO_CLAVE", CIFRADO_CLAVE_LOCAL),
+            kms_key_name=os.getenv("KMS_KEY_NAME", "").strip(),
+            cifrado_clave_envuelta=os.getenv("CIFRADO_CLAVE_ENVUELTA", "").strip(),
         )
+

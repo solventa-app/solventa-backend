@@ -8,14 +8,21 @@ construye el **producto**; la evidencia de los experimentos de arquitectura vive
 Mapa del repo: [`README.md`](README.md). Alcance del sprint: [`docs/sprint-1.md`](docs/sprint-1.md).
 Arquitectura: [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md). Convenciones: [`docs/convenciones.md`](docs/convenciones.md).
 
-## Estado (2026-10-04)
+## Estado (2026-10-18)
 
-- Repo **recién estructurado**: esqueletos de servicios y stubs (solo `/health` y `/metrics`), contratos v0, entorno local con Docker Compose, CI/CD y agentes. **Aún no hay lógica de negocio.**
-- **CI/CD y migraciones armados (ADR-07, 2026-10-04):** migraciones (Alembic en `auth`/`payments`, runner de MongoDB en `risk`), CI con migraciones contra almacén real + humo del stack + gitleaks + actionlint, `deploy-staging.yml` y `rollback-staging.yml` (apagados hasta cargar las variables de GitHub) y Terraform de WIF/Cloud Run detrás de banderas. Probado en local; el `apply` de Terraform ya corrió contra GCP (2026-10-17), pero **el pipeline de GitHub no se ha ejecutado nunca**.
-- Sprint 1 (tentativo): 12–25 de octubre de 2026 — HU-W01 (KAN-24, 20 pts) y HU-W05 (KAN-28, 6 pts) con 7 habilitadoras. Holgura de solo 3 h: no se sobre-construye.
-- **Plan y decisiones cerradas de HU-W01 (2026-10-18):** [`docs/plan-completar-hu-w01.md`](docs/plan-completar-hu-w01.md) (backend; el del front está en `solventa-frontend-web/docs/plan-completar-hu-w01.md`). Léelo antes de tocar W01, cifrado, observabilidad o seguridad del CI. D-04 quedó cerrada ahí (campo + Secret Manager envuelto por KMS, CMEK salvo Atlas M0). Guardar la oferta pasa al Sprint 2 con HU-W03. En el Sprint 1 entran también el API Gateway (LAT-004, bloque 10) y el batch nocturno (ESC-004, bloque 9); ESC-001 queda en el Sprint 2.
-- **Decisiones del Planning:** D-02 (sesión causal `afterClusterTime`), D-04 (campo + Secret Manager envuelto por KMS; ver el plan), D-05 (stubs por contrato) y D-06 (HU-W05 en el Sprint 1) están **cerradas** (2026-10-18). Sigue abierta **D-01** (base de velocidad) para el Planning; D-03 (cobro antes o después de emitir) se cierra en el Sprint 2.
-- GitHub: organización `solventa-app` (`origin` = https://github.com/solventa-app/solventa-backend.git, repo vacío; aún sin commit ni push). Proyecto GCP de staging: `solventa-511815`. El 2026-10-17 se aplicó a mano la infraestructura base (ADR-09: 10 servicios y 3 jobs de migración en Cloud Run con la imagen de ejemplo, la cuenta y la federación del pipeline, y la protección de gasto, probada); no hay bases de datos y el pipeline de deploy sigue apagado hasta cargar las variables de GitHub (ver `infra/README.md`). No hay ninguna imagen real desplegada.
+- **Sprint 1 completo en código (HU-W01 / KAN-24 y HU-W05 / KAN-28):** todos los servicios del Sprint 1 (`bff`, `auth`, `acl-worker`, `risk`, `rating`, `payments`, `consolidador-fuentes` y los 3 stubs) están construidos y probados, junto con los 10 bloques de [`docs/plan-completar-hu-w01.md`](docs/plan-completar-hu-w01.md):
+  - **Bloque 1 (Medición):** guiones de k6 (`tests/k6/`), `scripts/correr_k6.sh`, tableros `hu-w01.json` y `hu-w05.json` en `observabilidad/gcp/dashboards/` y evidencias en `docs/evidencias/`.
+  - **Bloque 2 (Caché del score y EC010 ≤ 500 ms):** `ScoreCacheado` escrito en Redis desde RISK y leído en RATING; presupuesto con caché de 300 ms y `CACHE_SERVIR_EN_TTL` en el ACL Worker.
+  - **Bloque 3 (Cifrado en reposo, D-04 / EC022):** cifrado AES-GCM por campo + sobre con Cloud KMS (`KMS_KEY_NAME` + `CIFRADO_CLAVE_ENVUELTA`) en `auth`, `risk` (`fuentes[].datos` + migración `v0002`) y `rating`, con CMEK opcional en Terraform.
+  - **Bloque 4 (Consentimiento con titular y vencimiento 30 días, CE 004/2024):** migración `0005` en AUTH (`titular_id` opaco, `vence_en`, `estado`), validación del titular en el BFF, `ErrorOferta.motivo` y validación de `consentimiento_id` + `finalidad` en el stub de Open Finance.
+  - **Bloque 5 (Fuentes por configuración, EC031 / EC033):** `contracts/fuentes.json` compartido por BFF, ACL Worker, RISK y RATING.
+  - **Bloque 6 (Seguridad en CI/CD):** Bandit, `pip-audit`, Trivy y OWASP ZAP baseline en `.github/workflows/ci.yml` (`continue-on-error: true`).
+  - **Bloque 7 (Revocación de consentimiento, CA-W01-08):** invalidación inmediata de caché en el ACL Worker (`POST /fuentes/invalidar-cache`) al revocar desde el BFF.
+  - **Bloque 8 (Pendientes de diseño):** `Oferta.perfilRiesgo` (`score`, `nivelRiesgo`, `fechaVigencia`) en el contrato v0.8, Pub/Sub `perfil-actualizado` (`infra/pubsub.tf`, publicador en RISK y suscriptor en RATING).
+  - **Bloque 9 (Batch nocturno, HA-ESC-004 / EC017):** `services/risk/app/batch_reproceso.py`, Cloud Run Job + Cloud Scheduler en `infra/batch.tf` y `scripts/sembrar_perfiles.py`.
+  - **Bloque 10 (API Gateway delante del BFF, HA-LAT-004):** `infra/gateway/openapi.yaml`, `infra/gateway/envoy.yaml` (`:8080` en Compose), `infra/gateway.tf`, BFF privado en Cloud Run, `X-Forwarded-Authorization` y `PRESUPUESTO_MS_*` en el ACL Worker.
+- **Decisiones del Planning:** D-02 (sesión causal `afterClusterTime`), D-04 (campo + Secret Manager envuelto por KMS), D-05 (stubs por contrato) y D-06 (HU-W05 en el Sprint 1) están **cerradas** (2026-10-18). Sigue abierta **D-01** (base de velocidad) para el Planning; D-03 (cobro antes o después de emitir) y guardar la oferta pasan al Sprint 2 (HU-W03).
+- GitHub: organización `solventa-app` (`origin` = https://github.com/solventa-app/solventa-backend.git). Proyecto GCP de staging: `solventa-511815` (ver `infra/README.md`).
 
 ## Stack y decisiones ya tomadas (ADR-01 a ADR-05 del documento de arquitectura)
 

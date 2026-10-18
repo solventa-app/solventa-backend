@@ -92,11 +92,15 @@ E/S, así que no cuesta nada repetirla.
 sube (p. ej. a "v2") y la caché vieja queda huérfana — nunca se lee por
 accidente con reglas distintas, y expira sola por el TTL."""
 
+import json
 import logging
+import os
 import re
 import unicodedata
 import uuid
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from pathlib import Path
 from typing import Any, Protocol
 
 from app.application.identificadores import id_opaco
@@ -105,11 +109,20 @@ from app.application.lector_perfiles import LectorPerfiles
 logger = logging.getLogger("rating.oferta")
 
 VERSION_REGLAS = "v1"
+DIAS_VIGENCIA_PERFIL = 30
 
 MONEDA = "COP"
 
+_ORDEN_CANONICO: tuple[str, ...] = (
+    "historial-crediticio",
+    "cuentas-bancarias",
+    "afiliacion-pila",
+    "camara-comercio",
+    "antecedentes-judiciales",
+)
+
 # Pesos exactos de la tabla de arriba (fracción 0-1, no porcentaje).
-PESOS: dict[str, Decimal] = {
+_PESOS_POR_DEFECTO: dict[str, Decimal] = {
     "historial-crediticio": Decimal("0.30"),
     "cuentas-bancarias": Decimal("0.20"),
     "afiliacion-pila": Decimal("0.20"),
@@ -117,7 +130,7 @@ PESOS: dict[str, Decimal] = {
     "antecedentes-judiciales": Decimal("0.15"),
 }
 
-ORIGEN_POR_FUENTE: dict[str, str] = {
+_ORIGEN_POR_DEFECTO: dict[str, str] = {
     "cuentas-bancarias": "OPEN_FINANCE",
     "historial-crediticio": "OPEN_FINANCE",
     "afiliacion-pila": "OPEN_DATA",
@@ -125,8 +138,46 @@ ORIGEN_POR_FUENTE: dict[str, str] = {
     "antecedentes-judiciales": "OPEN_DATA",
 }
 
+_OBLIGATORIAS_POR_DEFECTO: tuple[str, ...] = ("historial-crediticio",)
+
+
+def cargar_configuracion_fuentes(
+    ruta: Path | str | None = None,
+) -> tuple[dict[str, Decimal], dict[str, str], tuple[str, ...]]:
+    """Lee `contracts/fuentes.json` (Bloque 5) con fallback a las constantes locales."""
+    if ruta is not None:
+        candidatas = [Path(ruta)]
+    elif os.getenv("FUENTES_CONFIG_PATH"):
+        candidatas = [Path(os.environ["FUENTES_CONFIG_PATH"])]
+    else:
+        actual = Path(__file__).resolve()
+        candidatas = [
+            p / "contracts" / "fuentes.json" for p in list(actual.parents)[:6]
+        ]
+
+    archivo = next((c for c in candidatas if c.is_file()), None)
+    if archivo is None:
+        return (
+            dict(_PESOS_POR_DEFECTO),
+            dict(_ORIGEN_POR_DEFECTO),
+            _OBLIGATORIAS_POR_DEFECTO,
+        )
+
+    items: list[dict[str, Any]] = json.loads(archivo.read_text(encoding="utf-8"))
+    por_nombre = {item["nombre"]: item for item in items}
+    nombres_ordenados = [n for n in _ORDEN_CANONICO if n in por_nombre] + [
+        item["nombre"] for item in items if item["nombre"] not in _ORDEN_CANONICO
+    ]
+    pesos = {nombre: Decimal(str(por_nombre[nombre]["peso"])) for nombre in nombres_ordenados}
+    origenes = {nombre: str(por_nombre[nombre]["origen"]) for nombre in nombres_ordenados}
+    obligatorias = tuple(
+        nombre for nombre in nombres_ordenados if bool(por_nombre[nombre].get("obligatoria"))
+    )
+    return pesos, origenes, obligatorias
+
+
 # CA-W01-05: sin estas fuentes (ni en línea ni de caché) no hay oferta.
-FUENTES_OBLIGATORIAS = ("historial-crediticio",)
+PESOS, ORIGEN_POR_FUENTE, FUENTES_OBLIGATORIAS = cargar_configuracion_fuentes()
 
 # Factor por plazo del crédito: (plazo máximo en meses, factor). Ilustrativo.
 FACTORES_PLAZO: tuple[tuple[int, Decimal], ...] = (
@@ -228,7 +279,10 @@ def _subscore(nombre: str, fuente_doc: dict[str, Any] | None) -> Decimal:
     datos = fuente_doc.get("datos") or {}
     if not datos:
         return NEUTRO
-    return _SUBSCORES[nombre](datos)
+    funcion = _SUBSCORES.get(nombre)
+    if funcion is None:
+        return NEUTRO
+    return funcion(datos)
 
 
 def calcular_score(fuentes: list[dict[str, Any]]) -> tuple[int, list[dict[str, Any]]]:
@@ -245,6 +299,34 @@ def calcular_score(fuentes: list[dict[str, Any]]) -> tuple[int, list[dict[str, A
     score_total = int(_acotar(acumulado).to_integral_value(rounding=ROUND_HALF_UP))
     desglose = [{"nombre": nombre, "peso": float(peso)} for nombre, peso in PESOS.items()]
     return score_total, desglose
+
+
+def calcular_nivel_riesgo(score_total: int) -> str:
+    """Clasifica el score en `BAJO` (>= 75), `MEDIO` (50..74) o `ALTO` (< 50)."""
+    if score_total >= 75:
+        return "BAJO"
+    if score_total >= 50:
+        return "MEDIO"
+    return "ALTO"
+
+
+def calcular_fecha_vigencia(
+    creado_en: datetime | str | None = None,
+    dias_vigencia: int = DIAS_VIGENCIA_PERFIL,
+) -> str:
+    """Vigencia ISO-8601 del perfil de riesgo (`creado_en + 30 días`)."""
+    if isinstance(creado_en, str):
+        try:
+            base = datetime.fromisoformat(creado_en)
+        except ValueError:
+            base = datetime.now(UTC)
+    elif isinstance(creado_en, datetime):
+        base = creado_en
+    else:
+        base = datetime.now(UTC)
+    if base.tzinfo is None:
+        base = base.replace(tzinfo=UTC)
+    return (base + timedelta(days=dias_vigencia)).isoformat()
 
 
 def factor_plazo(plazo_meses: int | None) -> Decimal:
@@ -330,7 +412,7 @@ def _fuentes_consultadas(fuentes: list[dict[str, Any]]) -> list[dict[str, Any]]:
             {
                 "id": nombre,
                 "nombre": nombre,
-                "origen": ORIGEN_POR_FUENTE[nombre],
+                "origen": ORIGEN_POR_FUENTE.get(nombre, "OPEN_DATA"),
                 "estado": estado,
                 "capturadoEn": capturado_en,
             }
@@ -338,10 +420,16 @@ def _fuentes_consultadas(fuentes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return resultado
 
 
-def _calcular_resultado_score(fuentes: list[dict[str, Any]]) -> dict[str, Any]:
+def _calcular_resultado_score(
+    fuentes: list[dict[str, Any]],
+    creado_en: datetime | str | None = None,
+) -> dict[str, Any]:
     score_total, desglose = calcular_score(fuentes)
     return {
         "score_total": score_total,
+        "nivel_riesgo": calcular_nivel_riesgo(score_total),
+        "fecha_vigencia": calcular_fecha_vigencia(creado_en),
+        "version_reglas": VERSION_REGLAS,
         "desglose_score": desglose,
         "tipo": _tipo_oferta(fuentes),
         "fuentes": _fuentes_consultadas(fuentes),
@@ -356,6 +444,10 @@ def _clave_cache(cliente_id: str, perfil_version: int) -> str:
     return f"oferta:{id_opaco(cliente_id)}:{perfil_version}:{VERSION_REGLAS}"
 
 
+def _clave_cache_score(cliente_id: str) -> str:
+    return f"score:{id_opaco(cliente_id)}:{VERSION_REGLAS}"
+
+
 class PuertoCacheScore(Protocol):
     def obtener(self, clave: str) -> dict[str, Any] | None: ...
 
@@ -366,6 +458,17 @@ class ServicioOferta:
     def __init__(self, lector_perfiles: LectorPerfiles, cache_score: PuertoCacheScore) -> None:
         self._lector_perfiles = lector_perfiles
         self._cache_score = cache_score
+
+    def invalidar_cache_cliente(
+        self, cliente_id: str, perfil_version: int | None = None
+    ) -> int:
+        if hasattr(self._cache_score, "invalidar_cliente"):
+            return int(
+                self._cache_score.invalidar_cliente(
+                    cliente_id, perfil_version, VERSION_REGLAS
+                )
+            )
+        return 0
 
     def generar(
         self,
@@ -388,10 +491,54 @@ class ServicioOferta:
 
         clave = _clave_cache(cliente_id, perfil["perfil_version"])
         resultado_score = self._cache_score.obtener(clave)
+        if resultado_score is None:
+            candidato_risk = self._cache_score.obtener(_clave_cache_score(cliente_id))
+            if candidato_risk is not None and candidato_risk.get("perfil_version") in (
+                None,
+                perfil["perfil_version"],
+            ):
+                resultado_score = candidato_risk
+
         score_de_cache = resultado_score is not None
         if resultado_score is None:
-            resultado_score = _calcular_resultado_score(perfil["fuentes"])
+            if (
+                perfil.get("score_total") is not None
+                and perfil.get("version_reglas", VERSION_REGLAS) == VERSION_REGLAS
+            ):
+                score_guardado = int(perfil["score_total"])
+                resultado_score = {
+                    "score_total": score_guardado,
+                    "nivel_riesgo": str(
+                        perfil.get("nivel_riesgo") or calcular_nivel_riesgo(score_guardado)
+                    ),
+                    "fecha_vigencia": str(
+                        perfil.get("fecha_vigencia")
+                        or calcular_fecha_vigencia(perfil.get("creado_en"))
+                    ),
+                    "version_reglas": VERSION_REGLAS,
+                    "desglose_score": [
+                        {"nombre": nombre, "peso": float(peso)}
+                        for nombre, peso in PESOS.items()
+                    ],
+                    "tipo": _tipo_oferta(perfil["fuentes"]),
+                    "fuentes": _fuentes_consultadas(perfil["fuentes"]),
+                }
+            else:
+                resultado_score = _calcular_resultado_score(
+                    perfil["fuentes"], creado_en=perfil.get("creado_en")
+                )
             self._cache_score.guardar(clave, resultado_score)
+
+        nivel_riesgo = str(
+            resultado_score.get("nivel_riesgo")
+            or perfil.get("nivel_riesgo")
+            or calcular_nivel_riesgo(int(resultado_score["score_total"]))
+        )
+        fecha_vigencia = str(
+            resultado_score.get("fecha_vigencia")
+            or perfil.get("fecha_vigencia")
+            or calcular_fecha_vigencia(perfil.get("creado_en"))
+        )
 
         logger.info(
             "oferta calculada cliente=%s perfil_version=%s score_cache=%s tipo=%s score=%s",
@@ -415,6 +562,11 @@ class ServicioOferta:
             "cobertura": {"valor": str(cobertura_decimal), "moneda": MONEDA},
             "desgloseScore": resultado_score["desglose_score"],
             "fuentes": resultado_score["fuentes"],
+            "perfilRiesgo": {
+                "score": int(resultado_score["score_total"]),
+                "nivelRiesgo": nivel_riesgo,
+                "fechaVigencia": fecha_vigencia,
+            },
         }
         if resultado_score["tipo"] == "PRELIMINAR":
             minima, maxima = calcular_rango_prima(prima)
@@ -428,3 +580,4 @@ class ServicioOferta:
             oferta["rangoPrima"] = None
 
         return oferta, score_de_cache
+

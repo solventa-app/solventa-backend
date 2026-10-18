@@ -179,3 +179,82 @@ def test_generar_oferta_sin_fuente_obligatoria_responde_422_datos_insuficientes(
 
     assert r.status_code == 422
     assert r.json() == {"detail": "datos_insuficientes"}
+
+
+def test_evento_perfil_actualizado_directo_invalida_cache() -> None:
+    servicio = ServicioOfertaFalso()
+
+    with TestClient(create_app(servicio_oferta=servicio)) as client:
+        r = client.post(
+            "/eventos/perfil-actualizado",
+            json={
+                "eventId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+                "tipo": "perfil.actualizado",
+                "version": 1,
+                "ocurridoEn": "2026-10-18T12:00:00+00:00",
+                "datos": {
+                    "clienteId": "cliente-1",
+                    "perfilVersion": 2,
+                    "operationTime": "1700000002.1",
+                },
+            },
+        )
+
+    assert r.status_code == 200
+    assert r.json()["estado"] == "ok"
+    assert servicio.invalidaciones == [("cliente-1", 2)]
+
+
+def test_evento_perfil_actualizado_sobre_pubsub_base64_invalida_cache() -> None:
+    import base64
+    import json
+
+    from fakes import AlmacenClaveValorFalso
+
+    from app.application.cache_score import CacheScore
+    from app.application.identificadores import id_opaco
+
+    almacen = AlmacenClaveValorFalso()
+    cache = CacheScore(almacen, ttl_segundos=300)
+    hash_cliente = id_opaco("cliente-pubsub-1")
+    cache.guardar(f"score:{hash_cliente}:v1", {"score_total": 80})
+    cache.guardar(f"oferta:{hash_cliente}:1:v1", {"score_total": 80})
+
+    payload_evento = {
+        "eventId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+        "tipo": "perfil.actualizado",
+        "version": 1,
+        "ocurridoEn": "2026-10-18T12:00:00+00:00",
+        "datos": {
+            "clienteId": "cliente-pubsub-1",
+            "perfilVersion": 2,
+            "operationTime": "1700000002.1",
+        },
+    }
+    sobre_pubsub = {
+        "message": {
+            "data": base64.b64encode(json.dumps(payload_evento).encode("utf-8")).decode(
+                "ascii"
+            ),
+            "messageId": "1001",
+        },
+        "subscription": "projects/solventa/subscriptions/rating-perfil-actualizado",
+    }
+
+    with TestClient(
+        create_app(servicio_oferta=ServicioOfertaFalso(), cache_score=cache)
+    ) as client:
+        r = client.post("/eventos/perfil-actualizado", json=sobre_pubsub)
+
+    assert r.status_code == 200
+    assert r.json() == {"estado": "ok", "claves_eliminadas": 2}
+    assert cache.obtener(f"score:{hash_cliente}:v1") is None
+    assert cache.obtener(f"oferta:{hash_cliente}:1:v1") is None
+
+
+def test_evento_perfil_actualizado_sin_cliente_id_responde_400() -> None:
+    with TestClient(create_app(servicio_oferta=ServicioOfertaFalso())) as client:
+        r = client.post("/eventos/perfil-actualizado", json={"datos": {}})
+
+    assert r.status_code == 400
+

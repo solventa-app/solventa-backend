@@ -146,24 +146,37 @@ función pura e inyectable (`leer_con_fallback_a_primaria`), probada con dobles 
 `tests/test_lector_perfiles.py` sin necesitar un MongoDB real. La parte que sí depende de pymongo
 de verdad (sesión, `read_preference`, `maxTimeMS`) se verifica en vivo (ver abajo), no con pytest.
 
-## Pendiente, fuera de alcance de esta tarea (huecos documentados)
+## Huecos cerrados (D-04 / EC022, `PerfilRiesgo` y Pub/Sub `perfil.actualizado`)
 
-- **Cifrado de campo:** mismo hueco que RISK (sin Cloud KMS, sin helper de cifrado en el repo);
-  este servicio lee lo que RISK escribió sin cifrar, y la caché de Redis tampoco cifra el score.
+- **Cifrado de campo (SEG-002 / D-04 / CA-W01-10 / EC022) — CERRADO:** `LectorPerfilesMongo`
+  descifra en memoria `datos_cifrados` (sobre KMS + AES-256-GCM con `RISK_KEK_BASE64`) y mantiene
+  compatibilidad hacia atrás con documentos legacy que aún tengan `datos` en claro. Si un sobre
+  está corrupto o fue cifrado con otra KEK, falla de forma segura marcando la fuente como
+  `degradado=True` y `datos={}` sin exponer PII en logs.
+- **`PerfilRiesgo` completo (`nivelRiesgo` y `fechaVigencia`):** `POST /ofertas` devuelve
+  `perfilRiesgo: {score, nivelRiesgo, fechaVigencia}` junto a los campos top-level `score` y
+  `desgloseScore` (reutilizando `nivel_riesgo` y `fecha_vigencia` persistidos por RISK o
+  calculándolos como fallback). Pesos, orígenes y obligatoriedad se cargan desde
+  `contracts/fuentes.json`.
+- **Suscriptor de `perfil.actualizado` (`POST /eventos/perfil-actualizado`):** acepta tanto el
+  evento directo como el sobre push de Cloud Pub/Sub (`message.data` en base64) e invalida las
+  claves `oferta:{id_opaco}:*` en Redis (`CacheScore.invalidar_cliente`).
 
 ## Operación
 
 - Puerto local: `8003`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.
 - `GET /perfiles/{cliente_id}?operation_time=<time>.<inc>` →
-  `{cliente_id, perfil_version, fuentes, leido_de_secundaria}` (200), `404` si no hay perfil para
+  `{cliente_id, perfil_version, fuentes, leido_de_secundaria, score_total, nivel_riesgo, fecha_vigencia, version_reglas}` (200), `404` si no hay perfil para
   ese cliente, `400` si `operation_time` no tiene el formato esperado, `422` si falta el parámetro.
-- `POST /ofertas` con cuerpo `{cliente_id, operation_time, cobertura}` -> `Oferta` (200, forma 1:1
-  con el contrato: ver `contracts/graphql/schema.graphql` y la sección de arriba), `404` si no hay
+- `POST /ofertas` con cuerpo `{cliente_id, operation_time, cobertura, plazo_meses?, direccion_inmueble?}` -> `Oferta` (200, incluye `perfilRiesgo: {score, nivelRiesgo, fechaVigencia}`), `404` si no hay
   perfil para ese cliente, `400` si `operation_time` o `cobertura` no tienen un formato válido,
-  `422` si falta algún campo del cuerpo.
+  `422` si falta algún campo del cuerpo o si falta la fuente obligatoria (`datos_insuficientes`).
+- `POST /eventos/perfil-actualizado` -> `{procesado, cliente_id, claves_invalidadas}` (200).
 - Variables de entorno: `MONGO_URI`, `REDIS_URL` (Cache-Aside del score, HA-LAT-001),
   `RATING_MAX_TIME_MS` (150 por defecto — cota de espera en la secundaria antes de caer a la
-  primaria, D-02), `OFERTA_CACHE_TTL_SEGUNDOS` (300 por defecto — TTL del score cacheado).
+  primaria, D-02), `OFERTA_CACHE_TTL_SEGUNDOS` (300 por defecto — TTL del score cacheado),
+  `RISK_KEK_BASE64` (32 bytes en base64 compartidos con RISK para descifrar `datos_cifrados`),
+  `RISK_KMS_KEY_ID` (`local-dev-kek`).
 - Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest`
   (desde esta carpeta). Las pruebas usan dobles de prueba (`tests/fakes.py`), no MongoDB ni Redis
   reales.

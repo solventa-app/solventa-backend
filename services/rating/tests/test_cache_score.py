@@ -44,3 +44,25 @@ def test_un_fallo_de_redis_nunca_se_propaga() -> None:
 
     cache.guardar("oferta:hash:1:v1", {"score_total": 82})  # no debe lanzar
     assert cache.obtener("oferta:hash:1:v1") is None  # no debe lanzar
+    assert cache.invalidar_cliente("cliente-1", 1) == 0  # no debe lanzar
+
+
+def test_invalidar_cliente_borra_score_y_oferta_de_ese_cliente() -> None:
+    from app.application.identificadores import id_opaco
+
+    almacen = AlmacenFalso()
+    cache = CacheScore(almacen, ttl_segundos=300)
+    h1 = id_opaco("cliente-1")
+    h2 = id_opaco("cliente-2")
+
+    cache.guardar(f"score:{h1}:v1", {"score_total": 82})
+    cache.guardar(f"oferta:{h1}:1:v1", {"score_total": 82})
+    cache.guardar(f"oferta:{h2}:1:v1", {"score_total": 70})
+
+    eliminadas = cache.invalidar_cliente("cliente-1", perfil_version=2)
+
+    assert eliminadas == 2
+    assert cache.obtener(f"score:{h1}:v1") is None
+    assert cache.obtener(f"oferta:{h1}:1:v1") is None
+    assert cache.obtener(f"oferta:{h2}:1:v1") == {"score_total": 70}
+

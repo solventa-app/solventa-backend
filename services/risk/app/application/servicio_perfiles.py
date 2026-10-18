@@ -15,6 +15,8 @@ import logging
 from typing import Any, Protocol
 
 from app.application.bus_eventos import PuertoBusEventos, construir_evento_perfil_actualizado
+from app.application.cache_score import CacheScore
+from app.application.calculo_score import calcular_resultado_score
 from app.application.identificadores import id_opaco
 from app.application.tiempo_causal import ComponentesTiempo, serializar_operation_time
 
@@ -23,27 +25,57 @@ logger = logging.getLogger("risk.perfiles")
 
 class RepositorioPerfiles(Protocol):
     def guardar(
-        self, cliente_id: str, fuentes: list[dict[str, Any]]
+        self, cliente_id: str, fuentes: list[dict[str, Any]], **kwargs: Any
     ) -> tuple[int, ComponentesTiempo]: ...
 
 
 class ServicioPerfiles:
-    def __init__(self, repositorio: RepositorioPerfiles, bus: PuertoBusEventos) -> None:
+    def __init__(
+        self,
+        repositorio: RepositorioPerfiles,
+        bus: PuertoBusEventos,
+        cache_score: CacheScore | None = None,
+    ) -> None:
         self._repositorio = repositorio
         self._bus = bus
+        self._cache_score = cache_score
 
     def registrar(self, cliente_id: str, fuentes: list[dict[str, Any]]) -> dict[str, Any]:
-        perfil_version, operation_time = self._repositorio.guardar(cliente_id, fuentes)
+        resultado_score = calcular_resultado_score(fuentes)
+        try:
+            perfil_version, operation_time = self._repositorio.guardar(
+                cliente_id,
+                fuentes,
+                score_total=resultado_score["score_total"],
+                nivel_riesgo=resultado_score["nivel_riesgo"],
+                fecha_vigencia=resultado_score["fecha_vigencia"],
+                version_reglas=resultado_score["version_reglas"],
+            )
+        except TypeError:
+            perfil_version, operation_time = self._repositorio.guardar(cliente_id, fuentes)
+
         operation_time_str = serializar_operation_time(operation_time)
 
+        if self._cache_score is not None:
+            self._cache_score.guardar_score_cliente(
+                cliente_id, perfil_version, resultado_score
+            )
+
         logger.info(
-            "perfil registrado cliente=%s perfil_version=%s",
+            "perfil registrado cliente=%s perfil_version=%s score=%s nivel_riesgo=%s",
             id_opaco(cliente_id),
             perfil_version,
+            resultado_score["score_total"],
+            resultado_score["nivel_riesgo"],
         )
 
         evento = construir_evento_perfil_actualizado(
-            cliente_id, perfil_version, operation_time_str
+            cliente_id,
+            perfil_version,
+            operation_time_str,
+            nivel_riesgo=resultado_score["nivel_riesgo"],
+            fecha_vigencia=resultado_score["fecha_vigencia"],
+            version_reglas=resultado_score["version_reglas"],
         )
         self._bus.publicar(evento)
 
@@ -51,4 +83,8 @@ class ServicioPerfiles:
             "cliente_id": cliente_id,
             "perfil_version": perfil_version,
             "operation_time": operation_time_str,
+            "score": resultado_score["score_total"],
+            "nivel_riesgo": resultado_score["nivel_riesgo"],
+            "fecha_vigencia": resultado_score["fecha_vigencia"],
         }
+

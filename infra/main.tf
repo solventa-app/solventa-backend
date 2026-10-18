@@ -37,31 +37,3 @@ resource "google_artifact_registry_repository" "imagenes" {
   format        = "DOCKER"
   description   = "Imágenes del backend de Solventa (MISW4501)."
 }
-
-# Cifrado de campo de datos personales (HA-SEG-002, D-04). Opcional: los key rings son permanentes.
-resource "google_project_service" "kms" {
-  count              = var.crear_kms ? 1 : 0
-  project            = var.project_id
-  service            = "cloudkms.googleapis.com"
-  disable_on_destroy = false
-}
-
-resource "google_kms_key_ring" "solventa" {
-  count      = var.crear_kms ? 1 : 0
-  depends_on = [google_project_service.kms]
-  project    = var.project_id
-  name       = "solventa-backend"
-  location   = var.region
-}
-
-resource "google_kms_crypto_key" "campos_personales" {
-  count    = var.crear_kms ? 1 : 0
-  name     = "campos-personales"
-  key_ring = google_kms_key_ring.solventa[0].id
-
-  rotation_period = "7776000s" # 90 días
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}

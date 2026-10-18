@@ -33,6 +33,10 @@ resource "google_sql_database_instance" "principal" {
   # Staging: sin protección de borrado para poder destruir la instancia sin pasos manuales extra.
   deletion_protection = false
 
+  # CMEK del disco (HA-SEG-002): solo se puede fijar al crear la instancia. En staging se activa con
+  # `usar_cmek_sql = true` en una ventana acordada (export/import de `auth` y `payments`).
+  encryption_key_name = (var.crear_kms && var.usar_cmek_sql) ? google_kms_crypto_key.campos_personales[0].id : null
+
   settings {
     edition           = "ENTERPRISE" # los niveles shared-core (db-f1-micro) solo existen en Enterprise, no en Enterprise Plus
     tier              = var.cloud_sql_tier
@@ -48,7 +52,10 @@ resource "google_sql_database_instance" "principal" {
     }
   }
 
-  depends_on = [google_project_service.sql_apis]
+  depends_on = [
+    google_project_service.sql_apis,
+    google_kms_crypto_key_iam_member.cmek_sql,
+  ]
 }
 
 resource "google_sql_database" "auth" {

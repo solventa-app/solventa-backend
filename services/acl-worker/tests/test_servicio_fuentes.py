@@ -187,3 +187,86 @@ def test_consulta_degradada_a_cache_tambien_encola_reconciliacion() -> None:
     assert productor.llamadas == [
         (CONSULTA.fuente, CONSULTA.cliente_id, CONSULTA.consentimiento_id)
     ]
+
+
+def test_servir_cache_en_ttl_evita_llamar_al_proveedor_en_solicitud_repetida() -> None:
+    resultado = DatosFuente(
+        fuente="cuentas-bancarias", datos={"saldo": 500}, capturado_en=datetime.now(UTC)
+    )
+    adaptador = AdaptadorFalso(resultado=resultado)
+    fabrica = construir_fabrica(umbral_fallos=10, ttl_segundos=10)
+    cache = CacheFuentes(AlmacenEnMemoria(), ttl_segundos=300)
+    productor = ProductorReconciliacionFalso()
+    servicio = ServicioConsultaFuentes(
+        adaptador,
+        fabrica,
+        NOMBRE_CIRCUITO_OPEN_FINANCE,
+        cache,
+        presupuesto_s=0.7,
+        productor_reconciliacion=productor,
+        servir_cache_en_ttl=True,
+    )
+
+    primera = servicio.consultar(CONSULTA)
+    assert primera.de_cache is False
+    assert adaptador.llamadas == 1
+
+    segunda = servicio.consultar(CONSULTA)
+    assert segunda.de_cache is True
+    assert segunda.datos == {"saldo": 500}
+    assert adaptador.llamadas == 1  # no volvió a llamar al proveedor
+    assert productor.llamadas == []  # no es un fallo: no encola reconciliación
+
+    # Si se pide explícitamente forzar_proveedor, sí consulta al proveedor:
+    tercera = servicio.consultar(CONSULTA, forzar_proveedor=True)
+    assert tercera.de_cache is False
+    assert adaptador.llamadas == 2
+
+
+def test_con_cache_caliente_usa_presupuesto_reducido_para_ec010() -> None:
+    """EC010 <= 500 ms: cuando ya existe un valor en caché, compite caché contra
+    proveedor con `presupuesto_con_cache_s` (300 ms por defecto) y si el proveedor
+    excede ese presupuesto reducido devuelve la caché."""
+    timeouts_recibidos: list[float | None] = []
+
+    class AdaptadorConTimeoutRegistrado:
+        def __init__(self) -> None:
+            self.fallar_por_timeout = False
+
+        def consultar(
+            self, consulta: ConsultaFuente, timeout_s: float | None = None
+        ) -> DatosFuente:
+            timeouts_recibidos.append(timeout_s)
+            if self.fallar_por_timeout and timeout_s is not None and timeout_s <= 0.3:
+                raise TimeoutError("proveedor lento > 300ms")
+            return DatosFuente(
+                fuente=consulta.fuente,
+                datos={"saldo": 999},
+                capturado_en=datetime.now(UTC),
+            )
+
+    adaptador = AdaptadorConTimeoutRegistrado()
+    fabrica = construir_fabrica(umbral_fallos=10, ttl_segundos=10)
+    cache = CacheFuentes(AlmacenEnMemoria(), ttl_segundos=300)
+    servicio = ServicioConsultaFuentes(
+        adaptador,
+        fabrica,
+        NOMBRE_CIRCUITO_OPEN_FINANCE,
+        cache,
+        presupuesto_s=0.7,
+        presupuesto_con_cache_s=0.3,
+        servir_cache_en_ttl=False,
+    )
+
+    # 1ª llamada sin caché: usa presupuesto completo (0.7 s)
+    en_linea = servicio.consultar(CONSULTA)
+    assert en_linea.de_cache is False
+    assert timeouts_recibidos[0] == pytest.approx(0.7)
+
+    # 2ª llamada con caché caliente y proveedor lento (> 300 ms): usa 0.3 s y degrada a caché
+    adaptador.fallar_por_timeout = True
+    degradada = servicio.consultar(CONSULTA)
+    assert degradada.de_cache is True
+    assert degradada.datos == {"saldo": 999}
+    assert timeouts_recibidos[1] == pytest.approx(0.3)
+

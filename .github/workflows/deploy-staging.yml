@@ -214,6 +214,11 @@ jobs:
           python3 ../scripts/revisar_plan.py plan.json "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Aplicar
         run: terraform apply plan.bin
+      - name: Leer URL del API Gateway (si existe)
+        id: gw_out
+        run: |
+          gw=$(terraform output -raw gateway_url 2>/dev/null || true)
+          echo "gateway_url=${gw}" >> "$GITHUB_OUTPUT"
 
   construir:
     # Construir una vez: la imagen que pasó CI es la que llega a staging (etiqueta = SHA, nunca "latest").
@@ -385,6 +390,18 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Humo final contra el API Gateway (si gateway_url existe)
+        id: gw
+        run: |
+          set -uo pipefail
+          host=$(gcloud api-gateway gateways describe solventa-gateway --location="$REGION" --project="$PROYECTO" --format='value(defaultHostname)' 2>/dev/null || true)
+          if [ -n "$host" ]; then
+            gateway_url="https://${host}"
+            echo "gateway_url=${gateway_url}" >> "$GITHUB_OUTPUT"
+            curl -fsS --max-time 5 --retry 3 --retry-delay 2 "${gateway_url}/health"
+          else
+            echo "gateway_url=" >> "$GITHUB_OUTPUT"
+          fi
       - name: Estado real de Cloud Run
         run: gcloud run services list --region "$REGION" --format=json > "$RUNNER_TEMP/cloud-run.json"
       - name: Generar el informe
@@ -393,6 +410,7 @@ jobs:
           EVENTO: ${{ github.event_name }}
           REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GATEWAY_URL: ${{ steps.gw.outputs.gateway_url }}
         run: |
           set -euo pipefail
           printf '%s' "$NEEDS" > "$RUNNER_TEMP/needs.json"
@@ -402,6 +420,16 @@ jobs:
             --needs "$RUNNER_TEMP/needs.json" --cloud-run "$RUNNER_TEMP/cloud-run.json" \
             --run-url "$RUN_URL" --proyecto "$PROYECTO" --region "$REGION" \
             --main-adelante "$adelante" --tags "$tags" > informe-despliegue.md
+          if [ -n "$GATEWAY_URL" ]; then
+            {
+              echo ""
+              echo "## Puerta pública: API Gateway (HA-LAT-004)"
+              echo ""
+              echo "- **\`gateway_url\`:** \`${GATEWAY_URL}\` (corte duro de 700 ms)"
+              echo "- **GraphQL Web:** \`${GATEWAY_URL}/graphql/web\`"
+              echo "- **Salud:** \`${GATEWAY_URL}/health\`"
+            } >> informe-despliegue.md
+          fi
           cat informe-despliegue.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

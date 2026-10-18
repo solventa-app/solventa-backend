@@ -10,18 +10,30 @@ scalar DateTime
 
 # ---------- Consentimiento (CA-W01-01/02/08) ----------
 
+enum EstadoConsentimiento {
+  VIGENTE
+  REVOCADO
+  VENCIDO
+}
+
 type Consentimiento {
   id: ID!
   finalidad: String!
   versionTexto: String!
   otorgadoEn: DateTime!
   revocadoEn: DateTime
+  venceEn: DateTime!
   vigente: Boolean!
+  estado: EstadoConsentimiento!
 }
 
 input ConsentimientoInput {
   finalidad: String!
   versionTexto: String!
+  documentoIdentidad: String = null
+  tipoDato: String = null
+  fuenteDatos: String = null
+  canal: String = null
 }
 
 # ---------- Oferta (CA-W01-03/04/05/06) ----------
@@ -35,6 +47,24 @@ enum EstadoFuente {
   OK
   CACHE
   FALLO
+}
+
+enum NivelRiesgo {
+  BAJO
+  MEDIO
+  ALTO
+}
+
+type PerfilRiesgo {
+  score: Int!
+  nivelRiesgo: NivelRiesgo!
+  fechaVigencia: DateTime!
+}
+
+enum MotivoErrorOferta {
+  CONSENTIMIENTO_NO_VIGENTE
+  DATOS_INSUFICIENTES
+  FUENTES_NO_DISPONIBLES
 }
 
 type Monto {
@@ -73,11 +103,13 @@ type Oferta {
   cobertura: Monto!
   desgloseScore: [FactorScore!]!
   fuentes: [FuenteConsultada!]!
+  perfilRiesgo: PerfilRiesgo
 }
 
 type ErrorOferta {
   mensaje: String!
   puedeReintentar: Boolean!
+  motivo: MotivoErrorOferta
 }
 
 union ResultadoOferta = Oferta | ErrorOferta # nunca un 5xx crudo al cliente (CA-W01-05)

@@ -9,7 +9,12 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from app.application.bus_eventos import BusEventosLog, construir_evento_perfil_actualizado
+from app.application.bus_eventos import (
+    BusEventosLog,
+    BusEventosPubSub,
+    construir_bus_eventos,
+    construir_evento_perfil_actualizado,
+)
 
 RUTA_ESQUEMA = (
     Path(__file__).resolve().parents[3]
@@ -31,6 +36,24 @@ def test_evento_construido_valida_contra_el_contrato(esquema: dict) -> None:
     )
 
     jsonschema.validate(evento, esquema)
+
+
+def test_evento_con_campos_de_perfil_riesgo_valida_contra_el_contrato(
+    esquema: dict,
+) -> None:
+    evento = construir_evento_perfil_actualizado(
+        cliente_id="cliente-123",
+        perfil_version=2,
+        operation_time="1733600000.2",
+        nivel_riesgo="BAJO",
+        fecha_vigencia="2026-11-17T00:00:00+00:00",
+        version_reglas="v1",
+    )
+
+    jsonschema.validate(evento, esquema)
+    assert evento["datos"]["nivelRiesgo"] == "BAJO"
+    assert evento["datos"]["fechaVigencia"] == "2026-11-17T00:00:00+00:00"
+    assert evento["datos"]["versionReglas"] == "v1"
 
 
 def test_evento_lleva_los_campos_correctos() -> None:
@@ -57,3 +80,38 @@ def test_bus_log_no_filtra_el_cliente_id_en_crudo(caplog: pytest.LogCaptureFixtu
 
     mensajes = " ".join(registro.getMessage() for registro in caplog.records)
     assert "cliente-muy-personal-123" not in mensajes
+
+
+def test_bus_pubsub_publica_evento_y_construir_bus_selecciona_adaptador() -> None:
+    publicados: list[tuple[str, bytes]] = []
+
+    class FuturoFalso:
+        def result(self, timeout: float | None = None) -> str:
+            return "msg-1"
+
+    class PublicadorPubSubFalso:
+        def publish(self, tema: str, data: bytes, **attrs: str) -> FuturoFalso:
+            publicados.append((tema, data))
+            return FuturoFalso()
+
+    bus = construir_bus_eventos(
+        "projects/solventa/topics/perfil-actualizado",
+        cliente_pubsub=PublicadorPubSubFalso(),
+    )
+    assert isinstance(bus, BusEventosPubSub)
+
+    evento = construir_evento_perfil_actualizado(
+        cliente_id="cliente-123",
+        perfil_version=1,
+        operation_time="1733600000.1",
+        nivel_riesgo="MEDIO",
+    )
+    bus.publicar(evento)
+
+    assert len(publicados) == 1
+    tema, payload = publicados[0]
+    assert tema == "projects/solventa/topics/perfil-actualizado"
+    assert json.loads(payload.decode("utf-8")) == evento
+
+    assert isinstance(construir_bus_eventos(""), BusEventosLog)
+

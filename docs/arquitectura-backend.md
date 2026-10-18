@@ -25,22 +25,30 @@ Cada servicio tiene su propia base: **nadie lee ni escribe en la base de otro**.
 ## Caso insignia (Journey 5) — flujo del Sprint 1
 
 ```
-Cliente ─► BFF ─► AUTH        valida/registra consentimiento (síncrono, EC022/EC023)
-                  └► ACL ─► Open Finance / Open Data   (síncrono, timeout duro 700 ms, Circuit Breaker;
-                  │                                      degrada al último valor en caché)
-                  └► RISK ─► MongoDB primaria            escritor único; emite perfil.actualizado (async)
-                  └► RATING ◄─ MongoDB secundaria        replicación asíncrona (oplog); lectura causal (D-02)
-                       └► Redis                          Cache-Aside de scores
-         ◄──────────────── oferta (completa o preliminar), síncrono
+Cliente ─► API Gateway (700 ms) ─► BFF ─► AUTH        valida/registra consentimiento (titular_id + vence_en 30d; síncrono, EC022/EC023)
+                                      └► ACL ─► Open Finance / Open Data   (síncrono, timeout duro 700 ms / 300 ms con caché, Circuit Breaker;
+                                      │                                      degrada al último valor en caché; invalidación en < 5 min al revocar)
+                                      └► RISK ─► MongoDB primaria            escritor único; cifra `fuentes.datos` (AES-GCM + KMS); calcula score,
+                                      │     │                                `nivelRiesgo` y `fechaVigencia`; guarda `ScoreCacheado` en Redis;
+                                      │     └──► Pub/Sub `perfil-actualizado` (async) ──► RATING invalida caché del cliente
+                                      └► RATING ◄─ MongoDB secundaria        replicación asíncrona (oplog); lectura causal (D-02); descifra `datos`
+                                           └► Redis                          lee `ScoreCacheado` (Cache-Aside de scores)
+         ◄──────────────────────────────────── oferta (completa o preliminar) con `perfilRiesgo`, síncrono
 ```
 
 El tramo síncrono es solo lo que el usuario espera; todo efecto colateral viaja por eventos (`contracts/events/`).
 
-**Quién orquesta (decidido 2026-10-08):** el BFF llama al ACL Worker por cada una de las 5 fuentes y pasa los resultados tal cual a
-`POST /perfiles` de RISK (que no llama al ACL Worker); luego reenvía a RATING el `operation_time` que RISK devolvió. El BFF
-no calcula nada de negocio: solo secuencia las llamadas y traduce la degradación al contrato (`ErrorOferta` o oferta preliminar).
+**Quién orquesta (decidido 2026-10-08, ampliado 2026-10-18):** el BFF lee la lista de fuentes desde `contracts/fuentes.json`,
+llama al ACL Worker por cada una de las 5 fuentes en paralelo y pasa los resultados tal cual a `POST /perfiles` de RISK (que
+no llama al ACL Worker); RISK persiste el perfil cifrado en MongoDB, guarda el `ScoreCacheado` en Redis y devuelve `operation_time`,
+`score`, `nivel_riesgo` y `fecha_vigencia`. Luego el BFF reenvía a RATING el `operation_time` que RISK devolvió. El BFF no calcula
+nada de negocio: solo secuencia las llamadas, verifica que el `titular_id` del consentimiento coincida con el documento de la
+solicitud y traduce la degradación al contrato (`ErrorOferta` con `motivo` o oferta preliminar). Al revocar un consentimiento, el
+BFF llama también a `POST /fuentes/invalidar-cache` en el ACL Worker para limpiar la caché de las fuentes en segundos (CA-W01-08).
 
-**Autenticación entre servicios:** en Cloud Run solo el BFF es público; el resto exige un token de identidad con
+**Autenticación entre servicios y API Gateway (HA-LAT-004):** delante del BFF está GCP API Gateway (en local, Envoy en `:8080` con
+`infra/gateway/envoy.yaml`) con timeout duro de 700 ms por ruta (`infra/gateway/openapi.yaml`). En Cloud Run el BFF es privado y
+solo la cuenta `gateway-bff` tiene `roles/run.invoker` sobre él; el resto de servicios exige un token de identidad con
 audience = nombre del servicio destino. Todos los que llaman a otro servicio lo envían cuando
 `AUTENTICACION_SERVICIOS=id_token` (lo fija `.github/servicios.json` en staging; en local vale `ninguna`): el BFF
 (`services/bff/app/autenticacion_servicios.py`, asíncrono), PAYMENTS → ACL Worker, el ACL Worker → stubs de proveedores y
@@ -114,19 +122,30 @@ acl-worker (ServicioConsultaFuentes)        consolidador-fuentes (worker rq en h
 
 | Servicio | Variables |
 |---|---|
-| `bff` | `AUTH_URL`, `ACL_URL`, `RISK_URL`, `RATING_URL`, `PAYMENTS_URL` |
-| `auth`, `payments` | `DATABASE_URL` |
-| `risk` | `MONGO_URI`, `ACL_URL` (heredada, sin uso ni permiso en el manifiesto: RISK recibe los datos de las fuentes ya resueltos en el cuerpo de `POST /perfiles`; **quien consulta al ACL Worker es el BFF**) |
-| `rating` | `MONGO_URI`, `REDIS_URL` (Cache-Aside de scores, Sprint 2), `RATING_MAX_TIME_MS` (150, D-02: cota de espera en la secundaria antes de caer a la primaria) |
-| `acl-worker` | `REDIS_URL`, `OPEN_FINANCE_URL`, `OPEN_DATA_URL`, `PASARELA_URL`, `TIMEOUT_MS` (700), `BREAKER_UMBRAL_FALLOS` (3), `BREAKER_TTL_SEGUNDOS` (5), `SONDA_INTERVALO_SEGUNDOS` (2), `CACHE_TTL_SEGUNDOS` (300), `COLA_RECONCILIACION_REDIS_URL` (`redis://.../2`) |
-| `consolidador-fuentes` | `REDIS_URL` (misma cola, db 2), `ACL_URL` |
+| `bff` | `AUTH_URL`, `ACL_URL`, `RISK_URL`, `RATING_URL`, `PAYMENTS_URL`, `CLIENTE_ID_CLAVE`, `FUENTES_CONFIG_PATH` |
+| `auth` | `DATABASE_URL`, `CIFRADO_CLAVE`, `KMS_KEY_NAME`, `CIFRADO_CLAVE_ENVUELTA`, `CLIENTE_ID_CLAVE`, `CONSENTIMIENTO_VIGENCIA_DIAS` (30) |
+| `payments` | `DATABASE_URL`, `ACL_URL` |
+| `risk` | `MONGO_URI`, `REDIS_URL` (`ScoreCacheado`), `CIFRADO_CLAVE`, `KMS_KEY_NAME`, `CIFRADO_CLAVE_ENVUELTA`, `PUBSUB_TEMA_PERFIL_ACTUALIZADO`, `BATCH_TAMANO_LOTE` (500) |
+| `rating` | `MONGO_URI`, `REDIS_URL` (Cache-Aside de scores), `RATING_MAX_TIME_MS` (150, D-02), `CIFRADO_CLAVE`, `KMS_KEY_NAME`, `CIFRADO_CLAVE_ENVUELTA` |
+| `acl-worker` | `REDIS_URL`, `OPEN_FINANCE_URL`, `OPEN_DATA_URL`, `PASARELA_URL`, `TIMEOUT_MS` (700), `PRESUPUESTO_MS_OPEN_FINANCE`, `PRESUPUESTO_MS_OPEN_DATA`, `PRESUPUESTO_MS_PASARELA`, `CACHE_SERVIR_EN_TTL`, `BREAKER_UMBRAL_FALLOS` (3), `BREAKER_TTL_SEGUNDOS` (5), `SONDA_INTERVALO_SEGUNDOS` (2), `CACHE_TTL_SEGUNDOS` (300), `COLA_RECONCILIACION_REDIS_URL` (`redis://.../2`) |
+| `consolidador-fuentes` | `REDIS_URL` (misma cola, db 2), `ACL_URL`, `AUTH_URL` |
 | todos | `PORT` (lo inyecta Cloud Run) |
 
-En staging, las variables sensibles (`DATABASE_URL`, `MONGO_URI`, `REDIS_URL`) vienen de Secret Manager y las URL entre servicios las
+En staging, las variables sensibles (`DATABASE_URL`, `MONGO_URI`, `REDIS_URL`, `CIFRADO_CLAVE_ENVUELTA`) vienen de Secret Manager y las URL entre servicios las
 fija Terraform desde `.github/servicios.json` (campo `llama`). `rating` usa un `MONGO_URI` distinto al de `risk`: de solo lectura.
+
+## Cifrado en reposo (D-04, HA-SEG-002 / EC022)
+
+- **Cifrado de campo en la aplicación (AES-GCM de 256 bits) con sobre de KMS:** AUTH cifra `usuarios.nombre_cifrado` y RISK cifra `fuentes[].datos` (`datos_cifrados`, dejando `datos: {}` en MongoDB) usando `CifradorAesGcm`. En staging, la DEK se guarda envuelta en Secret Manager (`CIFRADO_CLAVE_ENVUELTA`) y se desenvuelve una sola vez al arrancar el contenedor con la llave `campos-personales` de Cloud KMS (`KMS_KEY_NAME`). Solo las cuentas de servicio de `auth`, `risk` y `rating` tienen `roles/cloudkms.cryptoKeyEncrypterDecrypter`. En local y en CI se usa `CIFRADO_CLAVE` directo sin llamar a GCP.
+- **CMEK de disco:** configurable en Terraform para Cloud SQL (`usar_cmek_sql`) y Memorystore Redis (`usar_cmek_redis`). MongoDB Atlas M0 no soporta CMEK en el tier gratuito, por lo que queda cubierto al 100 % por el cifrado de campo en RISK antes de escribir en MongoDB.
+
+## Batch nocturno de reproceso (HA-ESC-004 / EC017)
+
+- Cloud Run Job `risk-reproceso` (`python -m app.batch_reproceso` sobre la imagen de `services/risk`), disparado por Cloud Scheduler (`30 23 * * *` America/Bogota, detrás de `crear_batch`).
+- Recorre en lotes (`BATCH_TAMANO_LOTE`, por defecto 500) los perfiles cuya `version_reglas` sea distinta de la `VERSION_REGLAS` actual, recalcula `score_total`, `nivel_riesgo` y `fecha_vigencia` y actualiza tanto MongoDB como la caché de Redis. Es idempotente: si se interrumpe y se relanza, retoma desde el primer lote pendiente sin reprocesar los documentos ya actualizados.
 
 ## Migraciones y despliegue
 
 Cada servicio migra solo su almacén, con la misma imagen que el servicio: `auth` y `payments` con `alembic upgrade head`, `risk` con
-`python -m migrations` (MongoDB). Orden único en local, CI y staging: **migrar → arrancar**. Detalle y principios en
+`python -m migrations` (MongoDB, incluida `v0002_cifrar_datos_fuentes`). Orden único en local, CI y staging: **migrar → arrancar**. Detalle y principios en
 [ADR-07](adr/ADR-07-cicd-y-migraciones.md).

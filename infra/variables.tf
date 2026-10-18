@@ -178,3 +178,47 @@ variable "presupuesto_correos_alerta" {
   type        = list(string)
   default     = []
 }
+
+# --------------------------------------------------------------------------------------------------
+# Cifrado CMEK en almacenes (Bloque 3, HA-SEG-002)
+# --------------------------------------------------------------------------------------------------
+
+variable "usar_cmek_sql" {
+  description = "Activa CMEK (`encryption_key_name`) en Cloud SQL usando la llave `campos-personales` de Cloud KMS. Como Cloud SQL solo fija CMEK al crear la instancia, se activa en un PR propio con ventana acordada de export/import."
+  type        = bool
+  default     = false
+}
+
+variable "usar_cmek_redis" {
+  description = "Activa CMEK (`customer_managed_key`) en Memorystore Redis con la llave `campos-personales` de Cloud KMS. Se aplica en el próximo encendido de Redis."
+  type        = bool
+  default     = false
+}
+
+# --------------------------------------------------------------------------------------------------
+# Pub/Sub (`PerfilActualizado`), Batch nocturno (`risk-reproceso`) y API Gateway (Bloques 8, 9 y 10)
+# --------------------------------------------------------------------------------------------------
+
+variable "crear_pubsub" {
+  description = "Crea el tema `perfil-actualizado` y la suscripción de `rating` en Cloud Pub/Sub (decisión 9, bloque 8; capa gratuita de 10 GB/mes)."
+  type        = bool
+  default     = false
+}
+
+variable "crear_batch" {
+  description = "Crea el Cloud Run Job `risk-reproceso` y la tarea nocturna de Cloud Scheduler (`30 23 * * *` America/Bogota, antes del apagado de las 2:00 a.m.) para HA-ESC-004 / EC017 (bloque 9)."
+  type        = bool
+  default     = false
+}
+
+variable "crear_gateway" {
+  description = "Crea el API Gateway de GCP delante del BFF con timeout duro de 700 ms (`infra/gateway/openapi.yaml`) y la cuenta `gateway-bff` como único invocador del BFF (HA-LAT-004, bloque 10)."
+  type        = bool
+  default     = false
+}
+
+variable "calentar_camino_critico" {
+  description = "Pone `min_instance_count = 1` en los servicios del camino crítico de HU-W01 solo durante las sesiones de medición para evitar arranques en frío frente al corte de 700 ms del gateway. Mantener en `false` fuera de las sesiones."
+  type        = bool
+  default     = false
+}

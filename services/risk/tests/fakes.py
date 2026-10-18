@@ -21,14 +21,42 @@ class RepositorioPerfilesFalso:
     def __init__(self) -> None:
         self.secuencias: dict[str, int] = {}
         self.guardados: list[tuple[str, list[dict[str, Any]]]] = []
+        self.metadatos_guardados: list[dict[str, Any]] = []
 
     def guardar(
-        self, cliente_id: str, fuentes: list[dict[str, Any]]
+        self, cliente_id: str, fuentes: list[dict[str, Any]], **kwargs: Any
     ) -> tuple[int, TimestampFalso]:
         self.secuencias[cliente_id] = self.secuencias.get(cliente_id, 0) + 1
         perfil_version = self.secuencias[cliente_id]
         self.guardados.append((cliente_id, fuentes))
+        self.metadatos_guardados.append(
+            {
+                "cliente_id": cliente_id,
+                "perfil_version": perfil_version,
+                "score_total": kwargs.get("score_total", 50),
+                "nivel_riesgo": kwargs.get("nivel_riesgo", "MEDIO"),
+                "fecha_vigencia": kwargs.get(
+                    "fecha_vigencia", "2026-11-07T12:00:00+00:00"
+                ),
+                "version_reglas": kwargs.get("version_reglas", "v1"),
+            }
+        )
         return perfil_version, TimestampFalso(1_700_000_000 + perfil_version, 1)
+
+
+class AlmacenClaveValorFalso:
+    """Fake en memoria que cumple `PuertoAlmacenClaveValor` de `cache_score.py`."""
+
+    def __init__(self) -> None:
+        self.valores: dict[str, str] = {}
+        self.ttls: dict[str, int | None] = {}
+
+    def get(self, nombre: str) -> str | None:
+        return self.valores.get(nombre)
+
+    def set(self, nombre: str, valor: str, ex: int | None = None) -> None:
+        self.valores[nombre] = valor
+        self.ttls[nombre] = ex
 
 
 class BusEventosFalso:
@@ -40,3 +68,4 @@ class BusEventosFalso:
 
     def publicar(self, evento: dict[str, Any]) -> None:
         self.eventos.append(evento)
+
