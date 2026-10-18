@@ -5,6 +5,7 @@ from fakes import RepositorioUsuariosMemoria
 
 from app.configuracion import JWT_SECRETO_LOCAL, VALOR_MARCADOR, Configuracion
 from app.crear_usuario import crear_si_no_existe
+from app.usuarios import construir_pool
 
 
 def test_en_local_usa_el_secreto_local(monkeypatch) -> None:
@@ -40,6 +41,14 @@ def test_en_cloud_run_arranca_con_un_secreto_real(monkeypatch) -> None:
     monkeypatch.setenv("CIFRADO_CLAVE", "b" * 43 + "=")
 
     assert Configuracion.desde_entorno().jwt_secreto == "a" * 64
+
+
+def test_sin_database_url_no_hay_valor_por_defecto_y_el_pool_falla_claro(monkeypatch) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    assert Configuracion.desde_entorno().database_url == ""
+    with pytest.raises(ValueError, match="DATABASE_URL"):
+        construir_pool("")
 
 
 def test_crear_usuario_es_idempotente() -> None:
