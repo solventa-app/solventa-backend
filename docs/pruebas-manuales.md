@@ -226,6 +226,53 @@ gql "$(entrada "$CLAVE" 1.00)" "$TOKEN_BO"
 idénticas** (no hubo un segundo cobro); y reenviar el mismo `idIntentoCobro` con otro monto da `ErrorCobro`
 ("ya se usó con otros datos"). Un CLIENTE o un ASESOR que lo intente recibe "No tienes permiso".
 
+### Paso 12. Tarjeta de prueba, estado de la tarjeta y latencia (KAN-208)
+
+Reutiliza `$ID_CL`, `$TOKEN_BO`, `$PAY` y `$PASARELA` del paso 10. Los controles del mock están documentados en
+[stubs/pasarela/README.md](../stubs/pasarela/README.md); aquí se usan tres.
+
+```bash
+# 1) Tokenizar una tarjeta de PRUEBA en el mock de la pasarela (el número solo viaja aquí)
+TARJETA=$(curl -s -X POST $PASARELA/v1/tokens -H 'Content-Type: application/json' \
+  -d '{"numero":"5555 5555 5555 4444","vencimiento_mes":12,"vencimiento_anio":2035,"cvv":"123"}')
+echo "$TARJETA"
+TOKEN=$(echo "$TARJETA" | campo token)
+
+# 2) Registrarla para el cliente en PAYMENTS (interno; guarda el token cifrado y solo muestra marca y últimos 4)
+MEDIO=$(curl -s -X POST $PAY/medios-pago -H 'Content-Type: application/json' \
+  -d '{"cliente_id":"'"$ID_CL"'","token":"'"$TOKEN"'","marca":"'"$(echo "$TARJETA" | campo marca)"'","ultimos4":"'"$(echo "$TARJETA" | campo ultimos4)"'","vencimiento_mes":12,"vencimiento_anio":2035}' | campo id)
+echo "medio de pago: $MEDIO"
+
+# 3) Cobrar con ese medio de pago
+COBRO_MP='mutation($e: CrearCobroInput!) { crearCobro(entrada: $e) { __typename ... on Cobro { estado motivo medioPago { marca ultimos4 } } ... on ErrorCobro { mensaje } } }'
+cobrar_con_medio() { gql '{"query":"'"$COBRO_MP"'","variables":{"e":{"idIntentoCobro":"'"$1"'","polizaId":"POL-DEMO-3","clienteId":"'"$ID_CL"'","monto":{"valor":"90000.00","moneda":"COP"},"medioPagoId":"'"$MEDIO"'"}}}' "$TOKEN_BO"; }
+cobrar_con_medio "mp-$(date +%s)-a"
+
+# 4) Dejar la tarjeta sin fondos: el cobro se rechaza; luego se reactiva
+curl -s -X POST $PASARELA/control/tokens/$TOKEN/estado -H 'Content-Type: application/json' -d '{"estado":"fondos_insuficientes"}'; echo
+cobrar_con_medio "mp-$(date +%s)-b"
+curl -s -X POST $PASARELA/control/tokens/$TOKEN/estado -H 'Content-Type: application/json' -d '{"estado":"activa"}'; echo
+
+# 5) Pasarela lenta: 900 ms supera los 700 ms del ACL Worker (como una falla por timeout)
+curl -s -X POST $PASARELA/control/latencia -H 'Content-Type: application/json' -d '{"minimo_ms":900,"maximo_ms":900}'; echo
+cobrar_con_medio "mp-$(date +%s)-c"
+curl -s -X DELETE $PASARELA/control/latencia; echo
+
+# 6) El medio de pago de otro cliente no sirve
+gql '{"query":"'"$COBRO_MP"'","variables":{"e":{"idIntentoCobro":"mp-ajeno-'"$(date +%s)"'","polizaId":"POL-DEMO-3","clienteId":"u-otro-cliente","monto":{"valor":"90000.00","moneda":"COP"},"medioPagoId":"'"$MEDIO"'"}}}' "$TOKEN_BO"
+```
+
+**Esperado**, en orden:
+1. La tokenización devuelve `token`, `"marca":"mastercard"`, `"ultimos4":"4444"` y el estado `activa`: **no** repite el número ni el CVV.
+2. PAYMENTS devuelve el id del medio de pago (nunca el token).
+3. `COBRADO` con `"medioPago":{"marca":"mastercard","ultimos4":"4444"}`.
+4. El control responde `"estado":"fondos_insuficientes"` y el cobro queda `RECHAZADO` con `"motivo":"fondos_insuficientes"`, aunque la pasarela esté en modo `sano`; luego la tarjeta vuelve a `activa`.
+5. El cobro queda `PENDIENTE` (el ACL corta a los 700 ms; la pasarela igual cobró y la conciliación lo resuelve, como en el paso 2).
+6. `ErrorCobro` con "Ese medio de pago no existe o no es de este cliente.": no se puede cobrar con la tarjeta de otro.
+
+**Para la demo:** `python3 scripts/sembrar_cobros.py` deja 5 clientes con su tarjeta y su cobro ya armados (ver
+[cobros-conciliacion.md](cobros-conciliacion.md)).
+
 ## 6. Probar los servicios por separado
 
 Útil para aislar un problema. Todo servicio tiene Swagger en `/docs`, donde puedes ejecutar sus endpoints desde el

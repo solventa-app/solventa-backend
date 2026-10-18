@@ -43,6 +43,28 @@ El back-office ve **quién es el cliente** de cada cobro. El nombre es dato pers
   póliza sea de ese cliente.
 - **Llave:** `CIFRADO_CLAVE` (local, no secreta; en la nube, el secreto `clave-cifrado`). Pendiente pasar a Cloud KMS (D-04).
 
+### Medios de pago y tarjetas de prueba (KAN-208)
+
+Para una demo más realista, cada cliente puede tener una tarjeta **tokenizada**. Todo ocurre "tras bambalinas": no hay
+ninguna mutación ni endpoint público que reciba un número de tarjeta.
+
+- **La tokenización la hace el mock de la pasarela** (`POST /v1/tokens`), como una pasarela real con su formulario de
+  captura. El número y el CVV viajan **solo ahí**: no se guardan, no se devuelven y no se loguean. Solo se usan tarjetas de
+  prueba; jamás una real.
+- **PAYMENTS guarda el medio de pago** (`medios_pago`): el token del proveedor **cifrado por campo** (la misma llave de
+  AUTH, `CIFRADO_CLAVE`), la marca y los últimos 4. Las respuestas nunca traen el token. El registro es interno
+  (`POST /medios-pago`) y el BFF no lo expone.
+- **Se cobra con `medioPagoId`.** `crearCobro` acepta el token suelto de siempre **o** un `medioPagoId`, nunca los dos ni
+  ninguno. PAYMENTS comprueba que el medio sea **del `clienteId` del cobro**: nadie cobra con la tarjeta de otro (y el mensaje
+  es el mismo si el medio no existe, para no revelar los ajenos).
+- **El back-office ve con qué se cobró:** `Cobro.medioPago { marca ultimos4 }` ("Visa ····4242"), `null` si fue con un token suelto.
+- **Controles del mock para la demo:** el estado de cada tarjeta (`activa`, `fondos_insuficientes`, `bloqueada`, `vencida`)
+  y la latencia de la pasarela se cambian a mano con `/control/...` (ver el [README del mock](../stubs/pasarela/README.md)).
+  Una tarjeta que no está `activa` se rechaza con su motivo sin importar el modo global; una latencia por encima de los 700 ms
+  del ACL Worker equivale a una falla por timeout.
+- **Limitación conocida:** `cobros.token_medio_pago` (existente desde antes) guarda el token **sin cifrar**; solo
+  `medios_pago` va cifrado. Cifrarlo, o dejar de copiarlo y leerlo del medio de pago, queda pendiente.
+
 ## 1. El problema
 
 Una demo en vivo (2026-10-16) dejó a la vista tres huecos en lo que ya existía:
@@ -130,6 +152,7 @@ Cómo produce cada estado el mock de la pasarela, por modo:
 | **ACL Worker** | `PuertoPasarelaPagos.consultar`; `GET /pagos/cobros/{referencia_comercio}` (siempre 200); `motivo=circuito_abierto`; póliza enmascarada en logs |
 | **PAYMENTS** | `POST /cobros/buscar` (filtros en el cuerpo), `GET /cobros/{id}`, `POST /cobros/{id}/reintentar`; `procesar_reintento` concilia en el bucle y en el botón |
 | **BFF** | `cobros` y `reintentarCobro` reales, solo BACKOFFICE con token |
+| **Medios de pago (KAN-208, 2026-10-18)** | Contrato v0.8: `Cobro.medioPago` y `CrearCobroInput.medioPagoId`; el mock tokeniza (`POST /v1/tokens`) y tiene controles de estado de tarjeta y latencia; PAYMENTS guarda el token cifrado (migración `0007`); la siembra crea clientes con tarjeta |
 | **Nombre propio e `idTransaccion` (2026-10-18)** | Contrato v0.6: `Usuario.nombre` (propio) y `Cobro.idTransaccion`; AUTH admite nombre en cualquier rol y lo descifra solo para el propio usuario |
 | **Nombre del cliente (2026-10-17)** | Contrato v0.5; AUTH guarda `nombre_cifrado` (migración `0003`) y expone `POST /usuarios/nombres`; PAYMENTS guarda `cliente_id` (migración `0005`); el BFF compone `cobros.cliente { id nombre }` en lotes |
 | **Ajustes (2026-10-17)** | Contrato v0.3/v0.4: `crearCobro` en el BFF y evento v2 con `idIntentoCobro`; renombre a `id_intento_cobro` (mock: `referencia_comercio`); PAYMENTS responde 409 si el mismo intento llega con otros datos y 422 si falta un campo |
@@ -139,6 +162,7 @@ Cómo produce cada estado el mock de la pasarela, por modo:
 | Nivel | Resultado |
 |---|---|
 | Unitarias | Mock 15, ACL Worker 65, PAYMENTS 39, BFF 90 (incluida la equivalencia con el contrato y que la póliza no viaje en la URL) |
+| Medios de pago (2026-10-18) | Mock 38, PAYMENTS 88, BFF 142. Newman: 73 peticiones y 165 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. 0 números de tarjeta en logs y bases, 0 tokens en logs. Paso 5b verificado tal como está escrito |
 | Nombre propio e `idTransaccion` (2026-10-18) | AUTH 81, PAYMENTS 47, BFF 133. Newman: 58 peticiones y 135 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. `Cobro.idTransaccion` es la referencia de la pasarela (la misma que PAYMENTS guarda en `referencia`) |
 | Nombre del cliente (2026-10-17) | AUTH 74, PAYMENTS 47, BFF 109. Newman: 55 peticiones y 126 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. Nombre ilegible en la base y 0 apariciones en logs |
 | Ajustes (2026-10-17) | Mock 15, ACL Worker 66, PAYMENTS 43, BFF 99. Newman: 54 peticiones y 122 aserciones, 0 fallas en 2 corridas seguidas. Humo en verde. Este paso a paso, verificado tal como está escrito |
@@ -251,9 +275,54 @@ el cuarto reintento responde "Se agotaron los 3 reintentos: el cobro requiere ot
 
 ### Datos de ejemplo para la pantalla W05-01
 
-`python3 scripts/sembrar_cobros.py` crea por el BFF los 5 clientes del prototipo y un cobro para cada uno: 2 `COBRADO`,
-1 `RECHAZADO` (para probar el reintento) y 2 `PENDIENTE` que el reintento automático deja `COBRADO` a los pocos segundos.
-Es idempotente (alias e `idIntentoCobro` fijos) y solo sirve en local (usa el stub de la pasarela).
+`python3 scripts/sembrar_cobros.py` crea por el BFF los 5 clientes del prototipo, **cada uno con su tarjeta de prueba
+tokenizada** (Visa, Mastercard y Amex de prueba), y un cobro para cada uno: 2 `COBRADO`, 1 `RECHAZADO` y 2 `PENDIENTE` que
+el reintento automático deja `COBRADO` a los pocos segundos. La imprime como "Visa ····4242". Es idempotente (alias,
+tarjetas e `idIntentoCobro` fijos) y solo sirve en local (usa el mock de la pasarela y PAYMENTS).
+
+El `RECHAZADO` (Luisa) se logra dejando **su tarjeta sin fondos** en el mock, no cambiando el modo global; por eso sus
+reintentos seguirán rechazados hasta que su tarjeta vuelva a `activa` (el script imprime el comando para hacerlo).
+
+### Paso 5b. Tarjeta de prueba, estado de la tarjeta y latencia (KAN-208)
+
+```bash
+# 1) Tokenizar una tarjeta de PRUEBA en el mock de la pasarela (el número solo viaja aquí)
+TARJETA=$(curl -s -X POST $PASARELA/v1/tokens -H 'Content-Type: application/json' \
+  -d '{"numero":"5555 5555 5555 4444","vencimiento_mes":12,"vencimiento_anio":2035,"cvv":"123"}')
+echo "$TARJETA"
+TOKEN=$(echo "$TARJETA" | campo token)
+
+# 2) Registrarla para el cliente en PAYMENTS (interno; guarda el token cifrado y solo muestra marca y últimos 4)
+MEDIO=$(curl -s -X POST $PAY/medios-pago -H 'Content-Type: application/json' \
+  -d '{"cliente_id":"'"$ID_CL"'","token":"'"$TOKEN"'","marca":"'"$(echo "$TARJETA" | campo marca)"'","ultimos4":"'"$(echo "$TARJETA" | campo ultimos4)"'","vencimiento_mes":12,"vencimiento_anio":2035}' | campo id)
+echo "medio de pago: $MEDIO"
+
+# 3) Cobrar con ese medio de pago
+COBRO_MP='mutation($e: CrearCobroInput!) { crearCobro(entrada: $e) { __typename ... on Cobro { estado motivo medioPago { marca ultimos4 } } ... on ErrorCobro { mensaje } } }'
+cobrar_con_medio() { gql '{"query":"'"$COBRO_MP"'","variables":{"e":{"idIntentoCobro":"'"$1"'","polizaId":"POL-DEMO-3","clienteId":"'"$ID_CL"'","monto":{"valor":"90000.00","moneda":"COP"},"medioPagoId":"'"$MEDIO"'"}}}' "$TOKEN_BO"; }
+cobrar_con_medio "mp-$(date +%s)-a"
+
+# 4) Dejar la tarjeta sin fondos: el cobro se rechaza; luego se reactiva
+curl -s -X POST $PASARELA/control/tokens/$TOKEN/estado -H 'Content-Type: application/json' -d '{"estado":"fondos_insuficientes"}'; echo
+cobrar_con_medio "mp-$(date +%s)-b"
+curl -s -X POST $PASARELA/control/tokens/$TOKEN/estado -H 'Content-Type: application/json' -d '{"estado":"activa"}'; echo
+
+# 5) Pasarela lenta: 900 ms supera los 700 ms del ACL Worker (como una falla por timeout)
+curl -s -X POST $PASARELA/control/latencia -H 'Content-Type: application/json' -d '{"minimo_ms":900,"maximo_ms":900}'; echo
+cobrar_con_medio "mp-$(date +%s)-c"
+curl -s -X DELETE $PASARELA/control/latencia; echo
+
+# 6) El medio de pago de otro cliente no sirve
+gql '{"query":"'"$COBRO_MP"'","variables":{"e":{"idIntentoCobro":"mp-ajeno-'"$(date +%s)"'","polizaId":"POL-DEMO-3","clienteId":"u-otro-cliente","monto":{"valor":"90000.00","moneda":"COP"},"medioPagoId":"'"$MEDIO"'"}}}' "$TOKEN_BO"
+```
+
+**Esperado**, en orden:
+1. La tokenización devuelve `token`, `"marca":"mastercard"`, `"ultimos4":"4444"` y el estado `activa`: **no** repite el número ni el CVV.
+2. PAYMENTS devuelve el id del medio de pago (nunca el token).
+3. `COBRADO` con `"medioPago":{"marca":"mastercard","ultimos4":"4444"}`.
+4. El control responde `"estado":"fondos_insuficientes"` y el cobro queda `RECHAZADO` con `"motivo":"fondos_insuficientes"`, aunque la pasarela esté en modo `sano`; luego la tarjeta vuelve a `activa`.
+5. El cobro queda `PENDIENTE` (el ACL corta a los 700 ms; la pasarela igual cobró y la conciliación lo resuelve, como en el paso 2).
+6. `ErrorCobro` con "Ese medio de pago no existe o no es de este cliente.": no se puede cobrar con la tarjeta de otro.
 
 ### Paso 6. Una caída larga ya no agota el cobro
 
@@ -309,7 +378,7 @@ npx --yes newman@6.2.2 run tests/newman/solventa-bff.postman_collection.json \
 POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios down -v
 ```
 
-**Esperado:** `OK: humo del BFF en verde` y Newman con 135 aserciones, 0 fallidas.
+**Esperado:** `OK: humo del BFF en verde` y Newman con 165 aserciones, 0 fallidas.
 
 ## 8. Limitaciones conocidas
 

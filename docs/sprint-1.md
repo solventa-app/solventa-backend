@@ -203,3 +203,9 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   `iniciarSesion` y `yo`, cifrado en AUTH y fuera del JWT). `Cobro.idTransaccion` llegó aparte con el reintento de rechazados.
   Los pagos siguen siendo solo del BACKOFFICE. Pedido por el front (KAN-207). **Tampoco estaba en el plan del sprint:**
   registrar las horas en Jira bajo KAN-28.
+- **Medios de pago para la demo (KAN-208, 2026-10-18):** cada cliente de la siembra tiene una tarjeta de prueba tokenizada por el
+  mock de la pasarela (`POST /v1/tokens`); PAYMENTS guarda el token cifrado (`medios_pago`, migración `0007`, misma llave de
+  AUTH) y el cobro se crea con `medioPagoId`. Contrato v0.8: `Cobro.medioPago { marca ultimos4 }`. El mock suma controles de la
+  demo: estado de cada tarjeta (rechaza con su motivo) y latencia configurable. **No** hay captura de tarjeta en el backend
+  (CA-W05-03 sigue fuera de alcance): ningún endpoint del BFF ni de PAYMENTS acepta un número de tarjeta. Fuera del plan del
+  sprint: registrar las horas en Jira bajo KAN-208.

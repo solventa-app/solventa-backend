@@ -70,7 +70,13 @@ A diferencia de RISK, aquí **no se hashea `cobroId` ni `idIntentoCobro`** en el
 ### Dinero y tarjeta
 
 - `monto` es `TEXT` en la tabla, en el `OrdenCobro`/`ResultadoCobro` y en el payload del evento — nunca `float`, ni en la app ni en SQL (el `SUM` del balance castea a `NUMERIC` solo para la agregación y vuelve a `TEXT`).
-- `token_medio_pago` se persiste tal cual: es el token opaco del proveedor PCI-DSS (ya tokenizado antes de llegar aquí), no un dato de tarjeta real. No se cifra como campo adicional — ver huecos.
+- `token_medio_pago` se persiste tal cual en `cobros`: es el token opaco del proveedor PCI-DSS (ya tokenizado antes de llegar aquí), no un dato de tarjeta real. **No se cifra en `cobros`** — ver huecos. En cambio, el token de los **medios de pago** (`medios_pago`, KAN-208) sí va cifrado por campo.
+
+### Medios de pago (KAN-208)
+
+- Tabla `medios_pago` (migración `0007`): `cliente_id`, `token_cifrado` (AES-256-GCM con el id del medio como dato asociado, `app/application/cifrado.py`, copiado de AUTH: **la misma llave**, `CIFRADO_CLAVE`), `token_huella` (SHA-256 del token, para no duplicar la misma tarjeta de un cliente), `marca`, `ultimos4` y vencimiento. `cobros.medio_pago_id` dice con qué medio se cobró.
+- **Nunca hay un número de tarjeta aquí**: la tarjeta se tokeniza en la pasarela (en la demo, el mock) y solo llegan el token, la marca y los últimos 4. Las respuestas no traen el token.
+- Cobrar con `medio_pago_id` valida que el medio sea del `cliente_id` del cobro (`409` si no, con el mismo mensaje si no existe).
 
 ## Pendiente, fuera de alcance de esta tarea (huecos documentados)
 
@@ -87,6 +93,9 @@ A diferencia de RISK, aquí **no se hashea `cobroId` ni `idIntentoCobro`** en el
   `422` si algún campo llega vacío; `409` si el mismo `id_intento_cobro` llega con otra póliza, monto, moneda o medio
   de pago (antes devolvía en silencio el cobro original). El nombre viene de la migración `0003`/`0004` (antes
   `clave_idempotencia`).
+- `POST /cobros` también acepta `medio_pago_id` en lugar de `token_medio_pago` (uno solo; `409` si faltan ambos, vienen los dos, el medio no existe o no es del `cliente_id`). La respuesta trae `medio_pago: {marca, ultimos4}` (nulo si fue con un token suelto).
+- `POST /medios-pago` `{cliente_id, token, marca, ultimos4, vencimiento_mes, vencimiento_anio}` → `{id, cliente_id, marca, ultimos4, vencimiento_mes, vencimiento_anio, creado_en}` (nunca el token). **Interno** (el BFF no lo expone) e idempotente; `400` si los datos son inválidos.
+- `GET /clientes/{cliente_id}/medios-pago` → los medios de pago del cliente (sin token).
 - `GET /polizas/{poliza_id}/balance` → `{poliza_id, balance}`.
 - `POST /cobros/buscar` `{poliza_id?, estado?}` → lista de cobros (también con `creado_en` y `actualizado_en`). Los
   filtros van en el cuerpo y no en la URL porque las URL quedan en los logs de acceso (regla #6).
@@ -95,7 +104,7 @@ A diferencia de RISK, aquí **no se hashea `cobroId` ni `idIntentoCobro`** en el
   cambios; sobre `rechazado` hace un intento nuevo ante la pasarela con la referencia `{id_intento_cobro}-rN`, hasta
   `REINTENTOS_RECHAZO_MAXIMO` veces (default `3`, prototipo W05-01), y agotados responde `409` ("requiere otro medio de
   pago"); `404` si no existe. La respuesta trae `reintentos_rechazo` y `reintentos_rechazo_restantes`.
-- Variables de entorno: `DATABASE_URL` (ya fijada en `docker-compose.yml`), `ACL_URL` (ídem), `PAYMENTS_ACL_TIMEOUT_SEGUNDOS` (default `3.0`, timeout de PAYMENTS llamando al ACL Worker — defensa en profundidad, el presupuesto de 700 ms proveedor-abajo ya lo aplica el ACL Worker), `REINTENTO_COBRO_INTERVALO_SEGUNDOS` (default `5`), `REINTENTO_COBRO_MAX_INTENTOS` (default `10`), `REINTENTOS_RECHAZO_MAXIMO` (default `3`).
+- Variables de entorno: `CIFRADO_CLAVE` (llave de cifrado del token de los medios de pago; en local, la llave no secreta de AUTH ya fijada en `docker-compose.yml`; en Cloud Run, el secreto `clave-cifrado`, y no arranca con la local), `DATABASE_URL` (ya fijada en `docker-compose.yml`), `ACL_URL` (ídem), `PAYMENTS_ACL_TIMEOUT_SEGUNDOS` (default `3.0`, timeout de PAYMENTS llamando al ACL Worker — defensa en profundidad, el presupuesto de 700 ms proveedor-abajo ya lo aplica el ACL Worker), `REINTENTO_COBRO_INTERVALO_SEGUNDOS` (default `5`), `REINTENTO_COBRO_MAX_INTENTOS` (default `10`), `REINTENTOS_RECHAZO_MAXIMO` (default `3`).
 - Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta). Usan dobles de prueba (`tests/fakes.py`), no PostgreSQL ni ACL Worker reales — ver "Verificación en vivo" abajo para la prueba con PostgreSQL y el ACL Worker reales.
 - Imagen: `docker build -t solventa-payments .`
 

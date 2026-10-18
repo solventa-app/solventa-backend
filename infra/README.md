@@ -228,7 +228,7 @@ openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add clave-jwt --data
 
 `clave-cifrado` es la llave AES-256 (32 bytes en base64) con la que AUTH cifra el nombre de los usuarios (KAN-28) y
 PAYMENTS cifra el token de los medios de pago (KAN-208): **los dos servicios leen el mismo secreto**.
-AUTH se niega a arrancar en Cloud Run con el valor marcador o con la llave local. **Rotarla sin migrar los datos deja
+AUTH y PAYMENTS se niegan a arrancar en Cloud Run con el valor marcador o con la llave local. **Rotarla sin migrar los datos deja
 ilegibles los nombres y los tokens de los medios de pago** (los cobros saldrían sin nombre y no se podría cobrar con un medio registrado): antes de rotar hay que re-cifrar. Pendiente: pasar a Cloud KMS
 (decisión D-04) detrás de la misma interfaz:
 
