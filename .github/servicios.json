@@ -5,7 +5,7 @@
     "puerto": 8000,
     "publico": true,
     "llama": ["auth", "acl-worker", "risk", "rating", "payments"],
-    "entorno": { "AUTENTICACION_SERVICIOS": "id_token" },
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": { "CLIENTE_ID_CLAVE": "clave-cliente-id", "JWT_SECRETO": "clave-jwt" }
   },
   {
@@ -14,6 +14,7 @@
     "puerto": 8001,
     "url_env": "AUTH_URL",
     "migracion": ["alembic", "upgrade", "head"],
+    "entorno": { "TRAZAS_GCP": "true" },
     "secretos": {
       "DATABASE_URL": "database-url-auth",
       "JWT_SECRETO": "clave-jwt",
@@ -26,7 +27,7 @@
     "puerto": 8002,
     "url_env": "RISK_URL",
     "migracion": ["python", "-m", "migrations"],
-    "entorno": { "MONGO_DB": "risk" },
+    "entorno": { "MONGO_DB": "risk", "TRAZAS_GCP": "true" },
     "secretos": { "MONGO_URI": "mongo-uri-risk" }
   },
   {
@@ -34,7 +35,7 @@
     "ruta": "services/rating",
     "puerto": 8003,
     "url_env": "RATING_URL",
-    "entorno": { "MONGO_DB": "risk" },
+    "entorno": { "MONGO_DB": "risk", "TRAZAS_GCP": "true" },
     "secretos": { "MONGO_URI": "mongo-uri-rating", "REDIS_URL": "redis-url-rating" }
   },
   {
@@ -44,7 +45,7 @@
     "url_env": "PAYMENTS_URL",
     "migracion": ["alembic", "upgrade", "head"],
     "llama": ["acl-worker"],
-    "entorno": { "AUTENTICACION_SERVICIOS": "id_token" },
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": { "DATABASE_URL": "database-url-payments" }
   },
   {
@@ -53,7 +54,7 @@
     "puerto": 8005,
     "url_env": "ACL_URL",
     "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela"],
-    "entorno": { "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token" },
+    "entorno": { "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": {
       "REDIS_URL": "redis-url-acl",
       "COLA_RECONCILIACION_REDIS_URL": "redis-url-cola-reconciliacion"
@@ -64,25 +65,28 @@
     "ruta": "services/consolidador-fuentes",
     "puerto": 8006,
     "llama": ["acl-worker", "auth"],
-    "entorno": { "AUTENTICACION_SERVICIOS": "id_token" },
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": { "REDIS_URL": "redis-url-cola-reconciliacion" }
   },
   {
     "nombre": "stub-open-finance",
     "ruta": "stubs/open-finance",
     "puerto": 8101,
-    "url_env": "OPEN_FINANCE_URL"
+    "url_env": "OPEN_FINANCE_URL",
+    "entorno": { "TRAZAS_GCP": "true" }
   },
   {
     "nombre": "stub-open-data",
     "ruta": "stubs/open-data",
     "puerto": 8102,
-    "url_env": "OPEN_DATA_URL"
+    "url_env": "OPEN_DATA_URL",
+    "entorno": { "TRAZAS_GCP": "true" }
   },
   {
     "nombre": "stub-pasarela",
     "ruta": "stubs/pasarela",
     "puerto": 8103,
-    "url_env": "PASARELA_URL"
+    "url_env": "PASARELA_URL",
+    "entorno": { "TRAZAS_GCP": "true" }
   }
 ]

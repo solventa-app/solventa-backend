@@ -34,6 +34,8 @@ from fastapi import FastAPI, Header, HTTPException
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 
+from app.observabilidad import configurar_trazas
+
 MODOS = ("sano", "lento", "error", "caido", "rechaza")
 Modo = Literal["sano", "lento", "error", "caido", "rechaza"]
 MOTIVO_RECHAZO = "fondos_insuficientes"
@@ -159,5 +161,7 @@ def create_app() -> FastAPI:
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app
 
+
+configurar_trazas("stub-pasarela")
 
 app = create_app()

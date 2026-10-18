@@ -18,9 +18,12 @@ from app.autenticacion_usuarios import TokenInvalido, leer_usuario
 from app.clientes import Clientes, construir_clientes
 from app.configuracion import Configuracion
 from app.esquema import schema
+from app.observabilidad import configurar_trazas
 from app.servicio_oferta import ServicioOferta
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+configurar_trazas("bff", instrumentos=("httpx",))
 
 CANALES = ("web", "app")
 

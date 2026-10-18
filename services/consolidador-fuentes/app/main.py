@@ -27,12 +27,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from app.observabilidad import configurar_trazas
 from app.worker import TrabajadorReconciliacion
 
 # Mismo motivo que en acl-worker: sin esto, los logs INFO de app.worker/app.tareas
 # (único rastro observable de que el trabajador procesó o reintentó un job) se
 # descartan en silencio bajo uvicorn.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+configurar_trazas("consolidador-fuentes", instrumentos=("httpx", "redis"))
 
 
 def create_app(redis_url: str | None = None) -> FastAPI:
