@@ -236,8 +236,17 @@ def test_el_score_cacheado_sin_historial_tambien_es_insuficiente() -> None:
 
 @pytest.mark.parametrize(
     ("plazo", "esperado"),
-    [(None, "1"), (1, "0.95"), (60, "0.95"), (61, "1.00"), (180, "1.00"), (181, "1.05"),
-     (240, "1.05"), (241, "1.10"), (360, "1.10")],
+    [
+        (None, "1"),
+        (1, "0.95"),
+        (60, "0.95"),
+        (61, "1.00"),
+        (180, "1.00"),
+        (181, "1.05"),
+        (240, "1.05"),
+        (241, "1.10"),
+        (360, "1.10"),
+    ],
 )
 def test_factor_plazo_por_tramos(plazo, esperado) -> None:
     assert factor_plazo(plazo) == Decimal(esperado)
@@ -272,8 +281,7 @@ def test_plazo_y_ciudad_cambian_la_prima_de_la_oferta_completa() -> None:
 
 def test_oferta_preliminar_cuando_una_fuente_viene_de_cache() -> None:
     de_cache = [
-        {**f, "de_cache": True} if f["fuente"] == "cuentas-bancarias" else f
-        for f in FUENTES_SANAS
+        {**f, "de_cache": True} if f["fuente"] == "cuentas-bancarias" else f for f in FUENTES_SANAS
     ]
     lector = LectorPerfilesFalso(perfil=_perfil_con_fuentes(de_cache))
     servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
@@ -391,4 +399,3 @@ def test_usa_score_cacheado_por_risk_en_redis_bajo_clave_score() -> None:
         "nivelRiesgo": "BAJO",
         "fechaVigencia": "2026-11-17T00:00:00+00:00",
     }
-

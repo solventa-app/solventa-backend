@@ -102,7 +102,6 @@ def create_app(
                 except Exception:
                     pass
 
-
     app = FastAPI(title="solventa-risk", version="0.1.0", lifespan=lifespan)
 
     @app.get("/health", tags=["operacion"])

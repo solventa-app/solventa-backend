@@ -72,4 +72,3 @@ def leer_usuario(autorizacion: str | None, secreto: str) -> UsuarioActual | None
     return UsuarioActual(
         id=claims["sub"], rol=claims["rol"], scopes=tuple(claims.get("scopes", []))
     )
-

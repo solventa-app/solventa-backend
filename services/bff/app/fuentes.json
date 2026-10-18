@@ -1,0 +1,32 @@
+[
+  {
+    "nombre": "cuentas-bancarias",
+    "origen": "OPEN_FINANCE",
+    "peso": "0.20",
+    "obligatoria": false
+  },
+  {
+    "nombre": "historial-crediticio",
+    "origen": "OPEN_FINANCE",
+    "peso": "0.30",
+    "obligatoria": true
+  },
+  {
+    "nombre": "afiliacion-pila",
+    "origen": "OPEN_DATA",
+    "peso": "0.20",
+    "obligatoria": false
+  },
+  {
+    "nombre": "camara-comercio",
+    "origen": "OPEN_DATA",
+    "peso": "0.15",
+    "obligatoria": false
+  },
+  {
+    "nombre": "antecedentes-judiciales",
+    "origen": "OPEN_DATA",
+    "peso": "0.15",
+    "obligatoria": false
+  }
+]

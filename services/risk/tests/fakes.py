@@ -35,9 +35,7 @@ class RepositorioPerfilesFalso:
                 "perfil_version": perfil_version,
                 "score_total": kwargs.get("score_total", 50),
                 "nivel_riesgo": kwargs.get("nivel_riesgo", "MEDIO"),
-                "fecha_vigencia": kwargs.get(
-                    "fecha_vigencia", "2026-11-07T12:00:00+00:00"
-                ),
+                "fecha_vigencia": kwargs.get("fecha_vigencia", "2026-11-07T12:00:00+00:00"),
                 "version_reglas": kwargs.get("version_reglas", "v1"),
             }
         )
@@ -68,4 +66,3 @@ class BusEventosFalso:
 
     def publicar(self, evento: dict[str, Any]) -> None:
         self.eventos.append(evento)
-

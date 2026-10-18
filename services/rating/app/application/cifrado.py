@@ -55,9 +55,7 @@ def desenvolver_clave_kms(
                     request={"name": nombre_llave, "ciphertext": clave_envuelta}
                 )
                 llave = (
-                    respuesta["plaintext"]
-                    if isinstance(respuesta, dict)
-                    else respuesta.plaintext
+                    respuesta["plaintext"] if isinstance(respuesta, dict) else respuesta.plaintext
                 )
             else:
                 raise ErrorDeCifrado("cliente_kms no soporta desenvolver/decrypt")
@@ -119,9 +117,7 @@ class CifradorAesGcm:
         cliente_kms: Any = None,
     ) -> "CifradorAesGcm":
         llave_kms = (
-            kms_key_name
-            if kms_key_name is not None
-            else os.getenv("KMS_KEY_NAME", "").strip()
+            kms_key_name if kms_key_name is not None else os.getenv("KMS_KEY_NAME", "").strip()
         )
         sobre_b64 = (
             cifrado_clave_envuelta

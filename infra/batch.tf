@@ -33,7 +33,7 @@ resource "google_cloud_run_v2_job" "risk_reproceso" {
   ]
 
   template {
-    task_count = 1
+    task_count = var.batch_tareas # cada tarea procesa su partición de perfiles (CLOUD_RUN_TASK_INDEX/COUNT)
 
     template {
       service_account = google_service_account.runtime["risk"].email

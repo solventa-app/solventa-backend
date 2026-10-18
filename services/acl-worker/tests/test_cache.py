@@ -87,9 +87,7 @@ def test_invalidar_cliente_borra_todas_sus_fuentes_sin_afectar_a_otros_clientes(
     cache.guardar(
         "cuentas-bancarias",
         "cliente-b",
-        DatosFuente(
-            fuente="cuentas-bancarias", datos={"ok": 2}, capturado_en=datetime.now(UTC)
-        ),
+        DatosFuente(fuente="cuentas-bancarias", datos={"ok": 2}, capturado_en=datetime.now(UTC)),
     )
 
     borradas = cache.invalidar_cliente("cliente-a", fuentes)
@@ -98,4 +96,3 @@ def test_invalidar_cliente_borra_todas_sus_fuentes_sin_afectar_a_otros_clientes(
     for f in fuentes:
         assert cache.obtener(f, "cliente-a") is None
     assert cache.obtener("cuentas-bancarias", "cliente-b") is not None
-

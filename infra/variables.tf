@@ -205,6 +205,18 @@ variable "crear_pubsub" {
   default     = false
 }
 
+variable "crear_metricas_logs" {
+  description = "Crea las métricas basadas en logs (ofertas por tipo, circuito abierto y cobros por estado) que leen los tableros de Grafana (bloque 1). Capa gratuita de Cloud Monitoring."
+  type        = bool
+  default     = false
+}
+
+variable "batch_tareas" {
+  description = "Tareas paralelas del Cloud Run Job `risk-reproceso` (`task_count`). Cada una procesa una partición de los perfiles por el hash de `cliente_id`. 1 en staging; para 10 M de perfiles en < 2 h se proyectan ~19 (docs/evidencias/EC017-2026-10-18.md)."
+  type        = number
+  default     = 1
+}
+
 variable "crear_batch" {
   description = "Crea el Cloud Run Job `risk-reproceso` y la tarea nocturna de Cloud Scheduler (`30 23 * * *` America/Bogota, antes del apagado de las 2:00 a.m.) para HA-ESC-004 / EC017 (bloque 9)."
   type        = bool

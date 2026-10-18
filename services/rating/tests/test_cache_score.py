@@ -65,4 +65,3 @@ def test_invalidar_cliente_borra_score_y_oferta_de_ese_cliente() -> None:
     assert cache.obtener(f"score:{h1}:v1") is None
     assert cache.obtener(f"oferta:{h1}:1:v1") is None
     assert cache.obtener(f"oferta:{h2}:1:v1") == {"score_total": 70}
-

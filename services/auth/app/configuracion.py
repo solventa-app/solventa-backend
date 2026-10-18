@@ -44,9 +44,7 @@ class Configuracion:
             if len(secreto.encode("utf-8")) < LONGITUD_MINIMA_SECRETO:
                 raise ValueError("JWT_SECRETO debe tener al menos 32 bytes")
             usa_sobre_kms = bool(
-                kms_key_name
-                and cifrado_clave_envuelta
-                and cifrado_clave_envuelta != VALOR_MARCADOR
+                kms_key_name and cifrado_clave_envuelta and cifrado_clave_envuelta != VALOR_MARCADOR
             )
             if not usa_sobre_kms and cifrado_clave in (CIFRADO_CLAVE_LOCAL, VALOR_MARCADOR):
                 raise ValueError("CIFRADO_CLAVE no se ha cargado en Secret Manager")

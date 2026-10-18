@@ -154,4 +154,3 @@ def construir_bus_eventos(
     if tema:
         return BusEventosPubSub(tema, cliente_pubsub=cliente_pubsub)
     return BusEventosLog()
-

@@ -28,9 +28,7 @@ def test_mapea_respuesta_exitosa() -> None:
             "consentimiento_id": "k-1",
             "finalidad": "perfilamiento",
         }
-        return httpx.Response(
-            200, json={"fuente": "cuentas-bancarias", "datos": {"saldo": 100}}
-        )
+        return httpx.Response(200, json={"fuente": "cuentas-bancarias", "datos": {"saldo": 100}})
 
     cliente = _cliente_mock(handler)
     adaptador = AdaptadorOpenFinance("http://stub-open-finance", 0.7, cliente=cliente)
@@ -74,7 +72,6 @@ def test_propaga_error_5xx_como_excepcion() -> None:
     adaptador = AdaptadorOpenFinance("http://stub-open-finance", 0.7, cliente=cliente)
     with pytest.raises(httpx.HTTPStatusError):
         adaptador.consultar(CONSULTA)
-
 
 
 def test_respeta_el_timeout_duro_con_proveedor_caido(servidor_caido: str) -> None:

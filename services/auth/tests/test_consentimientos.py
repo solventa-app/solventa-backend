@@ -226,4 +226,3 @@ def test_registrar_con_titular_id_explicito_lo_conserva() -> None:
     assert cuerpo["tipo_dato"] == "FINANCIEROS_Y_ABIERTOS"
     assert cuerpo["fuente_datos"] == "OPEN_FINANCE_OPEN_DATA"
     assert cuerpo["canal"] == "WEB"
-

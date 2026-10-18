@@ -68,9 +68,7 @@ def _extraer_datos_evento_perfil_actualizado(
     perfil_version_raw = datos.get("perfilVersion", datos.get("perfil_version"))
     perfil_version: int | None = None
     if perfil_version_raw is not None:
-        if isinstance(perfil_version_raw, bool) or not isinstance(
-            perfil_version_raw, int
-        ):
+        if isinstance(perfil_version_raw, bool) or not isinstance(perfil_version_raw, int):
             raise ValueError("perfilVersion invalido")
         perfil_version = perfil_version_raw
 
@@ -122,9 +120,7 @@ def create_app(
             app.state.cache_score = getattr(servicio_oferta, "_cache_score", None)
         else:
             cliente_redis = redis.Redis.from_url(config.redis_url)
-            app.state.cache_score = CacheScore(
-                cliente_redis, config.oferta_cache_ttl_segundos
-            )
+            app.state.cache_score = CacheScore(cliente_redis, config.oferta_cache_ttl_segundos)
 
         if servicio_oferta is not None:
             app.state.servicio_oferta = servicio_oferta
@@ -184,9 +180,7 @@ def create_app(
             # CA-W01-05: el BFF lo traduce a `ErrorOferta` con reintento.
             raise HTTPException(status_code=422, detail=DETALLE_DATOS_INSUFICIENTES) from error
         except (ValueError, InvalidOperation) as error:
-            raise HTTPException(
-                status_code=400, detail=f"solicitud invalida: {error}"
-            ) from error
+            raise HTTPException(status_code=400, detail=f"solicitud invalida: {error}") from error
         if oferta is None:
             raise HTTPException(status_code=404, detail="perfil no encontrado")
         return oferta
@@ -198,17 +192,13 @@ def create_app(
         try:
             cliente_id, perfil_version = _extraer_datos_evento_perfil_actualizado(body)
         except ValueError as error:
-            raise HTTPException(
-                status_code=400, detail=f"evento invalido: {error}"
-            ) from error
+            raise HTTPException(status_code=400, detail=f"evento invalido: {error}") from error
 
         eliminadas = 0
         if getattr(app.state, "cache_score", None) is not None and hasattr(
             app.state.cache_score, "invalidar_cliente"
         ):
-            eliminadas = app.state.cache_score.invalidar_cliente(
-                cliente_id, perfil_version
-            )
+            eliminadas = app.state.cache_score.invalidar_cliente(cliente_id, perfil_version)
         elif hasattr(app.state.servicio_oferta, "invalidar_cache_cliente"):
             eliminadas = app.state.servicio_oferta.invalidar_cache_cliente(
                 cliente_id, perfil_version
@@ -228,4 +218,3 @@ def create_app(
 
 
 app = create_app()
-

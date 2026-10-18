@@ -29,7 +29,6 @@ class ConsultaFuente:
     forzar_proveedor: bool = False
 
 
-
 @dataclass
 class DatosFuente:
     fuente: Fuente

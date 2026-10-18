@@ -710,6 +710,72 @@
         }
       },
       "id": 9
+    },
+    {
+      "type": "timeseries",
+      "title": "HU-W05 · Cobros por estado",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/solventa_cobros_por_estado"
+            ],
+            "groupBys": [
+              "metric.label.estado"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 10,
+      "description": "Métrica basada en logs (infra/metricas-logs.tf): solo hay datos tras aplicar la infraestructura con crear_metricas_logs = true. Sin datos personales en las etiquetas."
     }
   ]
 }

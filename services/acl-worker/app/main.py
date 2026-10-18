@@ -276,7 +276,6 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         app.state.cache_fuentes.invalidar_cliente(body.cliente_id, fuentes)
         return InvalidarCacheResponse(invalidado=True)
 
-
     @app.post("/pagos/cobrar", tags=["pagos"], response_model=ResultadoCobroResponse)
     def cobrar(body: OrdenCobroRequest) -> ResultadoCobroResponse:
         orden = OrdenCobro(

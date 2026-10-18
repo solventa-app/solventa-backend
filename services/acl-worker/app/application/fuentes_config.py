@@ -68,6 +68,10 @@ def _resolver_ruta(ruta: str | Path | None = None) -> Path | None:
         except OSError:
             pass
     actual = Path(__file__).resolve()
+    # La copia que lleva la imagen (`app/fuentes.json`), idéntica al contrato.
+    copia = actual.parents[1] / "fuentes.json"
+    if copia.is_file():
+        return copia
     for ancestro in actual.parents:
         try:
             archivo = ancestro / "contracts" / "fuentes.json"
@@ -76,7 +80,6 @@ def _resolver_ruta(ruta: str | Path | None = None) -> Path | None:
         except OSError:
             continue
     return None
-
 
 
 def cargar_fuentes(ruta: str | Path | None = None) -> tuple[DefinicionFuente, ...]:

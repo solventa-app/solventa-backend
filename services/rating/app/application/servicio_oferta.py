@@ -151,7 +151,9 @@ def cargar_configuracion_fuentes(
         candidatas = [Path(os.environ["FUENTES_CONFIG_PATH"])]
     else:
         actual = Path(__file__).resolve()
-        candidatas = [
+        # Primero la copia que lleva la imagen (`app/fuentes.json`, idéntica al contrato) y, en el
+        # repo, el contrato mismo.
+        candidatas = [actual.parents[1] / "fuentes.json"] + [
             p / "contracts" / "fuentes.json" for p in list(actual.parents)[:6]
         ]
 
@@ -459,14 +461,10 @@ class ServicioOferta:
         self._lector_perfiles = lector_perfiles
         self._cache_score = cache_score
 
-    def invalidar_cache_cliente(
-        self, cliente_id: str, perfil_version: int | None = None
-    ) -> int:
+    def invalidar_cache_cliente(self, cliente_id: str, perfil_version: int | None = None) -> int:
         if hasattr(self._cache_score, "invalidar_cliente"):
             return int(
-                self._cache_score.invalidar_cliente(
-                    cliente_id, perfil_version, VERSION_REGLAS
-                )
+                self._cache_score.invalidar_cliente(cliente_id, perfil_version, VERSION_REGLAS)
             )
         return 0
 
@@ -517,8 +515,7 @@ class ServicioOferta:
                     ),
                     "version_reglas": VERSION_REGLAS,
                     "desglose_score": [
-                        {"nombre": nombre, "peso": float(peso)}
-                        for nombre, peso in PESOS.items()
+                        {"nombre": nombre, "peso": float(peso)} for nombre, peso in PESOS.items()
                     ],
                     "tipo": _tipo_oferta(perfil["fuentes"]),
                     "fuentes": _fuentes_consultadas(perfil["fuentes"]),
@@ -580,4 +577,3 @@ class ServicioOferta:
             oferta["rangoPrima"] = None
 
         return oferta, score_de_cache
-

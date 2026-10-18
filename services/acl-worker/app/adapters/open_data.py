@@ -56,4 +56,3 @@ class AdaptadorOpenData:
 
     def cerrar(self) -> None:
         self._cliente.close()
-

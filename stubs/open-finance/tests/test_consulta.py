@@ -120,4 +120,3 @@ def test_modo_lento_supera_700ms() -> None:
     duracion_ms = (time.monotonic() - inicio) * 1000
     assert r.status_code == 200
     assert duracion_ms > 700
-

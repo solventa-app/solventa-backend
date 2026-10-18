@@ -29,19 +29,19 @@ _FUENTES_POR_DEFECTO = (
 
 
 def cargar_fuentes(ruta: Path | str | None = None) -> tuple[str, ...]:
-    """Lee el archivo único de configuración de fuentes (`contracts/fuentes.json`, Bloque 5).
-    Si el archivo no está montado en el contenedor, usa las 5 fuentes por defecto."""
-    candidata = (
-        Path(ruta)
-        if ruta is not None
-        else Path(
-            os.getenv(
-                "FUENTES_CONFIG_PATH",
-                str(Path(__file__).resolve().parents[3] / "contracts" / "fuentes.json"),
-            )
-        )
-    )
-    if candidata.is_file():
+    """Lee la configuración de fuentes (Bloque 5). Orden: la ruta dada, `FUENTES_CONFIG_PATH`, la
+    copia de la imagen en `app/fuentes.json` (idéntica al contrato; lo verifica
+    `scripts/sincronizar_fuentes.py --verificar`) y, en el repo, `contracts/fuentes.json`. Sin
+    archivo, las 5 fuentes por defecto."""
+    candidatas = [Path(ruta)] if ruta is not None else []
+    if ruta is None and os.getenv("FUENTES_CONFIG_PATH"):
+        candidatas.append(Path(os.environ["FUENTES_CONFIG_PATH"]))
+    if ruta is None:
+        aqui = Path(__file__).resolve()
+        candidatas.append(aqui.parent / "fuentes.json")
+        candidatas.extend(p / "contracts" / "fuentes.json" for p in list(aqui.parents)[:5])
+    candidata = next((c for c in candidatas if c.is_file()), None)
+    if candidata is not None:
         datos = json.loads(candidata.read_text(encoding="utf-8"))
         return tuple(item["nombre"] for item in datos)
     return _FUENTES_POR_DEFECTO
@@ -215,4 +215,3 @@ class ServicioOferta:
                 "de_cache": False,
                 "degradado": True,
             }
-

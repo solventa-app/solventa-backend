@@ -326,4 +326,4 @@ services:
       - ${GCLOUD_ADC:-~/.config/gcloud/application_default_credentials.json}:/etc/gcp/adc.json:ro
       - ./observabilidad/gcp/provisioning:/etc/grafana/provisioning:ro
       - ./observabilidad/gcp/dashboards:/var/lib/grafana/dashboards:ro
-    ports: ["3200:3000"]
+    ports: ["127.0.0.1:3200:3000"]  # solo tu máquina: lleva tus credenciales de GCP

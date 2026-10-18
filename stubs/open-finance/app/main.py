@@ -134,9 +134,7 @@ def create_app() -> FastAPI:
             consentimiento_id
             if consentimiento_id is not None
             else (
-                x_consentimiento_id
-                if x_consentimiento_id is not None
-                else body.consentimiento_id
+                x_consentimiento_id if x_consentimiento_id is not None else body.consentimiento_id
             )
         )
         finalidad_efectiva = (
@@ -187,4 +185,3 @@ def create_app() -> FastAPI:
 configurar_trazas("stub-open-finance")
 
 app = create_app()
-

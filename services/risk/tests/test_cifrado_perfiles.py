@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from fakes import TimestampFalso
+from migrations.versiones import v0002_cifrar_datos_fuentes
 
 from app.application.cifrado import (
     CIFRADO_CLAVE_LOCAL,
@@ -21,7 +22,6 @@ from app.application.repositorio_perfiles import (
     NOMBRE_BASE,
     RepositorioPerfilesMongo,
 )
-from migrations.versiones import v0002_cifrar_datos_fuentes
 
 
 class SesionMongoFalsa:
@@ -57,9 +57,7 @@ class ColeccionMongoFalsa:
     def find(self, filtro: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         return list(self.documentos)
 
-    def update_one(
-        self, filtro: dict[str, Any], actualizacion: dict[str, Any]
-    ) -> None:
+    def update_one(self, filtro: dict[str, Any], actualizacion: dict[str, Any]) -> None:
         for doc in self.documentos:
             if doc.get("_id") == filtro.get("_id"):
                 doc.update(actualizacion.get("$set", {}))
@@ -135,9 +133,7 @@ def test_ec022_documento_crudo_en_mongo_tiene_datos_vacios_y_datos_cifrados() ->
         assert "score_crediticio" not in texto_cifrado
 
     # Con la llave correcta sí se recupera el JSON original
-    descifrado_0 = json.loads(
-        cifrador.descifrar(doc_crudo["fuentes"][0]["datos_cifrados"])
-    )
+    descifrado_0 = json.loads(cifrador.descifrar(doc_crudo["fuentes"][0]["datos_cifrados"]))
     assert descifrado_0 == {"obligaciones_vigentes": 2, "score_crediticio": 780}
 
 
@@ -223,9 +219,7 @@ def test_migracion_v0002_cifrar_datos_fuentes_es_idempotente() -> None:
     doc = db[COLECCION_PERFILES].documentos[0]
     assert doc["fuentes"][0]["datos"] == {}
     cifrado_primera_vez = doc["fuentes"][0]["datos_cifrados"]
-    assert json.loads(cifrador.descifrar(cifrado_primera_vez)) == {
-        "score_crediticio": 690
-    }
+    assert json.loads(cifrador.descifrar(cifrado_primera_vez)) == {"score_crediticio": 690}
     # La fuente que tenía datos={} (degradada) sigue vacía sin datos_cifrados
     assert doc["fuentes"][1]["datos"] == {}
     assert "datos_cifrados" not in doc["fuentes"][1]

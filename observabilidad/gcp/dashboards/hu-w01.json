@@ -719,6 +719,286 @@
         }
       },
       "id": 9
+    },
+    {
+      "type": "timeseries",
+      "title": "HU-W01 · API Gateway · peticiones por clase de respuesta",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "serviceruntime.googleapis.com/api/request_count"
+            ],
+            "groupBys": [
+              "metric.label.response_code_class"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 10,
+      "description": "API Gateway (HA-LAT-004). Métrica de Service Control del gateway; solo hay datos cuando crear_gateway = true. Por confirmar contra staging en el primer despliegue del gateway."
+    },
+    {
+      "type": "timeseries",
+      "title": "HU-W01 · API Gateway · latencia p99 (umbral EC001/EC002: 500 ms)",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "serviceruntime.googleapis.com/api/request_latencies"
+            ],
+            "groupBys": [
+              "resource.label.service"
+            ],
+            "crossSeriesReducer": "REDUCE_PERCENTILE_99",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 11,
+      "description": "API Gateway (HA-LAT-004). Métrica de Service Control del gateway; solo hay datos cuando crear_gateway = true. Por confirmar contra staging en el primer despliegue del gateway."
+    },
+    {
+      "type": "timeseries",
+      "title": "HU-W01 · Ofertas por tipo",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/solventa_ofertas_por_tipo"
+            ],
+            "groupBys": [
+              "metric.label.tipo"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 12,
+      "description": "Métrica basada en logs (infra/metricas-logs.tf): solo hay datos tras aplicar la infraestructura con crear_metricas_logs = true. Sin datos personales en las etiquetas."
+    },
+    {
+      "type": "timeseries",
+      "title": "HU-W01 · Llamadas rechazadas por circuito abierto",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/solventa_circuito_abierto"
+            ],
+            "groupBys": [
+              "metric.label.circuito"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 13,
+      "description": "Métrica basada en logs (infra/metricas-logs.tf): solo hay datos tras aplicar la infraestructura con crear_metricas_logs = true. Sin datos personales en las etiquetas."
     }
   ]
 }

@@ -13,6 +13,7 @@ crear_cloud_sql         = false
 crear_mongo_atlas       = false
 crear_presupuesto       = false
 crear_pubsub            = false
+crear_metricas_logs     = false
 crear_batch             = false
 crear_gateway           = false
 calentar_camino_critico = false

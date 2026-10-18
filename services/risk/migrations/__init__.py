@@ -31,7 +31,6 @@ def descubrir() -> list[Migracion]:
     return [(n, importlib.import_module(f"{versiones.__name__}.{n}").aplicar) for n in nombres]
 
 
-
 def aplicar_pendientes(db, migraciones: list[Migracion] | None = None) -> list[str]:
     """Aplica en orden las migraciones aún no registradas y devuelve los nombres aplicados."""
     registro = db[COLECCION]

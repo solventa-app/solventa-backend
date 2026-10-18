@@ -38,4 +38,3 @@ class Configuracion:
             kms_key_name=os.getenv("KMS_KEY_NAME", "").strip(),
             cifrado_clave_envuelta=os.getenv("CIFRADO_CLAVE_ENVUELTA", "").strip(),
         )
-

@@ -68,9 +68,7 @@ def test_registrar_pasa_las_fuentes_tal_cual_al_repositorio() -> None:
 def test_registrar_guarda_score_cacheado_en_redis() -> None:
     almacen = AlmacenClaveValorFalso()
     cache = CacheScore(almacen, ttl_segundos=300)
-    servicio = ServicioPerfiles(
-        RepositorioPerfilesFalso(), BusEventosFalso(), cache_score=cache
-    )
+    servicio = ServicioPerfiles(RepositorioPerfilesFalso(), BusEventosFalso(), cache_score=cache)
 
     resultado = servicio.registrar("cliente-1", FUENTES)
 
@@ -82,4 +80,3 @@ def test_registrar_guarda_score_cacheado_en_redis() -> None:
     assert en_score["nivel_riesgo"] == resultado["nivel_riesgo"]
     assert en_score["fecha_vigencia"] == resultado["fecha_vigencia"]
     assert en_oferta["score_total"] == resultado["score"]
-

@@ -17,10 +17,7 @@ from app.application.bus_eventos import (
 )
 
 RUTA_ESQUEMA = (
-    Path(__file__).resolve().parents[3]
-    / "contracts"
-    / "events"
-    / "perfil.actualizado.schema.json"
+    Path(__file__).resolve().parents[3] / "contracts" / "events" / "perfil.actualizado.schema.json"
 )
 
 
@@ -114,4 +111,3 @@ def test_bus_pubsub_publica_evento_y_construir_bus_selecciona_adaptador() -> Non
     assert json.loads(payload.decode("utf-8")) == evento
 
     assert isinstance(construir_bus_eventos(""), BusEventosLog)
-

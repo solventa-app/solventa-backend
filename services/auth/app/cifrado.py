@@ -78,9 +78,7 @@ class DesenvolvedorGoogleKms:
                 ) from error
 
         try:
-            respuesta = cliente.decrypt(
-                request={"name": self._kms_key_name, "ciphertext": cifrado}
-            )
+            respuesta = cliente.decrypt(request={"name": self._kms_key_name, "ciphertext": cifrado})
         except Exception as error:
             raise ErrorDeCifrado(
                 f"No se pudo desenvolver la llave con KMS ({self._kms_key_name}): {error}"

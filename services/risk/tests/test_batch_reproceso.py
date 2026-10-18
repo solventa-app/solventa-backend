@@ -41,16 +41,12 @@ class ColeccionPerfilesBatchFalsa:
         condicion = filtro.get("version_reglas", {})
         if isinstance(condicion, dict) and "$ne" in condicion:
             objetivo = condicion["$ne"]
-            filtrados = [
-                d for d in self.documentos if d.get("version_reglas") != objetivo
-            ]
+            filtrados = [d for d in self.documentos if d.get("version_reglas") != objetivo]
         else:
             filtrados = list(self.documentos)
         return CursorFalso(filtrados)
 
-    def update_one(
-        self, filtro: dict[str, Any], actualizacion: dict[str, Any]
-    ) -> None:
+    def update_one(self, filtro: dict[str, Any], actualizacion: dict[str, Any]) -> None:
         for doc in self.documentos:
             if doc.get("_id") == filtro.get("_id"):
                 doc.update(actualizacion.get("$set", {}))
@@ -99,10 +95,7 @@ def _crear_documento_perfil(
 
 def test_reproceso_por_lotes_actualiza_mongo_y_cache_redis() -> None:
     cifrador = CifradorAesGcm.desde_base64(CIFRADO_CLAVE_LOCAL)
-    docs = [
-        _crear_documento_perfil(i, version_reglas="v0", cifrador=cifrador)
-        for i in range(1, 6)
-    ]
+    docs = [_crear_documento_perfil(i, version_reglas="v0", cifrador=cifrador) for i in range(1, 6)]
     db = DbBatchFalsa(docs)
     almacen_redis = AlmacenClaveValorFalso()
     cache = CacheScore(almacen_redis, ttl_segundos=300)
@@ -141,10 +134,7 @@ def test_reproceso_es_idempotente_al_interrumpir_y_reanudar() -> None:
     """HA-ESC-004 / EC017: si el batch se interrumpe tras el primer lote y
     vuelve a correr, retoma desde donde iba sin reprocesar los ya actualizados."""
     cifrador = CifradorAesGcm.desde_base64(CIFRADO_CLAVE_LOCAL)
-    docs = [
-        _crear_documento_perfil(i, version_reglas="v0", cifrador=cifrador)
-        for i in range(1, 6)
-    ]
+    docs = [_crear_documento_perfil(i, version_reglas="v0", cifrador=cifrador) for i in range(1, 6)]
     db = DbBatchFalsa(docs)
 
     # 1) Se interrumpe después de 1 lote de tamaño 2
@@ -180,3 +170,45 @@ def test_reproceso_es_idempotente_al_interrumpir_y_reanudar() -> None:
     assert final["procesados"] == 0
     assert final["omitidos"] == 5
     assert final["lotes"] == 0
+
+
+# ---------- reparto entre tareas del Cloud Run Job
+
+
+def test_sin_particion_el_filtro_es_el_de_siempre() -> None:
+    from app.batch_reproceso import construir_filtro
+
+    assert construir_filtro("v1") == {"version_reglas": {"$ne": "v1"}}
+    assert construir_filtro("v1", (0, 1)) == {"version_reglas": {"$ne": "v1"}}
+
+
+def test_con_particion_el_filtro_suma_el_modulo_del_hash_del_cliente() -> None:
+    from app.batch_reproceso import construir_filtro
+
+    filtro = construir_filtro("v1", (3, 19))
+
+    assert filtro["version_reglas"] == {"$ne": "v1"}
+    assert filtro["$expr"] == {
+        "$eq": [{"$mod": [{"$abs": {"$toHashedIndexKey": "$cliente_id"}}, 19]}, 3]
+    }
+
+
+def test_una_particion_fuera_de_rango_se_rechaza() -> None:
+    import pytest
+
+    from app.batch_reproceso import construir_filtro
+
+    with pytest.raises(ValueError):
+        construir_filtro("v1", (5, 5))
+
+
+def test_la_particion_sale_de_las_variables_de_cloud_run_jobs(monkeypatch) -> None:
+    from app.batch_reproceso import particion_desde_entorno
+
+    monkeypatch.delenv("CLOUD_RUN_TASK_COUNT", raising=False)
+    monkeypatch.delenv("CLOUD_RUN_TASK_INDEX", raising=False)
+    assert particion_desde_entorno() is None
+
+    monkeypatch.setenv("CLOUD_RUN_TASK_COUNT", "4")
+    monkeypatch.setenv("CLOUD_RUN_TASK_INDEX", "2")
+    assert particion_desde_entorno() == (2, 4)

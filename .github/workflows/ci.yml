@@ -50,6 +50,8 @@ jobs:
             contratos:
               - 'contracts/**'
               - 'scripts/validar_contratos.py'
+              - 'scripts/sincronizar_fuentes.py'
+              - 'services/*/app/fuentes.json'
               - 'requirements-dev.txt'
             infra:
               - 'infra/**'
@@ -247,6 +249,8 @@ jobs:
           python-version: "3.14"
       - run: pip install -r requirements-dev.txt
       - run: python scripts/validar_contratos.py
+      - name: Las copias de fuentes.json de las imágenes siguen iguales al contrato
+        run: python scripts/sincronizar_fuentes.py --verificar
 
   manifiesto:
     needs: cambios

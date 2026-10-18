@@ -84,7 +84,7 @@ def validar(texto_openapi: str | None = None, texto_envoy: str | None = None) ->
         texto_envoy = ENVOY.read_text(encoding="utf-8")
 
     if 'swagger: "2.0"' not in texto_openapi and "swagger: '2.0'" not in texto_openapi:
-        errores.append("openapi.yaml debe ser OpenAPI 2.0 (swagger: \"2.0\") para GCP API Gateway")
+        errores.append('openapi.yaml debe ser OpenAPI 2.0 (swagger: "2.0") para GCP API Gateway')
 
     rutas_oa = extraer_openapi(texto_openapi)
     rutas_ev = extraer_envoy(texto_envoy)

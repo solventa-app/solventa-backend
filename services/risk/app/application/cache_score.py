@@ -43,9 +43,7 @@ def clave_score(cliente_id: str, version_reglas: str = VERSION_REGLAS) -> str:
     return f"score:{id_opaco(cliente_id)}:{version_reglas}"
 
 
-def clave_oferta(
-    cliente_id: str, perfil_version: int, version_reglas: str = VERSION_REGLAS
-) -> str:
+def clave_oferta(cliente_id: str, perfil_version: int, version_reglas: str = VERSION_REGLAS) -> str:
     return f"oferta:{id_opaco(cliente_id)}:{perfil_version}:{version_reglas}"
 
 

@@ -233,17 +233,13 @@ def test_evento_perfil_actualizado_sobre_pubsub_base64_invalida_cache() -> None:
     }
     sobre_pubsub = {
         "message": {
-            "data": base64.b64encode(json.dumps(payload_evento).encode("utf-8")).decode(
-                "ascii"
-            ),
+            "data": base64.b64encode(json.dumps(payload_evento).encode("utf-8")).decode("ascii"),
             "messageId": "1001",
         },
         "subscription": "projects/solventa/subscriptions/rating-perfil-actualizado",
     }
 
-    with TestClient(
-        create_app(servicio_oferta=ServicioOfertaFalso(), cache_score=cache)
-    ) as client:
+    with TestClient(create_app(servicio_oferta=ServicioOfertaFalso(), cache_score=cache)) as client:
         r = client.post("/eventos/perfil-actualizado", json=sobre_pubsub)
 
     assert r.status_code == 200
@@ -257,4 +253,3 @@ def test_evento_perfil_actualizado_sin_cliente_id_responde_400() -> None:
         r = client.post("/eventos/perfil-actualizado", json={"datos": {}})
 
     assert r.status_code == 400
-

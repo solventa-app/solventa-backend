@@ -35,9 +35,6 @@ class Configuracion:
             cifrado_clave=os.getenv("CIFRADO_CLAVE", CIFRADO_CLAVE_LOCAL),
             kms_key_name=os.getenv("KMS_KEY_NAME", "").strip(),
             cifrado_clave_envuelta=os.getenv("CIFRADO_CLAVE_ENVUELTA", "").strip(),
-            pubsub_tema_perfil_actualizado=os.getenv(
-                "PUBSUB_TEMA_PERFIL_ACTUALIZADO", ""
-            ).strip(),
+            pubsub_tema_perfil_actualizado=os.getenv("PUBSUB_TEMA_PERFIL_ACTUALIZADO", "").strip(),
             batch_tamano_lote=int(os.getenv("BATCH_TAMANO_LOTE", "500")),
         )
-

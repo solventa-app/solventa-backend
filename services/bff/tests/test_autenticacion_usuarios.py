@@ -69,4 +69,3 @@ def test_token_alterado_no_pasa() -> None:
 
     with pytest.raises(TokenInvalido):
         leer_usuario(f"Bearer {alterado}", JWT_SECRETO_LOCAL)
-

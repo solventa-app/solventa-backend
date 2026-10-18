@@ -106,9 +106,7 @@ def descifrar_fuentes_perfil(
         datos_cifrados = copia.pop("datos_cifrados", None)
         if datos_cifrados:
             if cifrador is None:
-                raise ErrorDeCifrado(
-                    "No hay cifrador configurado para descifrar datos_cifrados"
-                )
+                raise ErrorDeCifrado("No hay cifrador configurado para descifrar datos_cifrados")
             texto_json = cifrador.descifrar(datos_cifrados)
             copia["datos"] = json.loads(texto_json)
         resultado.append(copia)
@@ -198,4 +196,3 @@ class LectorPerfilesMongo:
             if campo_opcional in documento and documento[campo_opcional] is not None:
                 perfil[campo_opcional] = documento[campo_opcional]
         return perfil
-

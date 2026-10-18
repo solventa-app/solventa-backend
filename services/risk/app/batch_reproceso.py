@@ -9,6 +9,11 @@ Lee perfiles en lotes (`BATCH_TAMANO_LOTE`, por defecto 500) cuya
 actualiza cada documento con el mismo escritor único (RISK) y en la caché de
 Redis (`CacheScore`).
 
+Reparto entre tareas: un Cloud Run Job con `task_count = N` lanza N copias con
+`CLOUD_RUN_TASK_INDEX` (0..N-1) y `CLOUD_RUN_TASK_COUNT`. Cada tarea toma solo los perfiles cuyo
+hash de `cliente_id` cae en su partición (`construir_filtro`): las N tareas no se pisan ni repiten
+trabajo y el caudal crece casi lineal con N (es lo que usa la proyección de EC017).
+
 Idempotente: si el job se interrumpe a mitad de camino y vuelve a correr, la
 consulta `{"version_reglas": {"$ne": version_objetivo}}` omite los perfiles que
 ya quedaron actualizados en `version_objetivo` y retoma desde donde iba."""
@@ -52,6 +57,30 @@ def _descifrar_fuentes_en_memoria(
     return resultado
 
 
+def construir_filtro(objetivo: str, particion: tuple[int, int] | None = None) -> dict[str, Any]:
+    """Perfiles pendientes de `objetivo`; con `particion=(indice, total)`, solo los de esa tarea.
+
+    La partición se calcula en MongoDB con el hash del `cliente_id` (`$toHashedIndexKey`, MongoDB
+    4.4+): las N particiones son disjuntas y cubren todos los perfiles."""
+    filtro: dict[str, Any] = {"version_reglas": {"$ne": objetivo}}
+    if particion is not None and particion[1] > 1:
+        indice, total = particion
+        if not 0 <= indice < total:
+            raise ValueError("el índice de la partición debe estar entre 0 y total - 1")
+        filtro["$expr"] = {
+            "$eq": [{"$mod": [{"$abs": {"$toHashedIndexKey": "$cliente_id"}}, total]}, indice]
+        }
+    return filtro
+
+
+def particion_desde_entorno() -> tuple[int, int] | None:
+    """La partición de esta tarea según las variables que define Cloud Run Jobs (o `None`)."""
+    total = int(os.getenv("CLOUD_RUN_TASK_COUNT", "1") or 1)
+    if total <= 1:
+        return None
+    return int(os.getenv("CLOUD_RUN_TASK_INDEX", "0") or 0), total
+
+
 def ejecutar_reproceso(
     db: Any,
     *,
@@ -60,17 +89,14 @@ def ejecutar_reproceso(
     version_objetivo: str | None = None,
     tamano_lote: int = 500,
     max_lotes: int | None = None,
+    particion: tuple[int, int] | None = None,
 ) -> dict[str, Any]:
     """Reprocesa por lotes los perfiles con `version_reglas != version_objetivo`
     y devuelve las métricas de la corrida."""
     if tamano_lote <= 0:
         raise ValueError("tamano_lote debe ser mayor a 0")
 
-    objetivo = (
-        version_objetivo
-        or os.getenv("BATCH_VERSION_REGLAS", "").strip()
-        or VERSION_REGLAS
-    )
+    objetivo = version_objetivo or os.getenv("BATCH_VERSION_REGLAS", "").strip() or VERSION_REGLAS
     cifrador_activo = cifrador or CifradorAesGcm.desde_entorno()
     coleccion = db[COLECCION_PERFILES]
 
@@ -81,9 +107,7 @@ def ejecutar_reproceso(
 
     if hasattr(coleccion, "count_documents"):
         try:
-            omitidos = int(
-                coleccion.count_documents({"version_reglas": objetivo})
-            )
+            omitidos = int(coleccion.count_documents({"version_reglas": objetivo}))
         except Exception:
             omitidos = 0
 
@@ -93,7 +117,7 @@ def ejecutar_reproceso(
         if max_lotes is not None and lotes >= max_lotes:
             break
 
-        cursor = coleccion.find({"version_reglas": {"$ne": objetivo}})
+        cursor = coleccion.find(construir_filtro(objetivo, particion))
         if hasattr(cursor, "sort"):
             cursor = cursor.sort([("_id", 1)])
         if hasattr(cursor, "limit"):
@@ -201,6 +225,7 @@ def main() -> int:
             cache_score=cache,
             cifrador=cifrador,
             tamano_lote=config.batch_tamano_lote,
+            particion=particion_desde_entorno(),
         )
         return 0
     finally:

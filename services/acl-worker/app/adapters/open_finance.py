@@ -74,4 +74,3 @@ class AdaptadorOpenFinance:
 
     def cerrar(self) -> None:
         self._cliente.close()
-

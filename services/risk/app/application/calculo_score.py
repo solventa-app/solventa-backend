@@ -58,7 +58,9 @@ def cargar_configuracion_fuentes(
         candidatas = [Path(os.environ["FUENTES_CONFIG_PATH"])]
     else:
         actual = Path(__file__).resolve()
-        candidatas = [
+        # Primero la copia que lleva la imagen (`app/fuentes.json`, idéntica al contrato) y, en el
+        # repo, el contrato mismo.
+        candidatas = [actual.parents[1] / "fuentes.json"] + [
             p / "contracts" / "fuentes.json" for p in list(actual.parents)[:6]
         ]
 

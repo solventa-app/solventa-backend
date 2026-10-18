@@ -27,6 +27,7 @@ crear_mongo_atlas = true # Atlas M0: gratis. Lo necesitan risk y rating (infra/R
 
 # Eventos Pub/Sub (bloque 8), Batch nocturno (bloque 9) y API Gateway 700 ms delante del BFF (bloque 10).
 crear_pubsub            = true
+crear_metricas_logs     = true
 crear_batch             = true
 crear_gateway           = true
 calentar_camino_critico = false # poner en true solo durante la sesión de medición con k6

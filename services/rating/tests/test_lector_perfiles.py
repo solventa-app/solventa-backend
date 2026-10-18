@@ -74,9 +74,7 @@ def test_cae_a_la_primaria_si_el_socket_a_la_secundaria_se_cuelga() -> None:
     usarla (`docker pause`, no un cierre limpio): pymongo lanza
     `NetworkTimeout` (subclase de `AutoReconnect`), confirmado en vivo."""
     resultado, de_secundaria = leer_con_fallback_a_primaria(
-        leer_de_secundaria=lambda: (_ for _ in ()).throw(
-            NetworkTimeout("mongo2:27017: timed out")
-        ),
+        leer_de_secundaria=lambda: (_ for _ in ()).throw(NetworkTimeout("mongo2:27017: timed out")),
         leer_de_primaria=lambda: {"origen": "primaria"},
     )
 
@@ -144,4 +142,3 @@ def test_ec022_descifrar_fuentes_perfil_falla_con_llave_incorrecta_o_kms_deshabi
             base64.urlsafe_b64encode(b"sobre").decode("ascii"),
             cliente_kms=KmsDeshabilitado(),
         )
-

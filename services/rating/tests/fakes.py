@@ -79,9 +79,6 @@ class ServicioOfertaFalso:
             raise self.error
         return self.oferta, self.score_de_cache
 
-    def invalidar_cache_cliente(
-        self, cliente_id: str, perfil_version: int | None = None
-    ) -> int:
+    def invalidar_cache_cliente(self, cliente_id: str, perfil_version: int | None = None) -> int:
         self.invalidaciones.append((cliente_id, perfil_version))
         return 1
-

@@ -30,7 +30,6 @@ class Configuracion:
     # Bloque 5: ruta opcional al catálogo de fuentes (contracts/fuentes.json).
     fuentes_config_path: str | None = None
 
-
     def presupuesto_proveedor_s(self, proveedor: str) -> float:
         """Devuelve el presupuesto en segundos para `proveedor`, acotado por `timeout_s`."""
         clave = proveedor.strip().lower().replace("_", "-")
@@ -73,12 +72,7 @@ class Configuracion:
             presupuesto_ms_open_finance=int(
                 os.getenv("PRESUPUESTO_MS_OPEN_FINANCE", timeout_ms_default)
             ),
-            presupuesto_ms_open_data=int(
-                os.getenv("PRESUPUESTO_MS_OPEN_DATA", timeout_ms_default)
-            ),
-            presupuesto_ms_pasarela=int(
-                os.getenv("PRESUPUESTO_MS_PASARELA", timeout_ms_default)
-            ),
+            presupuesto_ms_open_data=int(os.getenv("PRESUPUESTO_MS_OPEN_DATA", timeout_ms_default)),
+            presupuesto_ms_pasarela=int(os.getenv("PRESUPUESTO_MS_PASARELA", timeout_ms_default)),
             fuentes_config_path=os.getenv("FUENTES_CONFIG_PATH") or None,
         )
-

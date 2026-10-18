@@ -110,4 +110,3 @@ def test_presupuesto_por_proveedor_ec008_se_acota_por_timeout_s(monkeypatch) -> 
     assert cfg.presupuesto_proveedor_s("open-data") == 0.12
     assert cfg.presupuesto_proveedor_s("pasarela") == 0.12
     assert cfg.cache_servir_en_ttl is True
-

@@ -57,9 +57,7 @@ class ServicioPerfiles:
         operation_time_str = serializar_operation_time(operation_time)
 
         if self._cache_score is not None:
-            self._cache_score.guardar_score_cliente(
-                cliente_id, perfil_version, resultado_score
-            )
+            self._cache_score.guardar_score_cliente(cliente_id, perfil_version, resultado_score)
 
         logger.info(
             "perfil registrado cliente=%s perfil_version=%s score=%s nivel_riesgo=%s",
@@ -87,4 +85,3 @@ class ServicioPerfiles:
             "nivel_riesgo": resultado_score["nivel_riesgo"],
             "fecha_vigencia": resultado_score["fecha_vigencia"],
         }
-

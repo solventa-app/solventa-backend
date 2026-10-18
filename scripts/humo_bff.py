@@ -9,6 +9,9 @@ Recorre el flujo insignia por GraphQL, como lo haría el frontend, con usuario a
   5. el ASESOR intenta listar usuarios                  -> sin permiso (solo BACKOFFICE)
   6. crearCobro con la pasarela lenta y reintento        -> cobrado con UNA referencia (KAN-28)
 
+Pasos 3 y 6 con el gateway local (`BFF_URL=http://localhost:8080`): lo que tarda más de 700 ms se
+comprueba directo al BFF (`BFF_DIRECTO_URL`) porque el gateway lo cortaría con 504.
+
 Deja el stub otra vez en `sano` y espera a que los circuitos del ACL cierren, para que el
 script se pueda repetir (el alias del ASESOR cambia en cada corrida). Solo biblioteca estándar.
 
@@ -24,9 +27,13 @@ import random
 import string
 import sys
 import time
+import urllib.error
 import urllib.request
 
 BFF = os.getenv("BFF_URL", "http://localhost:8000") + "/graphql/web"
+# El BFF sin pasar por el API Gateway (local: `:8000`). Sirve para comprobar la degradación de la
+# aplicación en los casos en que el gateway corta antes (ver el paso 3).
+BFF_DIRECTO = os.getenv("BFF_DIRECTO_URL", "http://localhost:8000") + "/graphql/web"
 AUTH = os.getenv("AUTH_URL", "http://localhost:8001")
 STUB_OPEN_FINANCE = os.getenv("STUB_OPEN_FINANCE_URL", "http://localhost:8101")
 ACL = os.getenv("ACL_URL", "http://localhost:8005")
@@ -70,13 +77,17 @@ def _http(url: str, cuerpo: dict | None = None, token: str | None = None) -> dic
         return json.loads(respuesta.read())
 
 
-def _graphql_crudo(query: str, variables: dict | None = None, token: str | None = None) -> dict:
-    return _http(BFF, {"query": query, "variables": variables or {}}, token)
+def _graphql_crudo(
+    query: str, variables: dict | None = None, token: str | None = None, url: str | None = None
+) -> dict:
+    return _http(url or BFF, {"query": query, "variables": variables or {}}, token)
 
 
-def _graphql(query: str, variables: dict | None = None, token: str | None = None) -> dict:
+def _graphql(
+    query: str, variables: dict | None = None, token: str | None = None, url: str | None = None
+) -> dict:
     inicio = time.monotonic()
-    cuerpo = _graphql_crudo(query, variables, token)
+    cuerpo = _graphql_crudo(query, variables, token, url)
     ms = (time.monotonic() - inicio) * 1000
     if cuerpo.get("errors"):
         _fallar(f"errores de GraphQL: {cuerpo['errors']}")
@@ -109,13 +120,37 @@ def _iniciar_sesion(usuario: str, clave: str) -> dict:
     return sesion
 
 
-def _solicitar(consentimiento_id: str, token: str, **cambios) -> dict:
+def _solicitar(consentimiento_id: str, token: str, directo: bool = False, **cambios) -> dict:
     entrada = {**ENTRADA, **cambios, "consentimientoId": consentimiento_id}
-    respuesta = _graphql(SOLICITAR, {"entrada": entrada}, token)
+    respuesta = _graphql(SOLICITAR, {"entrada": entrada}, token, BFF_DIRECTO if directo else None)
     resultado = respuesta["solicitarOferta"]
     resumen = resultado.get("tipo") or resultado.get("mensaje")
     print(f"   -> {resultado['__typename']} {resumen} ({respuesta['_ms']} ms)")
     return resultado
+
+
+def _corte_del_gateway(consentimiento_id: str, token: str) -> tuple[int, int]:
+    """Pide por el gateway una oferta de un documento sin caché, con Open Finance lento. Devuelve
+    `(código HTTP, ms)` sin fallar: lo esperable es un 504 del gateway a ~700 ms (el plazo duro,
+    HA-LAT-004) o, si el BFF alcanza a responder, el `ErrorOferta` con reintento (HTTP 200)."""
+    entrada = {
+        **ENTRADA,
+        "consentimientoId": consentimiento_id,
+        "documentoIdentidad": "CC-HUMO-" + "".join(random.choices(string.digits, k=8)),
+    }
+    cuerpo = json.dumps({"query": SOLICITAR, "variables": {"entrada": entrada}}).encode()
+    peticion = urllib.request.Request(
+        BFF,
+        data=cuerpo,
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+    )
+    inicio = time.monotonic()
+    try:
+        with urllib.request.urlopen(peticion, timeout=10) as respuesta:
+            codigo = respuesta.status
+    except urllib.error.HTTPError as error:
+        codigo = error.code
+    return codigo, round((time.monotonic() - inicio) * 1000)
 
 
 def main() -> int:
@@ -168,7 +203,13 @@ def main() -> int:
     _modo_open_finance("lento")
     try:
         oferta = _solicitar(consentimiento["id"], token)
-        sin_datos = _solicitar(consentimiento["id"], token, documentoIdentidad=documento_sin_cache)
+        # Sin caché el ACL espera sus 700 ms completos, así que por el gateway (también de 700 ms)
+        # no cabe: esta comprobación de la aplicación (CA-W01-05) va directo al BFF y el corte
+        # del gateway se verifica aparte, en el paso 3c.
+        sin_datos = _solicitar(
+            consentimiento["id"], token, directo=True, documentoIdentidad=documento_sin_cache
+        )
+        corte_gateway = _corte_del_gateway(consentimiento["id"], token)
     finally:
         _modo_open_finance("sano")
     if sin_datos["__typename"] != "ErrorOferta" or not sin_datos["puedeReintentar"]:
@@ -177,6 +218,18 @@ def main() -> int:
         _fallar(f"se esperaba una oferta PRELIMINAR: {oferta}")
     if oferta["rangoPrima"] is None:
         _fallar("la oferta PRELIMINAR debe traer rango de prima")
+    codigo, ms = corte_gateway
+    por_gateway = BFF != BFF_DIRECTO
+    puerta = "el gateway" if por_gateway else "el BFF"
+    print(f"3c. sin caché y Open Finance lento, por {puerta}: HTTP {codigo} en {ms} ms")
+    if por_gateway:
+        # El gateway no deja colgada la petición: o responde a tiempo o la corta a ~700 ms (504).
+        if codigo not in (200, 504) or ms > 1500:
+            _fallar(
+                f"el gateway debía responder o cortar en ~700 ms (200/504): HTTP {codigo}, {ms} ms"
+            )
+    elif codigo != 200:
+        _fallar(f"sin el gateway se esperaba HTTP 200 con ErrorOferta: HTTP {codigo}")
     degradadas = [f for f in oferta["fuentes"] if f["estado"] != "OK"]
     print(f"   fuentes no frescas: {[(f['nombre'], f['estado']) for f in degradadas]}")
     _esperar(
@@ -237,6 +290,10 @@ def main() -> int:
                 }
             },
             token_backoffice,
+            # Con la pasarela lenta el ACL corta a los 700 ms y PAYMENTS responde después: por el
+            # gateway sería un 504 (reintentar con el mismo `idIntentoCobro` devuelve este cobro
+            # pendiente, es idempotente). Aquí se comprueba la aplicación, así que va directo.
+            BFF_DIRECTO,
         )["crearCobro"]
     finally:
         _http(f"{STUB_PASARELA}/control/modo", {"modo": "sano"})

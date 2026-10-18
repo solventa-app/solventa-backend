@@ -89,20 +89,12 @@ class RepositorioPerfilesMongo:
             or version_reglas is None
         ):
             calculado = calcular_resultado_score(fuentes, creado_en=ahora)
-            score_total = (
-                score_total if score_total is not None else calculado["score_total"]
-            )
-            nivel_riesgo = (
-                nivel_riesgo if nivel_riesgo is not None else calculado["nivel_riesgo"]
-            )
+            score_total = score_total if score_total is not None else calculado["score_total"]
+            nivel_riesgo = nivel_riesgo if nivel_riesgo is not None else calculado["nivel_riesgo"]
             fecha_vigencia = (
-                fecha_vigencia
-                if fecha_vigencia is not None
-                else calculado["fecha_vigencia"]
+                fecha_vigencia if fecha_vigencia is not None else calculado["fecha_vigencia"]
             )
-            version_reglas = (
-                version_reglas if version_reglas is not None else VERSION_REGLAS
-            )
+            version_reglas = version_reglas if version_reglas is not None else VERSION_REGLAS
 
         fuentes_persistidas = cifrar_fuentes_perfil(fuentes, self._cifrador)
 
@@ -131,4 +123,3 @@ class RepositorioPerfilesMongo:
             operation_time = session.operation_time
 
         return perfil_version, operation_time
-

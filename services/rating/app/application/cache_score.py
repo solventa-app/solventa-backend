@@ -64,9 +64,7 @@ class CacheScore:
         prefijo_score = f"score:{hash_cliente}:"
         claves_a_borrar: set[str] = {f"score:{hash_cliente}:{version_reglas}"}
         if perfil_version is not None:
-            claves_a_borrar.add(
-                f"oferta:{hash_cliente}:{perfil_version}:{version_reglas}"
-            )
+            claves_a_borrar.add(f"oferta:{hash_cliente}:{perfil_version}:{version_reglas}")
             if perfil_version > 1:
                 for version_anterior in range(1, perfil_version):
                     claves_a_borrar.add(
@@ -83,13 +81,11 @@ class CacheScore:
                             else str(encontrada)
                         )
                         claves_a_borrar.add(clave_str)
-            elif hasattr(self._almacen, "valores") and isinstance(
-                self._almacen.valores, dict
-            ):
+            elif hasattr(self._almacen, "valores") and isinstance(self._almacen.valores, dict):
                 for clave_existente in list(self._almacen.valores.keys()):
-                    if clave_existente.startswith(
-                        prefijo_oferta
-                    ) or clave_existente.startswith(prefijo_score):
+                    if clave_existente.startswith(prefijo_oferta) or clave_existente.startswith(
+                        prefijo_score
+                    ):
                         claves_a_borrar.add(clave_existente)
 
             eliminadas = 0
@@ -97,13 +93,9 @@ class CacheScore:
                 if claves_a_borrar:
                     resultado = self._almacen.delete(*claves_a_borrar)
                     eliminadas = (
-                        int(resultado)
-                        if isinstance(resultado, int)
-                        else len(claves_a_borrar)
+                        int(resultado) if isinstance(resultado, int) else len(claves_a_borrar)
                     )
-            elif hasattr(self._almacen, "valores") and isinstance(
-                self._almacen.valores, dict
-            ):
+            elif hasattr(self._almacen, "valores") and isinstance(self._almacen.valores, dict):
                 for clave in claves_a_borrar:
                     if clave in self._almacen.valores:
                         del self._almacen.valores[clave]
@@ -111,4 +103,3 @@ class CacheScore:
             return eliminadas
         except Exception:
             return 0
-
