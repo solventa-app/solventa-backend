@@ -234,6 +234,8 @@ class RepositorioUsuariosPostgres:
 def construir_pool(database_url: str) -> ConnectionPool:
     """Copiado de `services/payments/app/application/repositorio_cobros.py`
     (sin código compartido entre servicios)."""
+    if not database_url:
+        raise ValueError("Falta DATABASE_URL")
     return ConnectionPool(
         database_url,
         min_size=1,
