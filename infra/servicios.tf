@@ -31,6 +31,12 @@ locals {
   con_migracion = { for n, s in local.activos : n => s if try(s.migracion, null) != null }
   publicos      = { for n, s in local.activos : n => s if try(s.publico, false) }
 
+  # Instancias fijas mientras `instancias_fijas_encendidas` sea true. `instancia_fija` (manifiesto): mínimo 1 instancia,
+  # sin arranque en frío. `cpu_siempre`: además la CPU siempre asignada, para el trabajo en segundo plano (el reintento
+  # de cobros de PAYMENTS no corre con la CPU limitada a las peticiones).
+  fijo        = { for n, s in local.activos : n => var.instancias_fijas_encendidas && try(s.instancia_fija, false) }
+  cpu_siempre = { for n, s in local.activos : n => local.fijo[n] && try(s.cpu_siempre, false) }
+
   # Servicios que hablan con Postgres: los que declaran un secreto `database-url-*` (su URL usa el socket
   # /cloudsql, que Cloud Run solo monta si se pide). Vale para el servicio y para su job de migración.
   con_postgres = {
@@ -143,7 +149,7 @@ resource "google_cloud_run_v2_service" "servicio" {
     service_account = google_service_account.runtime[each.key].email
 
     scaling {
-      min_instance_count = 0
+      min_instance_count = local.fijo[each.key] ? 1 : 0
       max_instance_count = var.max_instancias
     }
 
@@ -182,7 +188,7 @@ resource "google_cloud_run_v2_service" "servicio" {
           cpu    = "1"
           memory = "512Mi"
         }
-        cpu_idle = true
+        cpu_idle = !local.cpu_siempre[each.key]
         # Más CPU solo mientras arranca el contenedor: acorta el arranque en frío (mínimo 0 instancias).
         startup_cpu_boost = true
       }

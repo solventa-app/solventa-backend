@@ -19,3 +19,8 @@ crear_kms         = false
 crear_redis       = true
 crear_cloud_sql   = true
 crear_mongo_atlas = true # Atlas M0: gratis. Lo necesitan risk y rating (infra/README.md, «MongoDB Atlas»)
+
+# Instancias fijas (mínimo 1) en los servicios que atiende el usuario, y CPU siempre asignada en PAYMENTS (su
+# reintento automático de cobros). Cobran por hora (estimado ~USD 4 al día todas juntas); «Costos staging → apagar»
+# las devuelve a mínimo 0 y «encender» las restituye.
+instancias_fijas_encendidas = true

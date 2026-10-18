@@ -7,6 +7,7 @@ import asyncio
 import pytest
 from fakes import BusEventosFalso, ClienteAclFalso, RepositorioCobrosFalso
 
+from app.application import reintento as modulo_reintento
 from app.application.cliente_acl import ResultadoCobro
 from app.application.reintento import ReintentoCobrosPendientes, ejecutar_una_pasada
 from app.application.servicio_cobros import ServicioCobros
@@ -130,3 +131,50 @@ def test_si_se_cancela_el_apagado_la_cancelacion_se_propaga() -> None:
             await apagado
 
     asyncio.run(ejercicio())
+
+
+def test_un_cobro_con_falla_no_frena_a_los_demas(monkeypatch) -> None:
+    repositorio = RepositorioCobrosFalso()
+    segundo = {**ORDEN, "id_intento_cobro": "clave-reintento-2"}
+    for orden in (ORDEN, segundo):
+        ServicioCobros(
+            repositorio,
+            ClienteAclFalso([ResultadoCobro(estado="pendiente", motivo="pasarela_no_disponible")]),
+            BusEventosFalso(),
+        ).crear_cobro(dict(orden))
+    vistos = []
+
+    def procesar_falso(cobro, repositorio, cliente_acl, bus):
+        vistos.append(cobro["id_intento_cobro"])
+        if cobro["id_intento_cobro"] == ORDEN["id_intento_cobro"]:
+            raise RuntimeError("falla de prueba")
+
+    monkeypatch.setattr(modulo_reintento, "procesar_reintento", procesar_falso)
+
+    cliente_acl = ClienteAclFalso()
+    procesados = ejecutar_una_pasada(repositorio, cliente_acl, BusEventosFalso(), max_intentos=10)
+
+    assert procesados == 2
+    assert sorted(vistos) == ["clave-reintento-1", "clave-reintento-2"]
+
+
+def test_el_bucle_sigue_vivo_si_una_pasada_falla(monkeypatch) -> None:
+    llamadas = []
+
+    def pasada_falsa(*_):
+        llamadas.append(1)
+        if len(llamadas) == 1:
+            raise RuntimeError("la base se reinició")
+        return 0
+
+    monkeypatch.setattr(modulo_reintento, "ejecutar_una_pasada", pasada_falsa)
+
+    async def ejercicio() -> None:
+        reintento = _reintento()
+        reintento.iniciar()
+        await asyncio.sleep(0.15)
+        await reintento.detener()
+
+    asyncio.run(ejercicio())
+
+    assert len(llamadas) >= 2  # tras la falla de la primera pasada, el bucle siguió

@@ -5,14 +5,16 @@ name: Costos staging
 #   Actions > Costos staging > Run workflow > elige la acción.
 #
 #   estado    solo informa qué está encendido y qué apagado (no cambia nada).
-#   apagar    DETIENE Cloud SQL (conserva las bases, los usuarios y las migraciones; solo se paga el disco) y BORRA
-#             Redis y su conector VPC (es una caché: se recrea sola al encender). Es lo que más ahorra: Redis y el
-#             conector cuestan ~USD 0,12/h según infra/README.md.
-#   encender  arranca Cloud SQL y vuelve a crear Redis y el conector (unos 10-15 minutos).
+#   apagar    DETIENE Cloud SQL (conserva las bases, los usuarios y las migraciones; solo se paga el disco), BORRA
+#             Redis y su conector VPC (es una caché: se recrea sola al encender) y devuelve los servicios con instancia
+#             fija a mínimo 0 y CPU solo en las peticiones. Es lo que más ahorra: Redis y el conector cuestan ~USD 0,12/h
+#             según infra/README.md, y las instancias fijas ~USD 4 al día (estimado).
+#   encender  arranca Cloud SQL, vuelve a crear Redis y el conector (unos 10-15 minutos) y deja otra vez las
+#             instancias fijas (mínimo 1; PAYMENTS además con CPU siempre asignada para su reintento de cobros).
 #
 # El estado queda guardado en gs://<proyecto>-tfstate/solventa-backend/costos/estado ("apagado" | "encendido") y el
 # despliegue automático (deploy-staging.yml) lo respeta: un release no vuelve a encender lo que está apagado.
-# Solo toca Cloud SQL, Redis y el conector VPC: si el plan destruyera otra cosa, el workflow falla sin aplicar nada.
+# Solo toca Cloud SQL, Redis, el conector VPC y el escalado de los servicios: si el plan destruyera otra cosa, el workflow falla sin aplicar nada.
 #
 # SE APAGA SOLO todos los días a las 2:00 a.m. hora de Colombia (por si se olvida apagarlo): es el bloque `schedule`.
 # Para quitarlo, borra ese bloque. GitHub puede demorar unos minutos en lanzar las ejecuciones programadas, y en un
@@ -151,6 +153,12 @@ jobs:
           if printf '%s\n' "$existentes" | grep -q '^google_redis_instance\.cache'; then redis="en marcha"; fi
           conector="no existe"
           if printf '%s\n' "$existentes" | grep -q '^google_vpc_access_connector\.conector'; then conector="en marcha"; fi
+          fijas="no existe"
+          if printf '%s\n' "$existentes" | grep -q '^google_cloud_run_v2_service\.servicio\["bff"\]'; then
+            fijas=$(terraform state show 'google_cloud_run_v2_service.servicio["bff"]' 2>/dev/null \
+              | awk '/min_instance_count/ {print ($3 > 0) ? "encendidas (mínimo 1)" : "apagadas (mínimo 0)"; exit}')
+            fijas=${fijas:-"existen"}
+          fi
           {
             echo "### Costos de staging — acción: \`${ACCION}\`"
             echo ""
@@ -160,6 +168,7 @@ jobs:
             echo "| Cloud SQL | ${sql} |"
             echo "| Redis (Memorystore) | ${redis} |"
             echo "| Conector VPC | ${conector} |"
+            echo "| Instancias fijas de los servicios | ${fijas} |"
             echo ""
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Plan
@@ -169,7 +178,7 @@ jobs:
           set -euo pipefail
           extra=()
           if [ "$ACCION" = "apagar" ]; then
-            extra=(-var=cloud_sql_encendida=false -var=redis_encendida=false)
+            extra=(-var=cloud_sql_encendida=false -var=redis_encendida=false -var=instancias_fijas_encendidas=false)
           fi
           terraform plan -var-file=staging.tfvars "${extra[@]}" -out=plan.bin
           terraform show -json plan.bin > plan.json
@@ -190,7 +199,7 @@ jobs:
       - name: Aplicar
         if: env.ACCION != 'estado'
         working-directory: codigo/infra
-        run: terraform apply plan.bin
+        run: terraform apply -parallelism=3 plan.bin
       - name: Guardar el estado y resumir
         if: env.ACCION != 'estado'
         run: |
@@ -200,15 +209,18 @@ jobs:
           if [ "$nuevo" = "apagado" ]; then
             cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
 
-          **Apagado.** Cloud SQL quedó detenida (conserva los datos; solo se paga el disco) y Redis y su conector VPC se
-          borraron. Los servicios que dependen de ellos no atenderán hasta que lo vuelvas a encender.
+          **Apagado.** Cloud SQL quedó detenida (conserva los datos; solo se paga el disco), Redis y su conector VPC se
+          borraron y los servicios volvieron a mínimo 0 instancias (el primer uso tras un rato sin tráfico tarda, y el
+          reintento automático de cobros de PAYMENTS deja de correr entre peticiones). Los servicios que dependen de
+          Cloud SQL y Redis no atenderán hasta que lo vuelvas a encender.
 
           Para volver a subirlo: *Actions → Costos staging → Run workflow → `encender`* (unos 10-15 minutos).
           EOF
           else
             cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
 
-          **Encendido.** Cloud SQL en marcha y, si `crear_redis` está en `true` en `infra/staging.tfvars`, Redis y su
+          **Encendido.** Cloud SQL en marcha, los servicios de nuevo con su instancia fija (cobran por hora; PAYMENTS
+          con la CPU siempre asignada) y, si `crear_redis` está en `true` en `infra/staging.tfvars`, Redis y su
           conector recreados. Los servicios toman las URLs nuevas al arrancar su próxima revisión: si alguno sigue
           fallando, lanza *Deploy staging* para ese servicio.
 

@@ -349,7 +349,8 @@ python scripts/probar_cobros.py --staging solventa-511815 --evidencia docs/evide
 | **Cobro atascado en `cobrando`** | Si el proceso se cae a mitad de un cobro, queda `cobrando` y el reintento lo devuelve tal cual | Un barrido que concilie los `cobrando` viejos |
 | **El mock vive en memoria** | Reiniciar el contenedor del mock olvida los cobros; la conciliación diría `no_encontrado` | Es un simulador; una pasarela real persiste sus cobros |
 | **La pasarela de staging también** | En Cloud Run (mínimo 0 instancias), si se recicla la instancia a mitad de `probar_cobros.py`, el modo vuelve a `sano` y se olvidan los cobros; la corrida falla en esa comprobación | Repetir la corrida; con una pasarela real no aplica |
-| **Bucle local** | El reintento automático es un bucle en el proceso, no Cloud Tasks | Cloud Tasks cuando exista el proyecto GCP |
+| **Bucle local** | El reintento automático es un bucle en el proceso, no Cloud Tasks. En staging solo corre entre peticiones con la instancia fija de PAYMENTS (mínimo 1 y CPU siempre asignada); con «Costos staging → apagar» deja de correr y un `PENDIENTE` hay que reintentarlo a mano | Cloud Tasks cuando exista el proyecto GCP |
+| **El bucle no se muere** | Si una pasada falla (p. ej. la base reiniciándose) o un cobro lanza un error, se registra y el bucle sigue en el próximo ciclo; antes un error lo mataba en silencio | — |
 | **Falla intermitente en Newman (oferta de HU-W01)** | En 1 de 6 corridas, justo después del humo, la oferta de la carpeta 3 salió `PRELIMINAR` en vez de `COMPLETA` (4 aserciones). No se reprodujo en 4 repeticiones. Esta rama no toca las fuentes de la oferta | Sin causa confirmada. Hipótesis: la carrera de la sonda del circuito que `docs/arquitectura-backend.md` ya reconoce ("no es 100 % infalible") tras el escenario degradado del humo. Vigilarlo en el CI; si se repite, guardar el `newman ... -r json` para ver qué fuente vino degradada |
 
 ## 9. Fuera de alcance

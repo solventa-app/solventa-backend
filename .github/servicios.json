@@ -2,6 +2,7 @@
   {
     "nombre": "bff",
     "ruta": "services/bff",
+    "instancia_fija": true,
     "puerto": 8000,
     "publico": true,
     "llama": ["auth", "acl-worker", "risk", "rating", "payments"],
@@ -16,6 +17,7 @@
   {
     "nombre": "auth",
     "ruta": "services/auth",
+    "instancia_fija": true,
     "puerto": 8001,
     "url_env": "AUTH_URL",
     "migracion": ["alembic", "upgrade", "head"],
@@ -29,6 +31,7 @@
   {
     "nombre": "risk",
     "ruta": "services/risk",
+    "instancia_fija": true,
     "puerto": 8002,
     "url_env": "RISK_URL",
     "migracion": ["python", "-m", "migrations"],
@@ -38,6 +41,7 @@
   {
     "nombre": "rating",
     "ruta": "services/rating",
+    "instancia_fija": true,
     "puerto": 8003,
     "url_env": "RATING_URL",
     "entorno": { "MONGO_DB": "risk", "TRAZAS_GCP": "true" },
@@ -46,6 +50,8 @@
   {
     "nombre": "payments",
     "ruta": "services/payments",
+    "instancia_fija": true,
+    "cpu_siempre": true,
     "puerto": 8004,
     "url_env": "PAYMENTS_URL",
     "migracion": ["alembic", "upgrade", "head"],
@@ -56,6 +62,7 @@
   {
     "nombre": "acl-worker",
     "ruta": "services/acl-worker",
+    "instancia_fija": true,
     "puerto": 8005,
     "url_env": "ACL_URL",
     "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela"],
@@ -76,6 +83,7 @@
   {
     "nombre": "stub-open-finance",
     "ruta": "stubs/open-finance",
+    "instancia_fija": true,
     "puerto": 8101,
     "url_env": "OPEN_FINANCE_URL",
     "entorno": { "TRAZAS_GCP": "true" }
@@ -83,6 +91,7 @@
   {
     "nombre": "stub-open-data",
     "ruta": "stubs/open-data",
+    "instancia_fija": true,
     "puerto": 8102,
     "url_env": "OPEN_DATA_URL",
     "entorno": { "TRAZAS_GCP": "true" }
@@ -90,6 +99,7 @@
   {
     "nombre": "stub-pasarela",
     "ruta": "stubs/pasarela",
+    "instancia_fija": true,
     "puerto": 8103,
     "url_env": "PASARELA_URL",
     "entorno": { "TRAZAS_GCP": "true" }

@@ -48,7 +48,11 @@ def ejecutar_una_pasada(
     cobros pendientes se procesaron en esta pasada."""
     pendientes = repositorio.listar_pendientes(max_intentos)
     for cobro in pendientes:
-        procesar_reintento(cobro, repositorio, cliente_acl, bus)
+        try:
+            procesar_reintento(cobro, repositorio, cliente_acl, bus)
+        except Exception:
+            # Un cobro con problema no frena a los demás; se vuelve a intentar en la próxima pasada.
+            logger.exception("reintento: falló un cobro; se sigue con los demás")
     return len(pendientes)
 
 
@@ -84,10 +88,15 @@ class ReintentoCobrosPendientes:
     async def _bucle(self) -> None:
         while True:
             await asyncio.sleep(self._intervalo_segundos)
-            await asyncio.to_thread(
-                ejecutar_una_pasada,
-                self._repositorio,
-                self._cliente_acl,
-                self._bus,
-                self._max_intentos,
-            )
+            try:
+                await asyncio.to_thread(
+                    ejecutar_una_pasada,
+                    self._repositorio,
+                    self._cliente_acl,
+                    self._bus,
+                    self._max_intentos,
+                )
+            except Exception:
+                # P. ej. la base reiniciándose. Con una instancia fija nadie volvería a
+                # arrancar un bucle muerto, así que se registra y se sigue.
+                logger.exception("reintento: falló la pasada; se reintenta en el próximo ciclo")
