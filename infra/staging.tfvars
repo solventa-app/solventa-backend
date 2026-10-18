@@ -18,4 +18,4 @@ presupuesto_monto  = 958332
 crear_kms         = false
 crear_redis       = true
 crear_cloud_sql   = true
-crear_mongo_atlas = false
+crear_mongo_atlas = true # Atlas M0: gratis. Lo necesitan risk y rating (infra/README.md, «MongoDB Atlas»)

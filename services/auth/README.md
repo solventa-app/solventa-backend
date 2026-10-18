@@ -56,8 +56,8 @@ los llama el BFF, que ya validó el token y el rol.
 - El alias no puede ser un correo ni un documento. El único dato personal es el **nombre** de cualquier rol (KAN-28): va cifrado por campo (AES-256-GCM con el id del usuario como dato asociado, `app/cifrado.py`), con la llave `CIFRADO_CLAVE` (local no secreta; en la nube, `clave-cifrado`, y no arranca con la local). Rotarla sin re-cifrar deja los nombres ilegibles.
 - Primer BACKOFFICE: `CLAVE_INICIAL=... python -m app.crear_usuario --usuario <alias> --rol BACKOFFICE` (idempotente).
   En compose lo hace la tarea `crear-backoffice` con credenciales **solo locales**: `admin.solventa` / `admin-local-solventa`.
-- Un CLIENTE, un ASESOR y un operador de prueba (por el BFF, con un BACKOFFICE ya creado): `python scripts/crear_usuarios.py`
-  (local y staging; ver `infra/README.md`, «Usuarios de staging»).
+- Un CLIENTE, un ASESOR y un operador de prueba, por el BFF: `python scripts/crear_usuarios.py`. El primer BACKOFFICE de
+  staging se crea directo en AUTH con `--auth <url-de-auth>` (ver `infra/README.md`, «Usuarios de staging»).
 - Logs: solo el id opaco del usuario; nunca el alias, la clave ni el token.
 
 ## Operación

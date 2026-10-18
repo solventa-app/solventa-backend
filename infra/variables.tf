@@ -102,6 +102,12 @@ variable "cloud_sql_tier" {
   default     = "db-f1-micro"
 }
 
+variable "redis_encendida" {
+  description = "Si Redis y su conector VPC están encendidos. Es el \"apagado\" de Redis en staging (workflow `Costos staging`): apagarlo borra SOLO la instancia de Memorystore y el conector, que son lo que cobra por hora; la red, la subred y las APIs se quedan (no cuestan y borrar la red falla mientras GCP libera el conector). No tiene efecto si `crear_redis = false`."
+  type        = bool
+  default     = true
+}
+
 variable "cloud_sql_encendida" {
   description = "Si la instancia de Cloud SQL está en marcha (`ALWAYS`) o DETENIDA (`NEVER`). Detenerla conserva las bases, los usuarios y las migraciones y solo deja de cobrar la instancia (queda el disco); es el \"apagado\" de staging, que se maneja con el workflow `Costos staging`. No tiene efecto si `crear_cloud_sql = false`."
   type        = bool
