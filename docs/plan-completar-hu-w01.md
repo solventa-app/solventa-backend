@@ -22,6 +22,9 @@
 | 13 | Costos | Solo los aprobados: Cloud KMS (centavos al mes) y Pub/Sub, Cloud Scheduler y Cloud Tasks en capa gratuita. Nada más sin confirmación. |
 | 14 | Pruebas a escala | Para **todas** las historias de arquitectura: no se repiten los experimentos; se prueba con menos tiempo, menos volumen o picos cortos y se proyecta con regla de tres, diciendo en la evidencia qué se midió y qué se proyectó. Todo en una sola sesión contra staging. Ver "Cómo se prueban todas las historias de arquitectura sin gastar". |
 | 15 | Batch nocturno (HA-ESC-004) | Se adelanta del Sprint 3 al **Sprint 1** (bloque 9). |
+| 16 | API Gateway (HA-LAT-004) | Se monta **en el Sprint 1** un API Gateway de GCP delante del BFF, con plazo duro de 700 ms. El BFF deja de ser público: solo el gateway lo invoca. El presupuesto ≤ 120 ms por proveedor vive en el ACL (es quien llama a los proveedores). Bloque 10. |
+| 17 | JWT en el gateway | En el Sprint 1 el JWT lo sigue validando el BFF (HS256). Pasarlo al gateway exige ES256 + JWKS en AUTH: Sprint 2. |
+| 18 | ESC-001 | Se queda en el **Sprint 2** (ya tendrá el gateway montado). |
 
 Basado en la revisión de pendientes de HU-W01 (18 puntos, numerados P1–P3 abajo) y en las restricciones que puso el equipo el 2026-10-18:
 
@@ -193,6 +196,65 @@ en el Sprint 1** (con la prueba reducida de abajo). Al ejecutar el bloque se cor
 | back · RISK | El job lee perfiles por lotes, recalcula y escribe con el mismo escritor único (RISK). Idempotente: si se corta, retoma donde iba. |
 | back | `scripts/sembrar_perfiles.py` para cargar perfiles sintéticos en staging y la prueba de EC017 a escala reducida (abajo). Evidencia en `docs/evidencias/EC017-<fecha>.md`. |
 
+### Bloque 10 · API Gateway delante del BFF (HA-LAT-004: EC001, EC002, EC008)
+
+**Qué pide LAT-004:** un API Gateway con **timeout duro de 700 ms** y un **presupuesto ≤ 120 ms por proveedor**, con
+fallback. EC001/EC002: p99 ≤ 500 ms extremo a extremo; EC008: ≤ 120 ms por dependencia. Hoy no hay gateway: el BFF es
+la puerta pública. **Decidido (felipe, 2026-10-18): se hace en el Sprint 1.**
+
+**Cómo queda el tráfico:**
+```
+Nube:   navegador → Vercel (rewrite /graphql) → API Gateway (700 ms) → BFF (privado) → servicios
+Local:  navegador → Vite (proxy /graphql)     → gateway local :8080 (Envoy, 700 ms) → BFF :8000 → servicios
+```
+
+**En la nube (GCP API Gateway):**
+- Es un servicio administrado que se configura con un archivo **OpenAPI 2.0** (`infra/gateway/openapi.yaml`): rutas
+  `POST /graphql/web`, `POST /graphql/movil` y `GET /health`, cada una con `x-google-backend` apuntando al BFF de Cloud
+  Run y `deadline: 0.7`.
+- Por dentro corre ESPv2, que está hecho sobre **Envoy**; por eso localmente se usa Envoy.
+- El gateway llama al BFF con su propia cuenta de servicio (`gateway-bff`, rol `run.invoker` solo sobre el BFF). El BFF
+  **deja de ser público** (se quita `publico` del BFF en `.github/servicios.json`).
+- Costo: gratis hasta 2 millones de llamadas al mes; después USD 3 por millón.
+
+**En local (docker compose):**
+- Servicio `gateway` con la imagen oficial de Envoy y `observabilidad`/`servicios` sin cambios: `infra/gateway/envoy.yaml`
+  con las mismas rutas y el mismo plazo de 700 ms, en el puerto **8080**.
+- El front local apunta a `VITE_BFF_URL=http://localhost:8080`. Ir directo a `:8000` sigue funcionando para depurar.
+- Un script (`scripts/validar_gateway.py`) compara rutas y plazos de `openapi.yaml` y `envoy.yaml` para que no se separen.
+
+**El presupuesto por proveedor (≤ 120 ms):** el gateway solo ve la petición al BFF, no las llamadas a los proveedores.
+Ese presupuesto se pone donde están esas llamadas: en el **ACL Worker**, con un plazo configurable por proveedor
+(`PRESUPUESTO_MS_<PROVEEDOR>`), y se mide por dependencia en la corrida de k6 (EC008).
+
+**Riesgos y cómo se cubren:**
+1. **Hoy la oferta preliminar tarda ~730 ms** y el gateway la cortaría en 700 ms con un 504. Por eso el **bloque 2
+   (EC010 ≤ 500 ms) entra antes o junto con este bloque**.
+2. **Arranque en frío:** si el BFF o un servicio del camino está apagado (escala a cero), la primera petición tarda más de
+   700 ms y el gateway responde 504. El front muestra ese 504 como "intenta de nuevo" (regla 4: nunca un 5xx crudo) y
+   para las sesiones de medición se usa `min_instances = 1` en los servicios del camino crítico solo mientras dura la
+   sesión (bandera `calentar_camino_critico`, se apaga al terminar).
+3. **El guardia de destrucciones** (`scripts/revisar_plan.py`) bloquearía el reemplazo de la configuración del gateway
+   (`google_api_gateway_api_config` es inmutable: cada cambio crea una nueva). Se agrega una excepción solo para ese
+   recurso, con `create_before_destroy`.
+
+| Repo | Cambio |
+|---|---|
+| back · infra | `infra/gateway.tf` (proveedor `google-beta`): API, configuración desde `openapi.yaml`, gateway en `us-central1` y cuenta `gateway-bff`, detrás de la bandera `crear_gateway`. Salida `gateway_url`. |
+| back · infra | `.github/servicios.json`: el BFF deja de ser `publico`. `scripts/validar_servicios.py` lo acepta. |
+| back · infra | `scripts/revisar_plan.py`: excepción para reemplazar `google_api_gateway_api_config`. |
+| back · compose | Servicio `gateway` (Envoy) en `docker-compose.yml` y `infra/gateway/envoy.yaml`. |
+| back · CI (`ci.yml`) | El job `humo` pasa por el gateway local (`:8080`) y prueba el corte: con el stub en `lento`, la respuesta llega antes de 700 ms y nunca como 5xx crudo. El job `infra` valida `openapi.yaml` y corre `validar_gateway.py`. |
+| back · deploy (`deploy-staging.yml`) | La humo de la revisión nueva sigue yendo directo al BFF con token de identidad (ya funciona). Se agrega una humo final contra `gateway_url/health` después de promover, y el informe del despliegue muestra la URL del gateway. |
+| back · ACL | Plazo por proveedor configurable (`PRESUPUESTO_MS_*`, 120 ms por defecto para EC008) dentro del corte duro de 700 ms. |
+| back | k6 de EC001/EC002/EC008 contra `gateway_url` (prueba reducida, abajo). Evidencia en `docs/evidencias/EC001-EC002-EC008-<fecha>.md`. |
+| front · Vercel | `apps/web/vercel.json`: el rewrite de `/graphql/:path*` pasa de la URL del BFF a la del gateway. |
+| front · app | `graphql/cliente.ts`: un 502/503/504 se muestra como error con reintento, igual que `ErrorOferta`, nunca como pantalla rota. Prueba en Vitest. |
+| front · local | `.env.example` y README: `VITE_BFF_URL=http://localhost:8080` (el gateway local). |
+
+**Lo que no cambia:** el BFF, el contrato GraphQL, las URL que usa el navegador (siempre `/graphql/web` a través de
+Vercel) y los workflows del front (`ci-web.yml`, `deploy-web.yml`, `e2e-staging.yml`).
+
 ## Cómo se prueban todas las historias de arquitectura sin gastar
 
 Aplica a **todos** los escenarios pendientes de las historias de arquitectura, no solo al batch. Los experimentos más
@@ -218,7 +280,7 @@ mismo con la menor carga posible.
 | LAT-002 Circuit breaker | EC009 | 100 % de llamadas > 700 ms cortadas | Stub en `lento` **5 min** | Medido: cortes, 0 bloqueadas, overhead ≤ 1 ms |
 | LAT-002 | EC010 | journey ≤ 500 ms p99 con caché | Stub en `caido` **5 min** con caché caliente | Medido: p99 y 0 % de 5xx |
 | LAT-003 Réplica | EC011 / EC012 | p95 ≤ 150 ms / p99 ≤ 300 ms | Mismo tráfico de EC003 (no corrida aparte) | Medido: latencia de lectura y lag de la réplica |
-| LAT-004 Presupuesto por dependencia | EC001 / EC002 / EC008 | p99 ≤ 500 ms; ≤ 120 ms por dependencia | Sprint 2 (necesita el API Gateway). Se reutiliza la corrida de EC003 midiendo el tiempo por dependencia | Medido |
+| LAT-004 Presupuesto por dependencia | EC001 / EC002 / EC008 | p99 ≤ 500 ms extremo a extremo; ≤ 120 ms por dependencia | Misma corrida de EC003 pero **contra la URL del gateway** (10 min), más 2 min con el stub en `lento` para ver el corte de 700 ms | Medido: p99 a través del gateway y tiempo por dependencia en el ACL |
 | ESC-004 Batch | EC017 | 10 M perfiles en < 2 h (~1.390/s) | **5 min a 1/20** (~70/s, ~21.000 perfiles) con tráfico de EC003 en paralelo | Medido: perfiles/s por instancia y p95 en línea. Proyectado: instancias para 1.390/s |
 | SEG-002 Cifrado | EC022 | 100 % cifrado en tránsito y reposo | Funcional: leer Mongo y Postgres sin la llave y deshabilitar la versión de KMS | Medido (sin carga) |
 | MOD-001 Capa anticorrupción | EC031 | 0 líneas cambiadas en el Core | Funcional: cambiar el adaptador de un proveedor y mostrar el diff | Medido (sin carga) |
@@ -241,6 +303,7 @@ contradiga estas decisiones. Al cerrar un bloque se marca aquí como hecho.
 | 5 · Fuentes | README del `acl-worker`, `docs/arquitectura-backend.md` |
 | 6 · Seguridad en CI | `docs/convenciones.md` (escaneos informativos y cuándo pasan a obligatorios), `infra/README.md` (secretos de Sonar) |
 | 7 · Front | `docs/convenciones.md` y README del repo del front |
+| 10 · Gateway | `docs/sprint-1.md` (LAT-004 sale de diferidas), `docs/arquitectura-backend.md` (el gateway es la puerta pública), `docs/autenticacion-usuarios.md` (sección 8: qué falta para el JWT en el gateway), `infra/README.md` (`crear_gateway`, `gateway_url`), `observabilidad/README.md`; en el front: `README.md`, `.env.example` y `CLAUDE.md` |
 | 9 · Batch | `docs/sprint-1.md` (ESC-004 sale de diferidas), `infra/README.md` (bandera `crear_batch`, Scheduler y Job), `docs/arquitectura-backend.md`, `docs/evidencias/EC017-<fecha>.md` |
 | 8 · Diseño | `contracts/` + CHANGELOG (evento `PerfilActualizado`), `infra/README.md` (bandera `crear_pubsub`), `docs/arquitectura-backend.md` (Pub/Sub solo para ese evento; la oferta se guarda en W03), `docs/evidencias/exploratoria-FC-01.md` |
 | Al terminar todo | `CLAUDE.md` → sección **Estado** con la fecha nueva y lo que quedó hecho |
@@ -264,8 +327,21 @@ necesitan tus permisos o tu máquina, y van en este orden:
 | 9 | Bloque 8, cuando W01 esté completa en staging | Hacer la **sesión exploratoria de FC-01** (unos 60 minutos usando la app web contra staging como lo haría un cliente, probando casos raros) y llenar la plantilla `docs/evidencias/exploratoria-FC-01.md` con lo encontrado. Puede hacerla otra persona del equipo; mejor alguien que no programó W01 | Navegador y el repo |
 | 10 | Bloque 8 | Aprobar y hacer el merge a `main` del PR que activa Pub/Sub (`crear_pubsub = true`) | GitHub |
 
+| 11 | Bloque 10, después del merge a `main` que crea el gateway | Revisar en el informe del despliegue la `gateway_url` y aprobar el PR del front que cambia el rewrite de Vercel a esa URL | GitHub |
+
 Nunca: subir la llave JSON al repo, pegarla en el chat ni compartirla por Slack. Si se filtra, se borra en
 GCP (`gcloud iam service-accounts keys delete`) y se crea otra.
+
+## Para el Sprint 2 (no se hace ahora)
+
+Queda escrito para que nadie lo construya antes de tiempo ni lo olvide:
+
+- **ESC-001**: depende del API Gateway, que ya quedará montado en el Sprint 1.
+- **Guardar la oferta aceptada** (con HU-W03): precio, plazo y si fue completa o preliminar; ahí se decide el escritor.
+- **JWT en el gateway**: AUTH firma con ES256 y publica JWKS; el gateway valida (`x-google-issuer`, `x-google-jwks_uri`)
+  y el BFF deja de verificar (`docs/autenticacion-usuarios.md`, sección 8).
+- **Límites por IP o por socio en el gateway** (cuotas): con HU-W07 (socios B2B).
+- **D-03**: cobro antes o después de emitir, con HU-W03.
 
 ## Decisiones que necesito del equipo
 
