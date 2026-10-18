@@ -5,7 +5,12 @@
     "puerto": 8000,
     "publico": true,
     "llama": ["auth", "acl-worker", "risk", "rating", "payments"],
-    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
+    "entorno": {
+      "AUTENTICACION_SERVICIOS": "id_token",
+      "TRAZAS_GCP": "true",
+      "SERVICIOS_TIMEOUT_SEGUNDOS": "15",
+      "ACL_TIMEOUT_SEGUNDOS": "15"
+    },
     "secretos": { "CLIENTE_ID_CLAVE": "clave-cliente-id", "JWT_SECRETO": "clave-jwt" }
   },
   {
