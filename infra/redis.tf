@@ -6,7 +6,9 @@
 # ~USD 0,12/h juntos (ver infra/README.md). Crear solo para la sesión de pruebas (`crear_redis = true`)
 # y destruir (`terraform destroy -target=...`) al terminar.
 #
-# Gate: var.crear_redis (default false).
+# Gate: var.crear_redis (default false) crea todo. var.redis_encendida (default true) es el apagado diario: en false
+# se borran SOLO Redis y el conector (lo que cobra por hora); la red, la subred y las APIs se quedan porque no cuestan
+# y GCP no deja borrar la red mientras libera el conector («being used by a Serverless resource»).
 
 resource "google_project_service" "redis_apis" {
   for_each = var.crear_redis ? toset([
@@ -38,7 +40,7 @@ resource "google_compute_subnetwork" "conector" {
 }
 
 resource "google_vpc_access_connector" "conector" {
-  count         = var.crear_redis ? 1 : 0
+  count         = (var.crear_redis && var.redis_encendida) ? 1 : 0
   project       = var.project_id
   name          = "solventa-conector"
   region        = var.region
@@ -54,7 +56,7 @@ resource "google_vpc_access_connector" "conector" {
 }
 
 resource "google_redis_instance" "cache" {
-  count              = var.crear_redis ? 1 : 0
+  count              = (var.crear_redis && var.redis_encendida) ? 1 : 0
   project            = var.project_id
   name               = "solventa-backend-redis"
   tier               = "BASIC"
@@ -76,7 +78,7 @@ resource "google_redis_instance" "cache" {
 # 0 = acl-worker (cache y circuito), 1 = rating (sesión causal, D-02), 2 = cola de reconciliación (acl-worker y
 # consolidador-fuentes).
 locals {
-  redis_bases = (var.crear_redis && var.crear_servicios) ? {
+  redis_bases = (var.crear_redis && var.redis_encendida && var.crear_servicios) ? {
     "redis-url-acl"                 = 0
     "redis-url-rating"              = 1
     "redis-url-cola-reconciliacion" = 2

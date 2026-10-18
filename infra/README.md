@@ -304,7 +304,8 @@ el tiempo. Cualquiera del equipo puede apagarlo y volver a subirlo con un botón
 | Recurso | Cobra por hora | Al apagar | Al encender |
 |---|---|---|---|
 | **Cloud SQL** (`auth`, `payments`) | Sí (~USD 9-12/mes con `db-f1-micro`, según este README) | Se **detiene**: conserva las bases, los usuarios y las migraciones; solo se paga el disco | Arranca (1-3 min); no hay que volver a migrar |
-| **Redis + conector VPC** (`rating`, `acl-worker`, `consolidador-fuentes`) | Sí (~USD 0,12/h juntos, según este README) | Se **borra** (es una caché) | Se vuelve a crear (10-15 min) |
+| **Redis + conector VPC** (`rating`, `acl-worker`, `consolidador-fuentes`) | Sí (~USD 0,12/h juntos, según este README) | Se **borran** la instancia y el conector (es una caché) | Se vuelven a crear (10-15 min) |
+| Red, subred y APIs de Redis | No | Se quedan (ver abajo) | No se tocan |
 | Cloud Run, Secret Manager, MongoDB Atlas M0 | No / casi cero / gratis | No se toca | No se toca |
 
 ### El botón
@@ -317,8 +318,14 @@ el tiempo. Cualquiera del equipo puede apagarlo y volver a subirlo con un botón
 
 El resumen de la ejecución muestra el plan antes de aplicarlo y el estado en que queda.
 
-**Seguridad:** `apagar` solo puede **borrar** Redis y su conector (la guardia de `scripts/revisar_plan.py` falla sin aplicar
-nada si el plan destruyera otra cosa, y un reemplazo nunca se permite). Cloud SQL no se borra: se detiene.
+**Seguridad:** `apagar` solo puede **borrar** Redis, su conector y las versiones de los secretos `redis-url-*` (la guardia de
+`scripts/revisar_plan.py` falla sin aplicar nada si el plan destruyera otra cosa, y un reemplazo nunca se permite). Cloud SQL
+no se borra: se detiene.
+
+**Por qué la red se queda:** el primer apagado automático (2026-10-18) falló al borrar la red `solventa-backend-vpc`: *«cannot
+be deleted because it is being used by a Serverless resource»*, porque GCP tarda en liberar el conector. La red, la subred y
+las APIs no cuestan, así que `apagar` ya no las toca (variable `redis_encendida`; `crear_redis` sigue siendo «este entorno
+tiene Redis»). Ese fallo dejó la marca sin escribir y el siguiente despliegue lo encendió todo de nuevo.
 
 **Qué recuerda el sistema:** el estado queda en `gs://<proyecto>-tfstate/solventa-backend/costos/estado` (`apagado` o
 `encendido`). El despliegue automático (`deploy-staging.yml`) lo respeta: **un release no vuelve a encender lo que está
@@ -358,7 +365,7 @@ export TF_VAR_billing_account_id=<ID de la cuenta de facturación (variable GCP_
 terraform init
 
 # APAGAR: Terraform muestra el plan y pide escribir "yes"; revisa que solo toque Cloud SQL y Redis/conector
-terraform apply -var-file=staging.tfvars -var=cloud_sql_encendida=false -var=crear_redis=false
+terraform apply -var-file=staging.tfvars -var=cloud_sql_encendida=false -var=redis_encendida=false
 printf apagado | gcloud storage cp - gs://solventa-511815-tfstate/solventa-backend/costos/estado
 
 # ENCENDER
