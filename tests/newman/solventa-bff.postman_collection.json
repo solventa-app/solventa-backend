@@ -3156,6 +3156,579 @@
           }
         },
         {
+          "name": "Mock: tokenizar una tarjeta de prueba",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('token, marca y últimos 4, sin el número', () => {",
+                  "  pm.expect(r.token).to.match(/^tok_/);",
+                  "  pm.expect(r.marca).to.eql('visa');",
+                  "  pm.expect(r.ultimos4).to.eql('4242');",
+                  "  pm.expect(pm.response.text()).to.not.include('4242424242424242').and.to.not.include('4242 4242');",
+                  "});",
+                  "pm.collectionVariables.set('token_tarjeta', r.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/v1/tokens",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "v1",
+                "tokens"
+              ]
+            },
+            "description": "KAN-208: el mock de la pasarela tokeniza una tarjeta de PRUEBA. El número solo viaja aquí: nunca al BFF ni a PAYMENTS.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numero\": \"4242 4242 4242 4242\",\n  \"vencimiento_mes\": 12,\n  \"vencimiento_anio\": 2035,\n  \"cvv\": \"123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PAYMENTS: registrar el medio de pago del cliente (interno)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('devuelve marca y últimos 4, nunca el token', () => {",
+                  "  pm.expect(r.marca).to.eql('visa');",
+                  "  pm.expect(r.ultimos4).to.eql('4242');",
+                  "  pm.expect(pm.response.text()).to.not.include(pm.collectionVariables.get('token_tarjeta'));",
+                  "});",
+                  "pm.collectionVariables.set('medio_pago_id', r.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{payments_url}}/medios-pago",
+              "host": [
+                "{{payments_url}}"
+              ],
+              "path": [
+                "medios-pago"
+              ]
+            },
+            "description": "Llamada directa a PAYMENTS (interna, solo local): no hay una mutación pública para registrar tarjetas. El token queda cifrado por campo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cliente_id\": \"{{id_cliente}}\",\n  \"token\": \"{{token_tarjeta}}\",\n  \"marca\": \"visa\",\n  \"ultimos4\": \"4242\",\n  \"vencimiento_mes\": 12,\n  \"vencimiento_anio\": 2035\n}"
+            }
+          }
+        },
+        {
+          "name": "PAYMENTS: registrar la misma tarjeta otra vez es idempotente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('devuelve el mismo medio de pago', () => pm.expect(r.id).to.eql(pm.collectionVariables.get('medio_pago_id')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{payments_url}}/medios-pago",
+              "host": [
+                "{{payments_url}}"
+              ],
+              "path": [
+                "medios-pago"
+              ]
+            },
+            "description": "Registrar la misma tarjeta del mismo cliente no crea un segundo medio de pago.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cliente_id\": \"{{id_cliente}}\",\n  \"token\": \"{{token_tarjeta}}\",\n  \"marca\": \"visa\",\n  \"ultimos4\": \"4242\",\n  \"vencimiento_mes\": 12,\n  \"vencimiento_anio\": 2035\n}"
+            }
+          }
+        },
+        {
+          "name": "crearCobro con medioPagoId: el cobro trae la marca y los últimos 4",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json().data.crearCobro;",
+                  "pm.test('COBRADO con la tarjeta', () => {",
+                  "  pm.expect(r.__typename).to.eql('Cobro');",
+                  "  pm.expect(r.estado).to.eql('COBRADO');",
+                  "  pm.expect(r.medioPago).to.eql({ marca: 'visa', ultimos4: '4242' });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "El cobro usa el token del medio de pago (PAYMENTS lo resuelve) y la tabla puede mostrar \"Visa ····4242\".",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id estado motivo medioPago { marca ultimos4 } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_cobro}}-mp1\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"clienteId\": \"{{id_cliente}}\",\n      \"monto\": {\n        \"valor\": \"90000.00\",\n        \"moneda\": \"COP\"\n      },\n      \"medioPagoId\": \"{{medio_pago_id}}\"\n    }\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "crearCobro con el medio de pago de otro cliente: ErrorCobro",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json().data.crearCobro;",
+                  "pm.test('ErrorCobro sin revelar si el medio existe', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorCobro');",
+                  "  pm.expect(r.mensaje).to.include('no existe o no es de este cliente');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "Nadie puede cobrar con la tarjeta de otro: PAYMENTS valida que el medio sea del clienteId.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id estado motivo medioPago { marca ultimos4 } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_cobro}}-mp-ajeno\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"clienteId\": \"u-otro-cliente\",\n      \"monto\": {\n        \"valor\": \"90000.00\",\n        \"moneda\": \"COP\"\n      },\n      \"medioPagoId\": \"{{medio_pago_id}}\"\n    }\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "crearCobro sin token ni medio de pago: ErrorCobro",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json().data.crearCobro;",
+                  "pm.test('ErrorCobro por falta de medio de pago', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorCobro');",
+                  "  pm.expect(r.mensaje).to.include('no ambos ni ninguno');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "Hay que mandar el token suelto o el medio de pago registrado, no ambos ni ninguno.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id estado motivo medioPago { marca ultimos4 } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_cobro}}-mp-nada\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"clienteId\": \"{{id_cliente}}\",\n      \"monto\": {\n        \"valor\": \"90000.00\",\n        \"moneda\": \"COP\"\n      }\n    }\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Mock: la tarjeta queda sin fondos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('estado fijado', () => pm.expect(r.estado).to.eql('fondos_insuficientes'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/control/tokens/{{token_tarjeta}}/estado",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "control",
+                "tokens",
+                "{{token_tarjeta}}",
+                "estado"
+              ]
+            },
+            "description": "Control del mock: cambia a mano el estado de una tarjeta (activa, fondos_insuficientes, bloqueada, vencida).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"fondos_insuficientes\"\n}"
+            }
+          }
+        },
+        {
+          "name": "crearCobro con la tarjeta sin fondos: RECHAZADO",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json().data.crearCobro;",
+                  "pm.test('RECHAZADO por fondos insuficientes', () => {",
+                  "  pm.expect(r.estado).to.eql('RECHAZADO');",
+                  "  pm.expect(r.motivo).to.eql('fondos_insuficientes');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "Con la tarjeta sin fondos la pasarela rechaza el cobro con su motivo, sin importar el modo global.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id estado motivo medioPago { marca ultimos4 } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_cobro}}-mp2\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"clienteId\": \"{{id_cliente}}\",\n      \"monto\": {\n        \"valor\": \"90000.00\",\n        \"moneda\": \"COP\"\n      },\n      \"medioPagoId\": \"{{medio_pago_id}}\"\n    }\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Mock: la tarjeta vuelve a activa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('estado restaurado', () => pm.expect(r.estado).to.eql('activa'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/control/tokens/{{token_tarjeta}}/estado",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "control",
+                "tokens",
+                "{{token_tarjeta}}",
+                "estado"
+              ]
+            },
+            "description": "Restaura la tarjeta para no afectar a otras pruebas.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"activa\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Mock: latencia de 900 ms",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('latencia fijada', () => pm.expect(r.minimo_ms).to.eql(900));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/control/latencia",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "control",
+                "latencia"
+              ]
+            },
+            "description": "900 ms supera los 700 ms con los que corta el ACL Worker: para él es una falla por timeout.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minimo_ms\": 900,\n  \"maximo_ms\": 900\n}"
+            }
+          }
+        },
+        {
+          "name": "crearCobro con la pasarela lenta: queda PENDIENTE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json().data.crearCobro;",
+                  "pm.test('PENDIENTE por timeout', () => pm.expect(r.estado).to.eql('PENDIENTE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bff_url}}/graphql/web",
+              "host": [
+                "{{bff_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "description": "El ACL corta a los 700 ms y PAYMENTS lo registra pendiente (la pasarela igual cobró; la conciliación lo resuelve).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CrearCobroInput!) {\\n  crearCobro(entrada: $e) {\\n    __typename\\n    ... on Cobro { id estado motivo medioPago { marca ultimos4 } }\\n    ... on ErrorCobro { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"idIntentoCobro\": \"{{clave_cobro}}-mp3\",\n      \"polizaId\": \"{{poliza_cobro}}\",\n      \"clienteId\": \"{{id_cliente}}\",\n      \"monto\": {\n        \"valor\": \"90000.00\",\n        \"moneda\": \"COP\"\n      },\n      \"medioPagoId\": \"{{medio_pago_id}}\"\n    }\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Mock: restaurar la latencia",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('latencia restaurada', () => pm.expect(r.minimo_ms).to.be.null);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/control/latencia",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "control",
+                "latencia"
+              ]
+            },
+            "description": "Vuelve a la latencia propia de cada modo."
+          }
+        },
+        {
           "name": "cobros sin token: exige sesión aun en modo opcional",
           "event": [
             {

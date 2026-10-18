@@ -60,12 +60,14 @@ SOLICITAR = """mutation($entrada: SolicitudOfertaInput!) { solicitarOferta(entra
   ... on ErrorOferta { mensaje puedeReintentar } } }"""
 
 
-def _http(url: str, cuerpo: dict | None = None, token: str | None = None) -> dict:
+def _http(
+    url: str, cuerpo: dict | None = None, token: str | None = None, metodo: str | None = None
+) -> dict:
     datos = json.dumps(cuerpo).encode() if cuerpo is not None else None
     cabeceras = {"Content-Type": "application/json"}
     if token:
         cabeceras["Authorization"] = f"Bearer {token}"
-    peticion = urllib.request.Request(url, data=datos, headers=cabeceras)
+    peticion = urllib.request.Request(url, data=datos, headers=cabeceras, method=metodo)
     with urllib.request.urlopen(peticion, timeout=10) as respuesta:
         return json.loads(respuesta.read())
 
@@ -297,6 +299,85 @@ def main() -> int:
     # La pasarela tiene el reintento con su propia referencia (si no, esto da 404).
     _http(f"{STUB_PASARELA}/v1/cobros/{clave_rechazo}-r1")
     print("   -> rechazado, reintentado con una referencia nueva y cobrado (quedan 2)")
+
+    print("8. medio de pago tokenizado en el mock, estado de la tarjeta y latencia (KAN-208)")
+    # Tarjeta de PRUEBA: el número va solo al mock de la pasarela, nunca al BFF ni a PAYMENTS.
+    tarjeta = _http(
+        f"{STUB_PASARELA}/v1/tokens",
+        {
+            "numero": "4242 4242 4242 4242",
+            "vencimiento_mes": 12,
+            "vencimiento_anio": 2035,
+            "cvv": "123",
+        },
+    )
+    if "4242424242424242" in json.dumps(tarjeta) or tarjeta["ultimos4"] != "4242":
+        _fallar(f"el mock debía tokenizar sin devolver el número: {tarjeta}")
+    medio = _http(
+        f"{PAYMENTS}/medios-pago",
+        {
+            "cliente_id": cliente["id"],
+            "token": tarjeta["token"],
+            "marca": tarjeta["marca"],
+            "ultimos4": tarjeta["ultimos4"],
+            "vencimiento_mes": tarjeta["vencimiento_mes"],
+            "vencimiento_anio": tarjeta["vencimiento_anio"],
+        },
+    )
+    if "token" in medio:
+        _fallar(f"PAYMENTS no debe devolver el token del medio de pago: {medio}")
+
+    def cobrar_con_medio(poliza: str) -> dict:
+        return _graphql(
+            "mutation($e: CrearCobroInput!) { crearCobro(entrada: $e) { __typename "
+            "... on Cobro { estado motivo medioPago { marca ultimos4 } } "
+            "... on ErrorCobro { mensaje } } }",
+            {
+                "e": {
+                    "idIntentoCobro": f"medio-humo-{poliza}-"
+                    + "".join(random.choices(string.ascii_lowercase, k=8)),
+                    "polizaId": poliza,
+                    "clienteId": cliente["id"],
+                    "monto": {"valor": "90000.00", "moneda": "COP"},
+                    "medioPagoId": medio["id"],
+                }
+            },
+            token_backoffice,
+        )["crearCobro"]
+
+    cobrado = cobrar_con_medio("POL-HUMO-3")
+    if cobrado.get("estado") != "COBRADO" or cobrado["medioPago"] != {
+        "marca": "visa",
+        "ultimos4": "4242",
+    }:
+        _fallar(f"el cobro con medio de pago debía quedar COBRADO con la tarjeta: {cobrado}")
+    print("   -> cobro con medioPagoId: cobrado con Visa ····4242")
+
+    estado_tarjeta = f"{STUB_PASARELA}/control/tokens/{tarjeta['token']}/estado"
+    _http(estado_tarjeta, {"estado": "fondos_insuficientes"})
+    try:
+        sin_fondos = cobrar_con_medio("POL-HUMO-4")
+    finally:
+        _http(estado_tarjeta, {"estado": "activa"})
+    if (
+        sin_fondos.get("estado") != "RECHAZADO"
+        or sin_fondos.get("motivo") != "fondos_insuficientes"
+    ):
+        _fallar(f"con la tarjeta sin fondos el cobro debía quedar RECHAZADO: {sin_fondos}")
+    print("   -> tarjeta sin fondos (por el control del mock): cobro rechazado")
+
+    _http(f"{STUB_PASARELA}/control/latencia", {"minimo_ms": 900, "maximo_ms": 900})
+    try:
+        lento = cobrar_con_medio("POL-HUMO-5")
+    finally:
+        _http(f"{STUB_PASARELA}/control/latencia", metodo="DELETE")
+    if lento.get("estado") != "PENDIENTE":
+        _fallar(f"con 900 ms de latencia el ACL corta y el cobro debía quedar PENDIENTE: {lento}")
+    _esperar(
+        lambda: set(_http(f"{ACL}/circuitos").values()) == {"closed"},
+        "los circuitos del ACL vuelven a cerrar",
+    )
+    print("   -> latencia de 900 ms: el cobro queda pendiente (el ACL corta a los 700 ms)")
 
     print("OK: humo del BFF en verde")
     return 0
