@@ -18,6 +18,8 @@ class Configuracion:
     sonda_intervalo_segundos: float
     cache_ttl_segundos: int
     cola_reconciliacion_redis_url: str
+    # "ninguna" en local; "id_token" en Cloud Run (los stubs de proveedores son privados).
+    autenticacion_servicios: str = "ninguna"
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -36,4 +38,5 @@ class Configuracion:
             cola_reconciliacion_redis_url=os.getenv(
                 "COLA_RECONCILIACION_REDIS_URL", "redis://localhost:6379/2"
             ),
+            autenticacion_servicios=os.getenv("AUTENTICACION_SERVICIOS", "ninguna"),
         )

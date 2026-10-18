@@ -40,10 +40,11 @@ El tramo síncrono es solo lo que el usuario espera; todo efecto colateral viaja
 `POST /perfiles` de RISK (que no llama al ACL Worker); luego reenvía a RATING el `operation_time` que RISK devolvió. El BFF
 no calcula nada de negocio: solo secuencia las llamadas y traduce la degradación al contrato (`ErrorOferta` o oferta preliminar).
 
-**Autenticación entre servicios (pendiente parcial):** en Cloud Run solo el BFF es público; el resto exige un token de
-identidad con audience = nombre del servicio. El BFF ya lo envía (`services/bff/app/autenticacion_servicios.py`).
-**PAYMENTS → ACL Worker y `consolidador-fuentes` → ACL Worker todavía no**: en staging esas llamadas recibirían 403.
-Se corrige antes del primer despliegue, con el mismo patrón.
+**Autenticación entre servicios:** en Cloud Run solo el BFF es público; el resto exige un token de identidad con
+audience = nombre del servicio destino. Todos los que llaman a otro servicio lo envían cuando
+`AUTENTICACION_SERVICIOS=id_token` (lo fija `.github/servicios.json` en staging; en local vale `ninguna`): el BFF
+(`services/bff/app/autenticacion_servicios.py`, asíncrono), PAYMENTS → ACL Worker, el ACL Worker → stubs de proveedores y
+`consolidador-fuentes` → ACL Worker y AUTH (copias síncronas del mismo módulo en cada servicio; KAN-176, 2026-10-17).
 
 ## Lo que enseñaron los experimentos (ya validado, no se re-discute)
 

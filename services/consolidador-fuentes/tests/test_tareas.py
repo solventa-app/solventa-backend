@@ -26,7 +26,7 @@ def consentimiento_vigente_por_defecto(monkeypatch: pytest.MonkeyPatch) -> list[
     """AUTH responde "vigente" salvo que la prueba lo cambie. Devuelve las URL consultadas."""
     consultadas: list[str] = []
 
-    def get_falso(url, timeout):
+    def get_falso(url, timeout, **_):
         consultadas.append(url)
         return RespuestaFalsa({"id": "consent-1", "vigente": True})
 
@@ -47,7 +47,7 @@ def _cuerpo(*, de_cache: bool, degradado: bool) -> dict:
 def test_dato_fresco_no_lanza(monkeypatch: pytest.MonkeyPatch) -> None:
     llamadas = []
 
-    def post_falso(url, json, timeout):  # noqa: A002 - mismo nombre que el parámetro real de httpx
+    def post_falso(url, json, timeout, **_):  # noqa: A002 - mismo nombre que el parámetro real de httpx
         llamadas.append((url, json, timeout))
         return RespuestaFalsa(_cuerpo(de_cache=False, degradado=False))
 
@@ -68,7 +68,7 @@ def test_dato_de_cache_lanza_para_que_rq_reintente(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(
         tareas.httpx,
         "post",
-        lambda url, json, timeout: RespuestaFalsa(_cuerpo(de_cache=True, degradado=False)),
+        lambda url, json, timeout, **_: RespuestaFalsa(_cuerpo(de_cache=True, degradado=False)),
     )
 
     with pytest.raises(tareas.FuenteSigueDegradadaError):
@@ -79,7 +79,7 @@ def test_dato_degradado_lanza_para_que_rq_reintente(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(
         tareas.httpx,
         "post",
-        lambda url, json, timeout: RespuestaFalsa(_cuerpo(de_cache=False, degradado=True)),
+        lambda url, json, timeout, **_: RespuestaFalsa(_cuerpo(de_cache=False, degradado=True)),
     )
 
     with pytest.raises(tareas.FuenteSigueDegradadaError):
@@ -87,7 +87,7 @@ def test_dato_degradado_lanza_para_que_rq_reintente(monkeypatch: pytest.MonkeyPa
 
 
 def test_acl_worker_caido_propaga_la_excepcion_de_httpx(monkeypatch: pytest.MonkeyPatch) -> None:
-    def post_falso(url, json, timeout):
+    def post_falso(url, json, timeout, **_):
         raise httpx.ConnectError("caido")
 
     monkeypatch.setattr(tareas.httpx, "post", post_falso)
@@ -99,7 +99,7 @@ def test_acl_worker_caido_propaga_la_excepcion_de_httpx(monkeypatch: pytest.Monk
 # ---------- Regla #7: sin consentimiento vigente no se consulta ----------
 
 
-def _post_que_no_debe_llamarse(url, json, timeout):
+def _post_que_no_debe_llamarse(url, json, timeout, **_):
     raise AssertionError("no debe consultar el ACL Worker sin consentimiento vigente")
 
 
@@ -109,7 +109,7 @@ def test_verifica_el_consentimiento_en_auth_antes_de_consultar(
     monkeypatch.setattr(
         tareas.httpx,
         "post",
-        lambda url, json, timeout: RespuestaFalsa(_cuerpo(de_cache=False, degradado=False)),
+        lambda url, json, timeout, **_: RespuestaFalsa(_cuerpo(de_cache=False, degradado=False)),
     )
 
     tareas.reconciliar_fuente("cuentas-bancarias", "cliente-1", "consent-1", 123.0)
@@ -123,7 +123,7 @@ def test_consentimiento_revocado_descarta_el_job_sin_consultar(
     monkeypatch.setattr(
         tareas.httpx,
         "get",
-        lambda url, timeout: RespuestaFalsa({"id": "consent-1", "vigente": False}),
+        lambda url, timeout, **_: RespuestaFalsa({"id": "consent-1", "vigente": False}),
     )
     monkeypatch.setattr(tareas.httpx, "post", _post_que_no_debe_llamarse)
 
@@ -133,7 +133,7 @@ def test_consentimiento_revocado_descarta_el_job_sin_consultar(
 def test_consentimiento_inexistente_descarta_el_job_sin_consultar(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(tareas.httpx, "get", lambda url, timeout: RespuestaFalsa({}, 404))
+    monkeypatch.setattr(tareas.httpx, "get", lambda url, timeout, **_: RespuestaFalsa({}, 404))
     monkeypatch.setattr(tareas.httpx, "post", _post_que_no_debe_llamarse)
 
     tareas.reconciliar_fuente("cuentas-bancarias", "cliente-1", "consent-1", 123.0)
@@ -142,7 +142,7 @@ def test_consentimiento_inexistente_descarta_el_job_sin_consultar(
 def test_auth_caido_propaga_para_que_rq_reintente_y_no_consulta(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def get_caido(url, timeout):
+    def get_caido(url, timeout, **_):
         raise httpx.ConnectError("caido")
 
     monkeypatch.setattr(tareas.httpx, "get", get_caido)

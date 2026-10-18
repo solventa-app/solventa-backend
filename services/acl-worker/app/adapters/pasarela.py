@@ -13,10 +13,14 @@ class AdaptadorPasarela:
     """Implementa `PuertoPasarelaPagos`."""
 
     def __init__(
-        self, base_url: str, timeout_s: float, cliente: httpx.Client | None = None
+        self,
+        base_url: str,
+        timeout_s: float,
+        cliente: httpx.Client | None = None,
+        auth: httpx.Auth | None = None,
     ) -> None:
         self._timeout_s = timeout_s
-        self._cliente = cliente or httpx.Client(base_url=base_url.rstrip("/"))
+        self._cliente = cliente or httpx.Client(base_url=base_url.rstrip("/"), auth=auth)
 
     def cobrar(self, orden: OrdenCobro, timeout_s: float | None = None) -> ResultadoCobro:
         timeout = timeout_s if timeout_s is not None else self._timeout_s

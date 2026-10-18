@@ -16,6 +16,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, Field
 
+from app.application.autenticacion_servicios import autenticacion_para
 from app.application.bus_eventos import BusEventosLog
 from app.application.cliente_acl import ClienteAcl
 from app.application.configuracion import Configuracion
@@ -104,7 +105,11 @@ def create_app(
         else:
             pool = construir_pool(config.database_url)
             repositorio = RepositorioCobrosPostgres(pool)
-            cliente_acl = ClienteAcl(config.acl_url, config.acl_timeout_segundos)
+            cliente_acl = ClienteAcl(
+                config.acl_url,
+                config.acl_timeout_segundos,
+                autenticacion_para(config.autenticacion_servicios, "acl-worker"),
+            )
             bus = BusEventosLog()
             app.state.servicio_cobros = ServicioCobros(
                 repositorio, cliente_acl, bus, config.reintentos_rechazo_maximo

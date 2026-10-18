@@ -59,8 +59,11 @@ class PuertoClienteAcl(Protocol):
 
 
 class ClienteAcl:
-    def __init__(self, base_url: str, timeout_segundos: float) -> None:
-        self._cliente = httpx.Client(base_url=base_url, timeout=timeout_segundos)
+    def __init__(
+        self, base_url: str, timeout_segundos: float, auth: httpx.Auth | None = None
+    ) -> None:
+        # `auth`: token de identidad hacia el ACL Worker en Cloud Run (autenticacion_servicios.py).
+        self._cliente = httpx.Client(base_url=base_url, timeout=timeout_segundos, auth=auth)
 
     def cobrar(self, orden: OrdenCobro) -> ResultadoCobro:
         try:

@@ -319,7 +319,6 @@ POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios down -v
 | **Cobro atascado en `cobrando`** | Si el proceso se cae a mitad de un cobro, queda `cobrando` y el reintento lo devuelve tal cual | Un barrido que concilie los `cobrando` viejos |
 | **El mock vive en memoria** | Reiniciar el contenedor del mock olvida los cobros; la conciliación diría `no_encontrado` | Es un simulador; una pasarela real persiste sus cobros |
 | **Bucle local** | El reintento automático es un bucle en el proceso, no Cloud Tasks | Cloud Tasks cuando exista el proyecto GCP |
-| **PAYMENTS → ACL sin token** | En Cloud Run esas llamadas recibirían 403 | Pendiente ya documentado en `docs/arquitectura-backend.md` |
 | **Falla intermitente en Newman (oferta de HU-W01)** | En 1 de 6 corridas, justo después del humo, la oferta de la carpeta 3 salió `PRELIMINAR` en vez de `COMPLETA` (4 aserciones). No se reprodujo en 4 repeticiones. Esta rama no toca las fuentes de la oferta | Sin causa confirmada. Hipótesis: la carrera de la sonda del circuito que `docs/arquitectura-backend.md` ya reconoce ("no es 100 % infalible") tras el escenario degradado del humo. Vigilarlo en el CI; si se repite, guardar el `newman ... -r json` para ver qué fuente vino degradada |
 
 ## 9. Fuera de alcance
