@@ -25,6 +25,10 @@
 | 16 | API Gateway (HA-LAT-004) | Se monta **en el Sprint 1** un API Gateway de GCP delante del BFF, con plazo duro de 700 ms. El BFF deja de ser público: solo el gateway lo invoca. El presupuesto ≤ 120 ms por proveedor vive en el ACL (es quien llama a los proveedores). Bloque 10. |
 | 17 | JWT en el gateway | En el Sprint 1 el JWT lo sigue validando el BFF (HS256). Pasarlo al gateway exige ES256 + JWKS en AUTH: Sprint 2. |
 | 18 | ESC-001 | Se queda en el **Sprint 2** (ya tendrá el gateway montado). |
+| 19 | Sonar | **SonarCloud** (gratis para repos públicos). Se activa con los secretos de cada repo. |
+| 20 | Consentimiento ligado al titular (bloque 4) | **Entra en el Sprint 1.** No hay pantalla nueva: se usa el checkbox de W01-01; `useCotizacion` manda además el documento y los campos fijos (`tipoDato`, `fuenteDatos`, `canal`). La consulta a Open Finance lleva `consentimiento_id` y finalidad (CE 004/2024). |
+| 21 | Revocar el consentimiento | El titular **debe poder revocar** (Ley 1581 de 2012; CA-W01-08 y el plan de pruebas: revocación en < 5 min). Como el prototipo no tiene esa pantalla, en el Sprint 1 se cumple en el **backend** (`revocarConsentimiento`, ya existe) con su prueba de los 5 minutos. La pantalla se agrega cuando exista en Figma (Sprint 2). |
+| 22 | Decisiones del Planning | D-02 (sesión causal), D-05 (stubs) y D-06 (W05 en el Sprint 1) **cerradas**: ya están hechas. D-04 cerrada en la decisión 6. Solo **D-01** (base de velocidad) sigue abierta para el Planning; D-03 es del Sprint 2. |
 
 Basado en la revisión de pendientes de HU-W01 (18 puntos, numerados P1–P3 abajo) y en las restricciones que puso el equipo el 2026-10-18:
 
@@ -167,7 +171,7 @@ PR sin bloquear. Cuando los hallazgos estén resueltos, se suman a `CI OK` y pas
 |---|---|
 | front | Cypress de **valores límite** en W01-01 (documento de 6 dígitos, plazo 1/360, valor 0, dirección vacía). |
 | front | Correr los E2E de W01 **contra el backend de staging** (no solo mocks) y guardar el video o el reporte como evidencia de FC-01. |
-| front | Pantalla de **revocar consentimiento** desde el detalle de fuentes (CA-W01-08). |
+| back | Prueba de CA-W01-08: tras `revocarConsentimiento`, una consulta nueva se rechaza y la caché del titular se invalida en < 5 min. Evidencia en `docs/evidencias/CA-W01-08-<fecha>.md`. La pantalla de revocar queda para cuando esté en Figma (decisión 21). |
 | front | Tablero en Grafana: no aplica en el front; las métricas salen del BFF. |
 
 ### Bloque 8 · Pendientes de diseño (P2 #13, P3 #15–#17)
@@ -342,8 +346,9 @@ Queda escrito para que nadie lo construya antes de tiempo ni lo olvide:
   y el BFF deja de verificar (`docs/autenticacion-usuarios.md`, sección 8).
 - **Límites por IP o por socio en el gateway** (cuotas): con HU-W07 (socios B2B).
 - **D-03**: cobro antes o después de emitir, con HU-W03.
+- **Pantalla de revocar consentimiento**: cuando el diseño esté en Figma (el backend ya la soporta desde el Sprint 1).
 
-## Decisiones que necesito del equipo
+## Decisiones abiertas
 
-1. ¿Usamos **SonarCloud** (gratis, en la nube de Sonar) o tienen un **SonarQube** propio?
-2. ¿El bloque 4 (consentimiento ligado al titular) entra en este sprint? Cambia el contrato y el front.
+No queda ninguna decisión técnica abierta del plan. Del Planning solo sigue abierta **D-01** (base de velocidad), que es
+de proceso del equipo.
