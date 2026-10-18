@@ -1,4 +1,7 @@
-# Plan para completar HU-W01
+# Plan para completar HU-W01 · Backend
+
+> Plan del **backend** (`solventa-backend`). El del front vive en `solventa-frontend-web/docs/plan-completar-hu-w01.md`
+> y comparte la misma tabla de decisiones (los números coinciden en los dos).
 
 > Fuente para los agentes de este repo: las decisiones de abajo están **cerradas** (las tomó felipe con el equipo el
 > 2026-10-17 y 2026-10-18). No las reinterpretes; si algo del documento de arquitectura choca con ellas, manda esto.
@@ -11,7 +14,7 @@
 | 2 | Plazo y dirección | Se validan en el BFF y entran a la prima en RATING (`factor_plazo` y factor por ciudad detectada en la dirección). Google Geocoding vía el ACL queda como trabajo futuro. |
 | 3 | Dónde se mide | Todo (k6, tableros, E2E de Cypress) **contra staging desplegado**. El compose local no es parte del plan de medición. Lo único simulado son los proveedores externos (stubs, D-05). |
 | 4 | Despliegue | Sin Kubernetes y **sin malla de servicios**. En tránsito: HTTPS de Cloud Run + token de identidad entre servicios. |
-| 5 | Observabilidad | Grafana **en local** (compose `observabilidad`, puerto 3100) leyendo **Google Cloud Monitoring** de staging con la cuenta `grafana-lector` (solo `roles/monitoring.viewer`). La llave JSON la crea felipe a mano y nunca va al repo. Solo métricas nativas de Cloud Run: **sin Managed Service for Prometheus** (cobra). Atlas se mira en su consola. |
+| 5 | Observabilidad | **Ya existe** (PR #165 y #166, 2026-10-18): `grafana-gcp` en local (perfil `gcp`, puerto **3200**) lee Cloud Monitoring, Cloud Logging y Cloud Trace de staging con las credenciales de `gcloud` de quien lo abre (sin cuentas ni llaves nuevas). Tableros: Servicios (con umbrales de EC003/EC004), Datos, Logs y Flujos (trazas con OpenTelemetry, `TRAZAS_GCP=true`). Solo métricas nativas de Cloud Run: **sin Managed Service for Prometheus** (cobra). Atlas M0 se mira en su consola. |
 | 6 | Cifrado en reposo (cierra D-04) | Cifrado de campo AES-GCM en AUTH y RISK (RATING descifra al leer); la llave de datos vive en **Secret Manager envuelta por Cloud KMS** (`crear_kms = true`). **CMEK** en Cloud SQL (instancia nueva + migración de datos, PR propio) y en Memorystore (en el próximo encendido). **Atlas se queda en M0 sin CMEK** (CMEK exige M10, ~USD 57/mes): lo cubre el cifrado de campo. |
 | 7 | Seguridad en CI/CD | Se agregan Bandit, pip-audit, Trivy y OWASP ZAP baseline (back) y `npm audit` (front), **informativos** al principio (fuera de `CI OK`). Sonar ya existe en los dos repos; se activa cargando `SONAR_TOKEN` y `SONAR_HOST_URL`. |
 | 8 | Perfil de riesgo | `PerfilRiesgo` gana `nivelRiesgo` (BAJO/MEDIO/ALTO) y `fechaVigencia`, junto con el score guardado en RISK. |
@@ -38,7 +41,7 @@ Basado en la revisión de pendientes de HU-W01 (18 puntos, numerados P1–P3 aba
 - Se mide **contra staging ya desplegado** (el despliegue a staging corrió bien el 2026-10-18 a las 17:41 UTC). Lo único
   simulado son los **proveedores externos** (Open Finance, Open Data y la pasarela): en staging son los stubs desplegados
   como servicios de Cloud Run (decisión D-05), porque no hay contrato con Belvo/Prometeo. La infraestructura es la real.
-- **Grafana corre en local** y se conecta a **Google Cloud Monitoring** para ver la infraestructura desplegada.
+- **Grafana corre en local** y lee Google Cloud (Monitoring, Logging y Trace) de staging: ya está hecho (`grafana-gcp`).
 
 ## Respuestas a las preguntas del equipo
 
@@ -64,31 +67,27 @@ cabe en la capa gratuita (2 millones de peticiones al mes); Cloud SQL, Memorysto
   campos sensibles cifrados en la aplicación con AES-GCM (como AUTH) y además los almacenes con llave propia de Cloud KMS.
   Detalle en el bloque 3.
 
-**¿Grafana local conectado a GCP para monitorear lo desplegado?** Sí:
-- El Grafana del compose (`observabilidad/`, puerto 3100) con el datasource **Google Cloud Monitoring**, provisionado
-  como código, y una cuenta de servicio con rol **Monitoring Viewer** (solo lectura). La llave JSON la carga una persona
-  del equipo en Grafana; nunca va al repo.
-- Tableros: los de Cloud Run por defecto (latencia p50/p95/p99, peticiones por código de respuesta, instancias) y uno por
-  HU (W01: BFF, AUTH, ACL Worker, RISK, RATING y stubs; W05: BFF, PAYMENTS, ACL Worker y pasarela), más Cloud SQL,
-  Memorystore (Atlas no está en Cloud Monitoring: sus métricas se ven en la consola de Atlas).
-- Las métricas propias de `/metrics` (Prometheus) de cada servicio **no** llegan a Cloud Monitoring sin Managed Service
-  for Prometheus, que sí cobra. Para no generar costo, en staging se usan las métricas nativas de Cloud Run.
+**¿Grafana local conectado a GCP para monitorear lo desplegado?** Ya está hecho (PR #165 y #166 de Frans, 2026-10-18).
+Se usa así: `gcloud auth application-default login` una vez y `docker compose --profile gcp up -d grafana-gcp`, y se abre
+http://localhost:3200. No hace falta cuenta de servicio ni llave JSON: usa tus credenciales de `gcloud`. Detalle en
+`observabilidad/README.md` y `docs/observabilidad.md`.
 
-## Plan de cambios
+## Plan de cambios (backend)
 
 Orden pensado para que lo primero dé números y lo siguiente los mejore. Cada bloque es un PR hacia `develop` con su
 rama `feat|fix|chore/KAN-N-…`.
 
-### Bloque 1 · Medir: k6 contra staging + tableros + evidencias (P1 #1, #2, #7, #18)
+### Bloque 1 · Medir: k6 contra staging + evidencias (P1 #1, #2, #7, #18)
+
+**Ya hecho por el equipo:** Grafana local con GCP (tableros Servicios, Datos, Logs y Flujos) y trazas distribuidas con
+OpenTelemetry hacia Cloud Trace. `tests/k6/README.md` ya lista los tres guiones a crear; la carpeta está vacía.
 
 | Repo | Cambio |
 |---|---|
 | back | `tests/k6/perfilamiento-baseline.js` (EC003 p95 ≤ 400 ms, EC004 p99 ≤ 800 ms, ritmo de 20.000 req/h), `tests/k6/falla-proveedor.js` (EC009/EC010: stub en `lento`/`caido`, corte a 700 ms, 0 % de 5xx; copiado del Experimento 1) y `tests/k6/lectura-replica.js` (EC011/EC012 y lag; del Experimento 2). |
-| back | `scripts/correr_k6.sh`: corre los guiones contra la URL del BFF de staging y guarda el resumen. |
-| back · infra | Terraform: cuenta de servicio `grafana-lector` con solo `roles/monitoring.viewer` en el proyecto de staging (sin costo). Se aplica por el pipeline. |
-| equipo (a mano, una vez) | Una persona con acceso al proyecto crea la llave: `gcloud iam service-accounts keys create ~/Downloads/grafana-lector-key.json --iam-account=grafana-lector@solventa-511815.iam.gserviceaccount.com` y la copia a `observabilidad/grafana/grafana-lector-key.json` (ignorado por git con `*-key.json`). Si GCP responde que la política `iam.disableServiceAccountKeyCreation` lo impide, un admin de la organización la desactiva solo para `solventa-511815`. |
-| back | `observabilidad/grafana/provisioning/datasources/`: datasource de Google Cloud Monitoring (proyecto de staging) que lee la llave del archivo local montado en el contenedor; si el archivo no está, Grafana arranca igual con los tableros de Prometheus local. `observabilidad/grafana/dashboards/hu-w01.json`: latencia p95/p99 y códigos de respuesta de los servicios de W01 en Cloud Run, instancias, Cloud SQL y Memorystore. |
-| back | `docs/evidencias/EC003-EC004-<fecha>.md`, `EC009-EC010-<fecha>.md`, `EC011-EC012-<fecha>.md` y la corrida de Newman (FC-06), con comando, cifras y límites. |
+| back | `scripts/correr_k6.sh`: corre los guiones contra la URL pública de staging (la del gateway cuando exista el bloque 10; antes, la del BFF) y guarda el resumen. |
+| back | Tableros `observabilidad/gcp/dashboards/hu-w01.json` y `hu-w05.json`: los paneles del tablero Servicios filtrados a los servicios de cada historia (W01: BFF, AUTH, ACL, RISK, RATING y stubs; W05: BFF, PAYMENTS, ACL y pasarela). Sin infraestructura nueva. |
+| back | `docs/evidencias/EC003-EC004-<fecha>.md`, `EC009-EC010-<fecha>.md`, `EC011-EC012-<fecha>.md` y la corrida de Newman (`tests/newman/`, FC-06), con comando, cifras, límites y captura del tablero o de la traza. |
 
 ### Bloque 2 · Caché del score y journey degradado (P1 #3, #4)
 
@@ -132,7 +131,6 @@ Memorystore cuestan lo mismo que hoy y Atlas sigue gratis (M0). No hay que subir
 | back · AUTH | **Vencimiento (decisión 23):** migración aditiva que agrega `vence_en` (`otorgado_en + 30 días`; a las filas viejas se les calcula igual). El trigger append-only no deja cambiarla después. `vigente` pasa a ser `revocado_en IS NULL AND now() < vence_en`, así que vence sola, sin cron ni proceso nocturno. |
 | back · contrato | `Consentimiento.venceEn: DateTime!` (aditivo, anotado en el CHANGELOG). |
 | back · BFF/consolidador | Un consentimiento vencido se trata igual que uno revocado: no se consulta ninguna fuente y la oferta responde `ErrorOferta` pidiendo autorizar de nuevo. Prueba en pytest con el reloj adelantado. |
-| front | `useCotizacion` manda los campos nuevos al registrar el consentimiento; sincronizar contrato y mocks. |
 
 ### Bloque 5 · Fuentes por configuración y EC031 (P2 #10, #11)
 
@@ -156,7 +154,6 @@ Bandit/Semgrep, pip-audit, `npm audit`, Trivy ni OWASP ZAP.
 | back | mismo job | **pip-audit** | Librerías Python con vulnerabilidades conocidas | Sobre el `requirements.txt` del servicio |
 | back | mismo job, después de "Construir imagen" | **Trivy** | Paquetes vulnerables en la imagen Docker | Severidad HIGH/CRITICAL; reporte como artefacto |
 | back | job `humo` (ya levanta el compose) | **OWASP ZAP baseline** | El BFF levantado: cabeceras, errores expuestos, configuración | Contra `http://localhost:8000/graphql/web`; reporte HTML como artefacto |
-| front | `.github/workflows/ci-web.yml`, job `web` | **npm audit** | Librerías npm con vulnerabilidades | `--audit-level=high` |
 | back y front | job `sonar` existente | **SonarCloud** | Calidad y seguridad del código | Solo hay que activarlo (abajo) |
 
 **Política:** al principio son **informativos** (`continue-on-error`, no entran en `CI OK`): dejan su reporte en cada
@@ -169,14 +166,13 @@ PR sin bloquear. Cuando los hallazgos estén resueltos, se suman a `CI OK` y pas
 **Evidencia:** los reportes de cada herramienta se guardan como artefactos del workflow y se resumen en
 `docs/evidencias/seguridad-<fecha>.md` (estrategia de pruebas: SAST con SonarQube y DAST con OWASP ZAP).
 
-### Bloque 7 · Front (P2 #6, P3 #14)
+### Bloque 7 · Revocación del consentimiento (CA-W01-08)
 
 | Repo | Cambio |
 |---|---|
-| front | Cypress de **valores límite** en W01-01 (documento de 6 dígitos, plazo 1/360, valor 0, dirección vacía). |
-| front | Correr los E2E de W01 **contra el backend de staging** (no solo mocks) y guardar el video o el reporte como evidencia de FC-01. |
 | back | Prueba de CA-W01-08: tras `revocarConsentimiento`, una consulta nueva se rechaza y la caché del titular se invalida en < 5 min. Evidencia en `docs/evidencias/CA-W01-08-<fecha>.md`. La pantalla de revocar queda para cuando esté en Figma (decisión 21). |
-| front | Tablero en Grafana: no aplica en el front; las métricas salen del BFF. |
+
+Los cambios del front de este bloque (Cypress de valores límite y E2E contra staging) están en el plan del front.
 
 ### Bloque 8 · Pendientes de diseño (P2 #13, P3 #15–#17)
 
@@ -201,6 +197,7 @@ en el Sprint 1** (con la prueba reducida de abajo). Al ejecutar el bloque se cor
 | Repo | Cambio |
 |---|---|
 | back · infra | **Cloud Scheduler** (el "cron", 3 tareas gratis al mes) que de noche lanza un **Cloud Run Job** `risk-reproceso`, aislado del servicio en línea (otra instancia, su propio límite de instancias). Si hace falta repartir el trabajo, por **Cloud Tasks** (1 millón de operaciones gratis al mes). Detrás de una bandera `crear_batch`. |
+| back · infra | **Ojo con el apagado automático:** `costos-staging.yml` apaga Cloud SQL y Redis todos los días a las 2:00 a.m. (Colombia). El batch se programa para terminar antes (p. ej. de 23:30 a 1:30) o se hace depender solo de MongoDB Atlas, que no se apaga. |
 | back · RISK | El job lee perfiles por lotes, recalcula y escribe con el mismo escritor único (RISK). Idempotente: si se corta, retoma donde iba. |
 | back | `scripts/sembrar_perfiles.py` para cargar perfiles sintéticos en staging y la prueba de EC017 a escala reducida (abajo). Evidencia en `docs/evidencias/EC017-<fecha>.md`. |
 
@@ -256,12 +253,9 @@ Ese presupuesto se pone donde están esas llamadas: en el **ACL Worker**, con un
 | back · deploy (`deploy-staging.yml`) | La humo de la revisión nueva sigue yendo directo al BFF con token de identidad (ya funciona). Se agrega una humo final contra `gateway_url/health` después de promover, y el informe del despliegue muestra la URL del gateway. |
 | back · ACL | Plazo por proveedor configurable (`PRESUPUESTO_MS_*`, 120 ms por defecto para EC008) dentro del corte duro de 700 ms. |
 | back | k6 de EC001/EC002/EC008 contra `gateway_url` (prueba reducida, abajo). Evidencia en `docs/evidencias/EC001-EC002-EC008-<fecha>.md`. |
-| front · Vercel | `apps/web/vercel.json`: el rewrite de `/graphql/:path*` pasa de la URL del BFF a la del gateway. |
-| front · app | `graphql/cliente.ts`: un 502/503/504 se muestra como error con reintento, igual que `ErrorOferta`, nunca como pantalla rota. Prueba en Vitest. |
-| front · local | `.env.example` y README: `VITE_BFF_URL=http://localhost:8080` (el gateway local). |
 
-**Lo que no cambia:** el BFF, el contrato GraphQL, las URL que usa el navegador (siempre `/graphql/web` a través de
-Vercel) y los workflows del front (`ci-web.yml`, `deploy-web.yml`, `e2e-staging.yml`).
+**Lo que no cambia:** el código del BFF y el contrato GraphQL. Lo que le toca al front (rewrite de Vercel, 504 como
+reintento, gateway local) está en el plan del front.
 
 ## Cómo se prueban todas las historias de arquitectura sin gastar
 
@@ -304,41 +298,57 @@ contradiga estas decisiones. Al cerrar un bloque se marca aquí como hecho.
 
 | Bloque | Documentos a actualizar |
 |---|---|
-| 1 · Medir | `observabilidad/README.md` (Grafana con Cloud Monitoring y la llave local), `infra/README.md` (cuenta `grafana-lector`), `docs/pruebas-manuales.md` (cómo correr k6 contra staging), `docs/evidencias/` (resultados) |
+| 1 · Medir | `observabilidad/README.md` (tableros por HU), `tests/k6/README.md` (guiones hechos), `docs/pruebas-manuales.md` (cómo correr k6 contra staging), `docs/evidencias/` (resultados) |
 | 2 · Caché del score | `docs/arquitectura-backend.md` (el score cacheado vive en RISK), `contracts/` + `contracts/CHANGELOG.md` (`nivelRiesgo`, `fechaVigencia`), `docs/sprint-1.md` (estado de CA-W01-04 y EC010) |
 | 3 · Cifrado | `docs/sprint-1.md` y `CLAUDE.md` (D-04 cerrada; quitar "cifrado de campo fuera de alcance en risk"), `infra/README.md` (KMS, CMEK de Cloud SQL y Memorystore, Atlas M0 sin CMEK), README de `auth`, `risk` y `rating` (cifrado de sobre) |
 | 4 · Consentimiento | `contracts/` + CHANGELOG, `docs/autenticacion-usuarios.md`, `docs/sprint-1.md` (CA-W01-08) |
 | 5 · Fuentes | README del `acl-worker`, `docs/arquitectura-backend.md` |
 | 6 · Seguridad en CI | `docs/convenciones.md` (escaneos informativos y cuándo pasan a obligatorios), `infra/README.md` (secretos de Sonar) |
-| 7 · Front | `docs/convenciones.md` y README del repo del front |
-| 10 · Gateway | `docs/sprint-1.md` (LAT-004 sale de diferidas), `docs/arquitectura-backend.md` (el gateway es la puerta pública), `docs/autenticacion-usuarios.md` (sección 8: qué falta para el JWT en el gateway), `infra/README.md` (`crear_gateway`, `gateway_url`), `observabilidad/README.md`; en el front: `README.md`, `.env.example` y `CLAUDE.md` |
+| 7 · Revocación | `docs/sprint-1.md` (CA-W01-08), `docs/evidencias/CA-W01-08-<fecha>.md` |
+| 10 · Gateway | `docs/sprint-1.md` (LAT-004 sale de diferidas), `docs/arquitectura-backend.md` (el gateway es la puerta pública), `docs/autenticacion-usuarios.md` (sección 8: qué falta para el JWT en el gateway), `infra/README.md` (`crear_gateway`, `gateway_url`), `observabilidad/README.md` |
 | 9 · Batch | `docs/sprint-1.md` (ESC-004 sale de diferidas), `infra/README.md` (bandera `crear_batch`, Scheduler y Job), `docs/arquitectura-backend.md`, `docs/evidencias/EC017-<fecha>.md` |
 | 8 · Diseño | `contracts/` + CHANGELOG (evento `PerfilActualizado`), `infra/README.md` (bandera `crear_pubsub`), `docs/arquitectura-backend.md` (Pub/Sub solo para ese evento; la oferta se guarda en W03), `docs/evidencias/exploratoria-FC-01.md` |
 | Al terminar todo | `CLAUDE.md` → sección **Estado** con la fecha nueva y lo que quedó hecho |
 
-## Lo que hace felipe a mano
+## Cambios en despliegue, infraestructura y pipelines (backend)
+
+Resumen de todo lo que el plan cambia fuera del código de los servicios. Cada uno va en su bloque y con su bandera.
+
+| Dónde | Cambio | Bloque | Costo |
+|---|---|---|---|
+| `infra/staging.tfvars` | `crear_kms = true` | 3 | Centavos al mes |
+| `infra/*.tf` | KMS: permiso de cifrar/descifrar solo para AUTH, RISK y RATING | 3 | — |
+| `infra/cloud-sql.tf` | Instancia nueva con CMEK, migración de `auth` y `payments`, baja de la vieja (PR propio con ventana) | 3 | Igual que hoy |
+| `infra/redis.tf` | CMEK en Memorystore (al próximo encendido) | 3 | Igual que hoy |
+| `infra/` | Pub/Sub: tema y suscripción de `PerfilActualizado` (`crear_pubsub`) | 8 | Capa gratuita |
+| `infra/` | Cloud Scheduler + Cloud Run Job `risk-reproceso` (+ Cloud Tasks si hace falta) (`crear_batch`) | 9 | Capa gratuita y minutos de Job |
+| `infra/gateway.tf` + `infra/gateway/openapi.yaml` | API Gateway delante del BFF, cuenta `gateway-bff` (`crear_gateway`) | 10 | Gratis hasta 2 M llamadas/mes |
+| `infra/servicios.tf` | Bandera `calentar_camino_critico` (`min_instance_count = 1` solo durante sesiones de medición) | 10 | Solo mientras está encendida |
+| `.github/servicios.json` | El BFF deja de ser `publico` | 10 | — |
+| `docker-compose.yml` | Servicio `gateway` (Envoy, `:8080`) | 10 | — |
+| `scripts/revisar_plan.py` | Excepción para reemplazar `google_api_gateway_api_config` | 10 | — |
+| `.github/workflows/ci.yml` | Bandit, pip-audit, Trivy y ZAP informativos (bloque 6); la humo pasa por el gateway local y el job `infra` valida el OpenAPI (bloque 10) | 6, 10 | Gratis |
+| `.github/workflows/deploy-staging.yml` | Humo final contra `gateway_url/health` y la URL del gateway en el informe | 10 | — |
+| Secretos del repo | `SONAR_TOKEN` y `SONAR_HOST_URL` (SonarCloud) | 6 | Gratis |
+
+Lo que **no** cambia: Cloud Run como plataforma, una sola región, el flujo `build → migrar → arrancar` de ADR-07, el
+guardia de destrucciones (solo gana la excepción del gateway) y el apagado de costos (`costos-staging.yml`).
+
+## Lo que hace felipe a mano (backend)
 
 Todo lo demás (código, Terraform, pipelines, pruebas y evidencias) lo hago yo en PR hacia `develop`. Estos pasos
-necesitan tus permisos o tu máquina, y van en este orden:
+necesitan tus permisos o tu máquina:
 
 | # | Cuándo | Qué haces | Dónde |
 |---|---|---|---|
-| 1 | Después de que el PR del bloque 1 llegue a `main` y el pipeline aplique el Terraform (crea `grafana-lector`) | Crear la llave de Grafana: `gcloud iam service-accounts keys create ~/Downloads/grafana-lector-key.json --iam-account=grafana-lector@solventa-511815.iam.gserviceaccount.com` | Tu terminal, con `gcloud` logueado en `solventa-511815` |
-| 2 | Justo después del paso 1 | Copiarla al repo (git la ignora): `cp ~/Downloads/grafana-lector-key.json observabilidad/grafana/grafana-lector-key.json` | Carpeta `solventa-backend` |
-| 3 | Si el paso 1 falla por `iam.disableServiceAccountKeyCreation` | Pedir a un admin de la organización de GCP que desactive esa política solo para `solventa-511815`, y repetir el paso 1 | Consola de GCP → IAM → Políticas de la organización |
-| 4 | Para ver los tableros | `docker compose --profile observabilidad up -d` y abrir http://localhost:3100 | Carpeta `solventa-backend` |
-| 5 | Para activar Sonar (bloque 6) | Crear los proyectos `solventa-backend` y `solventa-frontend` en SonarCloud y cargar los secretos `SONAR_TOKEN` y `SONAR_HOST_URL=https://sonarcloud.io` en cada repo (lo hace un admin de `solventa-app`) | sonarcloud.io y GitHub → Settings → Secrets and variables → Actions |
-| 6 | Bloque 3 | Aprobar y hacer el merge a `main` del PR que pone `crear_kms = true` (el key ring de KMS no se puede borrar nunca) | GitHub |
-| 7 | Bloque 3, Cloud SQL con CMEK | Acordar con el equipo una ventana en que staging puede quedar sin AUTH y PAYMENTS mientras se pasa a la instancia nueva | Con el equipo |
-| 8 | Bloques 1 y 7 | Correr k6 y los E2E contra staging cuando te pase el comando (o lanzar el job manual de GitHub) | Tu terminal o GitHub → Actions |
-
-| 9 | Bloque 8, cuando W01 esté completa en staging | Hacer la **sesión exploratoria de FC-01** (unos 60 minutos usando la app web contra staging como lo haría un cliente, probando casos raros) y llenar la plantilla `docs/evidencias/exploratoria-FC-01.md` con lo encontrado. Puede hacerla otra persona del equipo; mejor alguien que no programó W01 | Navegador y el repo |
-| 10 | Bloque 8 | Aprobar y hacer el merge a `main` del PR que activa Pub/Sub (`crear_pubsub = true`) | GitHub |
-
-| 11 | Bloque 10, después del merge a `main` que crea el gateway | Revisar en el informe del despliegue la `gateway_url` y aprobar el PR del front que cambia el rewrite de Vercel a esa URL | GitHub |
-
-Nunca: subir la llave JSON al repo, pegarla en el chat ni compartirla por Slack. Si se filtra, se borra en
-GCP (`gcloud iam service-accounts keys delete`) y se crea otra.
+| 1 | Una vez, para ver los tableros | `gcloud auth application-default login` y luego `docker compose --profile gcp up -d grafana-gcp`; abrir http://localhost:3200. Tu cuenta necesita lectura de Monitoring, Logging y Trace en `solventa-511815` | Carpeta `solventa-backend` |
+| 2 | Bloque 6 | Crear el proyecto `solventa-backend` en SonarCloud y cargar `SONAR_TOKEN` y `SONAR_HOST_URL=https://sonarcloud.io` (lo hace un admin de `solventa-app`) | sonarcloud.io y GitHub → Settings → Secrets and variables → Actions |
+| 3 | Cada bloque con Terraform (3, 8, 9 y 10) | Aprobar el release a `main`, que es el que aplica la infraestructura. El key ring de KMS (bloque 3) no se puede borrar nunca | GitHub |
+| 4 | Bloque 3, Cloud SQL con CMEK | Acordar con el equipo una ventana en que staging puede quedar sin AUTH y PAYMENTS mientras se pasa a la instancia nueva | Con el equipo |
+| 5 | Antes de cada sesión de medición (bloques 1, 9 y 10) | *Actions → Costos staging → encender* (Cloud SQL y Redis tardan 10-15 min) y, al terminar, *apagar* | GitHub → Actions |
+| 6 | En la sesión de medición | Correr `scripts/correr_k6.sh` cuando te pase el comando, con el Grafana abierto para la captura | Tu terminal |
+| 7 | Bloque 10, después del release que crea el gateway | Copiar la `gateway_url` del informe del despliegue y pasársela al PR del front (rewrite de Vercel) | GitHub |
+| 8 | Bloque 8, cuando W01 esté completa en staging | Hacer la **sesión exploratoria de FC-01** (unos 60 minutos usando la app web contra staging como un cliente, probando casos raros) y llenar `docs/evidencias/exploratoria-FC-01.md`. Mejor alguien que no programó W01 | Navegador y el repo |
 
 ## Para el Sprint 2 (no se hace ahora)
 
