@@ -87,7 +87,11 @@ OpenTelemetry hacia Cloud Trace. `tests/k6/README.md` ya lista los tres guiones 
 |---|---|
 | back | `tests/k6/perfilamiento-baseline.js` (EC003 p95 ≤ 400 ms, EC004 p99 ≤ 800 ms, ritmo de 20.000 req/h), `tests/k6/falla-proveedor.js` (EC009/EC010: stub en `lento`/`caido`, corte a 700 ms, 0 % de 5xx; copiado del Experimento 1) y `tests/k6/lectura-replica.js` (EC011/EC012 y lag; del Experimento 2). |
 | back | `scripts/correr_k6.sh`: corre los guiones contra la URL pública de staging (la del gateway cuando exista el bloque 10; antes, la del BFF) y guarda el resumen. |
-| back | Tableros `observabilidad/gcp/dashboards/hu-w01.json` y `hu-w05.json`: los paneles del tablero Servicios filtrados a los servicios de cada historia (W01: BFF, AUTH, ACL, RISK, RATING y stubs; W05: BFF, PAYMENTS, ACL y pasarela). Sin infraestructura nueva. |
+| back · compose | **Seguridad:** `grafana-gcp` solo en tu máquina: `ports: ["127.0.0.1:3200:3000"]` (hoy queda abierto a la red con acceso anónimo de administrador y tus credenciales de GCP). |
+| back · tableros | Tablero Servicios: los umbrales de 400/800 ms (EC003/EC004) solo sobre el **BFF** (y el gateway cuando exista); variable `servicio` de selección múltiple y dos enlaces, **W01** (BFF, AUTH, ACL, RISK, RATING y stubs) y **W05** (BFF, PAYMENTS, ACL y pasarela), en lugar de archivos duplicados por historia. |
+| back · tableros | Panel de peticiones por código de respuesta (4xx y 5xx), para ver el 422 de datos insuficientes y el 409 de idempotencia: el de 5xx solo queda vacío por diseño (regla 4). |
+| back · infra | **Métricas basadas en logs** en Terraform (capa gratuita de Cloud Monitoring): ofertas por tipo (COMPLETA, PRELIMINAR, ERROR), cambios de estado del circuito y cobros por estado, con sus paneles. Los servicios ya escriben esos eventos en el log, sin datos personales. |
+| back · tableros | Con el bloque 10: latencia y códigos del API Gateway (EC001/EC002). |
 | back | `docs/evidencias/EC003-EC004-<fecha>.md`, `EC009-EC010-<fecha>.md`, `EC011-EC012-<fecha>.md` y la corrida de Newman (`tests/newman/`, FC-06), con comando, cifras, límites y captura del tablero o de la traza. |
 
 ### Bloque 2 · Caché del score y journey degradado (P1 #3, #4)
