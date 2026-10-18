@@ -51,16 +51,14 @@ class SondaRecuperacion:
         self._tarea = asyncio.create_task(self._bucle())
 
     async def detener(self) -> None:
+        """Cancela el bucle de la sonda y espera a que termine.
+
+        Su cancelación es lo esperado, así que `gather` la devuelve como resultado;
+        si se cancela este apagado, la propaga."""
         if self._tarea is None:
             return
         self._tarea.cancel()
-        try:
-            await self._tarea
-        except asyncio.CancelledError:
-            # La cancelación esperada es la de la tarea de fondo. Si lo que se cancela es esta misma
-            # corrutina (p. ej. el apagado se agotó), se propaga.
-            if asyncio.current_task().cancelling():
-                raise
+        await asyncio.gather(self._tarea, return_exceptions=True)
 
     async def _bucle(self) -> None:
         while True:
