@@ -160,7 +160,7 @@ Hecho y probado con pruebas automáticas locales (PAYMENTS 90, ACL Worker 92, mo
 
 | Bloque | Estado | Detalle |
 |---|---|---|
-| 0 · Disparadores externos | **Parcial** | PAYMENTS: reintento por Cloud Tasks (`DISPARADOR=externo`, `POST /cobros/_reintentar`). ACL: sonda por Cloud Scheduler (`POST /sonda/ejecutar`). Terraform en `infra/tareas.tf` con `crear_tareas = true`, sin aplicar. **Pendiente:** la reconciliación de fuentes del consolidador (hoy cola `rq`) |
+| 0 · Disparadores externos | Hecho en código | PAYMENTS: reintento por Cloud Tasks (`POST /cobros/_reintentar`). ACL: sonda por Cloud Scheduler (`POST /sonda/ejecutar`) y reconciliación de fuentes por Cloud Tasks hacia `POST /reconciliar` del consolidador (ACL 96 y consolidador 26 pruebas). Terraform en `infra/tareas.tf` con `crear_tareas = true`, sin aplicar. Falta verlo funcionar en staging |
 | 1 · Cifrado del token | Hecho | `enc:v1:` AES-256-GCM, migración `0007` (idempotente, con `downgrade`); la migración contra Postgres real la verifica el CI (`verificar-migraciones.sh payments`). Falta la envoltura con KMS cuando entre el bloque 3 de W01 |
 | 2 · Cambio de pasarela (EC031) | Hecho en pruebas | `AdaptadorPasarelaAlterna`, stub con segunda API, pruebas de contrato parametrizadas. **Pendiente:** correr el stack con `PROVEEDOR_PASARELA=alterna` y Newman (`docs/evidencias/EC031-pasarela-2026-10-18.md`, sección 4) |
 | 3 · Atascados | **Parcial** | Los `cobrando` viejos se concilian y se cobran una vez. **No se hizo** el `SELECT … FOR UPDATE SKIP LOCKED`: bucle y botón a la vez no cobran dos veces (concilia + la pasarela es idempotente); solo pueden contar dos intentos |
