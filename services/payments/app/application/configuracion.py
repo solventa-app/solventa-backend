@@ -4,6 +4,8 @@ código). Nombres y defaults documentados en `README.md`."""
 import os
 from dataclasses import dataclass
 
+from app.application.autenticacion_servicios import modo_desde_entorno
+
 
 @dataclass(frozen=True)
 class Configuracion:
@@ -13,6 +15,8 @@ class Configuracion:
     reintento_intervalo_segundos: float
     reintento_max_intentos: int
     reintentos_rechazo_maximo: int
+    # "ninguna" en local; "id_token" en Cloud Run (el ACL Worker es privado).
+    autenticacion_servicios: str
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -38,4 +42,5 @@ class Configuracion:
             # Reintentos manuales de un cobro `rechazado` (CA-W05-02). 3 es el número del
             # prototipo (W05-01): agotados, el cobro requiere otro medio de pago.
             reintentos_rechazo_maximo=int(os.getenv("REINTENTOS_RECHAZO_MAXIMO", "3")),
+            autenticacion_servicios=modo_desde_entorno(),
         )

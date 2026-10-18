@@ -44,6 +44,7 @@
     "url_env": "PAYMENTS_URL",
     "migracion": ["alembic", "upgrade", "head"],
     "llama": ["acl-worker"],
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token" },
     "secretos": { "DATABASE_URL": "database-url-payments" }
   },
   {
@@ -52,7 +53,7 @@
     "puerto": 8005,
     "url_env": "ACL_URL",
     "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela"],
-    "entorno": { "TIMEOUT_MS": "700" },
+    "entorno": { "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token" },
     "secretos": {
       "REDIS_URL": "redis-url-acl",
       "COLA_RECONCILIACION_REDIS_URL": "redis-url-cola-reconciliacion"
@@ -63,6 +64,7 @@
     "ruta": "services/consolidador-fuentes",
     "puerto": 8006,
     "llama": ["acl-worker", "auth"],
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token" },
     "secretos": { "REDIS_URL": "redis-url-cola-reconciliacion" }
   },
   {

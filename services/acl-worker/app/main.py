@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 
+from app.adapters.autenticacion_servicios import autenticacion_para
 from app.adapters.open_data import FUENTES_SOPORTADAS as FUENTES_OPEN_DATA
 from app.adapters.open_data import AdaptadorOpenData
 from app.adapters.open_finance import FUENTES_SOPORTADAS as FUENTES_OPEN_FINANCE
@@ -94,8 +95,15 @@ def _construir_servicios_fuentes(
     cache_redis,
     productor_reconciliacion,
 ) -> tuple[dict[str, ServicioConsultaFuentes], AdaptadorOpenFinance, AdaptadorOpenData]:
-    adaptador_open_finance = AdaptadorOpenFinance(config.open_finance_url, config.timeout_s)
-    adaptador_open_data = AdaptadorOpenData(config.open_data_url, config.timeout_s)
+    modo = config.autenticacion_servicios
+    adaptador_open_finance = AdaptadorOpenFinance(
+        config.open_finance_url,
+        config.timeout_s,
+        auth=autenticacion_para(modo, "stub-open-finance"),
+    )
+    adaptador_open_data = AdaptadorOpenData(
+        config.open_data_url, config.timeout_s, auth=autenticacion_para(modo, "stub-open-data")
+    )
     cache = CacheFuentes(cache_redis, config.cache_ttl_segundos)
 
     servicio_open_finance = ServicioConsultaFuentes(
@@ -142,7 +150,11 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             _construir_servicios_fuentes(config, fabrica, cache_redis, productor_reconciliacion)
         )
 
-        adaptador_pasarela = AdaptadorPasarela(config.pasarela_url, config.timeout_s)
+        adaptador_pasarela = AdaptadorPasarela(
+            config.pasarela_url,
+            config.timeout_s,
+            auth=autenticacion_para(config.autenticacion_servicios, "stub-pasarela"),
+        )
         servicio_cobro = ServicioCobro(
             adaptador_pasarela, fabrica, NOMBRE_CIRCUITO_PASARELA, config.timeout_s
         )
