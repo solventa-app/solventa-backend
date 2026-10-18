@@ -10,7 +10,7 @@ name: Costos staging
 #             fija a mínimo 0 y CPU solo en las peticiones. Es lo que más ahorra: Redis y el conector cuestan ~USD 0,12/h
 #             según infra/README.md, y las instancias fijas ~USD 4 al día (estimado).
 #   encender  arranca Cloud SQL, vuelve a crear Redis y el conector (unos 10-15 minutos) y deja otra vez las
-#             instancias fijas (mínimo 1; PAYMENTS además con CPU siempre asignada para su reintento de cobros).
+#             instancias fijas (mínimo 1).
 #
 # El estado queda guardado en gs://<proyecto>-tfstate/solventa-backend/costos/estado ("apagado" | "encendido") y el
 # despliegue automático (deploy-staging.yml) lo respeta: un release no vuelve a encender lo que está apagado.
@@ -210,17 +210,16 @@ jobs:
             cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
 
           **Apagado.** Cloud SQL quedó detenida (conserva los datos; solo se paga el disco), Redis y su conector VPC se
-          borraron y los servicios volvieron a mínimo 0 instancias (el primer uso tras un rato sin tráfico tarda, y el
-          reintento automático de cobros de PAYMENTS deja de correr entre peticiones). Los servicios que dependen de
-          Cloud SQL y Redis no atenderán hasta que lo vuelvas a encender.
+          borraron y los servicios volvieron a mínimo 0 instancias (el primer uso tras un rato sin tráfico tarda). Los
+          servicios que dependen de Cloud SQL y Redis no atenderán hasta que lo vuelvas a encender.
 
           Para volver a subirlo: *Actions → Costos staging → Run workflow → `encender`* (unos 10-15 minutos).
           EOF
           else
             cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
 
-          **Encendido.** Cloud SQL en marcha, los servicios de nuevo con su instancia fija (cobran por hora; PAYMENTS
-          con la CPU siempre asignada) y, si `crear_redis` está en `true` en `infra/staging.tfvars`, Redis y su
+          **Encendido.** Cloud SQL en marcha, los servicios de nuevo con su instancia fija (cobran por hora) y, si
+          `crear_redis` está en `true` en `infra/staging.tfvars`, Redis y su
           conector recreados. Los servicios toman las URLs nuevas al arrancar su próxima revisión: si alguno sigue
           fallando, lanza *Deploy staging* para ese servicio.
 

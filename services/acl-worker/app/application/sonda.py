@@ -60,11 +60,18 @@ class SondaRecuperacion:
         self._tarea.cancel()
         await asyncio.gather(self._tarea, return_exceptions=True)
 
+    async def una_pasada(self) -> dict[str, str]:
+        """Revisa cada circuito una vez y devuelve su estado. Es lo que corre cada tick del bucle y
+        lo que dispara Cloud Scheduler con `DISPARADOR=externo` (en Cloud Run no hay bucle fiable:
+        la CPU se limita fuera de una petición)."""
+        for nombre, sondeo in self._sondeos.items():
+            await asyncio.to_thread(self._intentar, nombre, sondeo)
+        return {nombre: self._fabrica.get_breaker(nombre).context.state for nombre in self._sondeos}
+
     async def _bucle(self) -> None:
         while True:
             await asyncio.sleep(self._intervalo_s)
-            for nombre, sondeo in self._sondeos.items():
-                await asyncio.to_thread(self._intentar, nombre, sondeo)
+            await self.una_pasada()
 
     def _intentar(self, nombre: str, sondeo: Sondeo) -> None:
         brk = self._fabrica.get_breaker(nombre)

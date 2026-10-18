@@ -178,3 +178,41 @@ def test_el_bucle_sigue_vivo_si_una_pasada_falla(monkeypatch) -> None:
     asyncio.run(ejercicio())
 
     assert len(llamadas) >= 2  # tras la falla de la primera pasada, el bucle siguió
+
+
+def test_un_cobro_atascado_en_cobrando_se_concilia_y_se_cobra_una_vez() -> None:
+    """El proceso se cayó a mitad del cobro: quedó en `cobrando`. Pasados los minutos, la pasada lo
+    concilia con la pasarela antes de volver a cobrar (sin doble cobro)."""
+    repositorio = RepositorioCobrosFalso()
+    cobro, _ = repositorio.crear_o_obtener("cobro-atascado", dict(ORDEN))
+    cliente_acl = ClienteAclFalso([ResultadoCobro(estado="cobrado", referencia="ref-1")])
+
+    assert ejecutar_una_pasada(repositorio, cliente_acl, BusEventosFalso(), max_intentos=10) == 0
+
+    repositorio.envejecer(cobro["id"], minutos=5)
+    procesados = ejecutar_una_pasada(repositorio, cliente_acl, BusEventosFalso(), max_intentos=10)
+
+    assert procesados == 1
+    assert cliente_acl.consultas == [ORDEN["id_intento_cobro"]]  # primero concilia
+    assert cliente_acl.llamadas == 1
+    assert repositorio.obtener(cobro["id"])["estado"] == "cobrado"
+
+
+def test_un_atascado_que_la_pasarela_ya_cobro_se_toma_sin_cobrar_de_nuevo() -> None:
+    from app.application.cliente_acl import ResultadoConsulta
+
+    repositorio = RepositorioCobrosFalso()
+    cobro, _ = repositorio.crear_o_obtener("cobro-atascado", dict(ORDEN))
+    repositorio.envejecer(cobro["id"], minutos=5)
+    cliente_acl = ClienteAclFalso(
+        en_pasarela={
+            ORDEN["id_intento_cobro"]: ResultadoConsulta(
+                resultado="encontrado", estado="cobrado", referencia="pg-1", motivo=None
+            )
+        }
+    )
+
+    ejecutar_una_pasada(repositorio, cliente_acl, BusEventosFalso(), max_intentos=10)
+
+    assert cliente_acl.llamadas == 0  # no se cobró otra vez
+    assert repositorio.obtener(cobro["id"])["estado"] == "cobrado"
