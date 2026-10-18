@@ -1,0 +1,780 @@
+{
+  "uid": "solventa-datos",
+  "title": "Staging — Datos (Cloud SQL, Redis y MongoDB)",
+  "tags": [
+    "solventa",
+    "gcp",
+    "datos"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "1m",
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "proyecto",
+        "type": "constant",
+        "hide": 2,
+        "query": "solventa-511815",
+        "current": {
+          "text": "solventa-511815",
+          "value": "solventa-511815"
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "type": "text",
+      "title": "Cómo leer este tablero",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Cloud SQL** (auth y payments) y **Redis** (caché del ACL, sesión causal de rating y cola de reconciliación) salen de Cloud Monitoring. **MongoDB Atlas M0** (risk y rating) no publica métricas del servidor a GCP: se ve en la consola de Atlas y, desde los servicios, como tramos `pymongo` en las trazas. Con el apagado de costos activo, Cloud SQL y Redis aparecen sin datos."
+      },
+      "id": 1
+    },
+    {
+      "type": "timeseries",
+      "title": "Cloud SQL — CPU",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/cpu/utilization"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 2
+    },
+    {
+      "type": "timeseries",
+      "title": "Cloud SQL — Memoria",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 3,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/memory/utilization"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 3
+    },
+    {
+      "type": "timeseries",
+      "title": "Cloud SQL — Disco",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 3,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/utilization"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 4
+    },
+    {
+      "type": "timeseries",
+      "title": "Cloud SQL — Conexiones (backends)",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/postgresql/num_backends"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 5
+    },
+    {
+      "type": "timeseries",
+      "title": "Cloud SQL — Transacciones por segundo",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 10,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/postgresql/transaction_count"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 6
+    },
+    {
+      "type": "timeseries",
+      "title": "Cloud SQL — Conexiones nuevas por segundo",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 10,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/postgresql/new_connection_count"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Sube cuando una instancia de Cloud Run arranca y abre su pool; en reposo debería ser casi cero.",
+      "id": 7
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis — Memoria usada",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "redis.googleapis.com/stats/memory/usage_ratio"
+            ],
+            "groupBys": [
+              "resource.label.instance_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 8
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis — Clientes conectados",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 17,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "redis.googleapis.com/clients/connected"
+            ],
+            "groupBys": [
+              "resource.label.instance_id"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 9
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis — Aciertos de caché",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 17,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "redis.googleapis.com/stats/cache_hit_ratio"
+            ],
+            "groupBys": [
+              "resource.label.instance_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "HA-LAT-001: Cache-Aside de scores en Redis.",
+      "id": 10
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis — Comandos por segundo",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "redis.googleapis.com/commands/calls"
+            ],
+            "groupBys": [
+              "metric.label.cmd"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 11
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis — Claves expulsadas por segundo",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "redis.googleapis.com/stats/evicted_keys"
+            ],
+            "groupBys": [
+              "resource.label.instance_id"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 12
+    }
+  ]
+}
