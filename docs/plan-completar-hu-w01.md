@@ -20,7 +20,7 @@
 | 11 | Exploratoria FC-01 | Plantilla en `docs/evidencias/exploratoria-FC-01.md`; la sesión la hace una persona contra staging. |
 | 12 | HU-W05 | Opción A del prototipo: RECHAZADO se reintenta a mano hasta 3 veces (referencia `id_intento_cobro-rN`); PENDIENTE lo reintenta el sistema. Sin captura de tarjeta (detalle en `docs/cobros-conciliacion.md`). |
 | 13 | Costos | Solo los aprobados: Cloud KMS (centavos al mes) y Pub/Sub, Cloud Scheduler y Cloud Tasks en capa gratuita. Nada más sin confirmación. |
-| 14 | Pruebas a escala | No se repiten los experimentos. Se prueba con menos tiempo (10 min en vez de 1 h) o menos volumen (EC017 a 1/20 en 5 min) y se proyecta con regla de tres, diciendo en la evidencia qué se midió y qué se proyectó. |
+| 14 | Pruebas a escala | Para **todas** las historias de arquitectura: no se repiten los experimentos; se prueba con menos tiempo, menos volumen o picos cortos y se proyecta con regla de tres, diciendo en la evidencia qué se midió y qué se proyectó. Todo en una sola sesión contra staging. Ver "Cómo se prueban todas las historias de arquitectura sin gastar". |
 
 Basado en la revisión de pendientes de HU-W01 (18 puntos, numerados P1–P3 abajo) y en las restricciones que puso el equipo el 2026-10-18:
 
@@ -191,25 +191,39 @@ línea. **No existe hoy.** Según `docs/sprint-1.md` va en el **Sprint 3, reduci
 | back · RISK | El job lee perfiles por lotes, recalcula y escribe con el mismo escritor único (RISK). Idempotente: si se corta, retoma donde iba. |
 | back | `scripts/sembrar_perfiles.py` para cargar perfiles sintéticos en staging y la prueba de EC017 a escala reducida (abajo). Evidencia en `docs/evidencias/EC017-<fecha>.md`. |
 
-## Cómo se prueba a escala sin gastar (regla de tres)
+## Cómo se prueban todas las historias de arquitectura sin gastar
 
-Los experimentos más importantes ya se hicieron (`solventa-arquitectura@11e4be6`); aquí no se repiten, se verifica que
-el producto cumple lo mismo. Se prueba con **menos volumen o menos tiempo** y se proyecta, dejando escrito en la evidencia
-qué se midió y qué se proyectó.
+Aplica a **todos** los escenarios pendientes de las historias de arquitectura, no solo al batch. Los experimentos más
+importantes ya se hicieron (`solventa-arquitectura@11e4be6`): aquí no se repiten, se verifica que el producto cumple lo
+mismo con la menor carga posible.
 
-| Escenario | Meta real | Cómo se prueba | Qué se mide de verdad |
-|---|---|---|---|
-| EC003/EC004 (oferta) | 20.000 req/h | Mismo ritmo (5,6 req/s) durante **10 minutos** en vez de 1 hora (~3.300 peticiones, suficientes para p95/p99) | p95 y p99 reales |
-| EC009/EC010 (proveedor caído) | 0 % de 5xx y corte a 700 ms | 5 minutos con el stub en `lento` y `caido` | Cortes, 5xx y latencia reales |
-| EC011/EC012 (réplica) | p95 ≤ 150 ms | 10 minutos al ritmo de EC003 | Latencia y lag reales |
-| EC017 (batch) | 10 M perfiles en < 2 h = **~1.390 perfiles/s** | **5 minutos** a escala reducida (p. ej. 1/20: ~70 perfiles/s, ~21.000 perfiles) mientras k6 manda el tráfico de EC003 | Perfiles/s por instancia y p95 en línea durante el batch |
+**Reglas:**
+1. **Menos tiempo, mismo ritmo** cuando el ritmo real es bajo: se corre al ritmo del escenario el tiempo justo para
+   tener muestras suficientes (≥ 1.000 peticiones para un p95, ≥ 3.000 para un p99).
+2. **Menos ritmo y regla de tres** cuando el ritmo real no cabe en staging (Atlas M0, Cloud SQL `db-f1-micro`): se mide
+   lo que saca **una instancia** y se proyecta cuántas hacen falta para la meta.
+3. **Picos cortos**: un pico se sostiene 2 minutos, no una hora.
+4. **Escenarios funcionales sin carga**: si lo que se prueba es un comportamiento (cifrado, cambiar un adaptador), basta
+   una prueba que lo demuestre una vez.
+5. Toda evidencia dice **qué se midió, qué se proyectó y con qué factor** (p. ej. "medido a 1/20 y proyectado").
+6. Se corre todo en **una sola sesión** contra staging (encender Redis con `redis_encendida`, correr, apagar), para que
+   el costo sea de minutos.
 
-**Proyección de EC017:** instancias necesarias = 1.390 ÷ (perfiles/s por instancia medidos). Se cumple si ese número cabe en
-el límite de instancias del job y el p95 en línea no se movió durante la prueba. La escala completa **no se puede**
-probar en staging aunque se quisiera: Atlas M0 tiene 512 MB y un tope de operaciones por segundo; 10 millones de
-perfiles no caben. Por eso la evidencia dice "medido a 1/20 y proyectado".
+| HA | Escenario | Meta real | Cómo se prueba (reducido) | Qué es medido y qué proyectado |
+|---|---|---|---|---|
+| LAT-001 Caché de scores | EC003 operación normal | p95 ≤ 400 ms a 20.000 req/h | Ritmo real (5,6 req/s) **10 min** (~3.300 peticiones) | Medido: p95 y lectura de caché ≤ 5 ms |
+| LAT-001 | EC004 carga pico | p99 ≤ 800 ms en pico | **Pico de 2 min** (rampa a 3× el ritmo normal) dentro de la misma corrida | Medido: p99. Si M0 limita, se proyecta por instancia |
+| LAT-002 Circuit breaker | EC009 | 100 % de llamadas > 700 ms cortadas | Stub en `lento` **5 min** | Medido: cortes, 0 bloqueadas, overhead ≤ 1 ms |
+| LAT-002 | EC010 | journey ≤ 500 ms p99 con caché | Stub en `caido` **5 min** con caché caliente | Medido: p99 y 0 % de 5xx |
+| LAT-003 Réplica | EC011 / EC012 | p95 ≤ 150 ms / p99 ≤ 300 ms | Mismo tráfico de EC003 (no corrida aparte) | Medido: latencia de lectura y lag de la réplica |
+| LAT-004 Presupuesto por dependencia | EC001 / EC002 / EC008 | p99 ≤ 500 ms; ≤ 120 ms por dependencia | Sprint 2 (necesita el API Gateway). Se reutiliza la corrida de EC003 midiendo el tiempo por dependencia | Medido |
+| ESC-004 Batch | EC017 | 10 M perfiles en < 2 h (~1.390/s) | **5 min a 1/20** (~70/s, ~21.000 perfiles) con tráfico de EC003 en paralelo | Medido: perfiles/s por instancia y p95 en línea. Proyectado: instancias para 1.390/s |
+| SEG-002 Cifrado | EC022 | 100 % cifrado en tránsito y reposo | Funcional: leer Mongo y Postgres sin la llave y deshabilitar la versión de KMS | Medido (sin carga) |
+| MOD-001 Capa anticorrupción | EC031 | 0 líneas cambiadas en el Core | Funcional: cambiar el adaptador de un proveedor y mostrar el diff | Medido (sin carga) |
+| INT-003 Fuente nueva | EC033 | v2 junto a v1, 0 caídas | Funcional: agregar una fuente por configuración y llamar v1 y v2 | Medido (sin carga) |
 
-**Costo:** Cloud Run Job unos minutos, Cloud Scheduler y Cloud Tasks dentro de la capa gratuita.
+**Costo de toda la sesión:** unos 30 minutos de tráfico (~10.000 peticiones a Cloud Run, dentro de la capa gratuita),
+Redis encendido solo durante la sesión (~USD 0,12/h) y el Cloud Run Job del batch unos minutos.
 
 ## Documentos que actualiza cada bloque
 
