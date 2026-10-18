@@ -313,6 +313,36 @@ POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios down -v
 
 **Esperado:** `OK: humo del BFF en verde` y Newman con 135 aserciones, 0 fallidas.
 
+### Prueba automática de punta a punta de HU-W05 (local y staging)
+
+`scripts/probar_cobros.py` recorre este mismo flujo por GraphQL, como el back-office, con la pasarela simulada en
+cada modo, y dice cuántas comprobaciones pasan (27). Solo biblioteca estándar. A diferencia del humo y de Newman, que
+solo corren en local, **también corre contra staging**, donde PAYMENTS, el ACL y la pasarela son privados.
+
+```bash
+# Local (stack arriba; credenciales solo locales)
+python scripts/probar_cobros.py
+
+# Staging: token de identidad de gcloud y clave de operador.demo leída del vault (no se muestra)
+python scripts/probar_cobros.py --staging solventa-511815 --evidencia docs/evidencias/HU-W05-cobros-staging.md
+```
+
+| # | Escenario | Qué comprueba |
+|---|---|---|
+| 1 | Pasarela sana | `COBRADO` con la referencia `pg-…` de la pasarela, la misma en PAYMENTS y con el nombre del cliente |
+| 2 | Idempotencia | La misma orden devuelve el mismo cobro; la misma clave con otro monto da `ErrorCobro`; sin segundo cobro |
+| 3 | Pasarela lenta | `PENDIENTE` aunque la pasarela cobró; `reintentarCobro` **concilia** (misma referencia) y el doble clic no cambia nada |
+| 4 | Pasarela caída (503) | `PENDIENTE` sin cobro en la pasarela; al volver se cobra una sola vez |
+| 5 | Pasarela rechaza | `RECHAZADO` por `fondos_insuficientes`; quedan 2, 1 y 0 reintentos; luego "otro medio de pago"; y un rechazado se cobra si la pasarela acepta |
+| 6 | Tabla y permisos | `cobros(polizaId)` y el filtro `RECHAZADO` muestran cada cobro con su estado; sin sesión no se ve nada |
+
+- **Códigos de salida:** `0` todo en verde, `1` alguna comprobación falla, `2` no se pudo preparar (sin conexión, sesión o cliente).
+- **Repetible:** cada corrida usa una póliza (`POL-E2E-…`) y claves nuevas, y deja la pasarela en `sano`. Los cobros de la prueba
+  quedan en la base (datos ficticios). El CLIENTE es `cliente.demo` en staging y `cliente.cobros` en local (se crea si falta).
+- **Verificada con un fallo real:** al romper a propósito la conciliación de PAYMENTS (el reintento cobraba con otra referencia),
+  fallan 3 comprobaciones y sale con código `1`.
+- **Evidencia:** `docs/evidencias/HU-W05-cobros-2026-10-18.md`.
+
 ## 8. Limitaciones conocidas
 
 | Limitación | Efecto | Cómo se cierra |
@@ -320,6 +350,7 @@ POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios down -v
 | **Bucle y botón a la vez** | Si el bucle y el back-office reintentan el mismo cobro en el mismo instante, los dos concilian; la clave idempotente evita el doble cobro, pero se pueden registrar dos intentos | Bloqueo de fila o Cloud Tasks con deduplicación |
 | ~~**Cobro atascado en `cobrando`**~~ | Resuelto (KAN-28, 2026-10-18): la pasada de reintento recoge los `cobrando` que llevan más de `COBRO_ATASCADO_MINUTOS` (2) sin cambios y los concilia con la pasarela antes de volver a cobrar | `ejecutar_una_pasada` |
 | **El mock vive en memoria** | Reiniciar el contenedor del mock olvida los cobros; la conciliación diría `no_encontrado` | Es un simulador; una pasarela real persiste sus cobros |
+| **La pasarela de staging también** | En Cloud Run (mínimo 0 instancias), si se recicla la instancia a mitad de `probar_cobros.py`, el modo vuelve a `sano` y se olvidan los cobros; la corrida falla en esa comprobación | Repetir la corrida; con una pasarela real no aplica |
 | ~~**Bucle local**~~ | Resuelto (2026-10-18): con `DISPARADOR=externo` (Cloud Run) el reintento lo dispara Cloud Tasks y la cadena sigue sola mientras queden pendientes; en local y CI sigue el bucle. Detalle en `infra/README.md` («Disparadores externos») | `crear_tareas = true` |
 | **Tarea de reintento sin pasarela** | Si la pasarela sigue caída, la cadena de tareas se reprograma cada `REINTENTO_COBRO_INTERVALO_SEGUNDOS` (30 en la nube) sin gastar intentos: una caída larga no agota el cobro, pero tampoco termina sola | Corte por antigüedad del cobro (no construido) |
 | **Falla intermitente en Newman (oferta de HU-W01)** | En 1 de 6 corridas, justo después del humo, la oferta de la carpeta 3 salió `PRELIMINAR` en vez de `COMPLETA` (4 aserciones). No se reprodujo en 4 repeticiones. Esta rama no toca las fuentes de la oferta | Sin causa confirmada. Hipótesis: la carrera de la sonda del circuito que `docs/arquitectura-backend.md` ya reconoce ("no es 100 % infalible") tras el escenario degradado del humo. Vigilarlo en el CI; si se repite, guardar el `newman ... -r json` para ver qué fuente vino degradada |

@@ -183,6 +183,8 @@ resource "google_cloud_run_v2_service" "servicio" {
           memory = "512Mi"
         }
         cpu_idle = true
+        # Más CPU solo mientras arranca el contenedor: acorta el arranque en frío (mínimo 0 instancias).
+        startup_cpu_boost = true
       }
 
       dynamic "env" {
