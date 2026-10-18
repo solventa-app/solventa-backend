@@ -203,6 +203,5 @@ GCP (`gcloud iam service-accounts keys delete`) y se crea otra.
 
 ## Decisiones que necesito del equipo
 
-1. ¿Confirmamos **no usar malla de servicios**? (TLS lo cubre Cloud Run y el reposo, el bloque 3 con KMS.)
-2. ¿Usamos **SonarCloud** (gratis, en la nube de Sonar) o tienen un **SonarQube** propio?
-3. ¿El bloque 4 (consentimiento ligado al titular) entra en este sprint? Cambia el contrato y el front.
+1. ¿Usamos **SonarCloud** (gratis, en la nube de Sonar) o tienen un **SonarQube** propio?
+2. ¿El bloque 4 (consentimiento ligado al titular) entra en este sprint? Cambia el contrato y el front.
