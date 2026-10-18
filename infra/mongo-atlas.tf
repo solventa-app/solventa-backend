@@ -59,7 +59,8 @@ resource "mongodbatlas_project_ip_access_list" "abierta" {
   count      = var.crear_mongo_atlas ? 1 : 0
   project_id = mongodbatlas_project.risk[0].id
   cidr_block = "0.0.0.0/0"
-  comment    = "M0 no soporta peering/private endpoint; Cloud Run no tiene IP saliente fija sin Cloud NAT adicional."
+  # Atlas rechaza comentarios de más de 80 caracteres (INVALID_NETWORK_PERMISSION_COMMENT).
+  comment = "M0 sin peering ni private endpoint; Cloud Run sin IP saliente fija"
 }
 
 # El contenedor del secreto `mongo-uri-risk` lo crea servicios.tf (único dueño; ver cloud-sql.tf). Aquí solo se

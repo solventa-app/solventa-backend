@@ -438,10 +438,12 @@ simulados por HTTP, no en vivo, porque bloquearía el ingreso de todos los servi
 **Verificado después, desde GitHub (2026-10-17):** la etapa `infra` y el entorno `infra-staging` corrieron: login por
 federación, estado en GCS, `plan`, guardia y `apply` (5 creados, 12 modificados, 1 destruido). Siete servicios (`bff`, los
 tres stubs, `consolidador-fuentes`, `payments`, `risk`) ya sirven su imagen real. Ese `apply` destapó una deriva: los
-despliegues dejan `template.labels` (la etiqueta `commit-sha`) y `template.revision` en la plantilla de cada servicio, y sin
-ignorarlos cada `apply` de infra recreaba una revisión de TODOS los servicios. Ahora `servicios.tf` también ignora esos dos
-atributos; comprobado con un `plan` real contra el estado con deriva (sin la corrección aparecía el servicio como
-«modificar», con ella no).
+despliegues dejan `template.labels` (la etiqueta `commit-sha`) y `template.revision` (el nombre que `gcloud` le pone a
+la revisión) en la plantilla de cada servicio. `servicios.tf` ignora `template.labels`. **`template.revision` NO se puede
+ignorar:** Terraform reenviaría el nombre viejo y, en cuanto la plantilla cambie (p. ej. una variable nueva en
+`servicios.json`), Cloud Run responde 409 *«Revision named … with different configuration already exists»* y bloquea el
+`apply` (pasó con `payments` el 2026-10-18). Costo asumido: un `apply` de infra puede crear una revisión nueva, con la misma
+configuración, en los servicios que despliega el pipeline.
 
 **Sin verificar todavía:** el primer arranque de los servicios con base de datos y caché (`auth`, `payments`, `risk`,
 `rating`, `acl-worker`), que solo se puede comprobar con Cloud SQL, MongoDB Atlas y Redis creados (`crear_cloud_sql`,
