@@ -30,7 +30,7 @@ En Windows (PowerShell), antes del `docker compose`, apunta al archivo de creden
 |---|---|---|
 | GCP Monitoring | `stackdriver` (incluido en Grafana) | Métricas de Cloud Run, Cloud SQL y Memorystore (Redis) |
 | GCP Logging | `googlecloud-logging-datasource` (plugin, se instala al arrancar) | Logs de los servicios, con el id de traza cuando existe |
-| GCP Trace | `googlecloud-trace-datasource` (plugin, se instala al arrancar) | Trazas distribuidas. **Vacío hasta que los servicios se instrumenten** |
+| GCP Trace | `googlecloud-trace-datasource` (plugin, se instala al arrancar) | Trazas distribuidas, con salto de cada tramo a sus logs |
 
 Tableros (carpeta `gcp/dashboards/`, aprovisionados solos):
 
@@ -40,6 +40,10 @@ Tableros (carpeta `gcp/dashboards/`, aprovisionados solos):
 - **Staging — Datos:** Cloud SQL (CPU, memoria, disco, conexiones, transacciones) y Redis (memoria, clientes, aciertos de
   caché, comandos). MongoDB Atlas M0 no publica métricas a GCP: se ve en su consola.
 - **Staging — Logs de los servicios:** advertencias y errores, y todos los logs, con filtro por servicio.
+- **Staging — Flujos (trazas):** lista de trazas recientes; al hacer clic en un id se ve el flujo completo (qué servicio
+  llamó a cuál y cuánto tardó cada tramo, incluidas las consultas a Postgres, MongoDB y Redis) y los logs de esa traza.
+  Los tramos de los servicios llegan cuando están desplegados con las trazas activas (`TRAZAS_GCP=true`); antes solo
+  aparecen las trazas que abre Cloud Run por su cuenta.
 
 Con el apagado de costos activo (*Costos staging → apagar*), Cloud SQL y Redis aparecen sin datos: es lo esperado.
 

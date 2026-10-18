@@ -1,0 +1,174 @@
+{
+  "uid": "solventa-flujos",
+  "title": "Staging — Flujos (trazas)",
+  "tags": [
+    "solventa",
+    "gcp",
+    "trazas"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "1m",
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "proyecto",
+        "type": "constant",
+        "hide": 2,
+        "query": "solventa-511815",
+        "current": {
+          "text": "solventa-511815",
+          "value": "solventa-511815"
+        }
+      },
+      {
+        "name": "traza",
+        "type": "textbox",
+        "label": "Id de traza",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "description": "Pega un id de la tabla de arriba (o haz clic en él)."
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "type": "table",
+      "title": "Trazas recientes (haz clic en un id para ver el flujo)",
+      "datasource": {
+        "type": "googlecloud-trace-datasource",
+        "uid": "gcp_trace"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "googlecloud-trace-datasource",
+            "uid": "gcp_trace"
+          },
+          "projectId": "${proyecto}",
+          "filter": []
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trace ID"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Ver este flujo",
+                    "url": "/d/solventa-flujos/staging-flujos-trazas?var-traza=${__value.raw}&${__url_time_range}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "Start time",
+            "desc": true
+          }
+        ],
+        "showHeader": true
+      },
+      "description": "Incluye las trazas que Cloud Run abre por su cuenta y las que generan los servicios con OpenTelemetry (nombre «GET /ruta» o «GraphQL mutation ...»).",
+      "id": 1
+    },
+    {
+      "type": "traces",
+      "title": "Flujo de la traza seleccionada (cada tramo: servicio, ruta y consultas a las bases)",
+      "datasource": {
+        "type": "googlecloud-trace-datasource",
+        "uid": "gcp_trace"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 14
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "googlecloud-trace-datasource",
+            "uid": "gcp_trace"
+          },
+          "projectId": "${proyecto}",
+          "queryType": "traceID",
+          "traceId": "${traza}"
+        }
+      ],
+      "id": 2
+    },
+    {
+      "type": "logs",
+      "title": "Logs de esa traza",
+      "datasource": {
+        "type": "googlecloud-logging-datasource",
+        "uid": "gcp_logging"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "googlecloud-logging-datasource",
+            "uid": "gcp_logging"
+          },
+          "projectId": "${proyecto}",
+          "bucketId": "global/buckets/_Default",
+          "viewId": "_AllLogs",
+          "queryText": "trace=\"projects/${proyecto}/traces/${traza}\""
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "prettifyLogMessage": false
+      },
+      "id": 3
+    }
+  ]
+}

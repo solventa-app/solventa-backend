@@ -30,3 +30,9 @@ datasources:
     jsonData:
       authenticationType: gce
       defaultProject: ${GCP_PROYECTO}
+      # Del tramo de una traza a sus logs ("Logs for this span").
+      tracesToLogsV2:
+        datasourceUid: gcp_logging
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        filterByTraceID: true
