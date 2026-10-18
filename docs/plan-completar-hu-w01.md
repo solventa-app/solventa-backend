@@ -21,6 +21,7 @@
 | 12 | HU-W05 | Opción A del prototipo: RECHAZADO se reintenta a mano hasta 3 veces (referencia `id_intento_cobro-rN`); PENDIENTE lo reintenta el sistema. Sin captura de tarjeta (detalle en `docs/cobros-conciliacion.md`). |
 | 13 | Costos | Solo los aprobados: Cloud KMS (centavos al mes) y Pub/Sub, Cloud Scheduler y Cloud Tasks en capa gratuita. Nada más sin confirmación. |
 | 14 | Pruebas a escala | Para **todas** las historias de arquitectura: no se repiten los experimentos; se prueba con menos tiempo, menos volumen o picos cortos y se proyecta con regla de tres, diciendo en la evidencia qué se midió y qué se proyectó. Todo en una sola sesión contra staging. Ver "Cómo se prueban todas las historias de arquitectura sin gastar". |
+| 15 | Batch nocturno (HA-ESC-004) | Se adelanta del Sprint 3 al **Sprint 1** (bloque 9). |
 
 Basado en la revisión de pendientes de HU-W01 (18 puntos, numerados P1–P3 abajo) y en las restricciones que puso el equipo el 2026-10-18:
 
@@ -183,7 +184,8 @@ que el cliente **acepta**, con precio, plazo y si fue completa o preliminar; ah�
 ### Bloque 9 · Batch nocturno de reprocesamiento (HA-ESC-004, EC017), a escala reducida
 
 **Qué pide:** RISK reprocesa en masa los perfiles fuera de horario pico (≥ 10 millones en < 2 h) sin afectar el tráfico en
-línea. **No existe hoy.** Según `docs/sprint-1.md` va en el **Sprint 3, reducida**; queda planeado aquí para no olvidarlo.
+línea. **No existe hoy.** `docs/sprint-1.md` la dejaba para el Sprint 3; **felipe decidió el 2026-10-18 hacerla ahora,
+en el Sprint 1** (con la prueba reducida de abajo). Al ejecutar el bloque se corrige la línea de diferidas de `docs/sprint-1.md`.
 
 | Repo | Cambio |
 |---|---|
@@ -239,7 +241,7 @@ contradiga estas decisiones. Al cerrar un bloque se marca aquí como hecho.
 | 5 · Fuentes | README del `acl-worker`, `docs/arquitectura-backend.md` |
 | 6 · Seguridad en CI | `docs/convenciones.md` (escaneos informativos y cuándo pasan a obligatorios), `infra/README.md` (secretos de Sonar) |
 | 7 · Front | `docs/convenciones.md` y README del repo del front |
-| 9 · Batch | `infra/README.md` (bandera `crear_batch`, Scheduler y Job), `docs/arquitectura-backend.md`, `docs/evidencias/EC017-<fecha>.md` |
+| 9 · Batch | `docs/sprint-1.md` (ESC-004 sale de diferidas), `infra/README.md` (bandera `crear_batch`, Scheduler y Job), `docs/arquitectura-backend.md`, `docs/evidencias/EC017-<fecha>.md` |
 | 8 · Diseño | `contracts/` + CHANGELOG (evento `PerfilActualizado`), `infra/README.md` (bandera `crear_pubsub`), `docs/arquitectura-backend.md` (Pub/Sub solo para ese evento; la oferta se guarda en W03), `docs/evidencias/exploratoria-FC-01.md` |
 | Al terminar todo | `CLAUDE.md` → sección **Estado** con la fecha nueva y lo que quedó hecho |
 
