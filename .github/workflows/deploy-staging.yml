@@ -191,7 +191,7 @@ jobs:
               echo "No hay $secreto en Secret Manager (solo hace falta si crear_mongo_atlas = true)."
             fi
           done
-      # Lo que cobra por hora (Cloud SQL, Redis) puede estar APAGADO a propósito (workflow `Costos staging`).
+      # Lo que cobra por hora (Cloud SQL, Redis, instancias fijas) puede estar APAGADO a propósito (workflow `Costos staging`).
       # Un release no debe volver a encenderlo: la marca guardada (job `costos`) manda sobre `staging.tfvars`.
       - name: Plan
         env:
@@ -200,7 +200,7 @@ jobs:
           set -euo pipefail
           extra=()
           if [ "$COSTOS" = "apagado" ]; then
-            extra=(-var=cloud_sql_encendida=false -var=redis_encendida=false)
+            extra=(-var=cloud_sql_encendida=false -var=redis_encendida=false -var=instancias_fijas_encendidas=false)
           fi
           terraform plan -var-file=staging.tfvars "${extra[@]}" -out=plan.bin
           terraform show -json plan.bin > plan.json
@@ -212,8 +212,10 @@ jobs:
           args=()
           if [ "$PERMITIR" = "true" ]; then args+=(--permitir-destruir); fi
           python3 ../scripts/revisar_plan.py plan.json "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+      # De a pocos: cada servicio que cambia crea una revisión nueva y su instancia de arranque cuenta contra la cuota
+      # de CPU de la región (20 vCPU). Con los 10 en paralelo se pasó (2026-10-18), y las instancias fijas ya ocupan 9.
       - name: Aplicar
-        run: terraform apply plan.bin
+        run: terraform apply -parallelism=3 plan.bin
 
   construir:
     # Construir una vez: la imagen que pasó CI es la que llega a staging (etiqueta = SHA, nunca "latest").
@@ -313,6 +315,9 @@ jobs:
       id-token: write
     strategy:
       fail-fast: false
+      # De a pocos: cada despliegue crea una revisión que arranca una instancia y cuenta contra la cuota de CPU de la
+      # región (20 vCPU), que las instancias fijas ya ocupan en parte.
+      max-parallel: 4
       matrix:
         servicio: ${{ fromJSON(needs.preparar.outputs.servicios) }}
     steps:

@@ -108,6 +108,12 @@ variable "redis_encendida" {
   default     = true
 }
 
+variable "instancias_fijas_encendidas" {
+  description = "Si los servicios marcados `instancia_fija` en el manifiesto (los que atiende el usuario: BFF, AUTH, RISK, RATING, PAYMENTS, ACL y los stubs de proveedores) corren con 1 instancia mínima en vez de 0, para que la primera petición no espere un arranque en frío. La CPU sigue limitada a las peticiones. Cobran por hora aunque nadie las use (estimado, sin verificar: ~USD 10 al mes por instancia mínima); es el \"apagado\" de esas instancias en staging (workflow `Costos staging`). Apagadas, los servicios vuelven a mínimo 0 con CPU solo mientras atienden una petición. No tiene efecto si `crear_servicios = false`."
+  type        = bool
+  default     = true
+}
+
 variable "cloud_sql_encendida" {
   description = "Si la instancia de Cloud SQL está en marcha (`ALWAYS`) o DETENIDA (`NEVER`). Detenerla conserva las bases, los usuarios y las migraciones y solo deja de cobrar la instancia (queda el disco); es el \"apagado\" de staging, que se maneja con el workflow `Costos staging`. No tiene efecto si `crear_cloud_sql = false`."
   type        = bool

@@ -54,12 +54,18 @@ def ejecutar_una_pasada(
 
     Además de los `pendiente`, recupera los **atascados**: un cobro que sigue en `cobrando` pasados
     `minutos_atascado` porque el proceso se cayó a mitad del cobro. Se trata igual: se concilia
-    con la pasarela antes de volver a cobrar, así que no hay doble cobro."""
+    con la pasarela antes de volver a cobrar, así que no hay doble cobro.
+
+    Un cobro que lanza un error no frena a los demás: se registra y se vuelve a intentar en la
+    próxima pasada."""
     por_procesar = repositorio.listar_pendientes(max_intentos) + repositorio.listar_atascados(
         minutos_atascado
     )
     for cobro in por_procesar:
-        procesar_reintento(cobro, repositorio, cliente_acl, bus)
+        try:
+            procesar_reintento(cobro, repositorio, cliente_acl, bus)
+        except Exception:
+            logger.exception("reintento: falló un cobro; se sigue con los demás")
     return len(por_procesar)
 
 
@@ -117,11 +123,16 @@ class ReintentoCobrosPendientes:
     async def _bucle(self) -> None:
         while True:
             await asyncio.sleep(self._intervalo_segundos)
-            await asyncio.to_thread(
-                ejecutar_una_pasada,
-                self._repositorio,
-                self._cliente_acl,
-                self._bus,
-                self._max_intentos,
-                self._minutos_atascado,
-            )
+            try:
+                await asyncio.to_thread(
+                    ejecutar_una_pasada,
+                    self._repositorio,
+                    self._cliente_acl,
+                    self._bus,
+                    self._max_intentos,
+                    self._minutos_atascado,
+                )
+            except Exception:
+                # P. ej. la base reiniciándose: un error no mata el bucle; se registra y sigue en el
+                # próximo ciclo.
+                logger.exception("reintento: falló la pasada; se reintenta en el próximo ciclo")
