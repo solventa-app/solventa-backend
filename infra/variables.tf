@@ -108,6 +108,12 @@ variable "redis_encendida" {
   default     = true
 }
 
+variable "instancias_fijas_encendidas" {
+  description = "Si los servicios marcados `instancia_fija` en el manifiesto (los que atiende el usuario: BFF, AUTH, RISK, RATING, PAYMENTS, ACL y los stubs de proveedores) corren con 1 instancia mínima en vez de 0, para que la primera petición no espere un arranque en frío. La CPU sigue limitada a las peticiones. Cobran por hora aunque nadie las use (estimado, sin verificar: ~USD 10 al mes por instancia mínima); es el \"apagado\" de esas instancias en staging (workflow `Costos staging`). Apagadas, los servicios vuelven a mínimo 0 con CPU solo mientras atienden una petición. No tiene efecto si `crear_servicios = false`."
+  type        = bool
+  default     = true
+}
+
 variable "cloud_sql_encendida" {
   description = "Si la instancia de Cloud SQL está en marcha (`ALWAYS`) o DETENIDA (`NEVER`). Detenerla conserva las bases, los usuarios y las migraciones y solo deja de cobrar la instancia (queda el disco); es el \"apagado\" de staging, que se maneja con el workflow `Costos staging`. No tiene efecto si `crear_cloud_sql = false`."
   type        = bool
@@ -177,4 +183,10 @@ variable "presupuesto_correos_alerta" {
   description = "Correos que reciben la alerta de presupuesto (50/80/100%), además de los administradores de facturación por defecto de GCP."
   type        = list(string)
   default     = []
+}
+
+variable "crear_tareas" {
+  description = "Crea la cola de Cloud Tasks del reintento de cobros (`reintento-cobros`) y el trabajo de Cloud Scheduler que dispara la sonda del circuito del ACL Worker, y pone `DISPARADOR=externo` en los servicios que lo declaran (`disparador_externo` en .github/servicios.json). En Cloud Run los bucles de fondo no corren de forma confiable (CPU limitada fuera de una petición, escala a cero). Capa gratuita: 1 millón de operaciones de Cloud Tasks al mes y 3 trabajos de Scheduler por cuenta de facturación."
+  type        = bool
+  default     = false
 }

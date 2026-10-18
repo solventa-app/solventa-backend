@@ -30,9 +30,13 @@ import logging
 from app.application.bus_eventos import PuertoBusEventos
 from app.application.cliente_acl import PuertoClienteAcl
 from app.application.conciliacion import procesar_reintento
+from app.application.disparador import PuertoPlanificador
 from app.application.servicio_cobros import RepositorioCobros
 
 logger = logging.getLogger("payments.reintento")
+
+
+MINUTOS_COBRO_ATASCADO = 2.0
 
 
 def ejecutar_una_pasada(
@@ -40,16 +44,29 @@ def ejecutar_una_pasada(
     cliente_acl: PuertoClienteAcl,
     bus: PuertoBusEventos,
     max_intentos: int,
+    minutos_atascado: float = MINUTOS_COBRO_ATASCADO,
 ) -> int:
     """Una pasada del reintento: función pequeña y aislada (ver docstring del
     módulo) reusada tal cual por el bucle en background y por las pruebas
     (sin `asyncio`, sin esperar ningún `intervalo_s`). Cada cobro pasa por
     `procesar_reintento` (concilia antes de cobrar, KAN-28). Devuelve cuántos
-    cobros pendientes se procesaron en esta pasada."""
-    pendientes = repositorio.listar_pendientes(max_intentos)
-    for cobro in pendientes:
-        procesar_reintento(cobro, repositorio, cliente_acl, bus)
-    return len(pendientes)
+    cobros se procesaron en esta pasada.
+
+    Además de los `pendiente`, recupera los **atascados**: un cobro que sigue en `cobrando` pasados
+    `minutos_atascado` porque el proceso se cayó a mitad del cobro. Se trata igual: se concilia
+    con la pasarela antes de volver a cobrar, así que no hay doble cobro.
+
+    Un cobro que lanza un error no frena a los demás: se registra y se vuelve a intentar en la
+    próxima pasada."""
+    por_procesar = repositorio.listar_pendientes(max_intentos) + repositorio.listar_atascados(
+        minutos_atascado
+    )
+    for cobro in por_procesar:
+        try:
+            procesar_reintento(cobro, repositorio, cliente_acl, bus)
+        except Exception:
+            logger.exception("reintento: falló un cobro; se sigue con los demás")
+    return len(por_procesar)
 
 
 class ReintentoCobrosPendientes:
@@ -60,13 +77,35 @@ class ReintentoCobrosPendientes:
         bus: PuertoBusEventos,
         intervalo_segundos: float,
         max_intentos: int,
+        planificador: PuertoPlanificador | None = None,
+        minutos_atascado: float = MINUTOS_COBRO_ATASCADO,
     ) -> None:
         self._repositorio = repositorio
         self._cliente_acl = cliente_acl
         self._bus = bus
         self._intervalo_segundos = intervalo_segundos
         self._max_intentos = max_intentos
+        self._planificador = planificador
+        self._minutos_atascado = minutos_atascado
         self._tarea: asyncio.Task | None = None
+
+    def una_pasada_externa(self) -> dict[str, int]:
+        """Una pasada disparada desde fuera (Cloud Tasks, `DISPARADOR=externo`). Si después de
+        procesar todavía quedan cobros por reintentar, programa la siguiente: la cadena sigue
+        sola hasta que no quede ninguno (o se agoten sus intentos)."""
+        procesados = ejecutar_una_pasada(
+            self._repositorio,
+            self._cliente_acl,
+            self._bus,
+            self._max_intentos,
+            self._minutos_atascado,
+        )
+        quedan = len(self._repositorio.listar_pendientes(self._max_intentos)) + len(
+            self._repositorio.listar_atascados(self._minutos_atascado)
+        )
+        if quedan > 0 and self._planificador is not None:
+            self._planificador.programar(self._intervalo_segundos)
+        return {"procesados": procesados, "por_reintentar": quedan}
 
     def iniciar(self) -> None:
         self._tarea = asyncio.create_task(self._bucle())
@@ -84,10 +123,16 @@ class ReintentoCobrosPendientes:
     async def _bucle(self) -> None:
         while True:
             await asyncio.sleep(self._intervalo_segundos)
-            await asyncio.to_thread(
-                ejecutar_una_pasada,
-                self._repositorio,
-                self._cliente_acl,
-                self._bus,
-                self._max_intentos,
-            )
+            try:
+                await asyncio.to_thread(
+                    ejecutar_una_pasada,
+                    self._repositorio,
+                    self._cliente_acl,
+                    self._bus,
+                    self._max_intentos,
+                    self._minutos_atascado,
+                )
+            except Exception:
+                # P. ej. la base reiniciándose: un error no mata el bucle; se registra y sigue en el
+                # próximo ciclo.
+                logger.exception("reintento: falló la pasada; se reintenta en el próximo ciclo")

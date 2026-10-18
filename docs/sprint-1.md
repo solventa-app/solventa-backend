@@ -13,11 +13,11 @@ Este archivo es el **resumen operativo para construir**; si el plan cambia, se a
 | ID | Decisión | Recomendación | Antes de |
 |---|---|---|---|
 | D-01 | Base de velocidad | Recálculo 27/27/44 y regla de recorte | Planning S1 |
-| D-02 | Read-your-writes RISK→RATING | Sesión causal: RISK devuelve el `operationTime` y RATING lee con `afterClusterTime`; lectura de la primaria como alternativa dentro de la misma solicitud | PF2-1 |
+| D-02 | Read-your-writes RISK→RATING | Sesión causal: RISK devuelve el `operationTime` y RATING lee con `afterClusterTime`; lectura de la primaria como alternativa dentro de la misma solicitud | PF2-1 — **cerrada 2026-10-18** (`docs/plan-completar-hu-w01.md`) |
 | D-03 | Cobro antes o después de emitir | Mantener la definición del equipo (antes) y actualizar el Journey 2 | Planning S2 (preguntas abiertas en `docs/cobros-conciliacion.md`, sección 10) |
-| D-04 | Alcance de HA-SEG-002 | Cifrado de campo en la aplicación con Cloud KMS; CMEK nativo queda como mejora | PF2-1 |
-| D-05 | Proveedores externos | Stubs por contrato, adaptadores intercambiables; sandbox reales si aparecen | PF2-1 |
-| D-06 | Adelantar HU-W05 al Sprint 1 | Aprobar | Planning S1 |
+| D-04 | Alcance de HA-SEG-002 | Cifrado de campo en la aplicación con Cloud KMS; CMEK nativo queda como mejora | PF2-1 — **cerrada 2026-10-18** (`docs/plan-completar-hu-w01.md`) |
+| D-05 | Proveedores externos | Stubs por contrato, adaptadores intercambiables; sandbox reales si aparecen | PF2-1 — **cerrada 2026-10-18** (`docs/plan-completar-hu-w01.md`) |
+| D-06 | Adelantar HU-W05 al Sprint 1 | Aprobar | Planning S1 — **cerrada 2026-10-18** (`docs/plan-completar-hu-w01.md`) |
 
 ## Actividades de backend (de la sección 2 del plan)
 
@@ -72,7 +72,7 @@ HU-W05 — Recaudo (11 h):
 | MOD-001 (KAN-67) | Puertos estables (fuente financiera, fuente abierta, pasarela) y un adaptador stub por puerto | Sustituir un adaptador sin modificar ni redesplegar el Core | puerto hexagonal del Exp. 1 |
 | INT-003 (KAN-73) | Plantilla de adaptador (interfaz, prueba de contrato, registro por configuración) | Nueva fuente en ≤ 1 semana sin cambiar RISK ni RATING | — |
 
-Diferidas: LAT-004 y ESC-001 al Sprint 2 (dependen del API Gateway); ESC-004 al Sprint 3 en versión reducida.
+Diferidas: ESC-001 al Sprint 2. LAT-004 (con el API Gateway) y ESC-004 (en versión reducida) se adelantaron al Sprint 1 el 2026-10-18 (`docs/plan-completar-hu-w01.md`, bloques 9 y 10).
 
 ## Escenarios a medir (umbrales = piso, no valor de producción)
 
@@ -199,6 +199,11 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   pasarela es idempotente por referencia, cada reintento va con la suya (`{idIntentoCobro}-rN`, migración `0006` de
   PAYMENTS). Contrato v0.6: `Cobro.reintentosRestantes`. No se construye captura de tarjeta (CA-W05-03): el prototipo no
   la tiene y la prima se factura con la cuota del crédito (W03-02b). `scripts/sembrar_cobros.py` deja los datos de la demo.
+- **Cierre de HU-W05 (KAN-28, 2026-10-18, plan de HU-W05):** CA-W05-03 se entiende como «PAYMENTS solo recibe un token
+  opaco del proveedor y nunca datos de tarjeta» (sin pantalla de captura, como el prototipo); CA-W05-07 (orden de pago de
+  indemnización y balance en GraphQL) pasa al Sprint 3 con siniestros. Se agregan: token del medio de pago cifrado en la
+  base (HA-SEG-002, migración `0007`), reintento de cobros por Cloud Tasks y recuperación de cobros atascados (CA-W05-05),
+  y el segundo adaptador de pasarela que demuestra EC031 (CA-W05-06). Evidencia en `docs/evidencias/`.
 - **Nombre propio (KAN-28, 2026-10-18):** cada usuario ve su nombre al iniciar sesión (`Usuario.nombre` en
   `iniciarSesion` y `yo`, cifrado en AUTH y fuera del JWT). `Cobro.idTransaccion` llegó aparte con el reintento de rechazados.
   Los pagos siguen siendo solo del BACKOFFICE. Pedido por el front (KAN-207). **Tampoco estaba en el plan del sprint:**

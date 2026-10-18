@@ -31,6 +31,11 @@ locals {
   con_migracion = { for n, s in local.activos : n => s if try(s.migracion, null) != null }
   publicos      = { for n, s in local.activos : n => s if try(s.publico, false) }
 
+  # Instancias fijas mientras `instancias_fijas_encendidas` sea true: los servicios con `instancia_fija` en el manifiesto
+  # corren con mínimo 1 instancia (sin arranque en frío). La CPU sigue limitada a las peticiones: el trabajo de fondo
+  # lo disparan Cloud Tasks y Cloud Scheduler desde fuera (tareas.tf), no un bucle dentro del proceso.
+  fijo = { for n, s in local.activos : n => var.instancias_fijas_encendidas && try(s.instancia_fija, false) }
+
   # Servicios que hablan con Postgres: los que declaran un secreto `database-url-*` (su URL usa el socket
   # /cloudsql, que Cloud Run solo monta si se pide). Vale para el servicio y para su job de migración.
   con_postgres = {
@@ -143,7 +148,7 @@ resource "google_cloud_run_v2_service" "servicio" {
     service_account = google_service_account.runtime[each.key].email
 
     scaling {
-      min_instance_count = 0
+      min_instance_count = local.fijo[each.key] ? 1 : 0
       max_instance_count = var.max_instancias
     }
 
@@ -183,10 +188,28 @@ resource "google_cloud_run_v2_service" "servicio" {
           memory = "512Mi"
         }
         cpu_idle = true
+        # Más CPU solo mientras arranca el contenedor: acorta el arranque en frío (mínimo 0 instancias).
+        startup_cpu_boost = true
       }
 
       dynamic "env" {
         for_each = try(each.value.entorno, {})
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      # Disparadores externos (tareas.tf): quién dispara el trabajo de fondo, y lo que Cloud Tasks necesita para
+      # firmar y dirigir la tarea. Solo con `crear_tareas` y en los servicios que lo declaran.
+      dynamic "env" {
+        for_each = contains(keys(local.con_disparador_externo), each.key) ? {
+          DISPARADOR    = "externo"
+          GCP_PROYECTO  = var.project_id
+          GCP_REGION    = var.region
+          URL_PROPIA    = local.url[each.key]
+          TAREAS_CUENTA = google_service_account.runtime[each.key].email
+        } : {}
         content {
           name  = env.key
           value = env.value

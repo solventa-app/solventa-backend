@@ -7,6 +7,7 @@ import asyncio
 import pytest
 from fakes import BusEventosFalso, ClienteAclFalso, RepositorioCobrosFalso
 
+from app.application import reintento as modulo_reintento
 from app.application.cliente_acl import ResultadoCobro
 from app.application.reintento import ReintentoCobrosPendientes, ejecutar_una_pasada
 from app.application.servicio_cobros import ServicioCobros
@@ -130,3 +131,88 @@ def test_si_se_cancela_el_apagado_la_cancelacion_se_propaga() -> None:
             await apagado
 
     asyncio.run(ejercicio())
+
+
+def test_un_cobro_con_falla_no_frena_a_los_demas(monkeypatch) -> None:
+    repositorio = RepositorioCobrosFalso()
+    segundo = {**ORDEN, "id_intento_cobro": "clave-reintento-2"}
+    for orden in (ORDEN, segundo):
+        ServicioCobros(
+            repositorio,
+            ClienteAclFalso([ResultadoCobro(estado="pendiente", motivo="pasarela_no_disponible")]),
+            BusEventosFalso(),
+        ).crear_cobro(dict(orden))
+    vistos = []
+
+    def procesar_falso(cobro, repositorio, cliente_acl, bus):
+        vistos.append(cobro["id_intento_cobro"])
+        if cobro["id_intento_cobro"] == ORDEN["id_intento_cobro"]:
+            raise RuntimeError("falla de prueba")
+
+    monkeypatch.setattr(modulo_reintento, "procesar_reintento", procesar_falso)
+
+    cliente_acl = ClienteAclFalso()
+    procesados = ejecutar_una_pasada(repositorio, cliente_acl, BusEventosFalso(), max_intentos=10)
+
+    assert procesados == 2
+    assert sorted(vistos) == ["clave-reintento-1", "clave-reintento-2"]
+
+
+def test_el_bucle_sigue_vivo_si_una_pasada_falla(monkeypatch) -> None:
+    llamadas = []
+
+    def pasada_falsa(*_):
+        llamadas.append(1)
+        if len(llamadas) == 1:
+            raise RuntimeError("la base se reinició")
+        return 0
+
+    monkeypatch.setattr(modulo_reintento, "ejecutar_una_pasada", pasada_falsa)
+
+    async def ejercicio() -> None:
+        reintento = _reintento()
+        reintento.iniciar()
+        await asyncio.sleep(0.15)
+        await reintento.detener()
+
+    asyncio.run(ejercicio())
+
+    assert len(llamadas) >= 2  # tras la falla de la primera pasada, el bucle siguió
+
+
+def test_un_cobro_atascado_en_cobrando_se_concilia_y_se_cobra_una_vez() -> None:
+    """El proceso se cayó a mitad del cobro: quedó en `cobrando`. Pasados los minutos, la pasada lo
+    concilia con la pasarela antes de volver a cobrar (sin doble cobro)."""
+    repositorio = RepositorioCobrosFalso()
+    cobro, _ = repositorio.crear_o_obtener("cobro-atascado", dict(ORDEN))
+    cliente_acl = ClienteAclFalso([ResultadoCobro(estado="cobrado", referencia="ref-1")])
+
+    assert ejecutar_una_pasada(repositorio, cliente_acl, BusEventosFalso(), max_intentos=10) == 0
+
+    repositorio.envejecer(cobro["id"], minutos=5)
+    procesados = ejecutar_una_pasada(repositorio, cliente_acl, BusEventosFalso(), max_intentos=10)
+
+    assert procesados == 1
+    assert cliente_acl.consultas == [ORDEN["id_intento_cobro"]]  # primero concilia
+    assert cliente_acl.llamadas == 1
+    assert repositorio.obtener(cobro["id"])["estado"] == "cobrado"
+
+
+def test_un_atascado_que_la_pasarela_ya_cobro_se_toma_sin_cobrar_de_nuevo() -> None:
+    from app.application.cliente_acl import ResultadoConsulta
+
+    repositorio = RepositorioCobrosFalso()
+    cobro, _ = repositorio.crear_o_obtener("cobro-atascado", dict(ORDEN))
+    repositorio.envejecer(cobro["id"], minutos=5)
+    cliente_acl = ClienteAclFalso(
+        en_pasarela={
+            ORDEN["id_intento_cobro"]: ResultadoConsulta(
+                resultado="encontrado", estado="cobrado", referencia="pg-1", motivo=None
+            )
+        }
+    )
+
+    ejecutar_una_pasada(repositorio, cliente_acl, BusEventosFalso(), max_intentos=10)
+
+    assert cliente_acl.llamadas == 0  # no se cobró otra vez
+    assert repositorio.obtener(cobro["id"])["estado"] == "cobrado"
