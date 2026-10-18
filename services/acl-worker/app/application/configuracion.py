@@ -20,9 +20,20 @@ class Configuracion:
     cola_reconciliacion_redis_url: str
     # "ninguna" en local; "id_token" en Cloud Run (los stubs de proveedores son privados).
     autenticacion_servicios: str = "ninguna"
+    # Qué adaptador de pasarela se usa (EC031): "estandar" o "alterna". Cambiar de proveedor es
+    # esto.
+    proveedor_pasarela: str = "estandar"
+    # Quién dispara la sonda: "bucle" (local y CI) o "externo" (Cloud Scheduler, en Cloud Run).
+    disparador: str = "bucle"
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
+        proveedor_pasarela = os.getenv("PROVEEDOR_PASARELA", "estandar")
+        if proveedor_pasarela not in ("estandar", "alterna"):
+            raise ValueError("PROVEEDOR_PASARELA debe ser 'estandar' o 'alterna'")
+        disparador = os.getenv("DISPARADOR", "bucle")
+        if disparador not in ("bucle", "externo"):
+            raise ValueError("DISPARADOR debe ser 'bucle' o 'externo'")
         return cls(
             redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/1"),
             open_finance_url=os.getenv("OPEN_FINANCE_URL", "http://localhost:8101"),
@@ -39,4 +50,6 @@ class Configuracion:
                 "COLA_RECONCILIACION_REDIS_URL", "redis://localhost:6379/2"
             ),
             autenticacion_servicios=os.getenv("AUTENTICACION_SERVICIOS", "ninguna"),
+            proveedor_pasarela=proveedor_pasarela,
+            disparador=disparador,
         )
