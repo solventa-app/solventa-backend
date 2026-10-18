@@ -267,29 +267,34 @@ openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n' | gcloud secrets versions ad
 
 ### Usuarios de staging: el primer BACKOFFICE y los de prueba
 
-AUTH expone `POST /usuarios` y no pide sesión: lo protege Cloud Run (solo una identidad con `roles/run.invoker` sobre
-`auth` entra; hoy `rt-bff`, `rt-consolidador-fuentes` y la cuenta propietaria del proyecto). Por eso el primer BACKOFFICE
-de staging **no necesita un job ni un usuario previo**: `scripts/crear_usuarios.py --auth` llama a AUTH directamente con
-tu token de identidad de `gcloud`. Crea un CLIENTE, un ASESOR y un operador (BACKOFFICE), genera una clave al azar para
-cada uno y, con `--vault`, la guarda en Secret Manager (`usuario-<alias>`) en vez de mostrarla. Es idempotente: lo que ya
-existe no se toca. Solo usa la biblioteca estándar y `gcloud`. Con Cloud SQL encendida (*Costos staging → encender*):
+Los usuarios se crean por el BFF, que exige un BACKOFFICE. Mientras staging no tenga ninguno, el **primero** se crea
+llamando directo a `POST /usuarios` de AUTH, que no pide sesión: lo protege Cloud Run (solo una identidad con
+`roles/run.invoker` sobre `auth` entra; hoy `rt-bff`, `rt-consolidador-fuentes` y la cuenta propietaria del proyecto).
+`scripts/crear_usuarios.py --auth` hace esa llamada con tu token de identidad de `gcloud` y crea **solo al operador**
+(BACKOFFICE); el CLIENTE y el ASESOR se crean después por el BFF, con su control de rol. Cada clave se genera al azar y,
+con `--vault`, va a Secret Manager (`usuario-<alias>`) en vez de la pantalla. El script es idempotente (lo que ya existe
+no se toca) y solo usa la biblioteca estándar y `gcloud`. Con Cloud SQL encendida (*Costos staging → encender*):
 
 ```bash
 PROYECTO=solventa-511815
 AUTH_URL=$(gcloud run services describe auth --region us-central1 --project "$PROYECTO" --format='value(status.url)')
+BFF_URL=$(gcloud run services describe bff --region us-central1 --project "$PROYECTO" --format='value(status.url)')
+
+# 1) Una sola vez: el primer BACKOFFICE (operador.demo), directo a AUTH
 python scripts/crear_usuarios.py --auth "$AUTH_URL" --vault "$PROYECTO"
-# Leer la clave de uno de ellos:
-gcloud secrets versions access latest --secret usuario-operador-demo --project "$PROYECTO"
+
+# 2) El CLIENTE y el ASESOR, por el BFF, con ese operador
+export USUARIO_BACKOFFICE=operador.demo
+export CLAVE_BACKOFFICE=$(gcloud secrets versions access latest --secret usuario-operador-demo --project "$PROYECTO")
+python scripts/crear_usuarios.py --bff "$BFF_URL" --vault "$PROYECTO"
 ```
 
-En PowerShell: `$AUTH_URL = gcloud run services describe auth --region us-central1 --project solventa-511815 --format='value(status.url)'`
-y `python scripts/crear_usuarios.py --auth $AUTH_URL --vault solventa-511815`.
+En PowerShell cambian las variables: `$AUTH_URL = gcloud run services describe auth --region us-central1 --project solventa-511815 --format='value(status.url)'`
+y `$env:CLAVE_BACKOFFICE = gcloud secrets versions access latest --secret usuario-operador-demo --project solventa-511815`.
 
 Los alias por defecto son `cliente.demo`, `asesor.demo` y `operador.demo` (`--cliente`, `--asesor`, `--operador` los
-cambian; un alias no puede ser un correo ni tener 6 o más dígitos seguidos). Con el operador ya se puede iniciar sesión
-por el BFF. Si prefieres pasar por el BFF, como lo haría el frontend, exporta `USUARIO_BACKOFFICE` y `CLAVE_BACKOFFICE`
-y ejecuta el script con `--bff https://<url-del-bff>`. En local sirve igual: `--auth http://localhost:8001`, o por el
-BFF con el BACKOFFICE público del compose (`admin.solventa` / `admin-local-solventa`).
+cambian; un alias no puede ser un correo ni tener 6 o más dígitos seguidos). En local no hace falta el paso 1: el compose
+ya crea un BACKOFFICE público (`admin.solventa` / `admin-local-solventa`), con el que sirve `python scripts/crear_usuarios.py`.
 
 ## Apagar y encender lo que cuesta (sin depender de nadie)
 

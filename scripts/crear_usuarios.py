@@ -1,31 +1,33 @@
 """Crea un CLIENTE, un ASESOR y un operador (BACKOFFICE). Solo biblioteca estándar.
 
-Hay dos caminos, según lo que tengas a mano:
-
-1. Directo a AUTH (`--auth URL`): llama a `POST /usuarios` de AUTH, que no pide sesión. En Cloud Run
-   lo protege IAM (`roles/run.invoker`), así que usa tu token de identidad de gcloud; en local no
-   hace falta nada. Sirve para el PRIMER BACKOFFICE: no necesita que ya exista otro.
-2. Por el BFF (por defecto, `--bff URL`): como lo haría el frontend, iniciando sesión con un
-   BACKOFFICE que ya exista (el de docker compose en local).
+Todo pasa por el BFF, como lo haría el frontend, con una excepción: el primer BACKOFFICE. El BFF
+exige un BACKOFFICE para crear usuarios, así que mientras no exista ninguno hay que crearlo por
+otro lado. Para eso sirve `--auth URL`: llama a `POST /usuarios` de AUTH, que no pide sesión (en
+Cloud Run lo protege IAM, `roles/run.invoker`, con tu token de identidad de gcloud) y crea SOLO al
+operador. Con ese operador se crea el resto por el BFF.
 
 Las credenciales nunca viajan como argumentos (quedan en el historial de la terminal):
   BFF_URL            URL base del BFF (por defecto http://localhost:8000)
-  USUARIO_BACKOFFICE alias del BACKOFFICE que crea a los demás, solo por el BFF (si falta, pregunta)
+  USUARIO_BACKOFFICE alias del BACKOFFICE que crea a los demás, por el BFF (si falta, pregunta)
   CLAVE_BACKOFFICE   su clave (si falta, la pregunta sin mostrarla)
   TOKEN_IDENTIDAD    token de identidad para AUTH en https (si falta, lo pide a gcloud)
   CLAVE_CLIENTE, CLAVE_ASESOR, CLAVE_OPERADOR
                      clave de cada usuario nuevo; si falta, se genera una al azar
 
-Uso en staging (el primer BACKOFFICE; las claves generadas van a Secret Manager, no a la pantalla):
+Uso en staging, una vez: el primer BACKOFFICE (su clave va a Secret Manager, no a la pantalla):
     python scripts/crear_usuarios.py --auth https://<url-de-auth> --vault solventa-511815
 
-Uso en local (con `docker compose up -d --wait`):
-    python scripts/crear_usuarios.py --auth http://localhost:8001
-    # o por el BFF, con el BACKOFFICE local (público, no es secreto):
+Después, el CLIENTE y el ASESOR por el BFF, con ese operador:
+    export USUARIO_BACKOFFICE=operador.demo
+    export CLAVE_BACKOFFICE=$(gcloud secrets versions access latest --secret usuario-operador-demo)
+    python scripts/crear_usuarios.py --bff https://<url-del-bff> --vault solventa-511815
+
+Uso en local (con `docker compose up -d --wait`; el BACKOFFICE local es público, no es secreto):
     export USUARIO_BACKOFFICE=admin.solventa CLAVE_BACKOFFICE=admin-local-solventa
     python scripts/crear_usuarios.py
 
-Es idempotente: un alias que ya existe se deja como está (no se toca su clave) y no es un error."""
+Es idempotente: un alias que ya existe se deja como está (no se toca su clave) y no es un error.
+Por el BFF, el operador también se intenta crear (si ya existe, se salta)."""
 
 import argparse
 import getpass
@@ -185,7 +187,7 @@ def main(argumentos: list[str] | None = None) -> int:
     parser.add_argument(
         "--auth",
         metavar="URL",
-        help="crea directo en AUTH (sin BFF ni BACKOFFICE previo); ignora --bff",
+        help="solo el primer BACKOFFICE: lo crea directo en AUTH, sin BFF; ignora --bff",
     )
     parser.add_argument("--cliente", default="cliente.demo", help="alias del CLIENTE")
     parser.add_argument("--asesor", default="asesor.demo", help="alias del ASESOR")
@@ -223,6 +225,10 @@ def main(argumentos: list[str] | None = None) -> int:
         (opciones.asesor, "ASESOR", None, "CLAVE_ASESOR"),
         (opciones.operador, "BACKOFFICE", None, "CLAVE_OPERADOR"),
     ]
+    if opciones.auth:
+        # Saltarse el BFF es solo para arrancar: el resto se crea por el BFF, con su control de rol.
+        pedidos = pedidos[2:]
+        print("  (solo el primer BACKOFFICE; el CLIENTE y el ASESOR se crean por el BFF)")
     errores = 0
     for alias, rol, nombre, variable in pedidos:
         propia = os.getenv(variable)
