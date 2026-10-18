@@ -45,7 +45,7 @@
     "migracion": ["alembic", "upgrade", "head"],
     "llama": ["acl-worker"],
     "entorno": { "AUTENTICACION_SERVICIOS": "id_token" },
-    "secretos": { "DATABASE_URL": "database-url-payments" }
+    "secretos": { "DATABASE_URL": "database-url-payments", "CIFRADO_CLAVE": "clave-cifrado" }
   },
   {
     "nombre": "acl-worker",

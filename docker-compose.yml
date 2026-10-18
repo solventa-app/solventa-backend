@@ -207,6 +207,9 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/payments
       ACL_URL: http://acl-worker:8005
+      # Cifra el token de los medios de pago. Es la misma llave de AUTH: solo local y no secreta;
+      # en Cloud Run llega de Secret Manager (clave-cifrado) y no arranca con la local.
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
     depends_on:
       postgres: { condition: service_healthy }
       migrar-payments: { condition: service_completed_successfully }

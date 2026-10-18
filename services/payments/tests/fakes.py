@@ -32,6 +32,7 @@ class RepositorioCobrosFalso:
                 "id_intento_cobro": orden["id_intento_cobro"],
                 "poliza_id": orden["poliza_id"],
                 "cliente_id": orden.get("cliente_id"),
+                "medio_pago_id": orden.get("medio_pago_id"),
                 "monto": orden["monto"],
                 "moneda": orden["moneda"],
                 "token_medio_pago": orden["token_medio_pago"],
@@ -166,3 +167,53 @@ class BusEventosFalso:
     def publicar(self, evento: dict[str, Any]) -> None:
         with self._lock:
             self.eventos.append(evento)
+
+
+class RepositorioMediosPagoFalso:
+    """Fake de `RepositorioMediosPago`: en memoria, con la unicidad (cliente, huella)."""
+
+    PUBLICAS = (
+        "id",
+        "cliente_id",
+        "marca",
+        "ultimos4",
+        "vencimiento_mes",
+        "vencimiento_anio",
+        "creado_en",
+    )
+
+    def __init__(self) -> None:
+        self.filas: dict[str, dict[str, Any]] = {}
+
+    def _publica(self, fila: dict) -> dict:
+        return {campo: fila[campo] for campo in self.PUBLICAS}
+
+    def crear_o_obtener(self, medio: dict[str, Any]) -> dict | None:
+        if any(
+            f["cliente_id"] == medio["cliente_id"] and f["token_huella"] == medio["token_huella"]
+            for f in self.filas.values()
+        ):
+            return None
+        fila = {**medio, "creado_en": datetime.now(UTC)}
+        self.filas[medio["id"]] = fila
+        return self._publica(fila)
+
+    def obtener_por_huella(self, cliente_id: str, huella: str) -> dict | None:
+        for fila in self.filas.values():
+            if fila["cliente_id"] == cliente_id and fila["token_huella"] == huella:
+                return self._publica(fila)
+        return None
+
+    def obtener(self, medio_pago_id: str) -> dict | None:
+        fila = self.filas.get(medio_pago_id)
+        return {**self._publica(fila), "token_cifrado": fila["token_cifrado"]} if fila else None
+
+    def listar_de_cliente(self, cliente_id: str) -> list[dict]:
+        return [self._publica(f) for f in self.filas.values() if f["cliente_id"] == cliente_id]
+
+    def resumenes(self, ids: list[str]) -> dict[str, dict]:
+        return {
+            i: {"marca": self.filas[i]["marca"], "ultimos4": self.filas[i]["ultimos4"]}
+            for i in ids
+            if i in self.filas
+        }

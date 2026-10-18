@@ -6,6 +6,13 @@ from dataclasses import dataclass
 
 from app.application.autenticacion_servicios import modo_desde_entorno
 
+# Llave de cifrado por campo, solo para local y pruebas (32 bytes en base64): el repo es público,
+# así que NO es secreta. Es la misma de AUTH. En Cloud Run llega de Secret Manager
+# (`clave-cifrado`) y el servicio no arranca con esta.
+CIFRADO_CLAVE_LOCAL = "c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE="
+# Valor con el que Terraform crea cada secreto (infra/README.md, "Cargar los secretos").
+VALOR_MARCADOR = "pendiente-de-cargar"
+
 
 @dataclass(frozen=True)
 class Configuracion:
@@ -17,9 +24,15 @@ class Configuracion:
     reintentos_rechazo_maximo: int
     # "ninguna" en local; "id_token" en Cloud Run (el ACL Worker es privado).
     autenticacion_servicios: str
+    cifrado_clave: str = CIFRADO_CLAVE_LOCAL
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
+        cifrado_clave = os.getenv("CIFRADO_CLAVE", CIFRADO_CLAVE_LOCAL)
+        # Cloud Run define `K_SERVICE` en todo contenedor: en la nube nunca se cifra con una
+        # llave conocida.
+        if os.getenv("K_SERVICE") and cifrado_clave in (CIFRADO_CLAVE_LOCAL, VALOR_MARCADOR):
+            raise ValueError("CIFRADO_CLAVE no se ha cargado en Secret Manager")
         return cls(
             database_url=os.getenv(
                 "DATABASE_URL",
@@ -43,4 +56,5 @@ class Configuracion:
             # prototipo (W05-01): agotados, el cobro requiere otro medio de pago.
             reintentos_rechazo_maximo=int(os.getenv("REINTENTOS_RECHAZO_MAXIMO", "3")),
             autenticacion_servicios=modo_desde_entorno(),
+            cifrado_clave=cifrado_clave,
         )

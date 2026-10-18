@@ -13,6 +13,7 @@ from app.application.bus_eventos import PuertoBusEventos, construir_evento_cobro
 from app.application.cliente_acl import OrdenCobro, PuertoClienteAcl
 from app.application.conciliacion import procesar_reintento, referencia_ante_pasarela
 from app.application.identificadores import id_opaco
+from app.application.medios_pago import MedioPagoNoUtilizable, ServicioMediosPago
 
 logger = logging.getLogger("payments.cobros")
 
@@ -49,6 +50,7 @@ def _misma_orden(cobro: dict[str, Any], orden: dict[str, Any]) -> bool:
     return (
         cobro["poliza_id"] == orden["poliza_id"]
         and cobro.get("cliente_id") == orden.get("cliente_id")
+        and cobro.get("medio_pago_id") == orden.get("medio_pago_id")
         and cobro["moneda"] == orden["moneda"]
         and cobro["token_medio_pago"] == orden["token_medio_pago"]
         and _mismo_monto(cobro["monto"], orden["monto"])
@@ -84,7 +86,9 @@ class ServicioCobros:
         cliente_acl: PuertoClienteAcl,
         bus: PuertoBusEventos,
         reintentos_rechazo_maximo: int = REINTENTOS_RECHAZO_MAXIMO,
+        medios_pago: ServicioMediosPago | None = None,
     ) -> None:
+        self._medios_pago = medios_pago
         self._repositorio = repositorio
         self._cliente_acl = cliente_acl
         self._bus = bus
@@ -95,6 +99,7 @@ class ServicioCobros:
         vuelve a llamar al ACL Worker — se devuelve la fila ya persistida tal
         cual (sea cual sea su estado actual). Si llega con otros datos, es un error
         del cliente y se rechaza (`IntentoCobroEnConflicto`), nunca se ignora."""
+        orden = self._resolver_medio_pago(orden)
         cobro_id = str(uuid.uuid4())
         cobro, creado = self._repositorio.crear_o_obtener(cobro_id, orden)
 
@@ -135,6 +140,23 @@ class ServicioCobros:
         )
         self._emitir(cobro_actualizado)
         return cobro_actualizado
+
+    def _resolver_medio_pago(self, orden: dict[str, Any]) -> dict[str, Any]:
+        """Con `medio_pago_id` se cobra con el token de ese medio (si es del cliente del cobro);
+        con `token_medio_pago` suelto, como antes. Hay que indicar uno, y solo uno."""
+        medio_pago_id = orden.get("medio_pago_id")
+        token = orden.get("token_medio_pago")
+        if bool(medio_pago_id) == bool(token):
+            raise MedioPagoNoUtilizable(
+                "Indica el token del medio de pago o un medio de pago registrado, "
+                "no ambos ni ninguno."
+            )
+        if not medio_pago_id:
+            return orden
+        if self._medios_pago is None:
+            raise MedioPagoNoUtilizable("Este servicio no está configurado para medios de pago.")
+        token = self._medios_pago.token_para_cobrar(medio_pago_id, orden.get("cliente_id"))
+        return {**orden, "token_medio_pago": token}
 
     def listar(self, poliza_id: str | None, estado: str | None) -> list[dict[str, Any]]:
         return self._repositorio.listar(poliza_id, estado)
