@@ -197,17 +197,47 @@ el merge. Localmente: `export TF_VAR_project_id=... TF_VAR_billing_account_id=..
 
 `terraform output secretos_a_cargar` lista **todos** los secretos del manifiesto. Terraform crea cada contenedor con un
 valor marcador (`pendiente-de-cargar`). Con `crear_cloud_sql` (y `crear_servicios`) Terraform ya escribe solo
-`database-url-auth` y `database-url-payments`, y con `crear_mongo_atlas` escribe `mongo-uri-risk`: esos no hay que
-cargarlos. El resto (`mongo-uri-rating`, `redis-url-*`, `clave-jwt`, `clave-cliente-id`) se agrega aparte, y ese valor
-nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
+`database-url-auth` y `database-url-payments`; con `crear_redis`, `redis-url-*`; y con `crear_mongo_atlas`,
+`mongo-uri-risk` y `mongo-uri-rating`: esos no hay que cargarlos. Lo que se agrega aparte es `clave-jwt`,
+`clave-cliente-id` y `clave-cifrado`, y ese valor nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
 
 ```bash
 printf '%s' 'postgresql://USUARIO:CLAVE@/auth?host=/cloudsql/PROYECTO:REGION:INSTANCIA' \
   | gcloud secrets versions add database-url-auth --data-file=-
 ```
 
-Una migración con el valor marcador falla fuerte y a propósito. `mongo-uri-rating` debe ser un usuario de **solo lectura**
-(RATING nunca escribe en Riesgo) y `mongo-uri-risk` el de lectura/escritura.
+Una migración con el valor marcador falla fuerte y a propósito. `mongo-uri-rating` es un usuario de **solo lectura**
+(RATING nunca escribe en Riesgo) y `mongo-uri-risk` el de lectura/escritura; Terraform crea los dos.
+
+### MongoDB Atlas: lo único que hay que hacer a mano
+
+Atlas necesita una cuenta que solo una persona puede crear (gratis, nivel M0). Una vez:
+
+1. Crea la cuenta en `cloud.mongodb.com` (se crea una organización).
+2. *Organization → Access Manager → API Keys → Create API Key*: nombre `terraform-solventa`, permiso **Organization
+   Project Creator**. Copia la clave pública y la privada (la privada se muestra una sola vez).
+3. Los servidores de GitHub no tienen IP fija: en la lista de acceso de esa clave agrega `0.0.0.0/0`, o desactiva *Require
+   IP Access List for the Atlas Administration API* en los ajustes de la organización (concesión de seguridad: la clave
+   sigue necesitando su secreto).
+4. Carga las claves en el vault, desde tu terminal (nunca en el chat ni en GitHub):
+
+```bash
+P=solventa-511815
+for s in mongodb-atlas-public-key mongodb-atlas-private-key; do
+  gcloud secrets create "$s" --project=$P --replication-policy=automatic
+done
+read -rsp "Public key: " K; echo; printf '%s' "$K" | gcloud secrets versions add mongodb-atlas-public-key --project=$P --data-file=-; unset K
+read -rsp "Private key: " K; echo; printf '%s' "$K" | gcloud secrets versions add mongodb-atlas-private-key --project=$P --data-file=-; unset K
+```
+
+5. Copia el **Organization ID** (*Organization Settings*; no es secreto) y guárdalo como variable de GitHub
+   `MONGODB_ATLAS_ORG_ID` (*Settings → Secrets and variables → Actions → Variables*).
+6. Pon `crear_mongo_atlas = true` en `infra/staging.tfvars` (PR) y haz el release. Los workflows `Deploy staging` y
+   `Costos staging` leen las claves de Secret Manager, las enmascaran y se las pasan a Terraform.
+
+Atlas M0 es gratis y **no se apaga** con `Costos staging`. Limitación conocida de M0: sin VPC peering ni Private Endpoint,
+por eso la lista de acceso de red del clúster queda abierta (`0.0.0.0/0`); la seguridad es usuario y contraseña (en Secret
+Manager) más TLS. Revisar antes de manejar datos reales.
 
 `clave-cliente-id` es la clave HMAC con la que el BFF deriva el `cliente_id` opaco a partir del documento de
 identidad (ver `services/bff/app/identificadores.py`). Debe ser aleatoria y **no cambiar** mientras haya datos en
