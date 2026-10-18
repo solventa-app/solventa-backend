@@ -280,3 +280,23 @@ services:
       - ./observabilidad/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports: ["3100:3000"]
     depends_on: [prometheus]
+
+  # Grafana que lee de Google Cloud (métricas, logs y trazas de staging) con tus credenciales de `gcloud`. No necesita
+  # el resto del compose: `docker compose --profile gcp up -d grafana-gcp` y abre http://localhost:3200.
+  # Antes, una vez: `gcloud auth application-default login`. En Windows apunta al archivo con
+  # `$env:GCLOUD_ADC = "$env:APPDATA\gcloud\application_default_credentials.json"` (PowerShell).
+  grafana-gcp:
+    image: grafana/grafana:11.3.1
+    profiles: ["gcp"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_INSTALL_PLUGINS: googlecloud-logging-datasource,googlecloud-trace-datasource
+      GF_USERS_DEFAULT_THEME: light
+      GOOGLE_APPLICATION_CREDENTIALS: /etc/gcp/adc.json
+      GCP_PROYECTO: ${GCP_PROYECTO:-solventa-511815}
+    volumes:
+      - ${GCLOUD_ADC:-~/.config/gcloud/application_default_credentials.json}:/etc/gcp/adc.json:ro
+      - ./observabilidad/gcp/provisioning:/etc/grafana/provisioning:ro
+      - ./observabilidad/gcp/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3200:3000"]

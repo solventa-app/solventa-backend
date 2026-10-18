@@ -37,6 +37,7 @@ from app.application.servicio_fuentes import ServicioConsultaFuentes
 from app.application.servicio_pagos import ServicioCobro
 from app.application.sonda import SondaRecuperacion
 from app.domain.puertos import ConsultaFuente, OrdenCobro
+from app.observabilidad import configurar_trazas
 
 # Backoff acotado de la reconciliación diferida (contrato punto 5): 5 intentos,
 # intervalos crecientes ~10s/30s/60s/120s/300s. Agotados, `rq` mueve el job al
@@ -49,6 +50,8 @@ REINTENTOS_RECONCILIACION = rq.Retry(max=5, interval=[10, 30, 60, 120, 300])
 # silencio: uvicorn solo configura sus propios loggers ("uvicorn", "uvicorn.access"),
 # no el root, y sin un handler el "lastResort" de logging filtra por debajo de WARNING.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+configurar_trazas("acl-worker", instrumentos=("httpx", "redis"))
 
 
 class ConsultaFuenteRequest(BaseModel):

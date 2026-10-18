@@ -24,6 +24,7 @@ from app.cifrado import CifradorAesGcm
 from app.configuracion import Configuracion
 from app.consentimientos import AlmacenConsentimientos, AlmacenConsentimientosPostgres
 from app.identificadores import id_opaco
+from app.observabilidad import configurar_trazas
 from app.sesiones import CredencialesInvalidas, ServicioSesiones
 from app.usuarios import (
     DatoInvalido,
@@ -34,6 +35,8 @@ from app.usuarios import (
 )
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+configurar_trazas("auth", instrumentos=("httpx", "psycopg"))
 logger = logging.getLogger("auth.consentimientos")
 logger_usuarios = logging.getLogger("auth.usuarios")
 

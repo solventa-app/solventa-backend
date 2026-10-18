@@ -16,6 +16,8 @@ from fastapi import FastAPI, Header, HTTPException
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 
+from app.observabilidad import configurar_trazas
+
 FUENTES = ("afiliacion-pila", "camara-comercio", "antecedentes-judiciales")
 MODOS = ("sano", "lento", "error", "caido")
 Modo = Literal["sano", "lento", "error", "caido"]
@@ -97,5 +99,7 @@ def create_app() -> FastAPI:
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app
 
+
+configurar_trazas("stub-open-data")
 
 app = create_app()
