@@ -267,43 +267,34 @@ openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n' | gcloud secrets versions ad
 
 ### Usuarios de staging: el primer BACKOFFICE y los de prueba
 
-La API exige un BACKOFFICE para crear usuarios, así que el primero se crea aparte, con la misma imagen de AUTH, en un
-Cloud Run Job temporal que se borra al terminar. La clave sale de Secret Manager (nunca va en el comando ni queda en la
-configuración del job). **Una sola vez; no se ha ejecutado todavía en GCP** (con Cloud SQL encendida: *Costos staging →
-encender*):
+Los usuarios se crean por el BFF, que exige un BACKOFFICE. Mientras staging no tenga ninguno, el **primero** se crea
+llamando directo a `POST /usuarios` de AUTH, que no pide sesión: lo protege Cloud Run (solo una identidad con
+`roles/run.invoker` sobre `auth` entra; hoy `rt-bff`, `rt-consolidador-fuentes` y la cuenta propietaria del proyecto).
+`scripts/crear_usuarios.py --auth` hace esa llamada con tu token de identidad de `gcloud` y crea **solo al operador**
+(BACKOFFICE); el CLIENTE y el ASESOR se crean después por el BFF, con su control de rol. Cada clave se genera al azar y,
+con `--vault`, va a Secret Manager (`usuario-<alias>`) en vez de la pantalla. El script es idempotente (lo que ya existe
+no se toca) y solo usa la biblioteca estándar y `gcloud`. Con Cloud SQL encendida (*Costos staging → encender*):
 
 ```bash
 PROYECTO=solventa-511815
-SA="rt-auth@${PROYECTO}.iam.gserviceaccount.com"
-# La clave del primer BACKOFFICE, generada aquí y guardada solo en el vault (sin salto de línea al final).
-python3 -c "import secrets; print(secrets.token_urlsafe(18), end='')"   | gcloud secrets create clave-backoffice-inicial --project "$PROYECTO" --replication-policy=automatic --data-file=-
-gcloud secrets add-iam-policy-binding clave-backoffice-inicial --project "$PROYECTO"   --member "serviceAccount:$SA" --role roles/secretmanager.secretAccessor
+AUTH_URL=$(gcloud run services describe auth --region us-central1 --project "$PROYECTO" --format='value(status.url)')
+BFF_URL=$(gcloud run services describe bff --region us-central1 --project "$PROYECTO" --format='value(status.url)')
 
-IMAGEN=$(gcloud run jobs describe migrar-auth --region us-central1 --project "$PROYECTO"   --format='value(spec.template.spec.template.spec.containers[0].image)')
-gcloud run jobs create crear-backoffice --region us-central1 --project "$PROYECTO" --image "$IMAGEN"   --service-account "$SA"   --set-cloudsql-instances "${PROYECTO}:us-central1:solventa-backend-postgres"   --set-secrets DATABASE_URL=database-url-auth:latest,CLAVE_INICIAL=clave-backoffice-inicial:latest   --command python --args=-m,app.crear_usuario,--usuario,admin.solventa,--rol,BACKOFFICE
-gcloud run jobs execute crear-backoffice --region us-central1 --project "$PROYECTO" --wait
-gcloud run jobs delete crear-backoffice --region us-central1 --project "$PROYECTO" --quiet
+# 1) Una sola vez: el primer BACKOFFICE (operador.demo), directo a AUTH
+python scripts/crear_usuarios.py --auth "$AUTH_URL" --vault "$PROYECTO"
+
+# 2) El CLIENTE y el ASESOR, por el BFF, con ese operador
+export USUARIO_BACKOFFICE=operador.demo
+export CLAVE_BACKOFFICE=$(gcloud secrets versions access latest --secret usuario-operador-demo --project "$PROYECTO")
+python scripts/crear_usuarios.py --bff "$BFF_URL" --vault "$PROYECTO"
 ```
 
-Es idempotente: si `admin.solventa` ya existe, no hace nada. Para leer su clave:
-`gcloud secrets versions access latest --secret clave-backoffice-inicial --project solventa-511815`.
+En PowerShell cambian las variables: `$AUTH_URL = gcloud run services describe auth --region us-central1 --project solventa-511815 --format='value(status.url)'`
+y `$env:CLAVE_BACKOFFICE = gcloud secrets versions access latest --secret usuario-operador-demo --project solventa-511815`.
 
-Con ese BACKOFFICE, el script `scripts/crear_usuarios.py` crea un CLIENTE, un ASESOR y un operador (BACKOFFICE) por el
-BFF, como lo haría el frontend. Genera una clave al azar para cada uno y, con `--vault`, la guarda en Secret Manager
-(`usuario-<alias>`) en vez de mostrarla. Es idempotente: lo que ya existe no se toca. Solo usa la biblioteca estándar y
-`gcloud` (solo con `--vault`).
-
-```bash
-export USUARIO_BACKOFFICE=admin.solventa
-export CLAVE_BACKOFFICE=$(gcloud secrets versions access latest --secret clave-backoffice-inicial --project solventa-511815)
-python scripts/crear_usuarios.py --bff https://<url-del-bff> --vault solventa-511815
-```
-
-En PowerShell: `$env:USUARIO_BACKOFFICE = "admin.solventa"` y
-`$env:CLAVE_BACKOFFICE = gcloud secrets versions access latest --secret clave-backoffice-inicial --project solventa-511815`.
 Los alias por defecto son `cliente.demo`, `asesor.demo` y `operador.demo` (`--cliente`, `--asesor`, `--operador` los
-cambian; un alias no puede ser un correo ni tener 6 o más dígitos seguidos). En local sirve igual, con el BACKOFFICE
-público del compose (`admin.solventa` / `admin-local-solventa`) y sin `--vault`.
+cambian; un alias no puede ser un correo ni tener 6 o más dígitos seguidos). En local no hace falta el paso 1: el compose
+ya crea un BACKOFFICE público (`admin.solventa` / `admin-local-solventa`), con el que sirve `python scripts/crear_usuarios.py`.
 
 ## Apagar y encender lo que cuesta (sin depender de nadie)
 
