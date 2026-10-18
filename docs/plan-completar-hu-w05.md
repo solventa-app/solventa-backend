@@ -37,7 +37,7 @@ Ya está hecho y no se vuelve a construir:
 | W05-4 | Cobro antes o después de emitir (D-03) y primer cobro al firmar | **Sprint 2**, con HU-W03 (`docs/cobros-conciliacion.md`, sección 10). | Cerrada |
 | W05-5 | Cifrado (HA-SEG-002) | Lo de W01 cubre la base de PAYMENTS (CMEK en Cloud SQL y llave en Secret Manager envuelta por KMS). Además se cifra en la aplicación el **`token_medio_pago`**, que hoy se guarda en claro. `cliente_id` es un id opaco y no se cifra. | Cerrada (sigue la decisión 6 de W01) |
 | W05-6 | Cambio de pasarela (HA-MOD-001, EC031) | Se demuestra con un **segundo adaptador** de pasarela elegido por configuración, con 0 líneas cambiadas en PAYMENTS y el BFF. Este plan es el dueño de EC031; el bloque 5 de W01 apunta aquí. | Cerrada |
-| W05-7 | Trabajo en segundo plano en Cloud Run | Ver bloque 0: los bucles de fondo no corren en staging. **Recomendado:** Cloud Tasks para el reintento de cobros y Cloud Scheduler para la sonda del circuito. | **Por confirmar** |
+| W05-7 | Trabajo en segundo plano en Cloud Run | Los bucles de fondo no corren en staging (bloque 0). Se disparan desde fuera: **Cloud Tasks** para el reintento de cobros y la reconciliación de fuentes, **Cloud Scheduler** para la sonda del circuito. Capa gratuita. | Cerrada (felipe, 2026-10-18) |
 | W05-8 | Evento `cobro.estado-cambiado` | Sigue solo en el log. Pub/Sub se aprobó únicamente para `PerfilActualizado` (decisión 9 de W01). | Cerrada |
 
 ## Plan de cambios (backend)
@@ -54,7 +54,7 @@ de fondo que en staging, por eso, **no corre de forma confiable**:
 | Sonda de recuperación del circuito | `acl-worker/app/application/sonda.py` | El circuito no se cierra fuera del camino del usuario (regla 5, HA-LAT-002) |
 | Reconciliación de fuentes degradadas | `consolidador-fuentes` (trabajador `rq` en el lifespan) | La cola `fuentes-reconciliacion` no se consume (W01) |
 
-**Arreglo recomendado (W05-7), sin cambiar la lógica, solo el disparador** (como ya prevé el docstring de `reintento.py`):
+**Arreglo decidido (W05-7), sin cambiar la lógica, solo el disparador** (como ya prevé el docstring de `reintento.py`):
 
 | Pieza | Disparador nuevo | Endpoint interno |
 |---|---|---|
@@ -161,5 +161,4 @@ Lo que **no** cambia: el contrato GraphQL de cobros, la semilla y el flujo de de
 
 ## Decisiones abiertas
 
-- **W05-7:** confirmar Cloud Tasks y Cloud Scheduler como disparadores (bloque 0). La alternativa es dejar CPU siempre
-  encendida y una instancia mínima en PAYMENTS, ACL y consolidador, que cuesta por hora aunque no haya tráfico.
+Ninguna. Del Planning solo sigue abierta D-01 (base de velocidad), que es de proceso del equipo.

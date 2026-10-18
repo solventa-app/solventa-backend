@@ -33,6 +33,7 @@
 | 21 | Revocar el consentimiento | El titular **debe poder revocar** (Ley 1581 de 2012; CA-W01-08 y el plan de pruebas: revocación en < 5 min). Como el prototipo no tiene esa pantalla, en el Sprint 1 se cumple en el **backend** (`revocarConsentimiento`, ya existe) con su prueba de los 5 minutos. La pantalla se agrega cuando exista en Figma (Sprint 2). |
 | 22 | Decisiones del Planning | D-02 (sesión causal), D-05 (stubs) y D-06 (W05 en el Sprint 1) **cerradas**: ya están hechas. D-04 cerrada en la decisión 6. Solo **D-01** (base de velocidad) sigue abierta para el Planning; D-03 es del Sprint 2. |
 | 23 | Vencimiento del consentimiento | Hoy no vence nunca (vigente = no revocado). Se agrega **vencimiento de 30 días** (configurable con `CONSENTIMIENTO_VIGENCIA_DIAS`) en el bloque 4: columna `vence_en` en la base de AUTH, fijada al otorgarlo; vigente = no revocado **y** antes de `vence_en`. Se calcula al leer: no hace falta un cron. |
+| 24 | Trabajo en segundo plano | La sonda del circuito (LAT-002) y la reconciliación de fuentes del consolidador no corren en Cloud Run con `cpu_idle = true`. Se disparan con Cloud Scheduler y Cloud Tasks: lo construye el **bloque 0 del plan de W05** (`docs/plan-completar-hu-w05.md`, decisión W05-7). |
 
 Basado en la revisión de pendientes de HU-W01 (18 puntos, numerados P1–P3 abajo) y en las restricciones que puso el equipo el 2026-10-18:
 
