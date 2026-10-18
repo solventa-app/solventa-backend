@@ -119,6 +119,12 @@ type ClienteCobro {
   nombre: String
 }
 
+# Con qué tarjeta se cobró. Solo marca y últimos 4 dígitos: el token del proveedor y la tarjeta nunca salen.
+type MedioPagoCobro {
+  marca: String!
+  ultimos4: String!
+}
+
 type Cobro {
   id: ID!
   polizaId: ID!
@@ -132,6 +138,7 @@ type Cobro {
   # En 0, `reintentarCobro` responde error: requiere otro medio de pago.
   reintentosRestantes: Int
   cliente: ClienteCobro # null en cobros creados sin clienteId
+  medioPago: MedioPagoCobro # null en cobros creados con un token suelto (sin medio de pago registrado)
 }
 
 input MontoInput {
@@ -148,7 +155,9 @@ input CrearCobroInput {
   # pólizas, nada valida que la póliza sea de ese cliente.
   clienteId: ID = null
   monto: MontoInput!
-  tokenMedioPago: String! # token del proveedor PCI-DSS; nunca datos de tarjeta
+  # Hay que mandar UNO de los dos (si faltan o vienen los dos, responde ErrorCobro):
+  tokenMedioPago: String = null # token suelto del proveedor PCI-DSS; nunca datos de tarjeta
+  medioPagoId: ID = null # medio de pago ya registrado en PAYMENTS; debe ser del clienteId
 }
 
 type ErrorCobro {

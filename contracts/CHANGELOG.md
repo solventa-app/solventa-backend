@@ -80,3 +80,16 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - El nombre **no viaja en el JWT** (va en base64, sin cifrar y vale 60 minutos): el front lo pide por GraphQL tras
   iniciar sesión. Si es `null`, mostrar el alias (`usuario`). Los pagos siguen siendo solo del BACKOFFICE.
 - Afecta al frontend: sí (saludo con el nombre).
+
+## v0.8 — 2026-10-18
+
+- KAN-208: medios de pago registrados para una demo más realista. `Cobro` suma `medioPago { marca ultimos4 }` (opcional) y
+  `CrearCobroInput` suma `medioPagoId` (opcional). Solo cambios aditivos en las consultas.
+- `CrearCobroInput.tokenMedioPago` pasa de `String!` a `String` (opcional): ahora hay que mandar **`tokenMedioPago` o
+  `medioPagoId`**, uno solo; si faltan ambos o vienen los dos, `crearCobro` responde `ErrorCobro`. Es una relajación del
+  input: quien ya enviaba el token sigue funcionando igual. El código generado a partir del esquema cambia el tipo del
+  campo de `string` a `string | null`.
+- No hay una mutación pública para registrar tarjetas: los medios de pago se cargan "tras bambalinas" (script de siembra
+  local, solo con tarjetas de prueba del mock de la pasarela). Con `medioPagoId`, PAYMENTS valida que el medio sea del
+  `clienteId` del cobro.
+- Afecta al frontend: sí, de forma opcional (columna "Medio de pago" de W05-01 con marca y últimos 4).
