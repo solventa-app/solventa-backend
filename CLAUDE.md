@@ -55,6 +55,7 @@ Arquitectura: [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md). Co
 ## Reglas de trabajo
 
 - **No sobre-construir.** Cada tarea se traza a una historia, una habilitadora o un escenario de `docs/sprint-1.md`. Si no se traza, no se construye.
+- **Al ejecutar un bloque de `docs/plan-completar-hu-w01.md`**, actualiza en el mismo PR los documentos que lista su tabla "Documentos que actualiza cada bloque". Si una decisión cerrada de ese plan choca con otro documento, gana el plan y corriges el documento.
 - **Verifica en vivo antes de reportar éxito:** corre las pruebas, levanta el compose, muestra números reales.
 - **Reutiliza los experimentos copiando, no enlazando.** Anota en el README del servicio el commit de origen (`solventa-arquitectura@11e4be6`). Sin submódulos.
 - **Costos:** nunca ejecutes `terraform apply`/`destroy` ni crees recursos facturables sin confirmación explícita del usuario. La protección de gasto de `../solventa-arquitectura/proteccion-costos/` debe estar activa en el proyecto antes de desplegar. Lo que cobra por hora (Cloud SQL, Redis y su conector) lo apaga y enciende el equipo con el workflow `Costos staging` (`infra/README.md`, «Apagar y encender lo que cuesta»); no hace falta pedírselo al agente.

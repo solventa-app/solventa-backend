@@ -179,6 +179,23 @@ que el cliente **acepta**, con precio, plazo y si fue completa o preliminar; ah�
 | back · infra | **Pub/Sub, solo el evento `PerfilActualizado`.** Tema y suscripción en Terraform detrás de una bandera `crear_pubsub` (capa gratuita: 10 GB/mes). RISK publica al actualizar el perfil; RATING se suscribe y borra su caché del score. Esquema del evento en `contracts/eventos/`. Los demás eventos, cuando una historia los pida. |
 | back | **Plantilla de la exploratoria de FC-01 y de los indicadores** en `docs/evidencias/exploratoria-FC-01.md`: misión, tiempo, datos usados, hallazgos y tabla de indicadores (defectos por severidad, casos ejecutados, cobertura, escenarios EC cumplidos). La sesión la hace una persona (ver "Lo que hace felipe a mano"). |
 
+## Documentos que actualiza cada bloque
+
+Regla: **cada PR de un bloque actualiza en el mismo PR los documentos que dice esta tabla**, para que el repo nunca
+contradiga estas decisiones. Al cerrar un bloque se marca aquí como hecho.
+
+| Bloque | Documentos a actualizar |
+|---|---|
+| 1 · Medir | `observabilidad/README.md` (Grafana con Cloud Monitoring y la llave local), `infra/README.md` (cuenta `grafana-lector`), `docs/pruebas-manuales.md` (cómo correr k6 contra staging), `docs/evidencias/` (resultados) |
+| 2 · Caché del score | `docs/arquitectura-backend.md` (el score cacheado vive en RISK), `contracts/` + `contracts/CHANGELOG.md` (`nivelRiesgo`, `fechaVigencia`), `docs/sprint-1.md` (estado de CA-W01-04 y EC010) |
+| 3 · Cifrado | `docs/sprint-1.md` y `CLAUDE.md` (D-04 cerrada; quitar "cifrado de campo fuera de alcance en risk"), `infra/README.md` (KMS, CMEK de Cloud SQL y Memorystore, Atlas M0 sin CMEK), README de `auth`, `risk` y `rating` (cifrado de sobre) |
+| 4 · Consentimiento | `contracts/` + CHANGELOG, `docs/autenticacion-usuarios.md`, `docs/sprint-1.md` (CA-W01-08) |
+| 5 · Fuentes | README del `acl-worker`, `docs/arquitectura-backend.md` |
+| 6 · Seguridad en CI | `docs/convenciones.md` (escaneos informativos y cuándo pasan a obligatorios), `infra/README.md` (secretos de Sonar) |
+| 7 · Front | `docs/convenciones.md` y README del repo del front |
+| 8 · Diseño | `contracts/` + CHANGELOG (evento `PerfilActualizado`), `infra/README.md` (bandera `crear_pubsub`), `docs/arquitectura-backend.md` (Pub/Sub solo para ese evento; la oferta se guarda en W03), `docs/evidencias/exploratoria-FC-01.md` |
+| Al terminar todo | `CLAUDE.md` → sección **Estado** con la fecha nueva y lo que quedó hecho |
+
 ## Lo que hace felipe a mano
 
 Todo lo demás (código, Terraform, pipelines, pruebas y evidencias) lo hago yo en PR hacia `develop`. Estos pasos
