@@ -130,7 +130,8 @@ Memorystore cuestan lo mismo que hoy y Atlas sigue gratis (M0). No hay que subir
 | back · ACL + stub | La consulta a Open Finance lleva `consentimiento_id` y `finalidad`; el stub responde 403 sin ellos (CE 004/2024). |
 | back · AUTH | **Vencimiento (decisión 23):** migración aditiva que agrega `vence_en` (`otorgado_en + 30 días`; a las filas viejas se les calcula igual). El trigger append-only no deja cambiarla después. `vigente` pasa a ser `revocado_en IS NULL AND now() < vence_en`, así que vence sola, sin cron ni proceso nocturno. |
 | back · contrato | `Consentimiento.venceEn: DateTime!` (aditivo, anotado en el CHANGELOG). |
-| back · BFF/consolidador | Un consentimiento vencido se trata igual que uno revocado: no se consulta ninguna fuente y la oferta responde `ErrorOferta` pidiendo autorizar de nuevo. Prueba en pytest con el reloj adelantado. |
+| back · BFF/consolidador | **Quién valida: el backend.** Hoy el BFF ya revisa `vigente` antes de consultar (`servicio_oferta.py`, línea 109); con `vence_en` esa misma revisión cubre vencido y revocado. No se consulta ninguna fuente y la oferta responde `ErrorOferta`. Prueba en pytest con el reloj adelantado. |
+| back · contrato | `ErrorOferta.motivo: MotivoErrorOferta` (aditivo): `CONSENTIMIENTO_NO_VIGENTE`, `DATOS_INSUFICIENTES`, `FUENTES_NO_DISPONIBLES`. Así el front sabe que debe volver a pedir el checkbox sin depender del texto del mensaje. |
 
 ### Bloque 5 · Fuentes por configuración y EC031 (P2 #10, #11)
 
