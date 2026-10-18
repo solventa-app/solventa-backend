@@ -317,6 +317,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.SONAR_TOKEN != ''
+        with:
+          fetch-depth: 0 # Sonar atribuye el código nuevo con el historial completo
       - uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8
         if: env.SONAR_TOKEN != ''
         env:

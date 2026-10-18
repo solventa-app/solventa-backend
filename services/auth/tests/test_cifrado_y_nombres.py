@@ -33,7 +33,10 @@ def test_ida_y_vuelta() -> None:
 
 
 def test_el_mismo_texto_cifra_distinto_cada_vez() -> None:
-    assert CIFRADOR_PRUEBAS.cifrar(NOMBRE, "u-1") != CIFRADOR_PRUEBAS.cifrar(NOMBRE, "u-1")
+    primero = CIFRADOR_PRUEBAS.cifrar(NOMBRE, "u-1")
+    segundo = CIFRADOR_PRUEBAS.cifrar(NOMBRE, "u-1")
+
+    assert primero != segundo
 
 
 def test_el_cifrado_de_un_usuario_no_sirve_para_otro() -> None:

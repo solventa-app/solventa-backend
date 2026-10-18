@@ -57,7 +57,10 @@ class SondaRecuperacion:
         try:
             await self._tarea
         except asyncio.CancelledError:
-            pass
+            # La cancelación esperada es la de la tarea de fondo. Si lo que se cancela es esta misma
+            # corrutina (p. ej. el apagado se agotó), se propaga.
+            if asyncio.current_task().cancelling():
+                raise
 
     async def _bucle(self) -> None:
         while True:

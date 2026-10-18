@@ -82,7 +82,7 @@ PR ─► CI ─► merge a develop ─► construir (imagen = SHA) ─► migra
 
 | Dónde | Qué | Para qué |
 |---|---|---|
-| Settings → Secrets → Actions | `SONAR_TOKEN` y `SONAR_HOST_URL` | Activa el análisis de SonarQube del CI |
+| Settings → Secrets → Actions | `SONAR_TOKEN` y `SONAR_HOST_URL` (`https://sonarcloud.io`) | Activa el análisis de SonarQube Cloud del CI (organización `global-spark`, proyecto `global-spark_solventa-backend`, plan Free: solo analiza la rama principal del proyecto en Sonar) |
 | Settings → Branches | Rama predeterminada `develop`; aplicar los rulesets de `main` y `develop` (`.github/rulesets/`): PR + 1 revisión + checks requeridos **`CI OK`**, **`Título del PR`** y **`Nombre de rama`** | ADR-08 y `docs/convenciones.md` |
 | Settings → Environments | Crear el entorno `staging` (revisores y rama `develop` si se quiere) | Lo exigen los jobs de despliegue y la identidad de GCP |
 | `.github/CODEOWNERS` | Reemplazar los roles por usuarios reales | Revisores automáticos |
