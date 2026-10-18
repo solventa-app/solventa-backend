@@ -218,8 +218,8 @@ Local:  navegador → Vite (proxy /graphql)     → gateway local :8080 (Envoy, 
 - Costo: gratis hasta 2 millones de llamadas al mes; después USD 3 por millón.
 
 **En local (docker compose):**
-- Servicio `gateway` con la imagen oficial de Envoy y `observabilidad`/`servicios` sin cambios: `infra/gateway/envoy.yaml`
-  con las mismas rutas y el mismo plazo de 700 ms, en el puerto **8080**.
+- Servicio `gateway` (imagen oficial de Envoy) en el perfil `servicios` del compose, configurado con
+  `infra/gateway/envoy.yaml`: las mismas rutas y el mismo plazo de 700 ms, en el puerto **8080**.
 - El front local apunta a `VITE_BFF_URL=http://localhost:8080`. Ir directo a `:8000` sigue funcionando para depurar.
 - Un script (`scripts/validar_gateway.py`) compara rutas y plazos de `openapi.yaml` y `envoy.yaml` para que no se separen.
 
