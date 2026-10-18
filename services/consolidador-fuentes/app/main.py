@@ -86,10 +86,10 @@ def create_app(redis_url: str | None = None, disparador: str | None = None) -> F
                 trabajo.fuente, trabajo.cliente_id, trabajo.consentimiento_id, trabajo.encolado_en
             )
         except Exception as error:  # cualquier fallo se reintenta; el detalle no se expone
+            # Sin datos de la petición en el log (inyección de log): `app/tareas.py` ya registra la
+            # fuente y el resultado.
             logging.getLogger("consolidador_fuentes.tareas").info(
-                "reconciliacion fuente=%s pendiente de reintento (%s)",
-                trabajo.fuente,
-                type(error).__name__,
+                "reconciliacion pendiente de reintento (%s)", type(error).__name__
             )
             raise HTTPException(status_code=503, detail="reintentar") from error
         return {"estado": "resuelta"}
