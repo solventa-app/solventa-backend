@@ -2,7 +2,10 @@ from app.identificadores import cliente_id_desde_documento, id_opaco
 
 
 def test_cliente_id_es_determinista() -> None:
-    assert cliente_id_desde_documento("CC-123", "k") == cliente_id_desde_documento("CC-123", "k")
+    primero = cliente_id_desde_documento("CC-123", "k")
+    segundo = cliente_id_desde_documento("CC-123", "k")
+
+    assert primero == segundo
 
 
 def test_cliente_id_ignora_espacios_y_mayusculas() -> None:
