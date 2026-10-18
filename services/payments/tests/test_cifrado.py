@@ -30,7 +30,10 @@ def test_cifra_y_descifra_con_el_mismo_dueno() -> None:
 def test_el_mismo_texto_cifra_distinto_cada_vez() -> None:
     cifrador = CifradorAesGcm(LLAVE)
 
-    assert cifrador.cifrar("tok", "cobro-1") != cifrador.cifrar("tok", "cobro-1")
+    primero = cifrador.cifrar("tok", "cobro-1")
+    segundo = cifrador.cifrar("tok", "cobro-1")
+
+    assert primero != segundo
 
 
 def test_copiar_el_cifrado_a_otro_cobro_falla() -> None:
