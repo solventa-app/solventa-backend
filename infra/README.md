@@ -197,17 +197,47 @@ el merge. Localmente: `export TF_VAR_project_id=... TF_VAR_billing_account_id=..
 
 `terraform output secretos_a_cargar` lista **todos** los secretos del manifiesto. Terraform crea cada contenedor con un
 valor marcador (`pendiente-de-cargar`). Con `crear_cloud_sql` (y `crear_servicios`) Terraform ya escribe solo
-`database-url-auth` y `database-url-payments`, y con `crear_mongo_atlas` escribe `mongo-uri-risk`: esos no hay que
-cargarlos. El resto (`mongo-uri-rating`, `redis-url-*`, `clave-jwt`, `clave-cliente-id`) se agrega aparte, y ese valor
-nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
+`database-url-auth` y `database-url-payments`; con `crear_redis`, `redis-url-*`; y con `crear_mongo_atlas`,
+`mongo-uri-risk` y `mongo-uri-rating`: esos no hay que cargarlos. Lo que se agrega aparte es `clave-jwt`,
+`clave-cliente-id` y `clave-cifrado`, y ese valor nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
 
 ```bash
 printf '%s' 'postgresql://USUARIO:CLAVE@/auth?host=/cloudsql/PROYECTO:REGION:INSTANCIA' \
   | gcloud secrets versions add database-url-auth --data-file=-
 ```
 
-Una migración con el valor marcador falla fuerte y a propósito. `mongo-uri-rating` debe ser un usuario de **solo lectura**
-(RATING nunca escribe en Riesgo) y `mongo-uri-risk` el de lectura/escritura.
+Una migración con el valor marcador falla fuerte y a propósito. `mongo-uri-rating` es un usuario de **solo lectura**
+(RATING nunca escribe en Riesgo) y `mongo-uri-risk` el de lectura/escritura; Terraform crea los dos.
+
+### MongoDB Atlas: lo único que hay que hacer a mano
+
+Atlas necesita una cuenta que solo una persona puede crear (gratis, nivel M0). Una vez:
+
+1. Crea la cuenta en `cloud.mongodb.com` (se crea una organización).
+2. *Organization → Access Manager → API Keys → Create API Key*: nombre `terraform-solventa`, permiso **Organization
+   Project Creator**. Copia la clave pública y la privada (la privada se muestra una sola vez).
+3. Los servidores de GitHub no tienen IP fija: en la lista de acceso de esa clave agrega `0.0.0.0/0`, o desactiva *Require
+   IP Access List for the Atlas Administration API* en los ajustes de la organización (concesión de seguridad: la clave
+   sigue necesitando su secreto).
+4. Carga las claves en el vault, desde tu terminal (nunca en el chat ni en GitHub):
+
+```bash
+P=solventa-511815
+for s in mongodb-atlas-public-key mongodb-atlas-private-key; do
+  gcloud secrets create "$s" --project=$P --replication-policy=automatic
+done
+read -rsp "Public key: " K; echo; printf '%s' "$K" | gcloud secrets versions add mongodb-atlas-public-key --project=$P --data-file=-; unset K
+read -rsp "Private key: " K; echo; printf '%s' "$K" | gcloud secrets versions add mongodb-atlas-private-key --project=$P --data-file=-; unset K
+```
+
+5. Copia el **Organization ID** (*Organization Settings*; no es secreto) y guárdalo como variable de GitHub
+   `MONGODB_ATLAS_ORG_ID` (*Settings → Secrets and variables → Actions → Variables*).
+6. Pon `crear_mongo_atlas = true` en `infra/staging.tfvars` (PR) y haz el release. Los workflows `Deploy staging` y
+   `Costos staging` leen las claves de Secret Manager, las enmascaran y se las pasan a Terraform.
+
+Atlas M0 es gratis y **no se apaga** con `Costos staging`. Limitación conocida de M0: sin VPC peering ni Private Endpoint,
+por eso la lista de acceso de red del clúster queda abierta (`0.0.0.0/0`); la seguridad es usuario y contraseña (en Secret
+Manager) más TLS. Revisar antes de manejar datos reales.
 
 `clave-cliente-id` es la clave HMAC con la que el BFF deriva el `cliente_id` opaco a partir del documento de
 identidad (ver `services/bff/app/identificadores.py`). Debe ser aleatoria y **no cambiar** mientras haya datos en
@@ -235,23 +265,45 @@ los nombres ilegibles** (los cobros saldrían sin nombre): antes de rotar hay qu
 openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n' | gcloud secrets versions add clave-cifrado --data-file=-
 ```
 
-**Primer usuario BACKOFFICE en staging (pendiente, manual, NO probado):** la API exige un BACKOFFICE para crear
-usuarios, así que el primero se crea con la misma imagen de AUTH, en un Cloud Run Job temporal que se borra al terminar
-(así la clave no queda guardada en la configuración del job):
+### Usuarios de staging: el primer BACKOFFICE y los de prueba
+
+La API exige un BACKOFFICE para crear usuarios, así que el primero se crea aparte, con la misma imagen de AUTH, en un
+Cloud Run Job temporal que se borra al terminar. La clave sale de Secret Manager (nunca va en el comando ni queda en la
+configuración del job). **Una sola vez; no se ha ejecutado todavía en GCP** (con Cloud SQL encendida: *Costos staging →
+encender*):
 
 ```bash
-IMAGEN=$(gcloud run services describe auth --region us-central1 --format='value(spec.template.spec.containers[0].image)')
-gcloud run jobs create crear-backoffice --region us-central1 --image "$IMAGEN" \
-  --service-account "rt-auth@${PROYECTO}.iam.gserviceaccount.com" \
-  --set-cloudsql-instances "${PROYECTO}:us-central1:<instancia>" \
-  --set-secrets DATABASE_URL=database-url-auth:latest \
-  --set-env-vars CLAVE_INICIAL="$CLAVE_BACKOFFICE" \
-  --command python --args=-m,app.crear_usuario,--usuario,admin.solventa,--rol,BACKOFFICE
-gcloud run jobs execute crear-backoffice --region us-central1 --wait
-gcloud run jobs delete crear-backoffice --region us-central1 --quiet
+PROYECTO=solventa-511815
+SA="rt-auth@${PROYECTO}.iam.gserviceaccount.com"
+# La clave del primer BACKOFFICE, generada aquí y guardada solo en el vault (sin salto de línea al final).
+python3 -c "import secrets; print(secrets.token_urlsafe(18), end='')"   | gcloud secrets create clave-backoffice-inicial --project "$PROYECTO" --replication-policy=automatic --data-file=-
+gcloud secrets add-iam-policy-binding clave-backoffice-inicial --project "$PROYECTO"   --member "serviceAccount:$SA" --role roles/secretmanager.secretAccessor
+
+IMAGEN=$(gcloud run jobs describe migrar-auth --region us-central1 --project "$PROYECTO"   --format='value(spec.template.spec.template.spec.containers[0].image)')
+gcloud run jobs create crear-backoffice --region us-central1 --project "$PROYECTO" --image "$IMAGEN"   --service-account "$SA"   --set-cloudsql-instances "${PROYECTO}:us-central1:solventa-backend-postgres"   --set-secrets DATABASE_URL=database-url-auth:latest,CLAVE_INICIAL=clave-backoffice-inicial:latest   --command python --args=-m,app.crear_usuario,--usuario,admin.solventa,--rol,BACKOFFICE
+gcloud run jobs execute crear-backoffice --region us-central1 --project "$PROYECTO" --wait
+gcloud run jobs delete crear-backoffice --region us-central1 --project "$PROYECTO" --quiet
 ```
 
-Nunca se ha ejecutado (no hay proyecto GCP): revisa los nombres reales con `terraform output` antes de usarlo.
+Es idempotente: si `admin.solventa` ya existe, no hace nada. Para leer su clave:
+`gcloud secrets versions access latest --secret clave-backoffice-inicial --project solventa-511815`.
+
+Con ese BACKOFFICE, el script `scripts/crear_usuarios.py` crea un CLIENTE, un ASESOR y un operador (BACKOFFICE) por el
+BFF, como lo haría el frontend. Genera una clave al azar para cada uno y, con `--vault`, la guarda en Secret Manager
+(`usuario-<alias>`) en vez de mostrarla. Es idempotente: lo que ya existe no se toca. Solo usa la biblioteca estándar y
+`gcloud` (solo con `--vault`).
+
+```bash
+export USUARIO_BACKOFFICE=admin.solventa
+export CLAVE_BACKOFFICE=$(gcloud secrets versions access latest --secret clave-backoffice-inicial --project solventa-511815)
+python scripts/crear_usuarios.py --bff https://<url-del-bff> --vault solventa-511815
+```
+
+En PowerShell: `$env:USUARIO_BACKOFFICE = "admin.solventa"` y
+`$env:CLAVE_BACKOFFICE = gcloud secrets versions access latest --secret clave-backoffice-inicial --project solventa-511815`.
+Los alias por defecto son `cliente.demo`, `asesor.demo` y `operador.demo` (`--cliente`, `--asesor`, `--operador` los
+cambian; un alias no puede ser un correo ni tener 6 o más dígitos seguidos). En local sirve igual, con el BACKOFFICE
+público del compose (`admin.solventa` / `admin-local-solventa`) y sin `--vault`.
 
 ## Apagar y encender lo que cuesta (sin depender de nadie)
 
