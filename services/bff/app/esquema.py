@@ -188,6 +188,14 @@ class ClienteCobro:
 
 
 @strawberry.type
+class MedioPagoCobro:
+    """Con qué tarjeta se cobró: solo marca y últimos 4. El token nunca sale de PAYMENTS."""
+
+    marca: str
+    ultimos4: str
+
+
+@strawberry.type
 class Cobro:
     id: strawberry.ID
     poliza_id: strawberry.ID
@@ -199,6 +207,7 @@ class Cobro:
     reintentos_restantes: int | None  # reintentos manuales de un rechazado (CA-W05-02)
     id_transaccion: str | None  # referencia de la pasarela (columna de W05-01)
     cliente: ClienteCobro | None
+    medio_pago: MedioPagoCobro | None  # null en cobros hechos con un token suelto
 
 
 @strawberry.input
@@ -213,10 +222,13 @@ class CrearCobroInput:
     id_intento_cobro: strawberry.ID
     poliza_id: strawberry.ID
     monto: MontoInput
-    token_medio_pago: str  # token del proveedor PCI-DSS; nunca datos de tarjeta
     # El CLIENTE a quien se le cobra. Mientras no exista el servicio de pólizas, nada valida
     # que la póliza sea suya.
     cliente_id: strawberry.ID | None = None
+    # Hay que mandar UNO de los dos: un token suelto del proveedor PCI-DSS (nunca datos de
+    # tarjeta) o un medio de pago ya registrado en PAYMENTS, que debe ser del `cliente_id`.
+    token_medio_pago: str | None = None
+    medio_pago_id: strawberry.ID | None = None
 
 
 @strawberry.type
@@ -357,6 +369,13 @@ def _cobro(datos: dict, nombres: dict[str, str] | None = None) -> Cobro:
         intentos=datos.get("intentos"),
         reintentos_restantes=datos.get("reintentos_rechazo_restantes"),
         id_transaccion=datos.get("referencia"),
+        medio_pago=(
+            MedioPagoCobro(
+                marca=datos["medio_pago"]["marca"], ultimos4=datos["medio_pago"]["ultimos4"]
+            )
+            if datos.get("medio_pago")
+            else None
+        ),
         cliente=(
             ClienteCobro(id=strawberry.ID(cliente_id), nombre=(nombres or {}).get(cliente_id))
             if cliente_id
@@ -383,6 +402,9 @@ CLIENTE_O_ASESOR = ("CLIENTE", "ASESOR")
 SOLO_BACKOFFICE = ("BACKOFFICE",)
 MENSAJE_AUTH_NO_DISPONIBLE = "No pudimos procesar la solicitud. Intenta de nuevo."
 MENSAJE_USUARIO_NO_ENCONTRADO = "Usuario no encontrado."
+MENSAJE_MEDIO_DE_PAGO = (
+    "Indica el token del medio de pago o un medio de pago registrado, no ambos ni ninguno."
+)
 MENSAJE_COBROS_NO_DISPONIBLES = "No pudimos consultar los cobros. Intenta de nuevo."
 
 
@@ -552,6 +574,8 @@ class Mutation:
         `idIntentoCobro` devuelve el mismo cobro sin cobrar de nuevo. Ni el token del
         medio de pago ni la póliza se loguean."""
         exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        if bool(entrada.token_medio_pago) == bool(entrada.medio_pago_id):
+            return ErrorCobro(mensaje=MENSAJE_MEDIO_DE_PAGO)
         try:
             datos = await info.context["clientes"].payments.crear_cobro(
                 {
@@ -560,7 +584,8 @@ class Mutation:
                     "cliente_id": str(entrada.cliente_id) if entrada.cliente_id else None,
                     "monto": entrada.monto.valor,
                     "moneda": entrada.monto.moneda,
-                    "token_medio_pago": entrada.token_medio_pago,
+                    "token_medio_pago": entrada.token_medio_pago or None,
+                    "medio_pago_id": str(entrada.medio_pago_id) if entrada.medio_pago_id else None,
                 }
             )
         except SolicitudInvalida as error:

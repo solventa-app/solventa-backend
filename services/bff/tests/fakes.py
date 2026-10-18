@@ -264,6 +264,8 @@ class PaymentsFalso:
         self.falla = falla
         self.filtros: list[tuple[str | None, str | None]] = []
         self.ordenes: list[dict] = []
+        # Medios de pago registrados: id -> cliente_id, marca y últimos 4.
+        self.medios: dict[str, dict] = {}
 
     async def listar_cobros(self, poliza_id: str | None, estado: str | None) -> list[dict]:
         if self.falla:
@@ -308,12 +310,20 @@ class PaymentsFalso:
                 if cobro["monto"] != orden["monto"] or cobro["poliza_id"] != orden["poliza_id"]:
                     raise SolicitudInvalida("Ese id_intento_cobro ya se usó con otros datos.")
                 return cobro
+        medio = None
+        if orden.get("medio_pago_id"):
+            medio = self.medios.get(orden["medio_pago_id"])
+            if medio is None or medio["cliente_id"] != orden.get("cliente_id"):
+                raise SolicitudInvalida("Ese medio de pago no existe o no es de este cliente.")
         cobro = cobro_de_payments(
             f"cobro-{len(self.cobros) + 1}",
             orden["poliza_id"],
             "cobrado",
             id_intento_cobro=orden["id_intento_cobro"],
             cliente_id=orden.get("cliente_id"),
+            medio_pago=(
+                {"marca": medio["marca"], "ultimos4": medio["ultimos4"]} if medio else None
+            ),
             monto=orden["monto"],
             moneda=orden["moneda"],
         )

@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 import httpx
+import pytest
 from fakes import AuthFalso, PaymentsFalso, clientes_falsos, cobro_de_payments, token_de_prueba
 from fastapi.testclient import TestClient
 
@@ -353,3 +354,92 @@ def test_cobros_trae_el_id_de_transaccion_de_la_pasarela() -> None:
         lista = _post(client, "{ cobros { id idTransaccion } }", {})["data"]["cobros"]
 
     assert {c["id"]: c["idTransaccion"] for c in lista} == {"c-1": "pg-abc-123", "c-2": None}
+
+
+# ---------- medios de pago (KAN-208)
+
+CREAR_CON_MEDIO = """mutation($e: CrearCobroInput!) {
+  crearCobro(entrada: $e) {
+    __typename
+    ... on Cobro { id medioPago { marca ultimos4 } }
+    ... on ErrorCobro { mensaje }
+  }
+}"""
+
+
+def _entrada_con_medio(**cambios) -> dict:
+    base = {k: v for k, v in ENTRADA_COBRO.items() if k != "tokenMedioPago"}
+    return {**base, "clienteId": "u-cli-1", "medioPagoId": "mp-1", **cambios}
+
+
+def _payments_con_medio() -> PaymentsFalso:
+    payments = PaymentsFalso()
+    payments.medios = {"mp-1": {"cliente_id": "u-cli-1", "marca": "visa", "ultimos4": "4242"}}
+    return payments
+
+
+def test_crear_cobro_con_medio_de_pago_devuelve_marca_y_ultimos4() -> None:
+    payments = _payments_con_medio()
+    with _cliente(payments) as client:
+        cobro = _post(client, CREAR_CON_MEDIO, {"e": _entrada_con_medio()})["data"]["crearCobro"]
+
+    assert cobro["medioPago"] == {"marca": "visa", "ultimos4": "4242"}
+    assert payments.ordenes[0]["medio_pago_id"] == "mp-1"
+    assert payments.ordenes[0]["token_medio_pago"] is None
+
+
+def test_crear_cobro_con_token_suelto_no_trae_medio_de_pago() -> None:
+    with _cliente(PaymentsFalso()) as client:
+        cobro = _post(client, CREAR_CON_MEDIO, {"e": ENTRADA_COBRO})["data"]["crearCobro"]
+
+    assert cobro["__typename"] == "Cobro" and cobro["medioPago"] is None
+
+
+@pytest.mark.parametrize(
+    "cambios",
+    [{"medioPagoId": None}, {"tokenMedioPago": "tok_suelto"}],
+    ids=["ninguno", "ambos"],
+)
+def test_hay_que_mandar_el_token_o_el_medio_pero_no_ambos_ni_ninguno(cambios: dict) -> None:
+    payments = _payments_con_medio()
+    with _cliente(payments) as client:
+        resultado = _post(client, CREAR_CON_MEDIO, {"e": _entrada_con_medio(**cambios)})
+
+    error = resultado["data"]["crearCobro"]
+    assert error["__typename"] == "ErrorCobro" and "no ambos ni ninguno" in error["mensaje"]
+    assert payments.ordenes == []  # ni siquiera se llamó a PAYMENTS
+
+
+def test_un_medio_de_otro_cliente_da_error_cobro() -> None:
+    with _cliente(_payments_con_medio()) as client:
+        resultado = _post(client, CREAR_CON_MEDIO, {"e": _entrada_con_medio(clienteId="u-otro")})[
+            "data"
+        ]["crearCobro"]
+
+    assert resultado["__typename"] == "ErrorCobro"
+    assert "no existe o no es de este cliente" in resultado["mensaje"]
+
+
+def test_cobros_lista_el_medio_de_pago() -> None:
+    cobros = [
+        cobro_de_payments(
+            "c-1", "POL-1", "cobrado", medio_pago={"marca": "mastercard", "ultimos4": "4444"}
+        ),
+        cobro_de_payments("c-2", "POL-2", "cobrado"),
+    ]
+    with _cliente(PaymentsFalso(cobros)) as client:
+        lista = _post(client, "{ cobros { id medioPago { marca ultimos4 } } }", {})["data"][
+            "cobros"
+        ]
+
+    assert {c["id"]: c["medioPago"] for c in lista} == {
+        "c-1": {"marca": "mastercard", "ultimos4": "4444"},
+        "c-2": None,
+    }
+
+
+def test_el_token_del_medio_de_pago_no_existe_en_el_esquema() -> None:
+    with _cliente(PaymentsFalso()) as client:
+        cuerpo = _post(client, "{ cobros { medioPago { token } } }", {})
+
+    assert "token" in cuerpo["errors"][0]["message"]
