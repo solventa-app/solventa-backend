@@ -196,6 +196,18 @@ resource "google_cloud_run_v2_service" "servicio" {
         }
       }
 
+      # Cifrado de sobre (kms.tf, bloque 3): la llave de KMS con que AUTH, RISK y RATING desenvuelven
+      # `CIFRADO_CLAVE_ENVUELTA`. Mientras ese secreto tenga el marcador, usan `CIFRADO_CLAVE`.
+      dynamic "env" {
+        for_each = contains(tolist(local.servicios_con_kms), each.key) ? {
+          KMS_KEY_NAME = google_kms_crypto_key.campos_personales[0].id
+        } : {}
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
       # Disparadores externos (tareas.tf): quién dispara el trabajo de fondo, y lo que Cloud Tasks necesita para
       # firmar y dirigir la tarea. Solo con `crear_tareas` y en los servicios que lo declaran.
       dynamic "env" {

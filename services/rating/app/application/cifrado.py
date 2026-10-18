@@ -124,7 +124,8 @@ class CifradorAesGcm:
             if cifrado_clave_envuelta is not None
             else os.getenv("CIFRADO_CLAVE_ENVUELTA", "").strip()
         )
-        if llave_kms and sobre_b64:
+        # Con el marcador de Terraform aún no hay sobre: se usa la llave directa.
+        if llave_kms and sobre_b64 and sobre_b64 != VALOR_MARCADOR:
             return cls.desde_kms(llave_kms, sobre_b64, cliente_kms=cliente_kms)
 
         clave = (
