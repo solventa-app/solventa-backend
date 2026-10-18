@@ -32,6 +32,11 @@ locals {
   publicos       = { for n, s in local.activos : n => s if try(s.publico, false) }
   camino_critico = toset(["bff", "auth", "acl-worker", "risk", "rating", "stub-open-finance", "stub-open-data"])
 
+  # Instancias fijas mientras `instancias_fijas_encendidas` sea true: los servicios con `instancia_fija` en el manifiesto
+  # corren con mínimo 1 instancia (sin arranque en frío). La CPU sigue limitada a las peticiones: el trabajo de fondo
+  # lo disparan Cloud Tasks y Cloud Scheduler desde fuera (tareas.tf), no un bucle dentro del proceso.
+  fijo = { for n, s in local.activos : n => var.instancias_fijas_encendidas && try(s.instancia_fija, false) }
+
   # Servicios que hablan con Postgres: los que declaran un secreto `database-url-*` (su URL usa el socket
   # /cloudsql, que Cloud Run solo monta si se pide). Vale para el servicio y para su job de migración.
   con_postgres = {
@@ -144,7 +149,7 @@ resource "google_cloud_run_v2_service" "servicio" {
     service_account = google_service_account.runtime[each.key].email
 
     scaling {
-      min_instance_count = (var.calentar_camino_critico && contains(local.camino_critico, each.key)) ? 1 : 0
+      min_instance_count = (local.fijo[each.key] || (var.calentar_camino_critico && contains(local.camino_critico, each.key))) ? 1 : 0
       max_instance_count = var.max_instancias
     }
 

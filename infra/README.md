@@ -388,16 +388,17 @@ el tiempo. Cualquiera del equipo puede apagarlo y volver a subirlo con un botón
 |---|---|---|---|
 | **Cloud SQL** (`auth`, `payments`) | Sí (~USD 9-12/mes con `db-f1-micro`, según este README) | Se **detiene**: conserva las bases, los usuarios y las migraciones; solo se paga el disco | Arranca (1-3 min); no hay que volver a migrar |
 | **Redis + conector VPC** (`rating`, `acl-worker`, `consolidador-fuentes`) | Sí (~USD 0,12/h juntos, según este README) | Se **borran** la instancia y el conector (es una caché) | Se vuelven a crear (10-15 min) |
+| **Instancias fijas** de Cloud Run (`bff`, `auth`, `risk`, `rating`, `payments`, `acl-worker` y los 3 stubs) | Sí (estimado, sin verificar: ~USD 10 al mes cada una; ~USD 3 al día las 9 juntas) | Vuelven a **mínimo 0** instancias y CPU solo en las peticiones | Mínimo 1 otra vez |
 | Red, subred y APIs de Redis | No | Se quedan (ver abajo) | No se tocan |
-| Cloud Run, Secret Manager, MongoDB Atlas M0 | No / casi cero / gratis | No se toca | No se toca |
+| El resto de Cloud Run (`consolidador-fuentes`), Secret Manager, MongoDB Atlas M0 | No / casi cero / gratis | No se toca | No se toca |
 
 ### El botón
 
 *GitHub → Actions → **Costos staging** → Run workflow → elige la acción:*
 
 - **`estado`**: solo informa qué está encendido y qué apagado. No cambia nada.
-- **`apagar`**: detiene Cloud SQL y borra Redis y su conector.
-- **`encender`**: arranca Cloud SQL y vuelve a crear Redis y el conector.
+- **`apagar`**: detiene Cloud SQL, borra Redis y su conector y devuelve las instancias fijas a mínimo 0.
+- **`encender`**: arranca Cloud SQL, vuelve a crear Redis y el conector y restituye las instancias fijas.
 
 El resumen de la ejecución muestra el plan antes de aplicarlo y el estado en que queda.
 
@@ -472,8 +473,19 @@ tras un rato sin uso sumaba el BFF en frío más AUTH en frío.
 - **No se toca el presupuesto de 700 ms del ACL con los proveedores externos** (`TIMEOUT_MS`, EC009/EC010): es otra
   frontera, la del ACL hacia Open Finance, Open Data y la pasarela.
 - **PAYMENTS hacia el ACL** sigue en 3 s: con el ACL frío, un cobro queda `pendiente` y se reintenta (degradación prevista).
-- **Si quieres evitar el frío del todo:** `min_instance_count = 1` en el BFF y en AUTH (unos 10 USD al mes por servicio, estimado
-  sin verificar) o un Cloud Scheduler que llame a `/health` cada 5 minutos. No están aplicados: es una decisión de costo.
+- **Instancias fijas (`instancias_fijas_encendidas`, true en `staging.tfvars`):** los servicios que atiende el usuario llevan
+  `"instancia_fija": true` en `.github/servicios.json` y corren con **mínimo 1 instancia**: BFF, AUTH, RISK, RATING,
+  PAYMENTS, el ACL y los 3 stubs de proveedores (un stub frío tarda más de los 700 ms del ACL y degradaría la oferta). Solo
+  `consolidador-fuentes` queda en 0: el BFF no lo llama. La CPU sigue limitada a las peticiones: el reintento de cobros y
+  la sonda del circuito los disparan Cloud Tasks y Cloud Scheduler desde fuera (ver «Disparadores externos»), así que no
+  hace falta CPU siempre asignada. Agregar un servicio a la lista es una línea en el manifiesto.
+- **Cobran por hora y se apagan con el botón** («Costos staging → apagar», y se apaga solo a las 2 a.m. de Colombia): apagadas,
+  los servicios vuelven a mínimo 0 y el primer uso tras un rato sin tráfico tarda de nuevo (los 15 s de arriba lo cubren).
+  Por la mañana hay que **encender** (unos 10-15 minutos por Redis); las instancias fijas vuelven con ese mismo botón.
+- **Cuota de CPU de Cloud Run: 20 vCPU por región** (`cpu_allocation`). Las instancias fijas ocupan 9, así que los despliegues
+  en paralelo se limitan: `terraform apply -parallelism=3` y `max-parallel: 4` en el job `desplegar`. Sin eso, un `apply` de
+  infra que crea una revisión nueva en los 10 servicios a la vez supera la cuota («Quota exceeded for total allowable CPU per
+  project per region», 2026-10-18). Si hiciera falta más, se pide un aumento de la cuota en la consola de GCP.
 
 ## Costos y cómo destruir
 
