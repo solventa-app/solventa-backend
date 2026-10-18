@@ -376,6 +376,22 @@ printf encendido | gcloud storage cp - gs://solventa-511815-tfstate/solventa-bac
 **No** apagues Cloud SQL con `gcloud sql instances patch` ni borres Redis desde la consola: Terraform lo vería como deriva y
 lo deshacería en el próximo despliegue.
 
+## Arranque en frío de Cloud Run
+
+Los servicios tienen **mínimo 0 instancias** (`min_instance_count = 0`): se apagan al no recibir tráfico y la primera
+petición los arranca. En staging eso toma de 2 a 8 s por servicio (hasta ~18 s en una petición de AUTH), y el primer login
+tras un rato sin uso sumaba el BFF en frío más AUTH en frío.
+
+- **El BFF espera a los demás hasta 15 s** (`SERVICIOS_TIMEOUT_SEGUNDOS` y `ACL_TIMEOUT_SEGUNDOS`, en el manifiesto). Antes
+  eran 2 s y 1 s (los valores por defecto del código, que siguen valiendo en local, donde no hay arranque en frío), y el
+  primer login fallaba con "servicio no disponible". Ahora tarda, pero entra.
+- **`startup_cpu_boost`** en todos los servicios: Cloud Run da más CPU solo mientras arranca el contenedor.
+- **No se toca el presupuesto de 700 ms del ACL con los proveedores externos** (`TIMEOUT_MS`, EC009/EC010): es otra
+  frontera, la del ACL hacia Open Finance, Open Data y la pasarela.
+- **PAYMENTS hacia el ACL** sigue en 3 s: con el ACL frío, un cobro queda `pendiente` y se reintenta (degradación prevista).
+- **Si quieres evitar el frío del todo:** `min_instance_count = 1` en el BFF y en AUTH (unos 10 USD al mes por servicio, estimado
+  sin verificar) o un Cloud Scheduler que llame a `/health` cada 5 minutos. No están aplicados: es una decisión de costo.
+
 ## Costos y cómo destruir
 
 | Cuándo | Qué | Costo a vigilar |
