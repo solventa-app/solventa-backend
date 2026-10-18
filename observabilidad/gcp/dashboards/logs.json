@@ -1,0 +1,123 @@
+{
+  "uid": "solventa-logs",
+  "title": "Staging — Logs de los servicios",
+  "tags": [
+    "solventa",
+    "gcp",
+    "logs"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "1m",
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "proyecto",
+        "type": "constant",
+        "hide": 2,
+        "query": "solventa-511815",
+        "current": {
+          "text": "solventa-511815",
+          "value": "solventa-511815"
+        }
+      },
+      {
+        "name": "servicio",
+        "type": "custom",
+        "label": "Servicio",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "query": "acl-worker,auth,bff,consolidador-fuentes,payments,rating,risk,stub-open-data,stub-open-finance,stub-pasarela",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "type": "logs",
+      "title": "Advertencias y errores",
+      "datasource": {
+        "type": "googlecloud-logging-datasource",
+        "uid": "gcp_logging"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 11
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "googlecloud-logging-datasource",
+            "uid": "gcp_logging"
+          },
+          "projectId": "${proyecto}",
+          "bucketId": "global/buckets/_Default",
+          "viewId": "_AllLogs",
+          "queryText": "resource.type=\"cloud_run_revision\" resource.labels.service_name=~\"${servicio}\" severity>=WARNING"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "prettifyLogMessage": false
+      },
+      "id": 1
+    },
+    {
+      "type": "logs",
+      "title": "Todos los logs",
+      "datasource": {
+        "type": "googlecloud-logging-datasource",
+        "uid": "gcp_logging"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 24,
+        "h": 14
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "googlecloud-logging-datasource",
+            "uid": "gcp_logging"
+          },
+          "projectId": "${proyecto}",
+          "bucketId": "global/buckets/_Default",
+          "viewId": "_AllLogs",
+          "queryText": "resource.type=\"cloud_run_revision\" resource.labels.service_name=~\"${servicio}\""
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "prettifyLogMessage": false
+      },
+      "id": 2
+    }
+  ]
+}

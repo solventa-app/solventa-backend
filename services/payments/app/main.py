@@ -27,10 +27,13 @@ from app.application.servicio_cobros import (
     NoReintentable,
     ServicioCobros,
 )
+from app.observabilidad import configurar_trazas
 
 # Sin esto, los logs INFO de app.application.servicio_cobros/bus_eventos/reintento
 # se descartan en silencio (mismo motivo documentado en acl-worker/app/main.py).
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+configurar_trazas("payments", instrumentos=("httpx", "psycopg"))
 
 
 class OrdenCobroRequest(BaseModel):

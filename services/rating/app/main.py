@@ -15,6 +15,7 @@ from app.application.cache_score import CacheScore
 from app.application.configuracion import Configuracion
 from app.application.lector_perfiles import LectorPerfiles, LectorPerfilesMongo
 from app.application.servicio_oferta import DatosInsuficientes, ServicioOferta
+from app.observabilidad import configurar_trazas
 
 # Timeouts acotados (mismo presupuesto que `max_time_ms`) SOLO en el cliente
 # dedicado a la secundaria — hueco real encontrado al verificar en vivo con
@@ -32,6 +33,8 @@ from app.application.servicio_oferta import DatosInsuficientes, ServicioOferta
 # app.application.lector_perfiles (único rastro observable del fallback a
 # primaria, D-02) se descartan en silencio.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+configurar_trazas("rating", instrumentos=("httpx", "pymongo", "redis"))
 
 
 # Contrato con el BFF: 422 con este `detail` = falta una fuente obligatoria (CA-W01-05).

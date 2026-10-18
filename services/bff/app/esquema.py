@@ -28,6 +28,7 @@ from app.autenticacion_usuarios import MENSAJE_SIN_PERMISO, MENSAJE_SIN_SESION, 
 from app.clientes import ErrorServicio, SolicitudInvalida
 from app.identificadores import id_opaco
 from app.servicio_oferta import ErrorOfertaDatos
+from app.trazas_graphql import TrazaGraphQL
 
 logger = logging.getLogger("bff.cobros")
 TAMANO_LOTE_NOMBRES = 200  # el máximo de ids por llamada que admite AUTH
@@ -629,5 +630,8 @@ class Mutation:
 schema = strawberry.Schema(
     query=Query,
     mutation=Mutation,
-    extensions=[lambda: MaskErrors(should_mask_error=_mostrar_solo_errores_publicos)],
+    extensions=[
+        lambda: MaskErrors(should_mask_error=_mostrar_solo_errores_publicos),
+        TrazaGraphQL,
+    ],
 )
