@@ -19,3 +19,7 @@ crear_kms         = false
 crear_redis       = true
 crear_cloud_sql   = true
 crear_mongo_atlas = true # Atlas M0: gratis. Lo necesitan risk y rating (infra/README.md, «MongoDB Atlas»)
+
+# Disparadores externos (plan de HU-W05, bloque 0): Cloud Tasks para el reintento de cobros y Cloud Scheduler para la
+# sonda del circuito. Capa gratuita. Sin esto, en Cloud Run no corren los bucles de fondo.
+crear_tareas = true
