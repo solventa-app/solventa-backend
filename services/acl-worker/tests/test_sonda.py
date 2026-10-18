@@ -73,3 +73,25 @@ def test_ciclo_de_vida_arranca_y_se_puede_detener_sin_fallar() -> None:
         await sonda.detener()
 
     asyncio.run(ejercicio())
+
+
+def test_si_se_cancela_el_apagado_la_cancelacion_se_propaga() -> None:
+    async def tarea_que_tarda_en_limpiar() -> None:
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            await asyncio.sleep(0.05)  # limpieza lenta: da tiempo a cancelar también el apagado
+            raise
+
+    async def ejercicio() -> None:
+        fabrica = construir_fabrica(umbral_fallos=10, ttl_segundos=10)
+        sonda = SondaRecuperacion(fabrica, sondeos={}, intervalo_s=1)
+        sonda._tarea = asyncio.create_task(tarea_que_tarda_en_limpiar())
+        await asyncio.sleep(0)
+        apagado = asyncio.create_task(sonda.detener())
+        await asyncio.sleep(0.01)
+        apagado.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await apagado
+
+    asyncio.run(ejercicio())

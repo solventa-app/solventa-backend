@@ -36,9 +36,9 @@ class Configuracion:
             if cifrado_clave in (CIFRADO_CLAVE_LOCAL, VALOR_MARCADOR):
                 raise ValueError("CIFRADO_CLAVE no se ha cargado en Secret Manager")
         return cls(
-            database_url=os.getenv(
-                "DATABASE_URL", "postgresql://postgres:solventa-local@localhost:5432/auth"
-            ),
+            # Sin valor por defecto: compose y Cloud Run fijan DATABASE_URL completa, y una URL
+            # escrita aquí llevaría la contraseña (o ninguna). `construir_pool` falla claro.
+            database_url=os.getenv("DATABASE_URL", ""),
             jwt_secreto=secreto,
             jwt_vigencia_minutos=int(os.getenv("JWT_VIGENCIA_MINUTOS", "60")),
             cifrado_clave=cifrado_clave,

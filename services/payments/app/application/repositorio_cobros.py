@@ -161,6 +161,8 @@ class RepositorioCobrosPostgres:
 
 
 def construir_pool(database_url: str) -> ConnectionPool:
+    if not database_url:
+        raise ValueError("Falta DATABASE_URL")
     return ConnectionPool(
         database_url,
         min_size=1,

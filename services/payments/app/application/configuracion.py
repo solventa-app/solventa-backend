@@ -21,10 +21,9 @@ class Configuracion:
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
         return cls(
-            database_url=os.getenv(
-                "DATABASE_URL",
-                "postgresql://postgres:solventa-local@localhost:5432/payments",
-            ),
+            # Sin valor por defecto: compose y Cloud Run fijan DATABASE_URL completa, y una URL
+            # escrita aquí llevaría la contraseña (o ninguna). `construir_pool` falla claro.
+            database_url=os.getenv("DATABASE_URL", ""),
             acl_url=os.getenv("ACL_URL", "http://localhost:8005"),
             # Timeout de PAYMENTS llamando al ACL Worker (defensa en profundidad):
             # el presupuesto duro de 700 ms proveedor-abajo ya lo aplica el ACL
