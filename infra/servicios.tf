@@ -3,10 +3,16 @@
 #
 # Reparto de responsabilidades (ADR-07): Terraform define QUÉ es cada servicio (cuenta de servicio, variables,
 # secretos, permisos entre servicios); el pipeline solo cambia la IMAGEN de cada revisión y el tráfico.
-# Por eso se ignoran image, labels, client y traffic, y de la plantilla del servicio también `labels` y `revision`:
-# `gcloud run deploy --update-labels commit-sha=...` deja esa etiqueta en la plantilla y asigna el nombre de la
-# revisión. Sin ignorarlos, cada servicio desplegado aparece como «modificar» en el plan, y cada `apply` de infra
-# recrearía una revisión de todos los servicios (y en los que no arrancan, volvería a fallar).
+# Por eso se ignoran image, labels, client y traffic, y de la plantilla del servicio también `labels`:
+# `gcloud run deploy --update-labels commit-sha=...` deja esa etiqueta en la plantilla.
+#
+# OJO: `template[0].revision` NO se ignora, aunque `gcloud run deploy` le pone nombre a cada revisión (p. ej.
+# payments-00006-gos) y por eso el plan muestra `revision -> null` en los servicios que despliega el pipeline. Si se
+# ignorara, Terraform reenviaría el nombre viejo en cada actualización y, en cuanto la plantilla cambie (una variable,
+# un secreto, un volumen), Cloud Run respondería 409 «Revision named ... with different configuration already
+# exists» y quedaría bloqueado todo `apply` de infra. Sin ignorarlo, Cloud Run nombra la revisión nueva. Costo
+# asumido: un `apply` de infra puede crear una revisión nueva (misma configuración) en los servicios que despliega
+# el pipeline.
 #
 # Costo: Cloud Run y Cloud Run Jobs escalan a cero (~USD 0 en reposo). Secret Manager cobra ~USD 0,06/mes por
 # versión activa. Con `crear_cloud_sql`, los servicios con `database-url-*` (y sus jobs) montan el socket de Cloud SQL;
@@ -205,7 +211,6 @@ resource "google_cloud_run_v2_service" "servicio" {
     ignore_changes = [
       template[0].containers[0].image,
       template[0].labels,
-      template[0].revision,
       labels,
       client,
       client_version,
