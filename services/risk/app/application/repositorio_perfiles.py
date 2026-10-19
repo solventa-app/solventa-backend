@@ -47,7 +47,10 @@ class RepositorioPerfilesMongo:
         self._contadores = base[COLECCION_CONTADORES]
 
     def guardar(
-        self, cliente_id: str, fuentes: list[dict[str, Any]]
+        self,
+        cliente_id: str,
+        fuentes: list[dict[str, Any]],
+        evaluacion: dict[str, Any] | None = None,
     ) -> tuple[int, Timestamp]:
         with self._cliente.start_session() as session:
             contador = self._contadores.find_one_and_update(
@@ -59,12 +62,17 @@ class RepositorioPerfilesMongo:
             )
             perfil_version = contador["secuencia"]
 
-            documento = {
+            documento: dict[str, Any] = {
                 "cliente_id": cliente_id,
                 "perfil_version": perfil_version,
                 "fuentes": fuentes,
                 "creado_en": datetime.now(UTC),
             }
+            if evaluacion is not None:
+                documento["evaluacion"] = evaluacion
+                documento["score"] = evaluacion.get("score")
+                documento["clasificacion"] = evaluacion.get("clasificacion")
+
             self._perfiles.insert_one(documento, session=session)
 
             operation_time = session.operation_time

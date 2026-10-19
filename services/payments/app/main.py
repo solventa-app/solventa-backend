@@ -85,6 +85,8 @@ class FiltroCobros(BaseModel):
 
     poliza_id: str | None = None
     estado: EstadoCobro | None = None
+    pagina: int | None = None
+    tamano: int | None = None
 
 
 class BalanceResponse(BaseModel):
@@ -205,7 +207,9 @@ def create_app(
     @app.post("/cobros/buscar", tags=["cobros"], response_model=list[CobroResponse])
     def buscar_cobros(filtro: FiltroCobros) -> list[CobroResponse]:
         """Tabla del back-office (CA-W05-01): filtros opcionales por póliza y estado."""
-        cobros = app.state.servicio_cobros.listar(filtro.poliza_id, filtro.estado)
+        cobros = app.state.servicio_cobros.listar(
+            filtro.poliza_id, filtro.estado, filtro.pagina, filtro.tamano
+        )
         return [_respuesta(c) for c in cobros]
 
     @app.get(

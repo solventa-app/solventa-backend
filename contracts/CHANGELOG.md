@@ -83,9 +83,17 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 
 ## v0.8 — 2026-10-18
 
+- KAN-28 (HU-W05, CA-W05-01): paginación en la consulta de cobros para la tabla del back-office.
+- La consulta `cobros` recibe argumentos opcionales con valores por defecto: `pagina: Int = 1` y `tamano: Int = 10`.
+- Cambio aditivo y compatible hacia atrás: clientes que no envíen estos parámetros reciben la primera página de 10 elementos.
+- Afecta al frontend: sí (la tabla de W05 implementa paginación y controles de avance/retroceso). Requiere PR gemelo en `solventa-frontend`.
+
+## v0.9 — 2026-10-18
+
 - KAN-28 (Bloque I - Jurisdicciones): se define el catálogo canónico de jurisdicciones en `contracts/jurisdicciones.json`
   (copia idéntica en frontend `contrato/jurisdicciones.json`) para 7 países: CO (COP, CC), MX (MXN, CURP), BR (BRL, CPF),
   CL (CLP, RUT), PE (PEN, DNI), US (USD, SSN) y ES (EUR, DNI_NIE).
 - Incluye parámetros regulatorios, límites de montos, plazos, DTI máximo y régimen de finanzas abiertas.
 - Afecta al frontend: sí (catálogo compartido y validación de documentos por país).
+
 

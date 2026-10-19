@@ -21,13 +21,18 @@ class RepositorioPerfilesFalso:
     def __init__(self) -> None:
         self.secuencias: dict[str, int] = {}
         self.guardados: list[tuple[str, list[dict[str, Any]]]] = []
+        self.evaluaciones: list[tuple[str, dict[str, Any] | None]] = []
 
     def guardar(
-        self, cliente_id: str, fuentes: list[dict[str, Any]]
+        self,
+        cliente_id: str,
+        fuentes: list[dict[str, Any]],
+        evaluacion: dict[str, Any] | None = None,
     ) -> tuple[int, TimestampFalso]:
         self.secuencias[cliente_id] = self.secuencias.get(cliente_id, 0) + 1
         perfil_version = self.secuencias[cliente_id]
         self.guardados.append((cliente_id, fuentes))
+        self.evaluaciones.append((cliente_id, evaluacion))
         return perfil_version, TimestampFalso(1_700_000_000 + perfil_version, 1)
 
 
