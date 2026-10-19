@@ -188,7 +188,7 @@ jobs:
           fi
           terraform plan -var-file=staging.tfvars "${extra[@]}" -out=plan.bin
           terraform show -json plan.bin > plan.json
-      - name: Revisar el plan (apagar solo puede borrar Redis y su conector)
+      - name: Revisar el plan (apagar solo puede borrar Redis y su conector; encender, solo la versión «apagado» de sus secretos)
         if: env.ACCION != 'estado'
         working-directory: codigo/infra
         run: |
@@ -200,7 +200,9 @@ jobs:
               --solo-destruir '^google_vpc_access_connector\.' \
               --solo-destruir '^google_secret_manager_secret_version\.redis_url' | tee -a "$GITHUB_STEP_SUMMARY"
           else
-            python3 "$revisar" plan.json | tee -a "$GITHUB_STEP_SUMMARY"
+            # Al encender se destruye solo la versión «apagado» de los secretos de Redis (la real, más nueva, la reemplaza).
+            python3 "$revisar" plan.json \
+              --solo-destruir '^google_secret_manager_secret_version\.redis_url_apagado' | tee -a "$GITHUB_STEP_SUMMARY"
           fi
       - name: Aplicar
         if: env.ACCION != 'estado'

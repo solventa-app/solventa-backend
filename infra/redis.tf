@@ -85,6 +85,28 @@ locals {
   } : {}
 }
 
+# Con Redis apagado (`redis_encendida = false`) las versiones reales de arriba se destruyen, pero los servicios siguen
+# montando estos secretos con `version = "latest"`. Si la más nueva queda DESTRUIDA, Cloud Run no puede crear ninguna
+# revisión («Secret Version ... is in DESTROYED state») y el propio apagado falla al bajar las instancias fijas.
+# Por eso, apagado, se escribe una versión nueva con una URL que no resuelve: es la más reciente, así que `latest` la
+# toma, y las aplicaciones tratan Redis como caché caída (es una caché derivada y desechable). Al encender se crea la
+# real (más nueva todavía) y esta se destruye.
+locals {
+  redis_bases_apagado = (var.crear_redis && !var.redis_encendida && var.crear_servicios) ? {
+    "redis-url-acl"                 = 0
+    "redis-url-rating"              = 1
+    "redis-url-cola-reconciliacion" = 2
+  } : {}
+}
+
+resource "google_secret_manager_secret_version" "redis_url_apagado" {
+  for_each   = local.redis_bases_apagado
+  secret     = google_secret_manager_secret.secreto[each.key].id
+  depends_on = [google_secret_manager_secret_version.marcador]
+
+  secret_data = "redis://redis-apagado.invalid:6379/${each.value}"
+}
+
 resource "google_secret_manager_secret_version" "redis_url" {
   for_each   = local.redis_bases
   secret     = google_secret_manager_secret.secreto[each.key].id
