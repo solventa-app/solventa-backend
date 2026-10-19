@@ -7,7 +7,8 @@ en cada modo:
   3. pasarela lenta (cobra, pero > 700 ms) -> PENDIENTE; el reintento CONCILIA y no cobra de nuevo
   4. pasarela caída (503)                  -> PENDIENTE sin cobro; al volver, se cobra una sola vez
   5. pasarela rechaza                      -> RECHAZADO; hasta 3 reintentos y otro medio de pago
-  6. tabla del back-office y permisos      -> cada cobro con su estado; sin sesión, sin datos
+  6. reintento automático                  -> un PENDIENTE se cobra solo al volver la pasarela
+  7. tabla del back-office y permisos      -> cada cobro con su estado; sin sesión, sin datos
 
 Deja la pasarela otra vez en `sano` y se puede repetir: cada corrida usa una póliza y claves
 nuevas. Solo biblioteca estándar. Cada cobro de la prueba queda en la base (datos ficticios,
@@ -143,8 +144,12 @@ def _modo(modo: str) -> None:
         raise Fallo(f"no pude poner la pasarela en `{modo}` (HTTP {estado})")
 
 
-def _pasarela_cobro(clave: str):
-    return _privado(f"{Config.pasarela}/v1/cobros/{clave}")
+def _pasarela_cobro(clave: str, forzar_sano: bool = False):
+    """`forzar_sano` consulta con `?modo=sano` aunque la pasarela siga en falla.
+    El reintento automático cobra un PENDIENTE a los pocos segundos de volver `sano`:
+    lo que no se cobró se mira antes."""
+    sufijo = "?modo=sano" if forzar_sano else ""
+    return _privado(f"{Config.pasarela}/v1/cobros/{clave}{sufijo}")
 
 
 def _crear(
@@ -402,6 +407,8 @@ def pasarela_caida(token: str, poliza: str, cliente_id: str, estado: dict) -> No
     _modo("error")
     try:
         cobro = _crear(token, clave, poliza, cliente_id)
+        # Antes de volver a `sano`: el reintento automático lo cobraría a los pocos segundos.
+        estado_pasarela, _ = _pasarela_cobro(clave, forzar_sano=True)
     finally:
         _modo("sano")
     comprobar(
@@ -410,7 +417,6 @@ def pasarela_caida(token: str, poliza: str, cliente_id: str, estado: dict) -> No
         and cobro.get("motivo") in ("pasarela_no_disponible", "circuito_abierto"),
         cobro,
     )
-    estado_pasarela, _ = _pasarela_cobro(clave)
     comprobar(
         "la pasarela NO tiene el cobro (404): no se cobró nada",
         estado_pasarela == 404,
@@ -488,8 +494,52 @@ def pasarela_rechaza(token: str, poliza: str, cliente_id: str, estado: dict) -> 
     estado["corregido"] = {"id": segundo["id"]}
 
 
+def reintento_automatico(token: str, poliza: str, cliente_id: str, estado: dict) -> None:
+    escenario("6. Reintento automático: un PENDIENTE se cobra solo al volver la pasarela")
+    _esperar_circuito()
+    clave = _clave("e2e-auto")
+    _modo("error")
+    try:
+        cobro = _crear(token, clave, poliza, cliente_id)
+        estado_pasarela, _ = _pasarela_cobro(clave, forzar_sano=True)
+    finally:
+        _modo("sano")
+    comprobar(
+        "con la pasarela caída el cobro queda PENDIENTE", cobro.get("estado") == "PENDIENTE", cobro
+    )
+    comprobar("y la pasarela no lo tiene (404)", estado_pasarela == 404, estado_pasarela)
+
+    # Sin llamar a `reintentarCobro`: solo se mira PAYMENTS hasta que el sistema lo resuelva (Cloud
+    # Tasks en staging; el bucle de PAYMENTS en local).
+    inicio = time.monotonic()
+    url = f"{Config.payments}/cobros/{cobro['id']}"
+
+    def cobrado() -> bool:
+        codigo, cuerpo = _privado(url)
+        return codigo == 200 and isinstance(cuerpo, dict) and cuerpo.get("estado") == "cobrado"
+
+    resuelto = _esperar(cobrado, segundos=120, pausa=3)
+    segundos = time.monotonic() - inicio
+    _, en_payments = _privado(url)
+    comprobar(
+        f"sin tocar nada, pasa solo a COBRADO ({segundos:.0f} s)",
+        resuelto,
+        en_payments,
+    )
+    estado_pasarela, en_pasarela = _pasarela_cobro(clave)
+    comprobar(
+        "con la referencia de la pasarela y reintentado más de una vez",
+        estado_pasarela == 200
+        and isinstance(en_payments, dict)
+        and en_payments.get("referencia") == en_pasarela.get("referencia")
+        and (en_payments.get("intentos") or 0) >= 2,
+        en_payments,
+    )
+    estado["auto"] = {"id": cobro["id"]}
+
+
 def tabla_y_permisos(token: str, poliza: str, estado: dict) -> None:
-    escenario("6. Tabla de cobros del back-office y permisos")
+    escenario("7. Tabla de cobros del back-office y permisos")
     datos, errores = _gql(TABLA, {"p": poliza}, token)
     filas = {c["id"]: c for c in (datos or {}).get("cobros", [])}
     esperado = {
@@ -499,6 +549,7 @@ def tabla_y_permisos(token: str, poliza: str, estado: dict) -> None:
         "caida": "COBRADO",
         "rechazo": "RECHAZADO",
         "corregido": "COBRADO",
+        "auto": "COBRADO",
     }
     faltan = [
         k
@@ -622,6 +673,7 @@ def main() -> int:
             pasarela_lenta(token, poliza, cliente_id, estado)
             pasarela_caida(token, poliza, cliente_id, estado)
             pasarela_rechaza(token, poliza, cliente_id, estado)
+            reintento_automatico(token, poliza, cliente_id, estado)
             tabla_y_permisos(token, poliza, estado)
         finally:
             try:

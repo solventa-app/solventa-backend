@@ -315,7 +315,11 @@ jobs:
   sonar:
     # Se activa solo cuando el repo tiene los secretos SONAR_TOKEN y SONAR_HOST_URL.
     needs: [servicio, cobertura]
-    if: always() && github.event_name == 'push' && needs.servicio.result != 'failure'
+    # Solo con la cobertura lista: si `cobertura` se cancela (un push nuevo cancela la ejecución anterior) o falla, un
+    # análisis sin informes publicaría 0 % de cobertura (pasó el 2026-10-19 con tres merges en 41 s).
+    if: >-
+      !cancelled() && github.event_name == 'push' && needs.servicio.result != 'failure' &&
+      needs.cobertura.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:

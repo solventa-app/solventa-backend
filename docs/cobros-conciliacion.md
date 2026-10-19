@@ -316,7 +316,7 @@ POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios down -v
 ### Prueba automática de punta a punta de HU-W05 (local y staging)
 
 `scripts/probar_cobros.py` recorre este mismo flujo por GraphQL, como el back-office, con la pasarela simulada en
-cada modo, y dice cuántas comprobaciones pasan (27). Solo biblioteca estándar. A diferencia del humo y de Newman, que
+cada modo, y dice cuántas comprobaciones pasan (31). Solo biblioteca estándar. A diferencia del humo y de Newman, que
 solo corren en local, **también corre contra staging**, donde PAYMENTS, el ACL y la pasarela son privados.
 
 ```bash
@@ -334,9 +334,13 @@ python scripts/probar_cobros.py --staging solventa-511815 --evidencia docs/evide
 | 3 | Pasarela lenta | `PENDIENTE` aunque la pasarela cobró; `reintentarCobro` **concilia** (misma referencia) y el doble clic no cambia nada |
 | 4 | Pasarela caída (503) | `PENDIENTE` sin cobro en la pasarela; al volver se cobra una sola vez |
 | 5 | Pasarela rechaza | `RECHAZADO` por `fondos_insuficientes`; quedan 2, 1 y 0 reintentos; luego "otro medio de pago"; y un rechazado se cobra si la pasarela acepta |
-| 6 | Tabla y permisos | `cobros(polizaId)` y el filtro `RECHAZADO` muestran cada cobro con su estado; sin sesión no se ve nada |
+| 6 | Reintento automático | Un `PENDIENTE` (pasarela caída) pasa **solo** a `COBRADO` al volver la pasarela, sin llamar a `reintentarCobro`: Cloud Tasks en staging (unos 7 s), el bucle de PAYMENTS en local (unos 6 s) |
+| 7 | Tabla y permisos | `cobros(polizaId)` y el filtro `RECHAZADO` muestran cada cobro con su estado; sin sesión no se ve nada |
 
 - **Códigos de salida:** `0` todo en verde, `1` alguna comprobación falla, `2` no se pudo preparar (sin conexión, sesión o cliente).
+- **Con reintento automático, lo que no se cobró se mira antes de volver la pasarela a `sano`:** el reintento (Cloud Tasks) cobra
+  un `PENDIENTE` a los pocos segundos, así que el script consulta a la pasarela con `?modo=sano` mientras la caída sigue (el mock
+  acepta el modo por llamada). Una versión anterior lo miraba después y fallaba por esa carrera.
 - **Repetible:** cada corrida usa una póliza (`POL-E2E-…`) y claves nuevas, y deja la pasarela en `sano`. Los cobros de la prueba
   quedan en la base (datos ficticios). El CLIENTE es `cliente.demo` en staging y `cliente.cobros` en local (se crea si falta).
 - **Verificada con un fallo real:** al romper a propósito la conciliación de PAYMENTS (el reintento cobraba con otra referencia),
