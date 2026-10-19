@@ -166,18 +166,28 @@ class RepositorioCobrosPostgres:
             ).fetchone()
             return self._a_cobro(fila) if fila is not None else None
 
-    def listar(self, poliza_id: str | None, estado: str | None) -> list[dict]:
+    def listar(
+        self,
+        poliza_id: str | None,
+        estado: str | None,
+        pagina: int | None = None,
+        tamano: int | None = None,
+    ) -> list[dict]:
         """Para la tabla del back-office (CA-W05-01); ambos filtros son opcionales."""
+        query = f"""
+            SELECT {_COLUMNAS} FROM cobros
+            WHERE (%(poliza_id)s::text IS NULL OR poliza_id = %(poliza_id)s)
+              AND (%(estado)s::text IS NULL OR estado = %(estado)s)
+            ORDER BY actualizado_en DESC
+        """
+        parametros: dict[str, object] = {"poliza_id": poliza_id, "estado": estado}
+        if pagina is not None and tamano is not None and pagina > 0 and tamano > 0:
+            query += " LIMIT %(limit)s OFFSET %(offset)s"
+            parametros["limit"] = tamano
+            parametros["offset"] = (pagina - 1) * tamano
+
         with self._pool.connection() as conexion:
-            filas = conexion.execute(
-                f"""
-                SELECT {_COLUMNAS} FROM cobros
-                WHERE (%(poliza_id)s::text IS NULL OR poliza_id = %(poliza_id)s)
-                  AND (%(estado)s::text IS NULL OR estado = %(estado)s)
-                ORDER BY actualizado_en DESC
-                """,
-                {"poliza_id": poliza_id, "estado": estado},
-            ).fetchall()
+            filas = conexion.execute(query, parametros).fetchall()
             return [self._a_cobro(fila) for fila in filas]
 
     def balance_poliza(self, poliza_id: str) -> str:

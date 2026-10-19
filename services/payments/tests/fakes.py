@@ -112,14 +112,24 @@ class RepositorioCobrosFalso:
             cobro = self._por_id.get(cobro_id)
             return dict(cobro) if cobro else None
 
-    def listar(self, poliza_id: str | None, estado: str | None) -> list[dict]:
+    def listar(
+        self,
+        poliza_id: str | None,
+        estado: str | None,
+        pagina: int | None = None,
+        tamano: int | None = None,
+    ) -> list[dict]:
         with self._lock:
-            return [
+            resultado = [
                 dict(c)
                 for c in self._por_id.values()
                 if (poliza_id is None or c["poliza_id"] == poliza_id)
                 and (estado is None or c["estado"] == estado)
             ]
+            if pagina is not None and tamano is not None and pagina > 0 and tamano > 0:
+                inicio = (pagina - 1) * tamano
+                return resultado[inicio : inicio + tamano]
+            return resultado
 
     def balance_poliza(self, poliza_id: str) -> str:
         with self._lock:
