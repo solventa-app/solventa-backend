@@ -80,3 +80,12 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - El nombre **no viaja en el JWT** (va en base64, sin cifrar y vale 60 minutos): el front lo pide por GraphQL tras
   iniciar sesión. Si es `null`, mostrar el alias (`usuario`). Los pagos siguen siendo solo del BACKOFFICE.
 - Afecta al frontend: sí (saludo con el nombre).
+
+## v0.8 — 2026-10-18
+
+- KAN-28 (Bloque I - Jurisdicciones): se define el catálogo canónico de jurisdicciones en `contracts/jurisdicciones.json`
+  (copia idéntica en frontend `contrato/jurisdicciones.json`) para 7 países: CO (COP, CC), MX (MXN, CURP), BR (BRL, CPF),
+  CL (CLP, RUT), PE (PEN, DNI), US (USD, SSN) y ES (EUR, DNI_NIE).
+- Incluye parámetros regulatorios, límites de montos, plazos, DTI máximo y régimen de finanzas abiertas.
+- Afecta al frontend: sí (catálogo compartido y validación de documentos por país).
+
