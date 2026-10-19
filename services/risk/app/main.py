@@ -3,6 +3,7 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from decimal import Decimal
 
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -11,6 +12,7 @@ from pymongo import MongoClient
 
 from app.application.bus_eventos import BusEventosLog
 from app.application.configuracion import Configuracion
+from app.application.motor_decision import ResultadoDecision
 from app.application.repositorio_perfiles import RepositorioPerfilesMongo
 from app.application.servicio_perfiles import ServicioPerfiles
 from app.observabilidad import configurar_trazas
@@ -42,6 +44,15 @@ class CrearPerfilResponse(BaseModel):
     cliente_id: str
     perfil_version: int
     operation_time: str
+    score: int | None = None
+    clasificacion: str | None = None
+
+
+class EvaluarPreaprobacionRequest(BaseModel):
+    cliente_id: str
+    monto: Decimal
+    plazo_meses: int
+    fuentes: list[DatosFuenteEntrada]
 
 
 def create_app(
@@ -85,6 +96,18 @@ def create_app(
             [fuente.model_dump() for fuente in body.fuentes],
         )
         return CrearPerfilResponse(**resultado)
+
+    @app.post(
+        "/preaprobaciones/evaluar", tags=["preaprobaciones"], response_model=ResultadoDecision
+    )
+    def evaluar_preaprobacion(body: EvaluarPreaprobacionRequest) -> ResultadoDecision:
+        fuentes = [fuente.model_dump() for fuente in body.fuentes]
+        return app.state.servicio_perfiles.evaluar_preaprobacion(
+            cliente_id=body.cliente_id,
+            monto=body.monto,
+            plazo_meses=body.plazo_meses,
+            fuentes=fuentes,
+        )
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app
