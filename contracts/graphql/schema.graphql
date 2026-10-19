@@ -134,6 +134,21 @@ type Cobro {
   cliente: ClienteCobro # null en cobros creados sin clienteId
 }
 
+# Una página de la tabla del back-office (W05-01): paginación en el servidor y conteo por estado
+# para los contadores de las pestañas (el conteo no aplica el filtro de estado).
+type ConteoCobros {
+  estado: EstadoCobro!
+  cantidad: Int!
+}
+
+type PaginaCobros {
+  elementos: [Cobro!]!
+  total: Int! # cuántos cobros cumplen el filtro (para calcular las páginas)
+  pagina: Int! # empieza en 1
+  tamano: Int!
+  conteoPorEstado: [ConteoCobros!]!
+}
+
 input MontoInput {
   valor: String! # decimal como texto, nunca float
   moneda: String!
@@ -217,6 +232,7 @@ input CrearUsuarioInput {
 type Query {
   oferta(id: ID!): Oferta
   cobros(polizaId: ID, estado: EstadoCobro): [Cobro!]!
+  cobrosPaginados(polizaId: ID, estado: EstadoCobro, pagina: Int! = 1, tamano: Int! = 10): PaginaCobros!
   yo: Usuario
   usuarios(rol: RolUsuario): [Usuario!]!
 }

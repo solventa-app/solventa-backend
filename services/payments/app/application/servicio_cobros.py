@@ -78,6 +78,10 @@ class RepositorioCobros(Protocol):
 
     def balance_poliza(self, poliza_id: str) -> str: ...
 
+    def pagina(
+        self, poliza_id: str | None, estado: str | None, limite: int, desplazamiento: int
+    ) -> tuple[list[dict], int, dict[str, int]]: ...
+
 
 class ServicioCobros:
     def __init__(
@@ -140,6 +144,12 @@ class ServicioCobros:
 
     def listar(self, poliza_id: str | None, estado: str | None) -> list[dict[str, Any]]:
         return self._repositorio.listar(poliza_id, estado)
+
+    def pagina(
+        self, poliza_id: str | None, estado: str | None, pagina: int, tamano: int
+    ) -> tuple[list[dict[str, Any]], int, dict[str, int]]:
+        """`pagina` empieza en 1: los cobros de esa página, el total y el conteo por estado."""
+        return self._repositorio.pagina(poliza_id, estado, tamano, (pagina - 1) * tamano)
 
     def obtener(self, cobro_id: str) -> dict[str, Any] | None:
         return self._repositorio.obtener(cobro_id)

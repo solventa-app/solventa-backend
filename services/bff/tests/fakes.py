@@ -276,6 +276,27 @@ class PaymentsFalso:
             and (estado is None or c["estado"] == estado)
         ]
 
+    async def pagina_cobros(
+        self, poliza_id: str | None, estado: str | None, pagina: int, tamano: int
+    ) -> dict:
+        if self.falla:
+            raise ErrorServicio("caido")
+        de_poliza = [
+            c for c in self.cobros.values() if poliza_id is None or c["poliza_id"] == poliza_id
+        ]
+        filtrados = [c for c in de_poliza if estado is None or c["estado"] == estado]
+        conteos: dict[str, int] = {}
+        for c in de_poliza:
+            conteos[c["estado"]] = conteos.get(c["estado"], 0) + 1
+        inicio = (pagina - 1) * tamano
+        return {
+            "elementos": filtrados[inicio : inicio + tamano],
+            "total": len(filtrados),
+            "pagina": pagina,
+            "tamano": tamano,
+            "conteo_por_estado": conteos,
+        }
+
     async def reintentar_cobro(self, cobro_id: str) -> dict | None:
         if self.falla:
             raise ErrorServicio("caido")

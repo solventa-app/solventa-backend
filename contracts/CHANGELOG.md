@@ -80,3 +80,11 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - El nombre **no viaja en el JWT** (va en base64, sin cifrar y vale 60 minutos): el front lo pide por GraphQL tras
   iniciar sesión. Si es `null`, mostrar el alias (`usuario`). Los pagos siguen siendo solo del BACKOFFICE.
 - Afecta al frontend: sí (saludo con el nombre).
+
+## v0.9 — 2026-10-19
+
+- KAN-28 (HU-W05, W05-01): la tabla de cobros se pagina en el servidor. Consulta nueva `cobrosPaginados(polizaId,
+  estado, pagina = 1, tamano = 10)` que devuelve `PaginaCobros { elementos, total, pagina, tamano, conteoPorEstado }`;
+  `conteoPorEstado` no aplica el filtro de estado (sirve para los contadores de las pestañas). `tamano` va de 1 a 100.
+  Solo exige token de BACKOFFICE, como `cobros`, que sigue igual. Solo cambios aditivos.
+- Afecta al frontend: sí (tabla de W05-01 con paginación).

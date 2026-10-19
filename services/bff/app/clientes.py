@@ -77,6 +77,10 @@ class PuertoRating(Protocol):
 class PuertoPayments(Protocol):
     async def listar_cobros(self, poliza_id: str | None, estado: str | None) -> list[dict]: ...
 
+    async def pagina_cobros(
+        self, poliza_id: str | None, estado: str | None, pagina: int, tamano: int
+    ) -> dict: ...
+
     async def reintentar_cobro(self, cobro_id: str) -> dict | None: ...
 
     async def crear_cobro(self, orden: dict) -> dict: ...
@@ -280,6 +284,20 @@ class ClientePaymentsHttp:
         try:
             respuesta = await self._cliente.post(
                 "/cobros/buscar", json={"poliza_id": poliza_id, "estado": estado}
+            )
+        except httpx.HTTPError as error:
+            raise ErrorServicio(type(error).__name__) from error
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def pagina_cobros(
+        self, poliza_id: str | None, estado: str | None, pagina: int, tamano: int
+    ) -> dict:
+        try:
+            respuesta = await self._cliente.post(
+                "/cobros/pagina",
+                json={"poliza_id": poliza_id, "estado": estado, "pagina": pagina, "tamano": tamano},
             )
         except httpx.HTTPError as error:
             raise ErrorServicio(type(error).__name__) from error

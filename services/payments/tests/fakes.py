@@ -121,6 +121,21 @@ class RepositorioCobrosFalso:
                 and (estado is None or c["estado"] == estado)
             ]
 
+    def pagina(
+        self, poliza_id: str | None, estado: str | None, limite: int, desplazamiento: int
+    ) -> tuple[list[dict], int, dict[str, int]]:
+        with self._lock:
+            de_poliza = [
+                c for c in self._por_id.values() if poliza_id is None or c["poliza_id"] == poliza_id
+            ]
+            filtrados = [c for c in de_poliza if estado is None or c["estado"] == estado]
+            filtrados.sort(key=lambda c: (c["actualizado_en"], c["id"]), reverse=True)
+            conteos: dict[str, int] = {}
+            for c in de_poliza:
+                conteos[c["estado"]] = conteos.get(c["estado"], 0) + 1
+            pagina = [dict(c) for c in filtrados[desplazamiento : desplazamiento + limite]]
+            return pagina, len(filtrados), conteos
+
     def balance_poliza(self, poliza_id: str) -> str:
         with self._lock:
             total = sum(

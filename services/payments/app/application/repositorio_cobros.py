@@ -180,6 +180,45 @@ class RepositorioCobrosPostgres:
             ).fetchall()
             return [self._a_cobro(fila) for fila in filas]
 
+    def pagina(
+        self, poliza_id: str | None, estado: str | None, limite: int, desplazamiento: int
+    ) -> tuple[list[dict], int, dict[str, int]]:
+        """Una página de la tabla del back-office, el total con el filtro y cuántos hay por estado
+        (para los contadores de las pestañas, sin el filtro de estado)."""
+        filtro = {"poliza_id": poliza_id, "estado": estado}
+        with self._pool.connection() as conexion:
+            filas = conexion.execute(
+                f"""
+                SELECT {_COLUMNAS} FROM cobros
+                WHERE (%(poliza_id)s::text IS NULL OR poliza_id = %(poliza_id)s)
+                  AND (%(estado)s::text IS NULL OR estado = %(estado)s)
+                ORDER BY actualizado_en DESC, id
+                LIMIT %(limite)s OFFSET %(desplazamiento)s
+                """,
+                {**filtro, "limite": limite, "desplazamiento": desplazamiento},
+            ).fetchall()
+            total = conexion.execute(
+                """
+                SELECT count(*) AS total FROM cobros
+                WHERE (%(poliza_id)s::text IS NULL OR poliza_id = %(poliza_id)s)
+                  AND (%(estado)s::text IS NULL OR estado = %(estado)s)
+                """,
+                filtro,
+            ).fetchone()["total"]
+            conteos = conexion.execute(
+                """
+                SELECT estado, count(*) AS cantidad FROM cobros
+                WHERE (%(poliza_id)s::text IS NULL OR poliza_id = %(poliza_id)s)
+                GROUP BY estado
+                """,
+                filtro,
+            ).fetchall()
+            return (
+                [self._a_cobro(fila) for fila in filas],
+                total,
+                {c["estado"]: c["cantidad"] for c in conteos},
+            )
+
     def balance_poliza(self, poliza_id: str) -> str:
         with self._pool.connection() as conexion:
             fila = conexion.execute(

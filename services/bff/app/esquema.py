@@ -202,6 +202,21 @@ class Cobro:
     cliente: ClienteCobro | None
 
 
+@strawberry.type
+class ConteoCobros:
+    estado: EstadoCobro
+    cantidad: int
+
+
+@strawberry.type
+class PaginaCobros:
+    elementos: list[Cobro]
+    total: int
+    pagina: int
+    tamano: int
+    conteo_por_estado: list[ConteoCobros]
+
+
 @strawberry.input
 class MontoInput:
     valor: str  # decimal como texto, nunca float
@@ -449,6 +464,39 @@ class Query:
             raise ErrorPublico(MENSAJE_COBROS_NO_DISPONIBLES) from error
         nombres = await _nombres_de_clientes(info, datos)
         return [_cobro(c, nombres) for c in datos]
+
+    @strawberry.field
+    async def cobros_paginados(
+        self,
+        info: Info,
+        poliza_id: strawberry.ID | None = strawberry.UNSET,
+        estado: EstadoCobro | None = strawberry.UNSET,
+        pagina: int = 1,
+        tamano: int = 10,
+    ) -> PaginaCobros:
+        """Tabla del back-office paginada en el servidor (W05-01). Siempre exige token."""
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        if pagina < 1 or not 1 <= tamano <= 100:
+            raise ErrorPublico("La página empieza en 1 y el tamaño va de 1 a 100.")
+        filtro_poliza = str(poliza_id) if isinstance(poliza_id, str) else None
+        filtro_estado = estado.value.lower() if isinstance(estado, EstadoCobro) else None
+        try:
+            datos = await info.context["clientes"].payments.pagina_cobros(
+                filtro_poliza, filtro_estado, pagina, tamano
+            )
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_COBROS_NO_DISPONIBLES) from error
+        nombres = await _nombres_de_clientes(info, datos["elementos"])
+        return PaginaCobros(
+            elementos=[_cobro(c, nombres) for c in datos["elementos"]],
+            total=datos["total"],
+            pagina=datos["pagina"],
+            tamano=datos["tamano"],
+            conteo_por_estado=[
+                ConteoCobros(estado=EstadoCobro(e.upper()), cantidad=n)
+                for e, n in sorted(datos["conteo_por_estado"].items())
+            ],
+        )
 
     @strawberry.field
     async def yo(self, info: Info) -> Usuario | None:

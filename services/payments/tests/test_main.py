@@ -214,3 +214,46 @@ def test_post_reintentar_inexistente_404() -> None:
     cliente, _ = _cliente()
     with cliente as client:
         assert client.post("/cobros/no-existe/reintentar").status_code == 404
+
+
+def test_pagina_de_cobros_con_total_y_conteo_por_estado() -> None:
+    from app.application.cliente_acl import ResultadoCobro
+
+    acl = ClienteAclFalso(
+        [
+            ResultadoCobro(estado="cobrado", referencia="r"),
+            ResultadoCobro(estado="cobrado", referencia="r"),
+            ResultadoCobro(estado="rechazado", motivo="fondos_insuficientes"),
+        ]
+    )
+    cliente, _ = _cliente(acl)
+    with cliente as client:
+        for i in range(3):
+            client.post("/cobros", json={**ORDEN, "id_intento_cobro": f"pag-{i}"})
+
+        r = client.post("/cobros/pagina", json={"pagina": 1, "tamano": 2})
+        segunda = client.post("/cobros/pagina", json={"pagina": 2, "tamano": 2}).json()
+        rechazados = client.post("/cobros/pagina", json={"estado": "rechazado"}).json()
+
+    assert r.status_code == 200
+    cuerpo = r.json()
+    assert (len(cuerpo["elementos"]), cuerpo["total"], cuerpo["pagina"], cuerpo["tamano"]) == (
+        2,
+        3,
+        1,
+        2,
+    )
+    assert cuerpo["conteo_por_estado"] == {"cobrado": 2, "rechazado": 1}
+    assert len(segunda["elementos"]) == 1
+    assert rechazados["total"] == 1
+    assert rechazados["conteo_por_estado"] == {
+        "cobrado": 2,
+        "rechazado": 1,
+    }  # las pestañas no se filtran
+
+
+def test_pagina_valida_el_tamano() -> None:
+    with _cliente()[0] as client:
+        assert client.post("/cobros/pagina", json={"tamano": 0}).status_code == 422
+        assert client.post("/cobros/pagina", json={"tamano": 101}).status_code == 422
+        assert client.post("/cobros/pagina", json={"pagina": 0}).status_code == 422

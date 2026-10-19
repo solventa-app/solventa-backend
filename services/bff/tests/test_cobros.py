@@ -353,3 +353,49 @@ def test_cobros_trae_el_id_de_transaccion_de_la_pasarela() -> None:
         lista = _post(client, "{ cobros { id idTransaccion } }", {})["data"]["cobros"]
 
     assert {c["id"]: c["idTransaccion"] for c in lista} == {"c-1": "pg-abc-123", "c-2": None}
+
+
+PAGINADOS = """query($estado: EstadoCobro, $pagina: Int!, $tamano: Int!) {
+  cobrosPaginados(estado: $estado, pagina: $pagina, tamano: $tamano) {
+    elementos { id estado }
+    total pagina tamano
+    conteoPorEstado { estado cantidad }
+  }
+}"""
+
+
+def test_cobros_paginados_con_total_y_conteo_por_estado() -> None:
+    cobros = [
+        cobro_de_payments("c-1", "POL-1", "cobrado"),
+        cobro_de_payments("c-2", "POL-2", "cobrado"),
+        cobro_de_payments("c-3", "POL-3", "rechazado"),
+    ]
+    with _cliente(PaymentsFalso(cobros)) as client:
+        pagina = _post(client, PAGINADOS, {"pagina": 1, "tamano": 2})["data"]["cobrosPaginados"]
+        rechazados = _post(client, PAGINADOS, {"estado": "RECHAZADO", "pagina": 1, "tamano": 10})[
+            "data"
+        ]["cobrosPaginados"]
+
+    assert len(pagina["elementos"]) == 2
+    assert (pagina["total"], pagina["pagina"], pagina["tamano"]) == (3, 1, 2)
+    assert {c["estado"]: c["cantidad"] for c in pagina["conteoPorEstado"]} == {
+        "COBRADO": 2,
+        "RECHAZADO": 1,
+    }
+    assert rechazados["total"] == 1
+    assert rechazados["elementos"][0]["id"] == "c-3"
+
+
+def test_cobros_paginados_rechaza_tamanos_fuera_de_rango_sin_5xx() -> None:
+    with _cliente(PaymentsFalso([])) as client:
+        cuerpo = _post(client, PAGINADOS, {"pagina": 1, "tamano": 500})
+
+    assert cuerpo["errors"][0]["message"] == "La página empieza en 1 y el tamaño va de 1 a 100."
+
+
+def test_cobros_paginados_solo_backoffice() -> None:
+    with _cliente(PaymentsFalso([])) as client:
+        cuerpo = _post(client, PAGINADOS, {"pagina": 1, "tamano": 10}, rol="CLIENTE")
+
+    assert cuerpo["data"] is None
+    assert cuerpo["errors"]

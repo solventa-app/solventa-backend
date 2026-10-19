@@ -87,6 +87,19 @@ class FiltroCobros(BaseModel):
     estado: EstadoCobro | None = None
 
 
+class FiltroPagina(FiltroCobros):
+    pagina: int = Field(default=1, ge=1)
+    tamano: int = Field(default=10, ge=1, le=100)
+
+
+class PaginaResponse(BaseModel):
+    elementos: list[CobroResponse]
+    total: int
+    pagina: int
+    tamano: int
+    conteo_por_estado: dict[str, int]
+
+
 class BalanceResponse(BaseModel):
     poliza_id: str
     balance: str
@@ -207,6 +220,20 @@ def create_app(
         """Tabla del back-office (CA-W05-01): filtros opcionales por póliza y estado."""
         cobros = app.state.servicio_cobros.listar(filtro.poliza_id, filtro.estado)
         return [_respuesta(c) for c in cobros]
+
+    @app.post("/cobros/pagina", tags=["cobros"], response_model=PaginaResponse)
+    def pagina_cobros(filtro: FiltroPagina) -> PaginaResponse:
+        """Tabla del back-office paginada en el servidor (W05-01); filtros en el cuerpo (#6)."""
+        cobros, total, conteos = app.state.servicio_cobros.pagina(
+            filtro.poliza_id, filtro.estado, filtro.pagina, filtro.tamano
+        )
+        return PaginaResponse(
+            elementos=[_respuesta(c) for c in cobros],
+            total=total,
+            pagina=filtro.pagina,
+            tamano=filtro.tamano,
+            conteo_por_estado=conteos,
+        )
 
     @app.get(
         "/cobros/{cobro_id}",
