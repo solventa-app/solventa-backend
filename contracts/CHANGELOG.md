@@ -80,3 +80,11 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - El nombre **no viaja en el JWT** (va en base64, sin cifrar y vale 60 minutos): el front lo pide por GraphQL tras
   iniciar sesión. Si es `null`, mostrar el alias (`usuario`). Los pagos siguen siendo solo del BACKOFFICE.
 - Afecta al frontend: sí (saludo con el nombre).
+
+## v0.8 — 2026-10-18
+
+- KAN-28 (HU-W05, CA-W05-01): paginación en la consulta de cobros para la tabla del back-office.
+- La consulta `cobros` recibe argumentos opcionales con valores por defecto: `pagina: Int = 1` y `tamano: Int = 10`.
+- Cambio aditivo y compatible hacia atrás: clientes que no envíen estos parámetros reciben la primera página de 10 elementos.
+- Afecta al frontend: sí (la tabla de W05 implementa paginación y controles de avance/retroceso). Requiere PR gemelo en `solventa-frontend`.
+

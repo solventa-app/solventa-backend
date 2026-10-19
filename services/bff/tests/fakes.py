@@ -265,16 +265,26 @@ class PaymentsFalso:
         self.filtros: list[tuple[str | None, str | None]] = []
         self.ordenes: list[dict] = []
 
-    async def listar_cobros(self, poliza_id: str | None, estado: str | None) -> list[dict]:
+    async def listar_cobros(
+        self,
+        poliza_id: str | None,
+        estado: str | None,
+        pagina: int | None = None,
+        tamano: int | None = None,
+    ) -> list[dict]:
         if self.falla:
             raise ErrorServicio("caido")
         self.filtros.append((poliza_id, estado))
-        return [
+        resultado = [
             c
             for c in self.cobros.values()
             if (poliza_id is None or c["poliza_id"] == poliza_id)
             and (estado is None or c["estado"] == estado)
         ]
+        if pagina is not None and tamano is not None and pagina > 0 and tamano > 0:
+            inicio = (pagina - 1) * tamano
+            return resultado[inicio : inicio + tamano]
+        return resultado
 
     async def reintentar_cobro(self, cobro_id: str) -> dict | None:
         if self.falla:
