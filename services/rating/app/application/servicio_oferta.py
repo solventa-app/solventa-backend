@@ -101,6 +101,7 @@ from typing import Any, Protocol
 
 from app.application.identificadores import id_opaco
 from app.application.lector_perfiles import LectorPerfiles
+from app.application.motor_decision import ResultadoDecision, evaluar_fuentes_preaprobacion
 
 logger = logging.getLogger("rating.oferta")
 
@@ -409,12 +410,39 @@ class ServicioOferta:
             cobertura_decimal, resultado_score["score_total"], plazo_meses, direccion_inmueble
         )
 
+        decision = evaluar_fuentes_preaprobacion(
+            perfil["fuentes"],
+            monto_solicitado=cobertura_decimal,
+            plazo_meses=plazo_meses or 24,
+        )
+
         oferta: dict[str, Any] = {
             "id": str(uuid.uuid4()),
             "tipo": resultado_score["tipo"],
             "cobertura": {"valor": str(cobertura_decimal), "moneda": MONEDA},
             "desgloseScore": resultado_score["desglose_score"],
             "fuentes": resultado_score["fuentes"],
+            "preaprobacion": {
+                "estado": decision.estado,
+                "score": decision.score,
+                "clasificacionRiesgo": decision.clasificacion_riesgo,
+                "montoAprobado": {"valor": str(decision.monto_aprobado), "moneda": MONEDA}
+                if decision.monto_aprobado
+                else None,
+                "montoMaximo": {"valor": str(decision.monto_maximo_capacidad), "moneda": MONEDA}
+                if decision.monto_maximo_capacidad
+                else None,
+                "plazoSugerido": decision.plazo_sugerido,
+                "tasaEa": str(decision.tasa_ea) if decision.tasa_ea else None,
+                "cuotaMensual": {"valor": str(decision.cuota_mensual), "moneda": MONEDA}
+                if decision.cuota_mensual
+                else None,
+                "condiciones": decision.condiciones,
+                "razones": [
+                    {"codigo": r.codigo, "descripcion": r.descripcion, "impacto": r.impacto}
+                    for r in decision.razones
+                ],
+            },
         }
         if resultado_score["tipo"] == "PRELIMINAR":
             minima, maxima = calcular_rango_prima(prima)
@@ -428,3 +456,16 @@ class ServicioOferta:
             oferta["rangoPrima"] = None
 
         return oferta, score_de_cache
+
+    def evaluar_decision_preaprobacion(
+        self,
+        cliente_id: str,
+        operation_time: str,
+        monto_solicitado: Decimal,
+        plazo_meses: int = 24,
+    ) -> ResultadoDecision | None:
+        """Permite consultar directamente la decisión y estructuración de preaprobación."""
+        perfil = self._lector_perfiles.leer(cliente_id, operation_time)
+        if perfil is None:
+            return None
+        return evaluar_fuentes_preaprobacion(perfil["fuentes"], monto_solicitado, plazo_meses)

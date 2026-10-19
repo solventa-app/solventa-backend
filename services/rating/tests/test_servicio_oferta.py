@@ -236,8 +236,17 @@ def test_el_score_cacheado_sin_historial_tambien_es_insuficiente() -> None:
 
 @pytest.mark.parametrize(
     ("plazo", "esperado"),
-    [(None, "1"), (1, "0.95"), (60, "0.95"), (61, "1.00"), (180, "1.00"), (181, "1.05"),
-     (240, "1.05"), (241, "1.10"), (360, "1.10")],
+    [
+        (None, "1"),
+        (1, "0.95"),
+        (60, "0.95"),
+        (61, "1.00"),
+        (180, "1.00"),
+        (181, "1.05"),
+        (240, "1.05"),
+        (241, "1.10"),
+        (360, "1.10"),
+    ],
 )
 def test_factor_plazo_por_tramos(plazo, esperado) -> None:
     assert factor_plazo(plazo) == Decimal(esperado)
@@ -272,8 +281,7 @@ def test_plazo_y_ciudad_cambian_la_prima_de_la_oferta_completa() -> None:
 
 def test_oferta_preliminar_cuando_una_fuente_viene_de_cache() -> None:
     de_cache = [
-        {**f, "de_cache": True} if f["fuente"] == "cuentas-bancarias" else f
-        for f in FUENTES_SANAS
+        {**f, "de_cache": True} if f["fuente"] == "cuentas-bancarias" else f for f in FUENTES_SANAS
     ]
     lector = LectorPerfilesFalso(perfil=_perfil_con_fuentes(de_cache))
     servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
@@ -341,3 +349,40 @@ def test_cambiar_version_de_reglas_invalida_el_hit_de_cache(monkeypatch) -> None
 
     _, tercera_de_cache = servicio.generar("cliente-1", "1700000001.1", "200000000")
     assert tercera_de_cache is False  # version distinta -> clave distinta -> no hit
+
+
+# ---------- Preaprobación y motor de decisión (HU-W02 / KAN-28) ----------
+
+
+def test_oferta_incluye_preaprobacion_del_motor_de_decision() -> None:
+    lector = LectorPerfilesFalso(perfil=PERFIL_SANO)
+    servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
+
+    oferta, _ = servicio.generar("cliente-1", "1700000001.1", "20000000", plazo_meses=24)
+
+    assert "preaprobacion" in oferta
+    preap = oferta["preaprobacion"]
+    assert preap["estado"] in {"APROBADO", "CONDICIONADO"}
+    assert preap["score"] is not None and preap["score"] > 0
+    assert preap["clasificacionRiesgo"] in {"BAJO", "MEDIO", "ALTO"}
+    assert preap["montoAprobado"] is not None
+    assert preap["montoMaximo"] is not None
+    assert preap["plazoSugerido"] is not None
+    assert preap["tasaEa"] is not None
+    assert preap["cuotaMensual"] is not None
+    assert isinstance(preap["razones"], list)
+    assert len(preap["razones"]) > 0
+
+
+def test_evaluar_decision_preaprobacion_directo() -> None:
+    lector = LectorPerfilesFalso(perfil=PERFIL_SANO)
+    servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
+
+    decision = servicio.evaluar_decision_preaprobacion(
+        "cliente-1", "1700000001.1", Decimal("10000000"), 24
+    )
+
+    assert decision is not None
+    assert decision.estado in {"APROBADO", "CONDICIONADO"}
+    assert decision.monto_aprobado is not None
+    assert decision.score is not None and decision.score > 0
