@@ -248,7 +248,7 @@ input CrearUsuarioInput {
 
 type Query {
   oferta(id: ID!): Oferta
-  cobros(polizaId: ID, estado: EstadoCobro): [Cobro!]!
+  cobros(polizaId: ID, estado: EstadoCobro, pagina: Int = 1, tamano: Int = 10): [Cobro!]!
   yo: Usuario
   usuarios(rol: RolUsuario): [Usuario!]!
 }

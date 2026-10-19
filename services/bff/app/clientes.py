@@ -84,7 +84,13 @@ class PuertoRating(Protocol):
 
 
 class PuertoPayments(Protocol):
-    async def listar_cobros(self, poliza_id: str | None, estado: str | None) -> list[dict]: ...
+    async def listar_cobros(
+        self,
+        poliza_id: str | None,
+        estado: str | None,
+        pagina: int | None = None,
+        tamano: int | None = None,
+    ) -> list[dict]: ...
 
     async def reintentar_cobro(self, cobro_id: str) -> dict | None: ...
 
@@ -314,12 +320,21 @@ class ClientePaymentsHttp:
     def __init__(self, cliente: httpx.AsyncClient) -> None:
         self._cliente = cliente
 
-    async def listar_cobros(self, poliza_id: str | None, estado: str | None) -> list[dict]:
+    async def listar_cobros(
+        self,
+        poliza_id: str | None,
+        estado: str | None,
+        pagina: int | None = None,
+        tamano: int | None = None,
+    ) -> list[dict]:
         # Filtros en el CUERPO, nunca en la URL: httpx loguea la URL (regla #6).
+        cuerpo: dict[str, object] = {"poliza_id": poliza_id, "estado": estado}
+        if pagina is not None:
+            cuerpo["pagina"] = pagina
+        if tamano is not None:
+            cuerpo["tamano"] = tamano
         try:
-            respuesta = await self._cliente.post(
-                "/cobros/buscar", json={"poliza_id": poliza_id, "estado": estado}
-            )
+            respuesta = await self._cliente.post("/cobros/buscar", json=cuerpo)
         except httpx.HTTPError as error:
             raise ErrorServicio(type(error).__name__) from error
         if respuesta.is_error:

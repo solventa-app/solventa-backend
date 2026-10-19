@@ -501,6 +501,8 @@ class Query:
         info: Info,
         poliza_id: strawberry.ID | None = strawberry.UNSET,
         estado: EstadoCobro | None = strawberry.UNSET,
+        pagina: int | None = 1,
+        tamano: int | None = 10,
     ) -> list[Cobro]:
         """Tabla del back-office (CA-W05-01). Siempre exige token: son datos de pagos."""
         exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
@@ -508,7 +510,7 @@ class Query:
         filtro_estado = estado.value.lower() if isinstance(estado, EstadoCobro) else None
         try:
             datos = await info.context["clientes"].payments.listar_cobros(
-                filtro_poliza, filtro_estado
+                filtro_poliza, filtro_estado, pagina, tamano
             )
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_COBROS_NO_DISPONIBLES) from error

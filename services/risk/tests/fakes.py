@@ -22,9 +22,14 @@ class RepositorioPerfilesFalso:
         self.secuencias: dict[str, int] = {}
         self.guardados: list[tuple[str, list[dict[str, Any]]]] = []
         self.metadatos_guardados: list[dict[str, Any]] = []
+        self.evaluaciones: list[tuple[str, dict[str, Any] | None]] = []
 
     def guardar(
-        self, cliente_id: str, fuentes: list[dict[str, Any]], **kwargs: Any
+        self,
+        cliente_id: str,
+        fuentes: list[dict[str, Any]],
+        evaluacion: dict[str, Any] | None = None,
+        **kwargs: Any,
     ) -> tuple[int, TimestampFalso]:
         self.secuencias[cliente_id] = self.secuencias.get(cliente_id, 0) + 1
         perfil_version = self.secuencias[cliente_id]
@@ -39,6 +44,7 @@ class RepositorioPerfilesFalso:
                 "version_reglas": kwargs.get("version_reglas", "v1"),
             }
         )
+        self.evaluaciones.append((cliente_id, evaluacion))
         return perfil_version, TimestampFalso(1_700_000_000 + perfil_version, 1)
 
 

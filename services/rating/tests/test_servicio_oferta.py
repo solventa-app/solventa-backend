@@ -399,3 +399,40 @@ def test_usa_score_cacheado_por_risk_en_redis_bajo_clave_score() -> None:
         "nivelRiesgo": "BAJO",
         "fechaVigencia": "2026-11-17T00:00:00+00:00",
     }
+
+
+# ---------- Preaprobación y motor de decisión (HU-W02 / KAN-28) ----------
+
+
+def test_oferta_incluye_preaprobacion_del_motor_de_decision() -> None:
+    lector = LectorPerfilesFalso(perfil=PERFIL_SANO)
+    servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
+
+    oferta, _ = servicio.generar("cliente-1", "1700000001.1", "20000000", plazo_meses=24)
+
+    assert "preaprobacion" in oferta
+    preap = oferta["preaprobacion"]
+    assert preap["estado"] in {"APROBADO", "CONDICIONADO"}
+    assert preap["score"] is not None and preap["score"] > 0
+    assert preap["clasificacionRiesgo"] in {"BAJO", "MEDIO", "ALTO"}
+    assert preap["montoAprobado"] is not None
+    assert preap["montoMaximo"] is not None
+    assert preap["plazoSugerido"] is not None
+    assert preap["tasaEa"] is not None
+    assert preap["cuotaMensual"] is not None
+    assert isinstance(preap["razones"], list)
+    assert len(preap["razones"]) > 0
+
+
+def test_evaluar_decision_preaprobacion_directo() -> None:
+    lector = LectorPerfilesFalso(perfil=PERFIL_SANO)
+    servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
+
+    decision = servicio.evaluar_decision_preaprobacion(
+        "cliente-1", "1700000001.1", Decimal("10000000"), 24
+    )
+
+    assert decision is not None
+    assert decision.estado in {"APROBADO", "CONDICIONADO"}
+    assert decision.monto_aprobado is not None
+    assert decision.score is not None and decision.score > 0

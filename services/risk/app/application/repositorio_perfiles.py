@@ -74,6 +74,7 @@ class RepositorioPerfilesMongo:
         self,
         cliente_id: str,
         fuentes: list[dict[str, Any]],
+        evaluacion: dict[str, Any] | None = None,
         *,
         score_total: int | None = None,
         nivel_riesgo: str | None = None,
@@ -108,7 +109,7 @@ class RepositorioPerfilesMongo:
             )
             perfil_version = contador["secuencia"]
 
-            documento = {
+            documento: dict[str, Any] = {
                 "cliente_id": cliente_id,
                 "perfil_version": perfil_version,
                 "fuentes": fuentes_persistidas,
@@ -118,6 +119,11 @@ class RepositorioPerfilesMongo:
                 "version_reglas": version_reglas,
                 "creado_en": ahora,
             }
+            if evaluacion is not None:
+                documento["evaluacion"] = evaluacion
+                documento["score"] = evaluacion.get("score")
+                documento["clasificacion"] = evaluacion.get("clasificacion")
+
             self._perfiles.insert_one(documento, session=session)
 
             operation_time = session.operation_time
