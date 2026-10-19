@@ -50,6 +50,14 @@ class SolicitudModo(BaseModel):
     modo: Modo
 
 
+class SolicitudModoReferencia(BaseModel):
+    """Modo fijo para UNA referencia del comercio (demo de W05-01): por ejemplo, que un cobro siga
+    fallando para que se vea PENDIENTE mientras el resto de la pasarela funciona."""
+
+    referencia: str
+    modo: Modo
+
+
 ESTADOS_ALTERNA = {"cobrado": "APPROVED", "rechazado": "DECLINED", "pendiente": "PENDING"}
 
 
@@ -80,9 +88,18 @@ def create_app() -> FastAPI:
     # Cobros registrados por `referencia_comercio`.
     cobros: dict[str, dict] = {}
     candado = asyncio.Lock()
+    # Modos fijos por referencia (`/control/referencias`): ganan sobre el modo global.
+    modos_por_referencia: dict[str, str] = {}
 
-    def _modo_efectivo(modo_qp: str | None, modo_header: str | None) -> str:
-        modo = modo_qp or modo_header or estado["modo"]
+    def _modo_efectivo(
+        modo_qp: str | None, modo_header: str | None, referencia: str | None = None
+    ) -> str:
+        modo = (
+            modo_qp
+            or modo_header
+            or (modos_por_referencia.get(referencia) if referencia else None)
+            or estado["modo"]
+        )
         if modo not in MODOS:
             raise HTTPException(status_code=400, detail=f"modo inválido: {modo}")
         return modo
@@ -117,6 +134,17 @@ def create_app() -> FastAPI:
         estado["modo"] = body.modo
         return {"modo": estado["modo"]}
 
+    @app.post("/control/referencias", tags=["control"])
+    def fijar_modo_referencia(body: SolicitudModoReferencia) -> dict[str, str]:
+        modos_por_referencia[body.referencia] = body.modo
+        return {"referencia": body.referencia, "modo": body.modo}
+
+    @app.delete("/control/referencias", tags=["control"])
+    def limpiar_modos_referencia() -> dict[str, int]:
+        cantidad = len(modos_por_referencia)
+        modos_por_referencia.clear()
+        return {"borrados": cantidad}
+
     async def _registrar_cobro(referencia: str, modo: str) -> dict:
         """Registra el cobro por su referencia (una vez) y espera la respuesta simulada. Lo
         comparten las dos APIs del stub: repetir la referencia devuelve el resultado original."""
@@ -149,7 +177,7 @@ def create_app() -> FastAPI:
         modo: str | None = None,
         x_modo_simulado: str | None = Header(default=None),
     ) -> dict:
-        modo_efectivo = _modo_efectivo(modo, x_modo_simulado)
+        modo_efectivo = _modo_efectivo(modo, x_modo_simulado, body.referencia_comercio)
         return await _registrar_cobro(body.referencia_comercio, modo_efectivo)
 
     @app.get("/v1/cobros/{referencia_comercio}", tags=["proveedor"])
@@ -160,7 +188,7 @@ def create_app() -> FastAPI:
     ) -> dict:
         """Conciliación: ¿la pasarela tiene un cobro con esta referencia del comercio
         (`referencia_comercio`)? 404 si no. Obedece el modo simulado."""
-        await _aplicar_modo(_modo_efectivo(modo, x_modo_simulado))
+        await _aplicar_modo(_modo_efectivo(modo, x_modo_simulado, referencia_comercio))
         resultado = cobros.get(referencia_comercio)
         if resultado is None:
             raise HTTPException(status_code=404, detail="cobro no encontrado")
@@ -182,7 +210,7 @@ def create_app() -> FastAPI:
         modo: str | None = None,
         x_modo_simulado: str | None = Header(default=None),
     ) -> dict:
-        modo_efectivo = _modo_efectivo(modo, x_modo_simulado)
+        modo_efectivo = _modo_efectivo(modo, x_modo_simulado, body.reference)
         resultado = await _registrar_cobro(body.reference, modo_efectivo)
         return _a_alterna(body.reference, resultado)
 
@@ -192,7 +220,7 @@ def create_app() -> FastAPI:
         modo: str | None = None,
         x_modo_simulado: str | None = Header(default=None),
     ) -> dict:
-        await _aplicar_modo(_modo_efectivo(modo, x_modo_simulado))
+        await _aplicar_modo(_modo_efectivo(modo, x_modo_simulado, reference))
         resultado = cobros.get(reference)
         if resultado is None:
             raise HTTPException(status_code=404, detail="charge_not_found")

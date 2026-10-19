@@ -135,3 +135,21 @@ def test_consultar_obedece_el_modo() -> None:
     cliente = TestClient(create_app())
 
     assert cliente.get("/v1/cobros/cualquiera", params={"modo": "error"}).status_code == 503
+
+
+def test_un_modo_por_referencia_gana_sobre_el_global_y_se_puede_limpiar() -> None:
+    cliente = TestClient(create_app())
+    cliente.post("/control/referencias", json={"referencia": "fija-1", "modo": "error"})
+
+    falla = cliente.post("/v1/cobros", json={**ORDEN, "referencia_comercio": "fija-1"})
+    otra = cliente.post("/v1/cobros", json={**ORDEN, "referencia_comercio": "libre-1"})
+
+    assert falla.status_code == 503  # esa referencia sigue fallando
+    assert otra.json()["estado"] == "cobrado"  # el resto de la pasarela funciona
+    assert cliente.get("/v1/cobros/fija-1").status_code == 503  # la conciliación tampoco responde
+
+    assert cliente.delete("/control/referencias").json() == {"borrados": 1}
+    assert (
+        cliente.post("/v1/cobros", json={**ORDEN, "referencia_comercio": "fija-1"}).json()["estado"]
+        == "cobrado"
+    )

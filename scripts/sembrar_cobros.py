@@ -5,9 +5,20 @@ cobro para cada uno, usando el modo del stub de la pasarela para dejar cada esta
 
 - COBRADO: María Gutiérrez y Sandra Ospina (pasarela sana).
 - RECHAZADO: Luisa Fernanda Parra (pasarela en `rechaza`): se puede reintentar hasta 3 veces.
-- PENDIENTE: Carlos Rincón y Jorge Mendoza (pasarela en `error`). El reintento automático de
-  PAYMENTS los vuelve a intentar a los pocos segundos y, con la pasarela sana, quedan COBRADO:
-  así se ve el reintento automático en la demo.
+- PENDIENTE que se queda: Carlos Rincón. La pasarela tiene programado fallar SOLO para su
+  referencia (`/control/referencias` del stub), así que el sistema lo sigue reintentando y la tabla
+  lo muestra en «Pendiente de reintento» mientras el resto de la pasarela funciona.
+- PENDIENTE que se recupera: Jorge Mendoza (pasarela en `error` al crearlo). El reintento
+  automático lo vuelve a intentar y, con la pasarela sana, queda COBRADO: se ve el reintento.
+- COBRANDO (opcional, `--con-cobrando`, solo local): en la vida real un cobro está «Cobrando» un
+  instante (mientras la pasarela responde). Para que la demo lo muestre, se inserta uno directo en
+  la base local de PAYMENTS, como si el proceso se hubiera caído a mitad del cobro. A los 2 minutos
+  (`COBRO_ATASCADO_MINUTOS`) el sistema lo recupera solo: lo concilia y lo cobra. Es la única fila
+  que no pasa por PAYMENTS (regla 1): por eso es opcional y solo local.
+
+Qué significa cada estado: COBRANDO = el cobro está en curso; PENDIENTE = la pasarela no respondió
+y el sistema lo reintenta solo (sin gastar los reintentos manuales); RECHAZADO = la pasarela lo
+rechazó (p. ej. fondos insuficientes) y el operador lo puede reintentar a mano hasta 3 veces.
 
 Es idempotente: los alias y los `idIntentoCobro` son fijos, así que correrlo dos veces no
 duplica nada (los usuarios se reutilizan y los cobros se devuelven como estaban).
@@ -18,7 +29,8 @@ apunta `BFF_URL` a la URL del gateway, con `USUARIO_BACKOFFICE` y `CLAVE_BACKOFF
 real de staging (sus claves quedan en Secret Manager, ver `scripts/crear_usuarios.py`).
 
 Uso (con `docker compose --profile servicios up -d`):
-    python3 scripts/sembrar_cobros.py
+    python3 scripts/sembrar_cobros.py                  # cobrado, rechazado y pendientes
+    python3 scripts/sembrar_cobros.py --con-cobrando   # y uno «Cobrando» (solo local)
 """
 
 import json
@@ -40,7 +52,7 @@ COBROS = [
     ("demo.maria", "María Gutiérrez", "VH-2026-0048217", "185000.00", "sano"),
     ("demo.sandra", "Sandra Ospina", "VH-2026-0048077", "198500.00", "sano"),
     ("demo.luisa", "Luisa Fernanda Parra", "VH-2026-0048155", "164800.00", "rechaza"),
-    ("demo.carlos", "Carlos Rincón", "VH-2026-0048190", "212400.00", "error"),
+    ("demo.carlos", "Carlos Rincón", "VH-2026-0048190", "212400.00", "fija-error"),
     ("demo.jorge", "Jorge Mendoza", "VH-2026-0048101", "240000.00", "error"),
 ]
 
@@ -88,6 +100,48 @@ def _modo_pasarela(modo: str) -> None:
     _http(f"{STUB_PASARELA}/control/modo", {"modo": modo}, _token_pasarela())
 
 
+def _modo_referencia(referencia: str, modo: str) -> None:
+    """Solo esa referencia queda con ese modo (el resto de la pasarela sigue en su modo global)."""
+    _http(
+        f"{STUB_PASARELA}/control/referencias",
+        {"referencia": referencia, "modo": modo},
+        _token_pasarela(),
+    )
+
+
+ANDRES = ("demo.andres", "Andrés Felipe Duarte", "VH-2026-0048233", "198000.00")
+
+
+def _cobro_cobrando(cliente_id: str) -> None:
+    """Inserta un cobro en `cobrando` en la base LOCAL de PAYMENTS (docker compose)."""
+    _, _, poliza, prima = ANDRES
+    sql = (
+        "INSERT INTO cobros (id, id_intento_cobro, poliza_id, cliente_id, monto, moneda, "
+        "token_medio_pago, estado) VALUES (gen_random_uuid()::text, "
+        f"'semilla-w05-{poliza}', '{poliza}', '{cliente_id}', '{prima}', 'COP', "
+        "'tok_demo_semilla', 'cobrando') ON CONFLICT (id_intento_cobro) DO NOTHING;"
+    )
+    subprocess.run(
+        [
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "postgres",
+            "psql",
+            "-U",
+            "postgres",
+            "-d",
+            "payments",
+            "-c",
+            sql,
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+
+
 def _cliente(alias: str, nombre: str, token: str, existentes: dict[str, str]) -> str:
     if alias in existentes:
         return existentes[alias]
@@ -119,7 +173,11 @@ def main() -> int:
     try:
         for alias, nombre, poliza, prima, modo in COBROS:
             cliente_id = _cliente(alias, nombre, token, existentes)
-            _modo_pasarela(modo)
+            if modo == "fija-error":
+                _modo_pasarela("sano")
+                _modo_referencia(f"semilla-w05-{poliza}", "error")
+            else:
+                _modo_pasarela(modo)
             cobro = _graphql(
                 """mutation($e: CrearCobroInput!) { crearCobro(entrada: $e) {
                   __typename ... on Cobro { estado } ... on ErrorCobro { mensaje } } }""",
@@ -135,6 +193,12 @@ def main() -> int:
                 token,
             )["crearCobro"]
             print(f"{poliza}  {nombre:<22} {cobro.get('estado') or cobro.get('mensaje')}")
+        if "--con-cobrando" in sys.argv:
+            if BFF.startswith("https://"):
+                raise SystemExit("--con-cobrando es solo para la demo local (docker compose).")
+            alias, nombre, poliza, _ = ANDRES
+            _cobro_cobrando(_cliente(alias, nombre, token, existentes))
+            print(f"{poliza}  {nombre:<22} COBRANDO (se recupera solo a los 2 minutos)")
     finally:
         _modo_pasarela("sano")
 
