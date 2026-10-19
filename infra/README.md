@@ -358,10 +358,12 @@ Cloud SQL o Redis no atienden: es lo esperado.
 **Apagado automático:** por si se olvida apagarlo, el workflow **apaga solo todos los días a las 2:00 a.m. hora de
 Colombia** (`cron: '0 7 * * *'`, 07:00 UTC; Colombia no tiene horario de verano). Así, lo que se encienda para una
 prueba no sigue cobrando de un día para otro. Por eso cada mañana estará **apagado**: para usarlo, `encender`.
-Para quitarlo, borra el bloque `schedule` de `.github/workflows/costos-staging.yml`. Tres cosas a saber:
+Como GitHub no garantiza la hora (el 18-oct la ejecución llegó casi 5 h tarde y el 19-oct no llegó), el bloque `schedule`
+trae **tres reintentos** (08:30, 10:00 y 12:00 UTC). Apagar es idempotente: si la primera pasada funcionó, las otras no
+tienen cambios que aplicar. Para quitarlo, borra el bloque `schedule` de `.github/workflows/costos-staging.yml`. Tres cosas a saber:
 
-- GitHub puede demorar unos minutos en lanzar una ejecución programada, y en un repositorio público las desactiva tras
-  60 días sin actividad.
+- GitHub puede demorar o saltarse una ejecución programada, y en un repositorio público las desactiva tras
+  60 días sin actividad. Si el 1.er intento falla, GitHub avisa por correo a quien editó el cron por última vez.
 - Si alguien está trabajando pasadas las 2:00 a.m., se le apagará: basta con volver a ejecutar `encender`.
 - Mientras `main` no traiga este cambio, la ejecución programada se omite con un aviso (no falla cada noche).
 

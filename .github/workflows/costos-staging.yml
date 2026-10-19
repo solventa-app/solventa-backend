@@ -16,8 +16,8 @@ name: Costos staging
 # despliegue automático (deploy-staging.yml) lo respeta: un release no vuelve a encender lo que está apagado.
 # Solo toca Cloud SQL, Redis, el conector VPC y el escalado de los servicios: si el plan destruyera otra cosa, el workflow falla sin aplicar nada.
 #
-# SE APAGA SOLO todos los días a las 2:00 a.m. hora de Colombia (por si se olvida apagarlo): es el bloque `schedule`.
-# Para quitarlo, borra ese bloque. GitHub puede demorar unos minutos en lanzar las ejecuciones programadas, y en un
+# SE APAGA SOLO todos los días a las 2:00 a.m. hora de Colombia (por si se olvida apagarlo): es el bloque `schedule`,
+# con tres reintentos más tarde por si GitHub retrasa o se salta la primera. Para quitarlo, borra ese bloque. GitHub puede demorar unos minutos en lanzar las ejecuciones programadas, y en un
 # repositorio público las desactiva tras 60 días sin actividad. Si algo falla, infra/README.md explica cómo hacer lo
 # mismo a mano desde Cloud Shell.
 on:
@@ -30,7 +30,13 @@ on:
         default: estado
   schedule:
     # 2:00 a.m. en Colombia (UTC-5, sin horario de verano) = 07:00 UTC. Siempre apaga.
+    # Los cron de GitHub son de mejor esfuerzo: pueden llegar horas tarde o saltarse (el 18-oct llegó casi 5 h
+    # tarde y el 19-oct no llegó). Por eso hay reintentos: apagar es idempotente (si ya está apagado, el plan no
+    # tiene cambios y no se toca nada), así que las pasadas extra no cuestan nada cuando la primera funcionó.
     - cron: '0 7 * * *'
+    - cron: '30 8 * * *'
+    - cron: '0 10 * * *'
+    - cron: '0 12 * * *'
 
 permissions:
   contents: read
