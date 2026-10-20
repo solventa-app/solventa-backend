@@ -235,6 +235,15 @@ jobs:
         run: |
           gw=$(terraform output -raw gateway_url 2>/dev/null || true)
           echo "gateway_url=${gw}" >> "$GITHUB_OUTPUT"
+          # Queda en el resumen de Terraform aunque después falle construir, migrar o desplegar.
+          if [ -n "$gw" ]; then
+            {
+              echo "## API Gateway (salida de Terraform)"
+              echo "- **\`gateway_url\`:** \`${gw}\`"
+              echo "- **GraphQL Web:** \`${gw}/graphql/web\`"
+              echo "- **Salud:** \`${gw}/health\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   construir:
     # Construir una vez: la imagen que pasó CI es la que llega a staging (etiqueta = SHA, nunca "latest").
