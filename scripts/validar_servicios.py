@@ -57,10 +57,7 @@ def validar() -> list[str]:
     for s in servicios:
         nombre, ruta, puerto = s["nombre"], s["ruta"], s["puerto"]
 
-        # Excepción temporal: el BFF puede seguir público mientras Vercel pasa a la URL del gateway
-        # (que solo existe tras el primer despliegue con crear_gateway). Exige decir por qué.
-        transicion = nombre == "bff" and s.get("publico_temporal")
-        if s.get("publico") and not transicion:
+        if s.get("publico"):
             errores.append(
                 f"{nombre}: ningún servicio de Cloud Run debe ser público; "
                 "la única puerta pública es el API Gateway delante del BFF"

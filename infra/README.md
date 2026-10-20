@@ -588,3 +588,8 @@ El primer release con `crear_gateway = true` deja el BFF **todavía público** (
 2. Con la `gateway_url` del informe del despliegue, el front cambia `apps/web/vercel.json` para apuntar al gateway.
 3. Otro release quita `publico` y `publico_temporal` del BFF: desde ahí solo el gateway lo invoca.
 
+Hecho el 2026-10-20: gateway `https://solventa-gateway-btxoyawl.uc.gateway.dev` (pasos 1 y 2 en el front, #67).
+El paso 3 destruye `google_cloud_run_v2_service_iam_member.invocador_publico["bff"]`, así que la guardia de
+`scripts/revisar_plan.py` frena el apply automático del release: se revisa el plan y se vuelve a correr
+*Deploy staging* a mano con `infra` y `permitir_destruir` marcados. `validar_servicios.py` ya no admite la excepción.
+
