@@ -1,0 +1,299 @@
+{
+  "info": {
+    "name": "Solventa — HU-W01 (BFF GraphQL)",
+    "_postman_id": "d6a5b1c0-2e2f-4a8e-9b3a-hu-w01-humo",
+    "description": "Recorrido de humo de HU-W01 contra el BFF real (docker compose). Cada carpeta corre en orden: registra consentimiento, pide una oferta completa, degrada los proveedores y pide una oferta preliminar, los restaura, contacta a un asesor y revoca el consentimiento para confirmar que bloquea una nueva solicitud. Ver docs/evidencias/flujo-prueba-local-hu-w01.md para el porqué de cada paso.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "exec": [
+          "// Documento único por corrida: si se repite el mismo documentoIdentidad entre corridas",
+          "// seguidas, el caché del ACL Worker (TTL 300s) puede servir CACHE en vez de OK incluso",
+          "// con los proveedores sanos, y el paso 1.2 fallaría por una razón ajena al código.",
+          "if (!pm.collectionVariables.get('documentoIdentidad')) {",
+          "  pm.collectionVariables.set('documentoIdentidad', 'CC-NEWMAN-' + Date.now());",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "bffUrl", "value": "http://localhost:8000" },
+    { "key": "stubOpenFinance", "value": "http://localhost:8101" },
+    { "key": "stubOpenData", "value": "http://localhost:8102" },
+    { "key": "documentoIdentidad", "value": "" },
+    { "key": "consentimientoId", "value": "" },
+    { "key": "ofertaId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Camino feliz",
+      "item": [
+        {
+          "name": "1.1 Registrar consentimiento",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{bffUrl}}/graphql/web",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation { registrarConsentimiento(entrada: {finalidad: \"oferta-vida-hipotecario\", versionTexto: \"v1\"}) { id vigente otorgadoEn revocadoEn } }",
+                "variables": "{}"
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(body.errors).to.be.undefined);",
+                  "const c = body.data.registrarConsentimiento;",
+                  "pm.test('consentimiento vigente, sin fecha de revocación', () => {",
+                  "  pm.expect(c.vigente).to.be.true;",
+                  "  pm.expect(c.revocadoEn).to.be.null;",
+                  "});",
+                  "pm.collectionVariables.set('consentimientoId', c.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 Solicitar oferta (proveedores sanos) -> COMPLETA",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{bffUrl}}/graphql/web",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($entrada: SolicitudOfertaInput!) { solicitarOferta(entrada: $entrada) { __typename ... on Oferta { id tipo prima { valor moneda } rangoPrima { minima { valor } } fuentes { nombre estado } } ... on ErrorOferta { mensaje puedeReintentar } } }",
+                "variables": "{\"entrada\": {\"consentimientoId\": \"{{consentimientoId}}\", \"documentoIdentidad\": \"{{documentoIdentidad}}\", \"valorCredito\": \"200000000\", \"plazoMeses\": 240, \"direccionInmueble\": \"Calle 1 # 2-3\"}}"
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const r = body.data.solicitarOferta;",
+                  "pm.test('es una Oferta, nunca un error crudo', () => pm.expect(r.__typename).to.eql('Oferta'));",
+                  "pm.test('tipo COMPLETA con prima puntual, sin rango', () => {",
+                  "  pm.expect(r.tipo).to.eql('COMPLETA');",
+                  "  pm.expect(r.prima).to.not.be.null;",
+                  "  pm.expect(r.rangoPrima).to.be.null;",
+                  "});",
+                  "pm.test('las 5 fuentes se consultaron en vivo (estado OK)', () => {",
+                  "  pm.expect(r.fuentes).to.have.lengthOf(5);",
+                  "  r.fuentes.forEach(f => pm.expect(f.estado).to.eql('OK'));",
+                  "});",
+                  "pm.collectionVariables.set('ofertaId', r.id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Degradado (Circuit Breaker + caché)",
+      "item": [
+        {
+          "name": "2.1 Open Finance -> modo error",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{stubOpenFinance}}/control/modo",
+            "body": { "mode": "raw", "raw": "{\"modo\": \"error\"}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test('modo = error', () => pm.expect(pm.response.json().modo).to.eql('error'));"] }
+            }
+          ]
+        },
+        {
+          "name": "2.2 Open Data -> modo error",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{stubOpenData}}/control/modo",
+            "body": { "mode": "raw", "raw": "{\"modo\": \"error\"}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test('modo = error', () => pm.expect(pm.response.json().modo).to.eql('error'));"] }
+            }
+          ]
+        },
+        {
+          "name": "2.3 Solicitar oferta otra vez (mismo documento) -> PRELIMINAR desde caché",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{bffUrl}}/graphql/web",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($entrada: SolicitudOfertaInput!) { solicitarOferta(entrada: $entrada) { __typename ... on Oferta { tipo rangoPrima { minima { valor } maxima { valor } } fuentes { nombre estado } } ... on ErrorOferta { mensaje } } }",
+                "variables": "{\"entrada\": {\"consentimientoId\": \"{{consentimientoId}}\", \"documentoIdentidad\": \"{{documentoIdentidad}}\", \"valorCredito\": \"200000000\", \"plazoMeses\": 240, \"direccionInmueble\": \"Calle 1 # 2-3\"}}"
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const r = body.data.solicitarOferta;",
+                  "pm.test('sigue siendo una Oferta, nunca un error crudo', () => pm.expect(r.__typename).to.eql('Oferta'));",
+                  "pm.test('tipo PRELIMINAR con rango de prima', () => {",
+                  "  pm.expect(r.tipo).to.eql('PRELIMINAR');",
+                  "  pm.expect(r.rangoPrima).to.not.be.null;",
+                  "});",
+                  "pm.test('las fuentes vienen de caché, no fallaron crudas', () => {",
+                  "  r.fuentes.forEach(f => pm.expect(f.estado).to.eql('CACHE'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 Open Finance -> modo sano (restaurar)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{stubOpenFinance}}/control/modo",
+            "body": { "mode": "raw", "raw": "{\"modo\": \"sano\"}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test('modo = sano', () => pm.expect(pm.response.json().modo).to.eql('sano'));"] }
+            }
+          ]
+        },
+        {
+          "name": "2.5 Open Data -> modo sano (restaurar)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{stubOpenData}}/control/modo",
+            "body": { "mode": "raw", "raw": "{\"modo\": \"sano\"}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test('modo = sano', () => pm.expect(pm.response.json().modo).to.eql('sano'));"] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Asesor y revocación",
+      "item": [
+        {
+          "name": "3.1 Contactar a un asesor",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{bffUrl}}/graphql/web",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($ofertaId: ID!) { contactarAsesor(ofertaId: $ofertaId, canal: CHAT) { canal resumen } }",
+                "variables": "{\"ofertaId\": \"{{ofertaId}}\"}"
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const c = pm.response.json().data.contactarAsesor;",
+                  "pm.test('confirma el canal pedido', () => pm.expect(c.canal).to.eql('CHAT'));",
+                  "pm.test('el resumen referencia la oferta', () => pm.expect(c.resumen).to.include(pm.collectionVariables.get('ofertaId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 Revocar consentimiento",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{bffUrl}}/graphql/web",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($id: ID!) { revocarConsentimiento(id: $id) { id vigente revocadoEn } }",
+                "variables": "{\"id\": \"{{consentimientoId}}\"}"
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const c = pm.response.json().data.revocarConsentimiento;",
+                  "pm.test('ya no está vigente y queda la fecha de revocación', () => {",
+                  "  pm.expect(c.vigente).to.be.false;",
+                  "  pm.expect(c.revocadoEn).to.not.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 Solicitar oferta tras revocar -> bloqueada, sin 5xx",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{bffUrl}}/graphql/web",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($entrada: SolicitudOfertaInput!) { solicitarOferta(entrada: $entrada) { __typename ... on ErrorOferta { mensaje puedeReintentar } ... on Oferta { id } } }",
+                "variables": "{\"entrada\": {\"consentimientoId\": \"{{consentimientoId}}\", \"documentoIdentidad\": \"{{documentoIdentidad}}\", \"valorCredito\": \"200000000\", \"plazoMeses\": 240, \"direccionInmueble\": \"Calle 1 # 2-3\"}}"
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200, nunca un 5xx', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json().data.solicitarOferta;",
+                  "pm.test('se bloquea con ErrorOferta, sin reintento', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorOferta');",
+                  "  pm.expect(r.puedeReintentar).to.be.false;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
