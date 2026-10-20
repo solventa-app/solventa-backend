@@ -141,6 +141,7 @@ resource "google_cloud_run_v2_service" "servicio" {
     google_secret_manager_secret_version.database_url_auth,
     google_secret_manager_secret_version.database_url_payments,
     google_secret_manager_secret_version.redis_url,
+    google_secret_manager_secret_version.redis_url_apagado,
     google_secret_manager_secret_version.mongo_uri,
     google_secret_manager_secret_version.mongo_uri_rating,
   ]
