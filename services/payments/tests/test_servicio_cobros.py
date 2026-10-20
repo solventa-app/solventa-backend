@@ -122,3 +122,23 @@ def test_balance_poliza_suma_solo_los_cobros_en_estado_cobrado() -> None:
     servicio_pendiente.crear_cobro({**ORDEN, "id_intento_cobro": "clave-2", "monto": "999.00"})
 
     assert servicio_cobrado.balance_poliza("poliza-1") == "100.00"
+
+
+def test_listar_con_paginacion() -> None:
+    repositorio = RepositorioCobrosFalso()
+    servicio = ServicioCobros(repositorio, ClienteAclFalso(), BusEventosFalso())
+    for i in range(5):
+        orden = {**ORDEN, "id_intento_cobro": f"intento-{i}", "monto": f"{10 * (i + 1)}.00"}
+        servicio.crear_cobro(orden)
+
+    pag1 = servicio.listar("poliza-1", "cobrado", pagina=1, tamano=2)
+    pag2 = servicio.listar("poliza-1", "cobrado", pagina=2, tamano=2)
+    pag3 = servicio.listar("poliza-1", "cobrado", pagina=3, tamano=2)
+
+    assert len(pag1) == 2
+    assert len(pag2) == 2
+    assert len(pag3) == 1
+    assert pag1[0]["id_intento_cobro"] == "intento-0"
+    assert pag2[0]["id_intento_cobro"] == "intento-2"
+    assert pag3[0]["id_intento_cobro"] == "intento-4"
+

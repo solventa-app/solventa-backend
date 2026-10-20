@@ -6,6 +6,11 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 8.7"
     }
+    google-beta = {
+      # Necesario para los recursos de Google Cloud API Gateway (infra/gateway.tf, HA-LAT-004).
+      source  = "hashicorp/google-beta"
+      version = "~> 8.7"
+    }
     random = {
       # Genera las contraseñas de Cloud SQL / Mongo Atlas que van a Secret Manager (nunca al repo).
       source  = "hashicorp/random"
@@ -36,6 +41,11 @@ terraform {
 }
 
 provider "google" {
+  project = var.project_id
+  region  = var.region
+}
+
+provider "google-beta" {
   project = var.project_id
   region  = var.region
 }

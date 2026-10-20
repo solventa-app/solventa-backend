@@ -21,6 +21,20 @@
         "operationTime": {
           "type": "string",
           "description": "operationTime de MongoDB de la escritura, serializado; RATING lo usa como afterClusterTime."
+        },
+        "nivelRiesgo": {
+          "type": "string",
+          "enum": ["BAJO", "MEDIO", "ALTO"],
+          "description": "Nivel de riesgo calculado por RISK junto con el score."
+        },
+        "fechaVigencia": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Vigencia del perfil calculado por RISK."
+        },
+        "versionReglas": {
+          "type": "string",
+          "description": "Versión de reglas con la que RISK calculó el score."
         }
       }
     }

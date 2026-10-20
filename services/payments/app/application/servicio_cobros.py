@@ -74,7 +74,13 @@ class RepositorioCobros(Protocol):
 
     def obtener(self, cobro_id: str) -> dict | None: ...
 
-    def listar(self, poliza_id: str | None, estado: str | None) -> list[dict]: ...
+    def listar(
+        self,
+        poliza_id: str | None,
+        estado: str | None,
+        pagina: int | None = None,
+        tamano: int | None = None,
+    ) -> list[dict]: ...
 
     def balance_poliza(self, poliza_id: str) -> str: ...
 
@@ -138,8 +144,14 @@ class ServicioCobros:
         self._emitir(cobro_actualizado)
         return cobro_actualizado
 
-    def listar(self, poliza_id: str | None, estado: str | None) -> list[dict[str, Any]]:
-        return self._repositorio.listar(poliza_id, estado)
+    def listar(
+        self,
+        poliza_id: str | None,
+        estado: str | None,
+        pagina: int | None = None,
+        tamano: int | None = None,
+    ) -> list[dict[str, Any]]:
+        return self._repositorio.listar(poliza_id, estado, pagina, tamano)
 
     def obtener(self, cobro_id: str) -> dict[str, Any] | None:
         return self._repositorio.obtener(cobro_id)

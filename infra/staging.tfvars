@@ -1,4 +1,4 @@
-# Configuración de STAGING que aplica el pipeline (deploy-staging.yml) al mergear a `develop`; también la que
+# Configuración de STAGING que aplica el pipeline (deploy-staging.yml) al mergear a `main`; también la que
 # debe usar quien aplique a mano: `terraform plan -var-file=staging.tfvars`. Aquí van las banderas: ACTIVAR UNA DE
 # COSTO (Cloud SQL, Redis, Atlas) ES MERGEAR UN CAMBIO EN ESTE ARCHIVO, así que se revisa en el PR como cualquier gasto.
 #
@@ -14,11 +14,23 @@ crear_servicios   = true
 presupuesto_moneda = "COP"
 presupuesto_monto  = 958332
 
-# Con costo por hora aunque no haya tráfico: se activan en su fase, con el cambio revisado en un PR.
-crear_kms         = false
+# Cifrado en reposo (bloque 3, D-04 cerrada): key ring y llave `campos-personales` de Cloud KMS (~USD 0,06/mes).
+# OJO: un key ring de Cloud KMS no se puede borrar nunca.
+crear_kms       = true
+usar_cmek_sql   = false # se activa en PR propio con ventana acordada de migración (export/import)
+usar_cmek_redis = false # se activa en el próximo encendido de Memorystore
+
+# Almacenes de datos (con costo por hora aunque no haya tráfico: se apagan a diario con costos-staging.yml).
 crear_redis       = true
 crear_cloud_sql   = true
 crear_mongo_atlas = true # Atlas M0: gratis. Lo necesitan risk y rating (infra/README.md, «MongoDB Atlas»)
+
+# Eventos Pub/Sub (bloque 8), Batch nocturno (bloque 9) y API Gateway 700 ms delante del BFF (bloque 10).
+crear_pubsub            = true
+crear_metricas_logs     = true
+crear_batch             = true
+crear_gateway           = true
+calentar_camino_critico = false # poner en true solo durante la sesión de medición con k6
 
 # Disparadores externos (plan de HU-W05, bloque 0): Cloud Tasks para el reintento de cobros y Cloud Scheduler para la
 # sonda del circuito. Capa gratuita. Sin esto, en Cloud Run no corren los bucles de fondo.

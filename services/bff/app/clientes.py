@@ -29,7 +29,14 @@ class DatosInsuficientes(Exception):
 
 class PuertoAuth(Protocol):
     async def registrar_consentimiento(
-        self, finalidad: str, version_texto: str, actor: dict | None = None
+        self,
+        finalidad: str,
+        version_texto: str,
+        actor: dict | None = None,
+        titular_id: str | None = None,
+        tipo_dato: str | None = None,
+        fuente_datos: str | None = None,
+        canal: str | None = None,
     ) -> dict: ...
 
     async def obtener_consentimiento(self, consentimiento_id: str) -> dict | None: ...
@@ -58,6 +65,8 @@ class PuertoAcl(Protocol):
         self, cliente_id: str, consentimiento_id: str, fuente: str
     ) -> dict: ...
 
+    async def invalidar_cache_cliente(self, cliente_id: str) -> None: ...
+
 
 class PuertoRisk(Protocol):
     async def registrar_perfil(self, cliente_id: str, fuentes: list[dict]) -> dict: ...
@@ -75,7 +84,13 @@ class PuertoRating(Protocol):
 
 
 class PuertoPayments(Protocol):
-    async def listar_cobros(self, poliza_id: str | None, estado: str | None) -> list[dict]: ...
+    async def listar_cobros(
+        self,
+        poliza_id: str | None,
+        estado: str | None,
+        pagina: int | None = None,
+        tamano: int | None = None,
+    ) -> list[dict]: ...
 
     async def reintentar_cobro(self, cobro_id: str) -> dict | None: ...
 
@@ -117,13 +132,33 @@ class ClienteAuthHttp:
         self._cliente = cliente
 
     async def registrar_consentimiento(
-        self, finalidad: str, version_texto: str, actor: dict | None = None
+        self,
+        finalidad: str,
+        version_texto: str,
+        actor: dict | None = None,
+        titular_id: str | None = None,
+        tipo_dato: str | None = None,
+        fuente_datos: str | None = None,
+        canal: str | None = None,
     ) -> dict:
+        cuerpo_peticion: dict[str, Any] = {
+            "finalidad": finalidad,
+            "version_texto": version_texto,
+            "actor": actor,
+        }
+        if titular_id is not None:
+            cuerpo_peticion["titular_id"] = titular_id
+        if tipo_dato is not None:
+            cuerpo_peticion["tipo_dato"] = tipo_dato
+        if fuente_datos is not None:
+            cuerpo_peticion["fuente_datos"] = fuente_datos
+        if canal is not None:
+            cuerpo_peticion["canal"] = canal
         respuesta = await _pedir(
             self._cliente,
             "POST",
             "/consentimientos",
-            {"finalidad": finalidad, "version_texto": version_texto, "actor": actor},
+            cuerpo_peticion,
         )
         cuerpo = _json_o_none(respuesta)
         if cuerpo is None:
@@ -209,6 +244,16 @@ class ClienteAclHttp:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
 
+    async def invalidar_cache_cliente(self, cliente_id: str) -> None:
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            "/fuentes/invalidar-cache",
+            {"cliente_id": cliente_id},
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+
 
 class ClienteRiskHttp:
     def __init__(self, cliente: httpx.AsyncClient) -> None:
@@ -275,12 +320,21 @@ class ClientePaymentsHttp:
     def __init__(self, cliente: httpx.AsyncClient) -> None:
         self._cliente = cliente
 
-    async def listar_cobros(self, poliza_id: str | None, estado: str | None) -> list[dict]:
+    async def listar_cobros(
+        self,
+        poliza_id: str | None,
+        estado: str | None,
+        pagina: int | None = None,
+        tamano: int | None = None,
+    ) -> list[dict]:
         # Filtros en el CUERPO, nunca en la URL: httpx loguea la URL (regla #6).
+        cuerpo: dict[str, object] = {"poliza_id": poliza_id, "estado": estado}
+        if pagina is not None:
+            cuerpo["pagina"] = pagina
+        if tamano is not None:
+            cuerpo["tamano"] = tamano
         try:
-            respuesta = await self._cliente.post(
-                "/cobros/buscar", json={"poliza_id": poliza_id, "estado": estado}
-            )
+            respuesta = await self._cliente.post("/cobros/buscar", json=cuerpo)
         except httpx.HTTPError as error:
             raise ErrorServicio(type(error).__name__) from error
         if respuesta.is_error:

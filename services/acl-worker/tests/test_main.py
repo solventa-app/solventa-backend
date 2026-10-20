@@ -89,3 +89,24 @@ def test_consultar_cobro_con_pasarela_caida_es_desconocido_sin_5xx() -> None:
             "referencia": None,
             "motivo": None,
         }
+
+
+def test_invalidar_cache_fuentes_responde_200_sin_cliente_en_url() -> None:
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post("/fuentes/invalidar-cache", json={"cliente_id": "c-1"})
+        assert r.status_code == 200
+        assert r.json() == {"invalidado": True}
+
+
+def test_presupuesto_por_proveedor_ec008_se_acota_por_timeout_s(monkeypatch) -> None:
+    monkeypatch.setenv("TIMEOUT_MS", "700")
+    monkeypatch.setenv("PRESUPUESTO_MS_OPEN_FINANCE", "120")
+    monkeypatch.setenv("PRESUPUESTO_MS_OPEN_DATA", "120")
+    monkeypatch.setenv("PRESUPUESTO_MS_PASARELA", "120")
+    monkeypatch.setenv("CACHE_SERVIR_EN_TTL", "true")
+
+    cfg = Configuracion.desde_entorno()
+    assert cfg.presupuesto_proveedor_s("open-finance") == 0.12
+    assert cfg.presupuesto_proveedor_s("open-data") == 0.12
+    assert cfg.presupuesto_proveedor_s("pasarela") == 0.12
+    assert cfg.cache_servir_en_ttl is True

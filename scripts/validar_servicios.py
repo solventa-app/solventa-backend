@@ -47,8 +47,26 @@ def validar() -> list[str]:
     dependabot = leer(".github/dependabot.yml")
     compose = leer("docker-compose.yml")
 
+    # El BFF deja de ser público (HA-LAT-004): solo el API Gateway lo invoca (gateway en compose,
+    # cuenta gateway-bff en Cloud Run).
+    if "\n  gateway:\n" not in compose or '"8080:8080"' not in compose:
+        errores.append("gateway: falta el servicio Envoy en :8080 en docker-compose.yml")
+
+    llamados = {d for s in servicios for d in s.get("llama", [])}
+
     for s in servicios:
         nombre, ruta, puerto = s["nombre"], s["ruta"], s["puerto"]
+
+        if s.get("publico"):
+            errores.append(
+                f"{nombre}: ningún servicio de Cloud Run debe ser público; "
+                "la única puerta pública es el API Gateway delante del BFF"
+            )
+        if nombre not in ("bff", "consolidador-fuentes") and nombre not in llamados:
+            errores.append(
+                f"{nombre}: no es invocado por ningún servicio "
+                "(solo bff es invocado por el gateway)"
+            )
 
         if f"['{ruta}/**']" not in ci:
             errores.append(f"{nombre}: falta el filtro '{ruta}/**' en .github/workflows/ci.yml")

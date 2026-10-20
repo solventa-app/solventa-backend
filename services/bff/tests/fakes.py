@@ -14,7 +14,9 @@ CONSENTIMIENTO_VIGENTE = {
     "version_texto": "v1",
     "otorgado_en": "2026-10-08T12:00:00+00:00",
     "revocado_en": None,
+    "vence_en": "2026-11-07T12:00:00+00:00",
     "vigente": True,
+    "estado": "VIGENTE",
 }
 
 # Misma forma que devuelve `POST /ofertas` de RATING
@@ -35,6 +37,11 @@ OFERTA_COMPLETA = {
     ],
     "prima": {"valor": "61200.00", "moneda": "COP"},
     "rangoPrima": None,
+    "perfilRiesgo": {
+        "score": 82,
+        "nivelRiesgo": "BAJO",
+        "fechaVigencia": "2026-11-17T12:00:00+00:00",
+    },
 }
 
 OFERTA_PRELIMINAR = {
@@ -94,6 +101,7 @@ class AuthFalso:
         )
         self.falla = falla
         self.actores: list[dict | None] = []
+        self.registros_consentimiento: list[dict] = []
         # Nombres de CLIENTE por id y las consultas hechas (para probar el lote).
         self.nombres: dict[str, str] = {}
         self.consultas_de_nombres: list[list[str]] = []
@@ -105,13 +113,29 @@ class AuthFalso:
         self.claves = {"asesor.uno": "clave-segura-1", "admin.solventa": "clave-segura-1"}
 
     async def registrar_consentimiento(
-        self, finalidad: str, version_texto: str, actor: dict | None = None
+        self,
+        finalidad: str,
+        version_texto: str,
+        actor: dict | None = None,
+        titular_id: str | None = None,
+        tipo_dato: str | None = None,
+        fuente_datos: str | None = None,
+        canal: str | None = None,
     ) -> dict:
         if self.falla:
             raise ErrorServicio("caido")
         self.actores.append(actor)
-        nuevo = {**CONSENTIMIENTO_VIGENTE, "id": "c-nuevo", "finalidad": finalidad}
-        nuevo["version_texto"] = version_texto
+        nuevo = {
+            **CONSENTIMIENTO_VIGENTE,
+            "id": "c-nuevo",
+            "finalidad": finalidad,
+            "version_texto": version_texto,
+            "titular_id": titular_id,
+            "tipo_dato": tipo_dato,
+            "fuente_datos": fuente_datos,
+            "canal": canal,
+        }
+        self.registros_consentimiento.append(nuevo)
         self.consentimientos[nuevo["id"]] = nuevo
         return nuevo
 
@@ -126,7 +150,12 @@ class AuthFalso:
         actual = self.consentimientos.get(consentimiento_id)
         if actual is None:
             return None
-        revocado = {**actual, "revocado_en": "2026-10-08T13:00:00+00:00", "vigente": False}
+        revocado = {
+            **actual,
+            "revocado_en": "2026-10-08T13:00:00+00:00",
+            "vigente": False,
+            "estado": "REVOCADO",
+        }
         self.consentimientos[consentimiento_id] = revocado
         return revocado
 
@@ -186,6 +215,7 @@ class AclFalso:
     def __init__(self, fallan: set[str] | None = None) -> None:
         self.fallan = fallan or set()
         self.llamadas: list[tuple[str, str, str]] = []
+        self.invalidaciones: list[str] = []
 
     async def consultar_fuente(self, cliente_id: str, consentimiento_id: str, fuente: str) -> dict:
         self.llamadas.append((cliente_id, consentimiento_id, fuente))
@@ -198,6 +228,9 @@ class AclFalso:
             "de_cache": False,
             "degradado": False,
         }
+
+    async def invalidar_cache_cliente(self, cliente_id: str) -> None:
+        self.invalidaciones.append(cliente_id)
 
 
 class RiskFalso:
@@ -265,16 +298,26 @@ class PaymentsFalso:
         self.filtros: list[tuple[str | None, str | None]] = []
         self.ordenes: list[dict] = []
 
-    async def listar_cobros(self, poliza_id: str | None, estado: str | None) -> list[dict]:
+    async def listar_cobros(
+        self,
+        poliza_id: str | None,
+        estado: str | None,
+        pagina: int | None = None,
+        tamano: int | None = None,
+    ) -> list[dict]:
         if self.falla:
             raise ErrorServicio("caido")
         self.filtros.append((poliza_id, estado))
-        return [
+        resultado = [
             c
             for c in self.cobros.values()
             if (poliza_id is None or c["poliza_id"] == poliza_id)
             and (estado is None or c["estado"] == estado)
         ]
+        if pagina is not None and tamano is not None and pagina > 0 and tamano > 0:
+            inicio = (pagina - 1) * tamano
+            return resultado[inicio : inicio + tamano]
+        return resultado
 
     async def reintentar_cobro(self, cobro_id: str) -> dict | None:
         if self.falla:

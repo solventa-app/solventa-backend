@@ -84,12 +84,16 @@ def test_sin_consentimiento_no_consulta_ninguna_fuente() -> None:
 
     resultado = _solicitar(servicio, consentimiento_id="no-existe")
 
-    assert resultado == ErrorOfertaDatos(resultado.mensaje, puede_reintentar=False)
+    assert resultado == ErrorOfertaDatos(
+        resultado.mensaje,
+        puede_reintentar=False,
+        motivo="CONSENTIMIENTO_NO_VIGENTE",
+    )
     assert acl.llamadas == []
 
 
 def test_consentimiento_revocado_no_consulta_ninguna_fuente() -> None:
-    revocado = {**CONSENTIMIENTO_VIGENTE, "vigente": False}
+    revocado = {**CONSENTIMIENTO_VIGENTE, "vigente": False, "estado": "REVOCADO"}
     acl = AclFalso()
     servicio = ServicioOferta(clientes_falsos(auth=AuthFalso({"c-1": revocado}), acl=acl), "c")
 
@@ -97,6 +101,20 @@ def test_consentimiento_revocado_no_consulta_ninguna_fuente() -> None:
 
     assert isinstance(resultado, ErrorOfertaDatos)
     assert resultado.puede_reintentar is False
+    assert resultado.motivo == "CONSENTIMIENTO_NO_VIGENTE"
+    assert acl.llamadas == []
+
+
+def test_consentimiento_de_otro_titular_no_consulta_ninguna_fuente() -> None:
+    de_otro = {**CONSENTIMIENTO_VIGENTE, "titular_id": "hash-de-otro-documento"}
+    acl = AclFalso()
+    servicio = ServicioOferta(clientes_falsos(auth=AuthFalso({"c-1": de_otro}), acl=acl), "clave")
+
+    resultado = _solicitar(servicio)
+
+    assert isinstance(resultado, ErrorOfertaDatos)
+    assert resultado.puede_reintentar is False
+    assert resultado.motivo == "CONSENTIMIENTO_NO_VIGENTE"
     assert acl.llamadas == []
 
 
@@ -107,6 +125,7 @@ def test_auth_caido_da_error_con_reintento_y_no_consulta_fuentes() -> None:
     resultado = _solicitar(servicio)
 
     assert resultado.puede_reintentar is True
+    assert resultado.motivo == "FUENTES_NO_DISPONIBLES"
     assert acl.llamadas == []
 
 
@@ -118,6 +137,7 @@ def test_risk_caido_da_error_con_reintento() -> None:
 
     assert isinstance(resultado, ErrorOfertaDatos)
     assert resultado.puede_reintentar is True
+    assert resultado.motivo == "FUENTES_NO_DISPONIBLES"
     assert rating.llamadas == []
 
 
@@ -127,6 +147,7 @@ def test_rating_caido_da_error_con_reintento() -> None:
     resultado = _solicitar(servicio)
 
     assert resultado.puede_reintentar is True
+    assert resultado.motivo == "FUENTES_NO_DISPONIBLES"
 
 
 def test_valor_invalido_da_error_sin_reintento() -> None:
@@ -156,7 +177,11 @@ def test_sin_historial_crediticio_da_error_con_reintento() -> None:
 
     resultado = _solicitar(servicio)
 
-    assert resultado == ErrorOfertaDatos(MENSAJE_DATOS_INSUFICIENTES, puede_reintentar=True)
+    assert resultado == ErrorOfertaDatos(
+        MENSAJE_DATOS_INSUFICIENTES,
+        puede_reintentar=True,
+        motivo="DATOS_INSUFICIENTES",
+    )
 
 
 # ---------- B3: validación de la solicitud ----------

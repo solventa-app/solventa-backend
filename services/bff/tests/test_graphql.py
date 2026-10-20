@@ -15,8 +15,9 @@ mutation($entrada: SolicitudOfertaInput!) {
       id tipo prima { valor moneda } rangoPrima { minima { valor } maxima { valor } }
       cobertura { valor moneda } desgloseScore { nombre peso }
       fuentes { id nombre origen estado capturadoEn }
+      perfilRiesgo { score nivelRiesgo fechaVigencia }
     }
-    ... on ErrorOferta { mensaje puedeReintentar }
+    ... on ErrorOferta { mensaje puedeReintentar motivo }
   }
 }
 """
@@ -41,7 +42,7 @@ def _post(client: TestClient, query: str, variables: dict | None = None, canal: 
     return r.json()
 
 
-@pytest.mark.parametrize("canal", ["web", "app"])
+@pytest.mark.parametrize("canal", ["web", "app", "movil"])
 def test_solicitar_oferta_completa_en_ambos_canales(canal: str) -> None:
     with _cliente() as client:
         cuerpo = _post(client, SOLICITAR, {"entrada": ENTRADA}, canal)
@@ -51,6 +52,8 @@ def test_solicitar_oferta_completa_en_ambos_canales(canal: str) -> None:
     assert oferta["tipo"] == "COMPLETA"
     assert oferta["prima"] == {"valor": "61200.00", "moneda": "COP"}
     assert oferta["rangoPrima"] is None
+    assert oferta["perfilRiesgo"]["score"] == 82
+    assert oferta["perfilRiesgo"]["nivelRiesgo"] == "BAJO"
 
 
 def test_oferta_preliminar_trae_rango_y_fecha_de_captura() -> None:
@@ -70,20 +73,42 @@ def test_sin_consentimiento_responde_error_oferta_no_5xx() -> None:
 
     assert oferta["__typename"] == "ErrorOferta"
     assert oferta["puedeReintentar"] is False
+    assert oferta["motivo"] == "CONSENTIMIENTO_NO_VIGENTE"
 
 
 def test_registrar_y_revocar_consentimiento() -> None:
-    registrar = """mutation { registrarConsentimiento(entrada: {finalidad: "f", versionTexto: "v1"})
-                   { id finalidad versionTexto vigente otorgadoEn revocadoEn } }"""
-    revocar = "mutation($id: ID!) { revocarConsentimiento(id: $id) { id vigente revocadoEn } }"
+    registrar = """mutation {
+      registrarConsentimiento(entrada: {
+        finalidad: "f",
+        versionTexto: "v1",
+        documentoIdentidad: "CC-1020304050",
+        tipoDato: "FINANCIEROS_Y_ABIERTOS",
+        fuenteDatos: "OPEN_FINANCE_OPEN_DATA",
+        canal: "WEB"
+      }) { id finalidad versionTexto vigente estado venceEn otorgadoEn revocadoEn }
+    }"""
+    revocar = """mutation($id: ID!) {
+      revocarConsentimiento(id: $id) { id vigente estado venceEn revocadoEn }
+    }"""
+    from fakes import AclFalso
 
-    with _cliente() as client:
+    auth = AuthFalso()
+    acl = AclFalso()
+    with _cliente(auth=auth, acl=acl) as client:
         creado = _post(client, registrar)["data"]["registrarConsentimiento"]
         revocado = _post(client, revocar, {"id": creado["id"]})["data"]["revocarConsentimiento"]
 
     assert creado["vigente"] is True and creado["revocadoEn"] is None
+    assert creado["estado"] == "VIGENTE"
+    assert creado["venceEn"].startswith("2026-11-07")
     assert creado["versionTexto"] == "v1"
+    # El documento nunca llega en claro a AUTH: llega el hash opaco (`titular_id`).
+    assert auth.registros_consentimiento[0]["titular_id"] is not None
+    assert "1020304050" not in auth.registros_consentimiento[0]["titular_id"]
     assert revocado["vigente"] is False and revocado["revocadoEn"]
+    assert revocado["estado"] == "REVOCADO"
+    # CA-W01-08: revocar invalida la caché del titular en el ACL Worker.
+    assert acl.invalidaciones == [auth.registros_consentimiento[0]["titular_id"]]
 
 
 def test_auth_caido_da_error_publico_con_mensaje() -> None:

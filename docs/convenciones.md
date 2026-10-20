@@ -64,6 +64,18 @@ feature (feat|fix|chore/KAN-N-…) ──squash──► develop ──► relea
 - Métricas visibles en el panel de observabilidad y **sin datos personales en logs**.
 - Documentación técnica y tablero de Jira actualizados; historia demostrada en la revisión del sprint.
 
+## Seguridad en CI/CD (Bloque 6, decisión 7 y 19)
+
+Además de `gitleaks`, `Dependabot` y `actionlint` (obligatorios), `.github/workflows/ci.yml` ejecuta escaneos de seguridad sobre cada cambio:
+
+- **Bandit** (SAST sobre `app/` en cada servicio Python).
+- **pip-audit** (SCA sobre `requirements.txt` de cada servicio).
+- **Trivy** (escaneo de vulnerabilidades `HIGH`/`CRITICAL` en la imagen Docker construida de cada servicio).
+- **OWASP ZAP baseline** (DAST contra el gateway/BFF levantado en el job `humo`).
+- **SonarCloud** (job `sonar`, activo al configurar los secretos `SONAR_TOKEN` y `SONAR_HOST_URL=https://sonarcloud.io`).
+
+**Política de transición:** Bandit, pip-audit, Trivy y OWASP ZAP corren inicialmente en modo **informativo** (`continue-on-error: true`, fuera del gate `CI OK`) y publican sus reportes como artefactos del workflow (resumidos en `docs/evidencias/seguridad-2026-10-18.md`). Una vez saneados los hallazgos base de imágenes o dependencias transitivas, se les retira `continue-on-error` y pasan a ser obligatorios dentro de `CI OK`.
+
 ## Migraciones de base de datos
 
 - Cada servicio migra **solo su almacén** (escritor único): `auth`, `payments` (Alembic) y `risk` (runner de MongoDB). RATING no migra.

@@ -4,7 +4,6 @@
     "ruta": "services/bff",
     "instancia_fija": true,
     "puerto": 8000,
-    "publico": true,
     "llama": ["auth", "acl-worker", "risk", "rating", "payments"],
     "entorno": {
       "AUTENTICACION_SERVICIOS": "id_token",
@@ -23,6 +22,7 @@
     "migracion": ["alembic", "upgrade", "head"],
     "entorno": { "TRAZAS_GCP": "true" },
     "secretos": {
+      "CIFRADO_CLAVE_ENVUELTA": "clave-cifrado-envuelta",
       "DATABASE_URL": "database-url-auth",
       "JWT_SECRETO": "clave-jwt",
       "CIFRADO_CLAVE": "clave-cifrado"
@@ -36,7 +36,12 @@
     "url_env": "RISK_URL",
     "migracion": ["python", "-m", "migrations"],
     "entorno": { "MONGO_DB": "risk", "TRAZAS_GCP": "true" },
-    "secretos": { "MONGO_URI": "mongo-uri-risk" }
+    "secretos": {
+      "CIFRADO_CLAVE_ENVUELTA": "clave-cifrado-envuelta",
+      "MONGO_URI": "mongo-uri-risk",
+      "REDIS_URL": "redis-url-rating",
+      "CIFRADO_CLAVE": "clave-cifrado"
+    }
   },
   {
     "nombre": "rating",
@@ -45,7 +50,12 @@
     "puerto": 8003,
     "url_env": "RATING_URL",
     "entorno": { "MONGO_DB": "risk", "TRAZAS_GCP": "true" },
-    "secretos": { "MONGO_URI": "mongo-uri-rating", "REDIS_URL": "redis-url-rating" }
+    "secretos": {
+      "CIFRADO_CLAVE_ENVUELTA": "clave-cifrado-envuelta",
+      "MONGO_URI": "mongo-uri-rating",
+      "REDIS_URL": "redis-url-rating",
+      "CIFRADO_CLAVE": "clave-cifrado"
+    }
   },
   {
     "nombre": "payments",
@@ -67,7 +77,7 @@
     "url_env": "ACL_URL",
     "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela", "consolidador-fuentes"],
     "disparador_externo": true,
-    "entorno": { "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
+    "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": {
       "REDIS_URL": "redis-url-acl",
       "COLA_RECONCILIACION_REDIS_URL": "redis-url-cola-reconciliacion"

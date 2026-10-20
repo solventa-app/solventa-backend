@@ -26,14 +26,33 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
 
 ## Cobertura de tareas del Sprint 1
 
-- **T-W01-8 (Open Finance) y T-W01-9 (Open Data):** adaptadores HTTP puros contra
+- **T-W01-8 (Open Finance, CE 004/2024) y T-W01-9 (Open Data):** adaptadores HTTP puros contra
   `stubs/open-finance` (`cuentas-bancarias`, `historial-crediticio`) y `stubs/open-data`
-  (`afiliacion-pila`, `camara-comercio`, `antecedentes-judiciales`).
-- **T-W01-10 (Circuit Breaker, Retry y degradación, 700 ms):** un breaker por proveedor
-  (`ServicioConsultaFuentes`/`ServicioCobro`), retry acotado al presupuesto de 700 ms
-  (`app/application/reintento.py`, sin backoff: el presupuesto es demasiado chico para que
-  esperar aporte algo), degradación cache-aside en Redis (`app/application/cache.py`, TTL 5 min)
-  y, si no hay nada en caché, un valor mínimo con `degradado=True`. Nunca se propaga un 5xx crudo.
+  (`afiliacion-pila`, `camara-comercio`, `antecedentes-judiciales`). `AdaptadorOpenFinance`
+  envía `consentimiento_id` y `finalidad` (por defecto `"perfilamiento"`) en cabeceras
+  (`X-Consentimiento-Id`, `X-Finalidad`), query params y cuerpo; el stub responde `403` si
+  alguno falta o viene vacío.
+- **Fuentes por configuración (`contracts/fuentes.json`, EC033) y modificabilidad (EC031):**
+  `app/application/fuentes_config.py` carga el catálogo de la ruta dada, de `FUENTES_CONFIG_PATH`, de la
+  **copia que lleva la imagen** (`app/fuentes.json`, idéntica a `contracts/fuentes.json`: la imagen se
+  construye solo con esta carpeta y no ve `contracts/`) o del contrato en el repo; sin ninguno, las 5
+  fuentes por defecto. `python scripts/sincronizar_fuentes.py` deja las copias iguales y el CI verifica que
+  lo estén. Pruebas automatizadas en `tests/test_ec031_y_ec033.py` y `tests/test_fuentes_copia.py`.
+- **Tiempo por proveedor (EC008):** la métrica `acl_proveedor_duracion_segundos{proveedor,resultado}`
+  (histograma de Prometheus, `GET /metrics`) mide cada llamada **en vivo** a un proveedor (resultado `ok`,
+  `timeout`, `error` o `circuito_abierto`); lo servido desde la caché no cuenta. Las etiquetas no llevan datos
+  personales. `tests/k6/gateway-presupuesto.js` mide el presupuesto de ≤ 120 ms contra este servicio.
+- **T-W01-10 (Circuit Breaker, Retry, degradación y EC010 ≤ 500 ms):** un breaker por proveedor
+  (`ServicioConsultaFuentes`/`ServicioCobro`), retry acotado al presupuesto por proveedor
+  (`PRESUPUESTO_MS_*` acotado por `TIMEOUT_MS`, p. ej. 120 ms para EC008 o 700 ms por defecto),
+  degradación cache-aside en Redis (`app/application/cache.py`, TTL 5 min). Cuando ya existe un
+  valor en caché, compite caché contra proveedor usando `presupuesto_con_cache_s`
+  (`PRESUPUESTO_CON_CACHE_MS`, 300 ms por defecto) para cumplir **EC010 ≤ 500 ms**, o sirve
+  directamente desde caché dentro del TTL si `CACHE_SERVIR_EN_TTL=true` (salvo `forzar_proveedor=True`).
+  Si no hay nada en caché, devuelve un valor mínimo con `degradado=True`. Nunca se propaga un 5xx crudo.
+- **Invalidación activa de caché al revocar consentimiento (CA-W01-08):** `POST /fuentes/invalidar-cache`
+  con `{"cliente_id": "..."}` en el cuerpo borra de inmediato las claves cacheadas de todas las fuentes
+  configuradas para ese titular, además del TTL pasivo de 5 minutos.
 - **T-W05-2 (lado ACL de la pasarela):** `AdaptadorPasarela` + `ServicioCobro`; sin circuito
   disponible, el cobro queda `pendiente` (CA-W05-04). La idempotencia persistente y el reintento
   vía Cloud Tasks (T-W05-3/4) son responsabilidad de `payments`, no de este servicio.
@@ -56,7 +75,7 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
   entre dos ticks); se mitiga con un intervalo de sonda (2 s) sensiblemente menor al TTL del
   breaker (5 s). Documentado también en `docs/arquitectura-backend.md`.
 - **Sondeo sin efectos de negocio:** la sonda de Open Finance/Open Data reusa `consultar()` con un
-  `cliente_id`/`consentimiento_id` sintéticos (`"sonda"`, no datos reales); la de la pasarela usa
+  `cliente_id`/`consentimiento_id`/`finalidad` sintéticos (`"sonda"`, no datos reales); la de la pasarela usa
   un endpoint dedicado `GET /v1/estado` en el stub (en vez de `cobrar()`) para no disparar una
   orden de pago real solo por sondear.
 - **Retry sin backoff:** con un presupuesto total de 700 ms, esperar entre intentos le resta
@@ -71,13 +90,8 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
 
 ## Pendiente, fuera de alcance de esta tarea
 
-- Invalidación **activa** de la caché al revocar consentimiento (consumir
-  `contracts/events/consentimiento.revocado.schema.json`): hoy la cota de CA-W01-08 (≤ 5 min) se
-  cumple de forma pasiva vía el TTL de la caché (`CACHE_TTL_SEGUNDOS=300`), no por un consumidor de
-  eventos.
-- Cifrado de campo (KMS) del valor cacheado en Redis: SEG-002 está asignado a T-W01-4/`auth` en
-  `docs/sprint-1.md`; este servicio no persiste el dato real en un almacén propio, solo lo cachea
-  como degradación temporal.
+- Cifrado de campo (KMS) del valor cacheado en Redis: SEG-002 está asignado a `auth` y `risk`;
+  este servicio no persiste el dato real en un almacén propio, solo lo cachea como degradación temporal.
 - KYC y firma electrónica (Sprint 2).
 
 ## Operación
@@ -85,15 +99,19 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
 - Puerto local: `8005`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.
 - Observabilidad del circuito (sin datos personales): `GET /circuitos` → `{"open-finance": "closed", ...}`.
 - Endpoints internos (backend-a-backend, no forman parte de `contracts/`):
-  - `POST /fuentes/consultar` `{cliente_id, consentimiento_id, fuente}` → `{fuente, datos, capturado_en, de_cache, degradado}`.
+  - `POST /fuentes/consultar` `{cliente_id, consentimiento_id, fuente, finalidad?, forzar_proveedor?}` → `{fuente, datos, capturado_en, de_cache, degradado}`.
+  - `POST /fuentes/invalidar-cache` `{cliente_id}` → `{invalidado: true}` (CA-W01-08, nunca `cliente_id` en la URL).
   - `POST /pagos/cobrar` `{id_intento_cobro, poliza_id, monto, moneda, token_medio_pago}` → `{estado, referencia, motivo, detalle}`.
   - `POST /sonda/ejecutar` → una pasada de la sonda; la llama Cloud Scheduler con `DISPARADOR=externo` (en Cloud Run no hay bucle fiable). Devuelve el estado de cada circuito. El estado de los circuitos vive en la memoria de cada instancia.
   - `GET /pagos/cobros/{referencia_comercio}` → siempre 200 con `{resultado: encontrado|no_encontrado|desconocido, estado, referencia, motivo}`.
 - **Cambiar de pasarela (EC031, CA-W05-06):** `PROVEEDOR_PASARELA=estandar|alterna` elige el adaptador. Para sumar un proveedor: una clase en `app/adapters/` que cumpla `PuertoPasarelaPagos` (`cobrar`, `consultar`, `sondear`, `cerrar`), una línea en la elección de `app/main.py` y su prueba de contrato en `tests/test_ec031_pasarela.py`. `AdaptadorPasarelaAlterna` es el ejemplo (otra API, otros campos y estados). PAYMENTS y el BFF no cambian.
 - Con `DISPARADOR=externo` la reconciliación diferida va por Cloud Tasks (`app/application/cola_tareas.py`) hacia `POST /reconciliar` del consolidador, y exige `GCP_PROYECTO`, `GCP_REGION`, `TAREAS_CUENTA` y `CONSOLIDADOR_URL` (los pone Terraform; opcional `TAREAS_COLA_RECONCILIACION`).
 - Variables de entorno: `DISPARADOR` (`bucle`; `externo` desactiva el bucle de la sonda y cambia `rq` por Cloud Tasks), `PROVEEDOR_PASARELA` (`estandar`), `REDIS_URL`, `OPEN_FINANCE_URL`, `OPEN_DATA_URL`, `PASARELA_URL`,
-  `TIMEOUT_MS` (700), `BREAKER_UMBRAL_FALLOS` (3), `BREAKER_TTL_SEGUNDOS` (5),
-  `SONDA_INTERVALO_SEGUNDOS` (2), `CACHE_TTL_SEGUNDOS` (300),
+  `TIMEOUT_MS` (700), `PRESUPUESTO_MS_OPEN_FINANCE` (`TIMEOUT_MS`, p. ej. 120 para EC008),
+  `PRESUPUESTO_MS_OPEN_DATA` (`TIMEOUT_MS`), `PRESUPUESTO_MS_PASARELA` (`TIMEOUT_MS`),
+  `PRESUPUESTO_CON_CACHE_MS` (300, EC010 ≤ 500 ms), `CACHE_SERVIR_EN_TTL` (`false`; `true` en Cloud Run),
+  `FUENTES_CONFIG_PATH` (`contracts/fuentes.json`), `BREAKER_UMBRAL_FALLOS` (3),
+  `BREAKER_TTL_SEGUNDOS` (5), `SONDA_INTERVALO_SEGUNDOS` (2), `CACHE_TTL_SEGUNDOS` (300),
   `COLA_RECONCILIACION_REDIS_URL` (`redis://localhost:6379/2`, db de Redis distinta a la de la
   caché — ver `services/consolidador-fuentes/README.md`).
 - Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta).
@@ -123,3 +141,4 @@ curl -s -X POST localhost:8101/control/modo -H 'content-type: application/json' 
 sleep 6
 curl -s localhost:8005/circuitos   # -> open-finance: "closed"
 ```
+

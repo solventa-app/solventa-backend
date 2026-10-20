@@ -271,9 +271,19 @@ def test_los_lotes_respetan_el_maximo_de_auth() -> None:
     ids = [f"u-{i:04d}" for i in range(450)]
     auth = AuthFalso()
     with _cliente(PaymentsFalso(_cobros_de(*ids)), auth) as client:
-        _post(client, COBROS_CON_CLIENTE, {})
+        _post(client, "query { cobros(tamano: 500) { id cliente { id nombre } } }", {})
 
     assert [len(lote) for lote in auth.consultas_de_nombres] == [200, 200, 50]
+
+
+def test_cobros_soporta_paginacion() -> None:
+    payments = PaymentsFalso(_cobros_de("u-1", "u-2", "u-3", "u-4", "u-5"))
+    with _cliente(payments) as client:
+        pag1 = _post(client, "query { cobros(pagina: 1, tamano: 2) { id } }", {})["data"]["cobros"]
+        pag2 = _post(client, "query { cobros(pagina: 2, tamano: 2) { id } }", {})["data"]["cobros"]
+
+    assert [c["id"] for c in pag1] == ["c-0", "c-1"]
+    assert [c["id"] for c in pag2] == ["c-2", "c-3"]
 
 
 def test_un_cobro_sin_cliente_sale_con_cliente_null_y_no_llama_a_auth() -> None:
