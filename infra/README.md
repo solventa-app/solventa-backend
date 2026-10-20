@@ -578,3 +578,13 @@ configuración, en los servicios que despliega el pipeline.
 escribe las tres URLs `redis-url-*` en Secret Manager con la contraseña (AUTH) que genera Memorystore: no hay que cargar
 nada a mano. **Sin probar en ejecución:** conectividad real servicio → Memorystore, que solo se comprueba con Redis creado
 (`crear_redis = false` hoy; cuesta ~USD 0,12/h según este README).
+
+## Paso del BFF al API Gateway sin caída (2026-10-20)
+
+El primer release con `crear_gateway = true` deja el BFF **todavía público** (`publico` + `publico_temporal` en
+`.github/servicios.json`; `scripts/validar_servicios.py` solo lo acepta así para el BFF). Orden:
+
+1. Release del backend: se crea el gateway y la web sigue entrando directo al BFF.
+2. Con la `gateway_url` del informe del despliegue, el front cambia `apps/web/vercel.json` para apuntar al gateway.
+3. Otro release quita `publico` y `publico_temporal` del BFF: desde ahí solo el gateway lo invoca.
+
