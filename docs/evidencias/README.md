@@ -20,3 +20,8 @@ tiempo real de lo cerrado en la semana 1, vía API de Jira.
 `flujo-prueba-local-hu-w01.md` — smoke oficial (`scripts/humo_bff.py`) + recorrido manual por GraphQL
 contra el stack real en docker compose: oferta completa, degradada, timeout duro, consentimiento
 revocado. Capturas reales, no inventadas.
+
+## Release burndown
+
+`release-burndown.png` — puntos que le faltan al release (96 pts, 3 sprints) al cierre de cada sprint: el Sprint 1 real y el plan
+de los otros dos; datos de Jira y del plan de trabajo, metodología en `release-burndown.md`.
