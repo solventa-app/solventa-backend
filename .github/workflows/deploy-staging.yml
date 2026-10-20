@@ -213,9 +213,10 @@ jobs:
           if [ "$PERMITIR" = "true" ]; then args+=(--permitir-destruir); fi
           python3 ../scripts/revisar_plan.py plan.json "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
       # De a pocos: cada servicio que cambia crea una revisión nueva y su instancia de arranque cuenta contra la cuota
-      # de CPU de la región (20 vCPU). Con los 10 en paralelo se pasó (2026-10-18), y las instancias fijas ya ocupan 9.
+      # de CPU de la región (20 vCPU). Con los 10 en paralelo se pasó (2026-10-18), y las instancias fijas ya ocupan 9. Con 3 en
+      # paralelo también se pasó (2026-10-19, `Quota exceeded for total allowable CPU`): se aplica de a uno.
       - name: Aplicar
-        run: terraform apply -parallelism=3 plan.bin
+        run: terraform apply -parallelism=1 plan.bin
       - name: Leer URL del API Gateway (si existe)
         id: gw_out
         run: |

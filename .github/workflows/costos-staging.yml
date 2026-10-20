@@ -207,7 +207,7 @@ jobs:
       - name: Aplicar
         if: env.ACCION != 'estado'
         working-directory: codigo/infra
-        run: terraform apply -parallelism=3 plan.bin
+        run: terraform apply -parallelism=1 plan.bin
       - name: Guardar el estado y resumir
         if: env.ACCION != 'estado'
         run: |
