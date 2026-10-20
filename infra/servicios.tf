@@ -28,8 +28,9 @@ locals {
   servicios  = { for s in local.manifiesto : s.nombre => s }
   activos    = { for n, s in local.servicios : n => s if var.crear_servicios }
 
-  con_migracion = { for n, s in local.activos : n => s if try(s.migracion, null) != null }
-  publicos      = { for n, s in local.activos : n => s if try(s.publico, false) }
+  con_migracion  = { for n, s in local.activos : n => s if try(s.migracion, null) != null }
+  publicos       = { for n, s in local.activos : n => s if try(s.publico, false) }
+  camino_critico = toset(["bff", "auth", "acl-worker", "risk", "rating", "stub-open-finance", "stub-open-data"])
 
   # Instancias fijas mientras `instancias_fijas_encendidas` sea true: los servicios con `instancia_fija` en el manifiesto
   # corren con mínimo 1 instancia (sin arranque en frío). La CPU sigue limitada a las peticiones: el trabajo de fondo
@@ -148,7 +149,7 @@ resource "google_cloud_run_v2_service" "servicio" {
     service_account = google_service_account.runtime[each.key].email
 
     scaling {
-      min_instance_count = local.fijo[each.key] ? 1 : 0
+      min_instance_count = (local.fijo[each.key] || (var.calentar_camino_critico && contains(local.camino_critico, each.key))) ? 1 : 0
       max_instance_count = var.max_instancias
     }
 
@@ -194,6 +195,18 @@ resource "google_cloud_run_v2_service" "servicio" {
 
       dynamic "env" {
         for_each = try(each.value.entorno, {})
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      # Cifrado de sobre (kms.tf, bloque 3): la llave de KMS con que AUTH, RISK y RATING desenvuelven
+      # `CIFRADO_CLAVE_ENVUELTA`. Mientras ese secreto tenga el marcador, usan `CIFRADO_CLAVE`.
+      dynamic "env" {
+        for_each = contains(tolist(local.servicios_con_kms), each.key) ? {
+          KMS_KEY_NAME = google_kms_crypto_key.campos_personales[0].id
+        } : {}
         content {
           name  = env.key
           value = env.value

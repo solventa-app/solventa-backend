@@ -1,12 +1,12 @@
 """Dobles de prueba de AUTH: en memoria, sin levantar PostgreSQL."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from argon2 import PasswordHasher
 
 from app.cifrado import CifradorAesGcm
-from app.consentimientos import Consentimiento
+from app.consentimientos import VIGENCIA_DIAS_POR_DEFECTO, Consentimiento
 
 # Llave fija de pruebas (32 bytes); no es la local ni una real.
 CIFRADOR_PRUEBAS = CifradorAesGcm(b"0123456789abcdef0123456789abcdef")
@@ -112,14 +112,29 @@ class AlmacenConsentimientosMemoria:
         self._por_id: dict[str, Consentimiento] = {}
 
     def registrar(
-        self, finalidad: str, version_texto: str, actor: dict[str, str] | None = None
+        self,
+        finalidad: str,
+        version_texto: str,
+        actor: dict[str, str] | None = None,
+        titular_id: str | None = None,
+        tipo_dato: str | None = None,
+        fuente_datos: str | None = None,
+        canal: str | None = None,
+        vigencia_dias: int = VIGENCIA_DIAS_POR_DEFECTO,
     ) -> Consentimiento:
+        otorgado = datetime.now(UTC)
+        vence = otorgado + timedelta(days=vigencia_dias)
         consentimiento = Consentimiento(
             actor=actor,
             id=str(uuid.uuid4()),
             finalidad=finalidad,
             version_texto=version_texto,
-            otorgado_en=datetime.now(UTC).isoformat(),
+            otorgado_en=otorgado.isoformat(),
+            vence_en=vence.isoformat(),
+            titular_id=titular_id,
+            tipo_dato=tipo_dato,
+            fuente_datos=fuente_datos,
+            canal=canal,
         )
         self._por_id[consentimiento.id] = consentimiento
         return consentimiento

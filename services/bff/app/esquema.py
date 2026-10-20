@@ -15,7 +15,7 @@ Permisos (HU-M02): cada resolutor llama a `exigir_rol` con los roles que admite.
 matriz completa está en `docs/autenticacion-usuarios.md`."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Annotated
 
@@ -26,7 +26,7 @@ from strawberry.types import Info
 
 from app.autenticacion_usuarios import MENSAJE_SIN_PERMISO, MENSAJE_SIN_SESION, UsuarioActual
 from app.clientes import ErrorServicio, SolicitudInvalida
-from app.identificadores import id_opaco
+from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.servicio_oferta import ErrorOfertaDatos
 from app.trazas_graphql import TrazaGraphQL
 
@@ -71,6 +71,13 @@ def exigir_rol(info: Info, *roles: str, siempre: bool = False) -> UsuarioActual 
 
 
 @strawberry.enum
+class EstadoConsentimiento(Enum):
+    VIGENTE = "VIGENTE"
+    REVOCADO = "REVOCADO"
+    VENCIDO = "VENCIDO"
+
+
+@strawberry.enum
 class TipoOferta(Enum):
     COMPLETA = "COMPLETA"
     PRELIMINAR = "PRELIMINAR"
@@ -81,6 +88,27 @@ class EstadoFuente(Enum):
     OK = "OK"
     CACHE = "CACHE"
     FALLO = "FALLO"
+
+
+@strawberry.enum
+class NivelRiesgo(Enum):
+    BAJO = "BAJO"
+    MEDIO = "MEDIO"
+    ALTO = "ALTO"
+
+
+@strawberry.type
+class PerfilRiesgo:
+    score: int
+    nivel_riesgo: NivelRiesgo
+    fecha_vigencia: datetime
+
+
+@strawberry.enum
+class MotivoErrorOferta(Enum):
+    CONSENTIMIENTO_NO_VIGENTE = "CONSENTIMIENTO_NO_VIGENTE"
+    DATOS_INSUFICIENTES = "DATOS_INSUFICIENTES"
+    FUENTES_NO_DISPONIBLES = "FUENTES_NO_DISPONIBLES"
 
 
 @strawberry.enum
@@ -111,13 +139,19 @@ class Consentimiento:
     version_texto: str
     otorgado_en: datetime
     revocado_en: datetime | None
+    vence_en: datetime
     vigente: bool
+    estado: EstadoConsentimiento
 
 
 @strawberry.input
 class ConsentimientoInput:
     finalidad: str
     version_texto: str
+    documento_identidad: str | None = None
+    tipo_dato: str | None = None
+    fuente_datos: str | None = None
+    canal: str | None = None
 
 
 @strawberry.type
@@ -156,12 +190,14 @@ class Oferta:
     cobertura: Monto
     desglose_score: list[FactorScore]
     fuentes: list[FuenteConsultada]
+    perfil_riesgo: PerfilRiesgo | None = None
 
 
 @strawberry.type
 class ErrorOferta:
     mensaje: str
     puede_reintentar: bool
+    motivo: MotivoErrorOferta | None = None
 
 
 ResultadoOferta = Annotated[Oferta | ErrorOferta, strawberry.union("ResultadoOferta")]
@@ -301,18 +337,46 @@ def _fecha(valor: str | None) -> datetime | None:
 
 
 def _consentimiento(datos: dict) -> Consentimiento:
+    otorgado_en = datetime.fromisoformat(datos["otorgado_en"])
+    revocado_en = _fecha(datos.get("revocado_en"))
+    vence_en = (
+        datetime.fromisoformat(datos["vence_en"])
+        if datos.get("vence_en")
+        else otorgado_en + timedelta(days=30)
+    )
+    vigente = bool(datos["vigente"])
+    if datos.get("estado"):
+        estado = EstadoConsentimiento(datos["estado"])
+    elif revocado_en is not None:
+        estado = EstadoConsentimiento.REVOCADO
+    elif not vigente:
+        estado = EstadoConsentimiento.VENCIDO
+    else:
+        estado = EstadoConsentimiento.VIGENTE
     return Consentimiento(
         id=strawberry.ID(datos["id"]),
         finalidad=datos["finalidad"],
         version_texto=datos["version_texto"],
-        otorgado_en=datetime.fromisoformat(datos["otorgado_en"]),
-        revocado_en=_fecha(datos.get("revocado_en")),
-        vigente=datos["vigente"],
+        otorgado_en=otorgado_en,
+        revocado_en=revocado_en,
+        vence_en=vence_en,
+        vigente=vigente,
+        estado=estado,
     )
 
 
 def _monto(datos: dict | None) -> Monto | None:
     return Monto(valor=datos["valor"], moneda=datos["moneda"]) if datos else None
+
+
+def _perfil_riesgo(datos: dict | None) -> PerfilRiesgo | None:
+    if not datos:
+        return None
+    return PerfilRiesgo(
+        score=int(datos["score"]),
+        nivel_riesgo=NivelRiesgo(datos["nivelRiesgo"]),
+        fecha_vigencia=datetime.fromisoformat(datos["fechaVigencia"]),
+    )
 
 
 def _oferta(datos: dict) -> Oferta:
@@ -341,6 +405,7 @@ def _oferta(datos: dict) -> Oferta:
             )
             for f in datos["fuentes"]
         ],
+        perfil_riesgo=_perfil_riesgo(datos.get("perfilRiesgo")),
     )
 
 
@@ -483,9 +548,22 @@ class Mutation:
         # Actor (CA-W01-02, CA-W01-11): si un ASESOR consiente, queda registrado que
         # lo hizo en nombre del cliente. Sin sesión (modo `opcional`) va vacío.
         actor = {"rol": usuario.rol, "usuario_id": usuario.id} if usuario else None
+        clave_titular = info.context.get("cliente_id_clave", "dev-cliente-id-clave-local")
+        titular_id = (
+            cliente_id_desde_documento(entrada.documento_identidad, clave_titular)
+            if entrada.documento_identidad
+            else None
+        )
+        canal = entrada.canal or info.context.get("canal", "").upper() or None
         try:
             datos = await _auth(info).registrar_consentimiento(
-                entrada.finalidad, entrada.version_texto, actor
+                entrada.finalidad,
+                entrada.version_texto,
+                actor,
+                titular_id=titular_id,
+                tipo_dato=entrada.tipo_dato,
+                fuente_datos=entrada.fuente_datos,
+                canal=canal,
             )
         except ErrorServicio as error:
             raise ErrorPublico(
@@ -502,6 +580,12 @@ class Mutation:
             raise ErrorPublico("No pudimos revocar el consentimiento. Intenta de nuevo.") from error
         if datos is None:
             raise ErrorPublico("Consentimiento no encontrado.")
+        titular_id = datos.get("titular_id")
+        if titular_id:
+            try:
+                await info.context["clientes"].acl.invalidar_cache_cliente(titular_id)
+            except (ErrorServicio, AttributeError):
+                logger.warning("no se pudo invalidar cache del titular al revocar consentimiento")
         return _consentimiento(datos)
 
     @strawberry.mutation
@@ -516,7 +600,9 @@ class Mutation:
         )
         if isinstance(resultado, ErrorOfertaDatos):
             return ErrorOferta(
-                mensaje=resultado.mensaje, puede_reintentar=resultado.puede_reintentar
+                mensaje=resultado.mensaje,
+                puede_reintentar=resultado.puede_reintentar,
+                motivo=MotivoErrorOferta(resultado.motivo) if resultado.motivo else None,
             )
         return _oferta(resultado)
 

@@ -18,12 +18,22 @@ class AlmacenFalso:
         self.ttl_recibido = ex
         self.valores[nombre] = valor
 
+    def delete(self, *nombres: str) -> int:
+        borradas = 0
+        for nombre in nombres:
+            if self.valores.pop(nombre, None) is not None:
+                borradas += 1
+        return borradas
+
 
 class AlmacenQueFalla:
     def get(self, nombre: str) -> None:
         raise ConnectionError("redis caído")
 
     def set(self, nombre: str, valor: str, ex: int | None = None) -> None:
+        raise ConnectionError("redis caído")
+
+    def delete(self, *nombres: str) -> int:
         raise ConnectionError("redis caído")
 
 
@@ -63,3 +73,26 @@ def test_un_fallo_de_redis_nunca_se_propaga() -> None:
 
     cache.guardar("cuentas-bancarias", "cliente-1", datos)  # no debe lanzar
     assert cache.obtener("cuentas-bancarias", "cliente-1") is None  # no debe lanzar
+    assert cache.invalidar_cliente("cliente-1", ("cuentas-bancarias",)) == 0  # no debe lanzar
+
+
+def test_invalidar_cliente_borra_todas_sus_fuentes_sin_afectar_a_otros_clientes() -> None:
+    almacen = AlmacenFalso()
+    cache = CacheFuentes(almacen, ttl_segundos=300)
+    fuentes = ("cuentas-bancarias", "historial-crediticio", "afiliacion-pila")
+    for f in fuentes:
+        cache.guardar(
+            f, "cliente-a", DatosFuente(fuente=f, datos={"ok": 1}, capturado_en=datetime.now(UTC))
+        )
+    cache.guardar(
+        "cuentas-bancarias",
+        "cliente-b",
+        DatosFuente(fuente="cuentas-bancarias", datos={"ok": 2}, capturado_en=datetime.now(UTC)),
+    )
+
+    borradas = cache.invalidar_cliente("cliente-a", fuentes)
+
+    assert borradas == 3
+    for f in fuentes:
+        assert cache.obtener(f, "cliente-a") is None
+    assert cache.obtener("cuentas-bancarias", "cliente-b") is not None

@@ -25,7 +25,9 @@ Migracion = tuple[str, Callable]
 
 def descubrir() -> list[Migracion]:
     """Migraciones del paquete `versiones`, ordenadas por nombre (el prefijo fija el orden)."""
-    nombres = sorted(m.name for m in pkgutil.iter_modules(versiones.__path__))
+    nombres = sorted(
+        m.name for m in pkgutil.iter_modules(versiones.__path__) if m.name[0].isdigit()
+    )
     return [(n, importlib.import_module(f"{versiones.__name__}.{n}").aplicar) for n in nombres]
 
 

@@ -52,3 +52,18 @@ output "topic_alertas_presupuesto" {
   description = "ID del topic de Pub/Sub de alertas de presupuesto (null si crear_presupuesto = false)."
   value       = var.crear_presupuesto ? google_pubsub_topic.alertas_presupuesto[0].id : null
 }
+
+output "topic_perfil_actualizado" {
+  description = "ID del topic de Pub/Sub para el evento PerfilActualizado (null si crear_pubsub = false)."
+  value       = var.crear_pubsub ? google_pubsub_topic.perfil_actualizado[0].id : null
+}
+
+output "job_risk_reproceso" {
+  description = "Nombre del Cloud Run Job del batch nocturno de reprocesamiento de perfiles (null si crear_batch = false)."
+  value       = (var.crear_batch && var.crear_servicios) ? google_cloud_run_v2_job.risk_reproceso[0].name : null
+}
+
+output "gateway_url" {
+  description = "URL pública del API Gateway delante del BFF con corte duro de 700 ms (null si crear_gateway = false)."
+  value       = var.crear_gateway ? "https://${google_api_gateway_gateway.bff[0].default_hostname}" : null
+}

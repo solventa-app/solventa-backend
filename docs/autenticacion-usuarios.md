@@ -265,19 +265,25 @@ Fuera de alcance por decisión del equipo; queda el diseño para retomarlo:
   anterior) y `cerrarSesion` que revoca. Eso también cierra la limitación "el token no se revoca" de la sección 5.
 - La clave podría dejar de ser obligatoria (columna `hash_clave` nula) si el alta se hace por otro medio (invitación u OTP).
 
-## 8. Cuando llegue el API Gateway
+## 8. Autenticación con el API Gateway (Sprint 1 y Sprint 2)
 
-1. Pasar de HS256 a **ES256**: AUTH firma con clave privada y publica `GET /.well-known/jwks.json`; el BFF (o el
-   gateway) verifica con la clave pública. Así solo AUTH puede emitir tokens.
-2. Mover la verificación del token al gateway (`jwks_uri`). En el BFF, `app/autenticacion_usuarios.py` es el único
-   módulo que cambia; los resolutores siguen llamando a `exigir_rol`.
-3. Aprovechar el gateway para el límite de intentos por IP y las cuotas.
+En el **Sprint 1** ya existe el API Gateway delante del BFF (`infra/gateway.tf`, `infra/gateway/openapi.yaml` y Envoy local en `:8080`, HA-LAT-004):
 
-## 9. Otros pasos siguientes
+- **Cómo viaja el JWT en el Sprint 1 (decisión 17):** el usuario inicia sesión con AUTH (`iniciarSesion`), recibe su JWT HS256 y lo envía en `Authorization: Bearer <token>`. En GCP API Gateway (ESPv2), el gateway se autentica ante el BFF privado (`roles/run.invoker` con la cuenta `gateway-bff`) poniendo su propio token de identidad en `Authorization` y moviendo el JWT original del usuario a **`X-Forwarded-Authorization`**. Por eso `app/autenticacion_usuarios.py` (`extraer_cabecera_autorizacion`) lee primero `X-Forwarded-Authorization` cuando está presente y, si no, cae a `Authorization` (entorno local con Envoy y pruebas en CI).
+- **Qué falta para que el gateway valide el JWT en el borde (Sprint 2):**
+  1. Pasar de HS256 a **ES256**: AUTH firma con clave privada asimétrica y publica `GET /.well-known/jwks.json`.
+  2. Configurar `x-google-issuer` y `x-google-jwks_uri` en `infra/gateway/openapi.yaml` para que el gateway rechace tokens inválidos antes de tocar el BFF.
+  3. Aprovechar el gateway para límites por IP y cuotas por socio B2B (HU-W07).
 
-- **Pasar la bandera a `obligatoria`** cuando el frontend ya envíe el token: cambiar `AUTENTICACION_USUARIOS` en
-  `.github/servicios.json` (`entorno` del BFF) y en `docker-compose.yml`, avisar en `contracts/CHANGELOG.md` y abrir el
-  PR gemelo en `solventa-frontend`.
-- **Eventos de usuario** (`usuario.creado`, `usuario.suspendido`, `usuario.rol-cambiado`): no se publican porque nadie
-  los consume todavía. Se definen en `contracts/events/` cuando exista un consumidor.
+## 9. Consentimiento ligado al titular y vencimiento (Bloque 4, decisiones 20, 21 y 23)
+
+- **Titular opaco (`titular_id`):** al registrar el consentimiento (`registrarConsentimiento`), el BFF calcula el hash HMAC-SHA256 del documento (`cliente_id_desde_documento`) y lo envía a AUTH junto con `tipo_dato`, `fuente_datos` y `canal`. AUTH nunca recibe ni almacena el documento en claro. En `solicitarOferta`, el BFF verifica que el consentimiento pertenezca al mismo titular del documento; si no coincide, responde `ErrorOferta` con `motivo = CONSENTIMIENTO_NO_VIGENTE`.
+- **Vencimiento a 30 días (`vence_en`):** la migración `0005` de AUTH agrega `vence_en` (`otorgado_en + 30 días`, configurable con `CONSENTIMIENTO_VIGENCIA_DIAS`). Un consentimiento está `vigente` solo si `revocado_en IS NULL AND now() < vence_en` (`estado`: `VIGENTE`, `REVOCADO` o `VENCIDO`), calculado al leer sin necesidad de un proceso nocturno.
+- **Revocación (CA-W01-08):** `revocarConsentimiento` marca `revocado_en` en AUTH e invalida de inmediato la caché del titular en el ACL Worker (`POST /fuentes/invalidar-cache`), cumpliendo el umbral de ≤ 5 min.
+
+## 10. Otros pasos siguientes
+
+- **Pasar la bandera a `obligatoria`** cuando el frontend ya envíe el token en todas las vistas: cambiar `AUTENTICACION_USUARIOS` en `.github/servicios.json` (`entorno` del BFF) y en `docker-compose.yml`, avisar en `contracts/CHANGELOG.md` y abrir el PR gemelo en `solventa-frontend`.
+- **Eventos de usuario** (`usuario.creado`, `usuario.suspendido`, `usuario.rol-cambiado`): no se publican porque nadie los consume todavía. Se definen en `contracts/events/` cuando exista un consumidor.
 - **Staging**: cargar `clave-jwt` y crear el primer BACKOFFICE (ver `infra/README.md`).
+

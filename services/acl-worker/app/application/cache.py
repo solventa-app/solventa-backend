@@ -14,6 +14,7 @@ en profundidad, aunque esto vive en Redis interno, no en logs de aplicación.
 
 import hashlib
 import json
+from collections.abc import Iterable
 from datetime import datetime
 from typing import Protocol
 
@@ -27,6 +28,8 @@ class PuertoAlmacenClaveValor(Protocol):
     def get(self, nombre: str) -> bytes | str | None: ...
 
     def set(self, nombre: str, valor: str, ex: int | None = None) -> object: ...
+
+    def delete(self, *nombres: str) -> object: ...
 
 
 class CacheFuentes:
@@ -61,3 +64,23 @@ class CacheFuentes:
             datos=cuerpo["datos"],
             capturado_en=datetime.fromisoformat(cuerpo["capturado_en"]),
         )
+
+    def invalidar_cliente(self, cliente_id: str, fuentes: Iterable[str]) -> int:
+        """Borra de la caché todas las fuentes asociadas a `cliente_id` (CA-W01-08:
+        invalidación inmediata al revocar el consentimiento)."""
+        claves = [self._clave(fuente, cliente_id) for fuente in fuentes]
+        if not claves:
+            return 0
+        try:
+            borrar = getattr(self._almacen, "delete", None)
+            if callable(borrar):
+                resultado = borrar(*claves)
+                return int(resultado) if isinstance(resultado, int) else len(claves)
+            diccionario = getattr(self._almacen, "_valores", None)
+            if diccionario is None:
+                diccionario = getattr(self._almacen, "valores", None)
+            if isinstance(diccionario, dict):
+                return sum(1 for clave in claves if diccionario.pop(clave, None) is not None)
+        except Exception:
+            return 0
+        return 0

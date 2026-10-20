@@ -111,10 +111,7 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   de ese repo. `services/risk` y `services/rating` (T-W01-6/7, D-02/HA-LAT-003) se construyeron desde
   cero a partir de esta especificación, no portando código de un experimento que nunca se construyó. Los
   README de ambos servicios tenían una afirmación de reutilización incorrecta; ya se corrigió ahí.
-- **Cifrado de campo (SEG-002/D-04/CA-W01-10) fuera de alcance en `risk`:** sin proyecto GCP no hay Cloud
-  KMS disponible, y no existe todavía ningún helper de cifrado en el repo (AUTH tampoco lo ha construido
-  para T-W01-4). `risk` persiste los datos de las fuentes sin cifrar — hueco real, documentado en
-  `services/risk/README.md`, deliberadamente no simulado con un cifrado de juguete.
+- **Cifrado de campo (SEG-002/D-04/CA-W01-10) CERRADO en `auth`, `risk` y `rating` (2026-10-18, Bloque 3):** `risk` cifra `fuentes[].datos` con AES-GCM de 256 bits antes de escribir en MongoDB (dejando `datos: {}` y `datos_cifrados`), la migración idempotente `v0002_cifrar_datos_fuentes` cifra cualquier documento previo en claro, y `rating` descifra en memoria al leer. Tanto `auth` como `risk` y `rating` soportan cifrado de sobre con Cloud KMS (`KMS_KEY_NAME` + `CIFRADO_CLAVE_ENVUELTA`, con `roles/cloudkms.cryptoKeyEncrypterDecrypter` restringido a esas 3 cuentas de servicio) y CMEK opcional en Terraform para Cloud SQL y Memorystore.
 - **Ampliación de alcance pedida directamente por el usuario (sin HU/HA/CA nuevos, sin ID de
   Jira):** `services/rating` ya tenía el mecanismo de lectura causal (D-02/HA-LAT-003), pero el
   cálculo real de la oferta (T-W01-6 completo: score + prima, HA-MOD-002) y el Cache-Aside de
@@ -208,3 +205,20 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   `iniciarSesion` y `yo`, cifrado en AUTH y fuera del JWT). `Cobro.idTransaccion` llegó aparte con el reintento de rechazados.
   Los pagos siguen siendo solo del BACKOFFICE. Pedido por el front (KAN-207). **Tampoco estaba en el plan del sprint:**
   registrar las horas en Jira bajo KAN-28.
+- **Cierre en código de HU-W01 y habilitadoras (KAN-24, 2026-10-18, Bloques 1 a 10 de `docs/plan-completar-hu-w01.md`):**
+  1. **Bloque 1 (Medición):** guiones de k6 (`perfilamiento-baseline.js`, `falla-proveedor.js`, `lectura-replica.js`, `gateway-presupuesto.js`), `scripts/correr_k6.sh`, tableros `hu-w01.json` y `hu-w05.json` en Cloud Monitoring y reportes en `docs/evidencias/`.
+  2. **Bloque 2 (Caché del score y EC010 ≤ 500 ms):** `ScoreCacheado` se escribe en Redis desde RISK al registrar el perfil y RATING lo consume en modo Cache-Aside; el ACL Worker acota la espera a 300 ms cuando ya hay dato en caché y soporta `CACHE_SERVIR_EN_TTL`.
+  3. **Bloque 3 (Cifrado en reposo, D-04 / EC022):** cifrado de sobre con Cloud KMS (`KMS_KEY_NAME` + `CIFRADO_CLAVE_ENVUELTA`) en AUTH, RISK y RATING, cifrado AES-GCM de `fuentes[].datos` en RISK + migración `v0002`, y soporte CMEK en Terraform.
+  4. **Bloque 4 (Consentimiento con titular y vencimiento de 30 días, CE 004/2024):** migración `0005` en AUTH (`titular_id` opaco, `vence_en`, `tipo_dato`, `fuente_datos`, `canal`), verificación de titular en el BFF, `ErrorOferta.motivo` (`CONSENTIMIENTO_NO_VIGENTE`, `DATOS_INSUFICIENTES`, `FUENTES_NO_DISPONIBLES`) y validación de `consentimiento_id` + `finalidad` en el stub de Open Finance (HTTP 403 sin ellos).
+  5. **Bloque 5 (Fuentes por configuración, EC031 / EC033):** `contracts/fuentes.json` como fuente única para BFF, ACL Worker, RISK y RATING, con pruebas de reemplazo de adaptador (EC031) y sexta fuente por configuración (EC033).
+  6. **Bloque 6 (Seguridad en CI/CD):** Bandit, `pip-audit`, Trivy y OWASP ZAP baseline en modo informativo (`continue-on-error: true`).
+  7. **Bloque 7 (Revocación de consentimiento, CA-W01-08 / EC023):** `revocarConsentimiento` en el BFF invalida de inmediato las fuentes en caché del cliente en el ACL Worker (`POST /fuentes/invalidar-cache`).
+  8. **Bloque 8 (Pendientes de diseño):** `Oferta.perfilRiesgo` (`score`, `nivelRiesgo`, `fechaVigencia`) en el contrato v0.8, publicación de `PerfilActualizado` en Pub/Sub desde RISK e invalidación de caché en RATING (`POST /eventos/perfil-actualizado`).
+  9. **Bloque 9 (Batch nocturno, HA-ESC-004 / EC017):** `services/risk/app/batch_reproceso.py` idempotente por lotes, Cloud Run Job + Cloud Scheduler en `infra/batch.tf` y `scripts/sembrar_perfiles.py`.
+  10. **Bloque 10 (API Gateway delante del BFF, HA-LAT-004 / EC001-EC002-EC008):** `infra/gateway/openapi.yaml` y `envoy.yaml` con corte duro de 700 ms, `infra/gateway.tf`, BFF privado en Cloud Run, lectura de `X-Forwarded-Authorization` y presupuesto por proveedor (`PRESUPUESTO_MS_*`) en el ACL Worker.
+  **Estado de las mediciones de esos bloques (honesto):** el código está hecho y probado (pytest, humo por el gateway y Newman en
+  verde), pero **ningún escenario de calidad se ha medido todavía contra staging**. Hay corridas **locales** reales
+  (`docs/evidencias/`): EC003 ✅, **EC004 ❌** (el pico de 3× satura el BFF), EC009/EC010 ✅, EC011/EC012 ✅, EC001/EC002 ✅ y
+  **EC008 ❌** (p95 por dependencia 126 ms contra 120 ms). EC017 (batch), el informe de seguridad y la exploratoria FC-01 están
+  **pendientes**; EC022 y CA-W01-08 están verificados solo hasta donde lo dice cada informe (sin Cloud KMS real ni staging).
+  Una versión anterior de esos informes traía cifras que no provenían de ninguna medición; se retiraron.

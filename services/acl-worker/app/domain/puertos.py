@@ -25,6 +25,8 @@ class ConsultaFuente:
     cliente_id: str
     consentimiento_id: str  # sin consentimiento vigente no se consulta ninguna fuente (CA-W01-01)
     fuente: Fuente
+    finalidad: str = "perfilamiento"  # finalidad autorizada del consentimiento (CE 004/2024)
+    forzar_proveedor: bool = False
 
 
 @dataclass

@@ -187,3 +187,175 @@ def test_consulta_degradada_a_cache_tambien_encola_reconciliacion() -> None:
     assert productor.llamadas == [
         (CONSULTA.fuente, CONSULTA.cliente_id, CONSULTA.consentimiento_id)
     ]
+
+
+def test_servir_cache_en_ttl_evita_llamar_al_proveedor_en_solicitud_repetida() -> None:
+    resultado = DatosFuente(
+        fuente="cuentas-bancarias", datos={"saldo": 500}, capturado_en=datetime.now(UTC)
+    )
+    adaptador = AdaptadorFalso(resultado=resultado)
+    fabrica = construir_fabrica(umbral_fallos=10, ttl_segundos=10)
+    cache = CacheFuentes(AlmacenEnMemoria(), ttl_segundos=300)
+    productor = ProductorReconciliacionFalso()
+    servicio = ServicioConsultaFuentes(
+        adaptador,
+        fabrica,
+        NOMBRE_CIRCUITO_OPEN_FINANCE,
+        cache,
+        presupuesto_s=0.7,
+        productor_reconciliacion=productor,
+        servir_cache_en_ttl=True,
+    )
+
+    primera = servicio.consultar(CONSULTA)
+    assert primera.de_cache is False
+    assert adaptador.llamadas == 1
+
+    segunda = servicio.consultar(CONSULTA)
+    assert segunda.de_cache is True
+    assert segunda.datos == {"saldo": 500}
+    assert adaptador.llamadas == 1  # no volvió a llamar al proveedor
+    assert productor.llamadas == []  # no es un fallo: no encola reconciliación
+
+    # Si se pide explícitamente forzar_proveedor, sí consulta al proveedor:
+    tercera = servicio.consultar(CONSULTA, forzar_proveedor=True)
+    assert tercera.de_cache is False
+    assert adaptador.llamadas == 2
+
+
+def test_con_cache_caliente_usa_presupuesto_reducido_para_ec010() -> None:
+    """EC010 <= 500 ms: cuando ya existe un valor en caché, compite caché contra
+    proveedor con `presupuesto_con_cache_s` (300 ms por defecto) y si el proveedor
+    excede ese presupuesto reducido devuelve la caché."""
+    timeouts_recibidos: list[float | None] = []
+
+    class AdaptadorConTimeoutRegistrado:
+        def __init__(self) -> None:
+            self.fallar_por_timeout = False
+
+        def consultar(
+            self, consulta: ConsultaFuente, timeout_s: float | None = None
+        ) -> DatosFuente:
+            timeouts_recibidos.append(timeout_s)
+            if self.fallar_por_timeout and timeout_s is not None and timeout_s <= 0.3:
+                raise TimeoutError("proveedor lento > 300ms")
+            return DatosFuente(
+                fuente=consulta.fuente,
+                datos={"saldo": 999},
+                capturado_en=datetime.now(UTC),
+            )
+
+    adaptador = AdaptadorConTimeoutRegistrado()
+    fabrica = construir_fabrica(umbral_fallos=10, ttl_segundos=10)
+    cache = CacheFuentes(AlmacenEnMemoria(), ttl_segundos=300)
+    servicio = ServicioConsultaFuentes(
+        adaptador,
+        fabrica,
+        NOMBRE_CIRCUITO_OPEN_FINANCE,
+        cache,
+        presupuesto_s=0.7,
+        presupuesto_con_cache_s=0.3,
+        servir_cache_en_ttl=False,
+    )
+
+    # 1ª llamada sin caché: usa presupuesto completo (0.7 s)
+    en_linea = servicio.consultar(CONSULTA)
+    assert en_linea.de_cache is False
+    assert timeouts_recibidos[0] == pytest.approx(0.7)
+
+    # 2ª llamada con caché caliente y proveedor lento (> 300 ms): usa 0.3 s y degrada a caché
+    adaptador.fallar_por_timeout = True
+    degradada = servicio.consultar(CONSULTA)
+    assert degradada.de_cache is True
+    assert degradada.datos == {"saldo": 999}
+    assert timeouts_recibidos[1] == pytest.approx(0.3)
+
+
+# ---------- métrica del tiempo por proveedor (EC008)
+
+
+def _muestras(proveedor: str, resultado: str) -> float:
+    from prometheus_client import REGISTRY
+
+    return (
+        REGISTRY.get_sample_value(
+            "acl_proveedor_duracion_segundos_count",
+            {"proveedor": proveedor, "resultado": resultado},
+        )
+        or 0.0
+    )
+
+
+def test_una_llamada_exitosa_queda_medida_como_ok() -> None:
+    resultado = DatosFuente(
+        fuente="cuentas-bancarias", datos={"saldo": 1}, capturado_en=datetime.now(UTC)
+    )
+    antes = _muestras(NOMBRE_CIRCUITO_OPEN_FINANCE, "ok")
+
+    _servicio(AdaptadorFalso(resultado=resultado), umbral_fallos=10).consultar(CONSULTA)
+
+    assert _muestras(NOMBRE_CIRCUITO_OPEN_FINANCE, "ok") == antes + 1
+
+
+def test_un_timeout_queda_medido_como_timeout() -> None:
+    class TimeoutDeProveedor(Exception):
+        pass
+
+    antes = _muestras(NOMBRE_CIRCUITO_OPEN_FINANCE, "timeout")
+
+    _servicio(AdaptadorFalso(error=TimeoutDeProveedor("lento")), umbral_fallos=10).consultar(
+        CONSULTA
+    )
+
+    assert _muestras(NOMBRE_CIRCUITO_OPEN_FINANCE, "timeout") == antes + 1
+
+
+def test_otra_falla_queda_medida_como_error() -> None:
+    antes = _muestras(NOMBRE_CIRCUITO_OPEN_FINANCE, "error")
+
+    _servicio(AdaptadorFalso(error=ConnectionError("caido")), umbral_fallos=10).consultar(CONSULTA)
+
+    assert _muestras(NOMBRE_CIRCUITO_OPEN_FINANCE, "error") == antes + 1
+
+
+def test_el_circuito_abierto_queda_medido_y_no_llama_al_proveedor() -> None:
+    adaptador = AdaptadorFalso(error=ConnectionError("caido"))
+    servicio = _servicio(adaptador, umbral_fallos=1, ttl_segundos=60)
+    servicio.consultar(CONSULTA)  # abre el circuito
+    antes = _muestras(NOMBRE_CIRCUITO_OPEN_FINANCE, "circuito_abierto")
+
+    servicio.consultar(CONSULTA)
+
+    assert _muestras(NOMBRE_CIRCUITO_OPEN_FINANCE, "circuito_abierto") == antes + 1
+
+
+def test_lo_servido_desde_la_cache_no_cuenta_como_llamada_al_proveedor() -> None:
+    resultado = DatosFuente(
+        fuente="cuentas-bancarias", datos={"saldo": 1}, capturado_en=datetime.now(UTC)
+    )
+    fabrica = construir_fabrica(10, 10)
+    cache = CacheFuentes(AlmacenEnMemoria(), ttl_segundos=300)
+    servicio = ServicioConsultaFuentes(
+        AdaptadorFalso(resultado=resultado),
+        fabrica,
+        NOMBRE_CIRCUITO_OPEN_FINANCE,
+        cache,
+        presupuesto_s=0.7,
+        servir_cache_en_ttl=True,
+    )
+    servicio.consultar(CONSULTA)  # llama y guarda
+    antes = _muestras(NOMBRE_CIRCUITO_OPEN_FINANCE, "ok")
+
+    servicio.consultar(CONSULTA)  # dentro del TTL: de caché
+
+    assert _muestras(NOMBRE_CIRCUITO_OPEN_FINANCE, "ok") == antes
+
+
+def test_las_etiquetas_de_la_metrica_no_llevan_datos_personales() -> None:
+    from prometheus_client import REGISTRY
+
+    for familia in REGISTRY.collect():
+        if familia.name == "acl_proveedor_duracion_segundos":
+            for muestra in familia.samples:
+                valores = " ".join(muestra.labels.values())
+                assert "cliente-1" not in valores and "consent-1" not in valores

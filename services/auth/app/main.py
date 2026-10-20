@@ -20,10 +20,10 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel
 
-from app.cifrado import CifradorAesGcm
+from app.cifrado import construir_cifrador
 from app.configuracion import Configuracion
 from app.consentimientos import AlmacenConsentimientos, AlmacenConsentimientosPostgres
-from app.identificadores import id_opaco
+from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.observabilidad import configurar_trazas
 from app.sesiones import CredencialesInvalidas, ServicioSesiones
 from app.usuarios import (
@@ -52,6 +52,11 @@ class SolicitudConsentimiento(BaseModel):
     finalidad: str
     version_texto: str
     actor: Actor | None = None
+    titular_id: str | None = None
+    documento_identidad: str | None = None
+    tipo_dato: str | None = None
+    fuente_datos: str | None = None
+    canal: str | None = None
 
 
 class ConsentimientoResponse(BaseModel):
@@ -60,8 +65,14 @@ class ConsentimientoResponse(BaseModel):
     version_texto: str
     otorgado_en: str
     revocado_en: str | None
+    vence_en: str
     vigente: bool
+    estado: str
     actor: Actor | None = None
+    titular_id: str | None = None
+    tipo_dato: str | None = None
+    fuente_datos: str | None = None
+    canal: str | None = None
 
 
 class Credenciales(BaseModel):
@@ -128,7 +139,7 @@ def create_app(
         else:
             repositorio = RepositorioUsuariosPostgres(pool)
             hasher = PasswordHasher()
-            cifrador = CifradorAesGcm.desde_base64(config.cifrado_clave)
+            cifrador = construir_cifrador(config)
             app.state.usuarios = ServicioUsuarios(repositorio, hasher, cifrador)
             app.state.sesiones = ServicioSesiones(
                 repositorio, hasher, config.jwt_secreto, config.jwt_vigencia_minutos
@@ -153,8 +164,20 @@ def create_app(
     @app.post("/consentimientos", tags=["consentimientos"], response_model=ConsentimientoResponse)
     def registrar(body: SolicitudConsentimiento) -> ConsentimientoResponse:
         actor = body.actor.model_dump() if body.actor else None
+        titular_id = body.titular_id
+        if not titular_id and body.documento_identidad and body.documento_identidad.strip():
+            titular_id = cliente_id_desde_documento(
+                body.documento_identidad, config.cliente_id_clave
+            )
         consentimiento = app.state.consentimientos.registrar(
-            body.finalidad, body.version_texto, actor
+            body.finalidad,
+            body.version_texto,
+            actor,
+            titular_id=titular_id,
+            tipo_dato=body.tipo_dato,
+            fuente_datos=body.fuente_datos,
+            canal=body.canal,
+            vigencia_dias=config.consentimiento_vigencia_dias,
         )
         logger.info("consentimiento registrado id=%s", id_opaco(consentimiento.id))
         return ConsentimientoResponse(**consentimiento.como_dict())

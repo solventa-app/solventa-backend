@@ -5,11 +5,18 @@ project_id = "tu-proyecto-gcp"
 region     = "us-central1"
 
 # --- Todo lo de abajo es opt-in (default false): activar de a uno, con confirmación, nunca junto. ---
-crear_kms         = false
-crear_redis       = false
-crear_cloud_sql   = false
-crear_mongo_atlas = false
-crear_presupuesto = false
+crear_kms               = false
+usar_cmek_sql           = false
+usar_cmek_redis         = false
+crear_redis             = false
+crear_cloud_sql         = false
+crear_mongo_atlas       = false
+crear_presupuesto       = false
+crear_pubsub            = false
+crear_metricas_logs     = false
+crear_batch             = false
+crear_gateway           = false
+calentar_camino_critico = false
 
 # Pipeline de despliegue (ADR-07). Ambas banderas están apagadas por defecto; ver infra/README.md
 # para el orden y los costos antes de encenderlas.
