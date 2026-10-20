@@ -190,8 +190,9 @@ resource "google_cloud_run_v2_service" "servicio" {
           memory = "512Mi"
         }
         cpu_idle = true
-        # Más CPU solo mientras arranca el contenedor: acorta el arranque en frío (mínimo 0 instancias).
-        startup_cpu_boost = true
+        # Sin CPU extra al arrancar: con el boost cada instancia que arranca pide 2 vCPU y, con las instancias fijas,
+        # el deploy pasó la cuota de la región (20 vCPU, 2026-10-19). El arranque en frío es algo más lento.
+        startup_cpu_boost = false
       }
 
       dynamic "env" {
