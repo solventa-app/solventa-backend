@@ -1,0 +1,76 @@
+# Configuración de Envoy local que replica el API Gateway de GCP (ESPv2 corre sobre Envoy).
+# Escucha en :8080 y reenvía al BFF (bff:8000) con el mismo corte duro de 700 ms (timeout: 0.7s).
+# Sincronizado con infra/gateway/openapi.yaml mediante scripts/validar_gateway.py.
+static_resources:
+  listeners:
+    - name: listener_gateway
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8080
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+                route_config:
+                  name: rutas_bff
+                  virtual_hosts:
+                    - name: bff_vhost
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            path: "/health"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            path: "/graphql/web"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            path: "/graphql/movil"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            path: "/graphql/app"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+    - name: bff_cluster
+      connect_timeout: 0.25s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: bff_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: bff
+                      port_value: 8000

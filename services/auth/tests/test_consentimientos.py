@@ -126,3 +126,103 @@ def test_fila_con_actor_y_revocada() -> None:
     assert c.actor == {"rol": "ASESOR", "usuario_id": "u-1"}
     assert c.revocado_en == "2026-10-17T13:00:00+00:00"
     assert c.vigente is False
+    assert c.estado == "REVOCADO"
+
+
+# ---------- Vencimiento de 30 días y titular opaco (Bloque 4, decisiones 20 y 23) ----------
+
+
+def test_registrar_fija_vencimiento_a_30_dias_y_estado_vigente() -> None:
+    from datetime import datetime, timedelta
+
+    cuerpo = _cliente().post("/consentimientos", json=SOLICITUD).json()
+
+    otorgado = datetime.fromisoformat(cuerpo["otorgado_en"])
+    vence = datetime.fromisoformat(cuerpo["vence_en"])
+    assert vence - otorgado == timedelta(days=30)
+    assert cuerpo["estado"] == "VIGENTE"
+    assert cuerpo["vigente"] is True
+
+
+def test_consentimiento_vencido_se_detecta_al_leer_sin_tocar_la_base() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from app.consentimientos import Consentimiento
+
+    almacen = AlmacenConsentimientosMemoria()
+    client = TestClient(create_app(almacen=almacen))
+    creado = client.post("/consentimientos", json=SOLICITUD).json()
+
+    # Simulamos que pasaron más de 30 días dejando `vence_en` en el pasado, sin revocar.
+    pasado = datetime.now(UTC) - timedelta(days=31)
+    almacen._por_id[creado["id"]] = Consentimiento(
+        id=creado["id"],
+        finalidad=creado["finalidad"],
+        version_texto=creado["version_texto"],
+        otorgado_en=(pasado - timedelta(days=30)).isoformat(),
+        vence_en=pasado.isoformat(),
+    )
+
+    leido = client.get(f"/consentimientos/{creado['id']}").json()
+    assert leido["revocado_en"] is None
+    assert leido["vigente"] is False
+    assert leido["estado"] == "VENCIDO"
+
+
+def test_registrar_con_documento_calcula_titular_id_opaco_y_nunca_guarda_ni_loguea_documento(
+    caplog,
+) -> None:
+    import logging
+
+    from app.configuracion import CLIENTE_ID_CLAVE_LOCAL
+    from app.identificadores import cliente_id_desde_documento
+
+    documento = "1020304050"
+    almacen = AlmacenConsentimientosMemoria()
+    client = TestClient(create_app(almacen=almacen))
+
+    with caplog.at_level(logging.DEBUG):
+        r = client.post(
+            "/consentimientos",
+            json={
+                **SOLICITUD,
+                "documento_identidad": f"  {documento} ",
+                "tipo_dato": "FINANCIEROS_Y_ABIERTOS",
+                "fuente_datos": "OPEN_FINANCE_OPEN_DATA",
+                "canal": "WEB",
+            },
+        )
+
+    assert r.status_code == 200
+    cuerpo = r.json()
+    esperado_titular = cliente_id_desde_documento(documento, CLIENTE_ID_CLAVE_LOCAL)
+    assert cuerpo["titular_id"] == esperado_titular
+    assert documento not in cuerpo["titular_id"]
+    assert "documento_identidad" not in cuerpo
+    assert cuerpo["tipo_dato"] == "FINANCIEROS_Y_ABIERTOS"
+    assert cuerpo["fuente_datos"] == "OPEN_FINANCE_OPEN_DATA"
+    assert cuerpo["canal"] == "WEB"
+    assert documento not in str(almacen._por_id[cuerpo["id"]].como_dict())
+    assert documento not in caplog.text
+
+
+def test_registrar_con_titular_id_explicito_lo_conserva() -> None:
+    cuerpo = (
+        _cliente()
+        .post(
+            "/consentimientos",
+            json={
+                **SOLICITUD,
+                "titular_id": "hash-opaco-del-bff",
+                "tipo_dato": "FINANCIEROS_Y_ABIERTOS",
+                "fuente_datos": "OPEN_FINANCE_OPEN_DATA",
+                "canal": "WEB",
+            },
+        )
+        .json()
+    )
+
+    assert cuerpo["titular_id"] == "hash-opaco-del-bff"
+    assert cuerpo["tipo_dato"] == "FINANCIEROS_Y_ABIERTOS"
+    assert cuerpo["fuente_datos"] == "OPEN_FINANCE_OPEN_DATA"
+    assert cuerpo["canal"] == "WEB"

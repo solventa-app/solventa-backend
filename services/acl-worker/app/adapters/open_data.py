@@ -10,9 +10,10 @@ from datetime import UTC, datetime
 
 import httpx
 
+from app.application.fuentes_config import fuentes_open_data
 from app.domain.puertos import ConsultaFuente, DatosFuente
 
-FUENTES_SOPORTADAS = ("afiliacion-pila", "camara-comercio", "antecedentes-judiciales")
+FUENTES_SOPORTADAS = fuentes_open_data()
 
 
 class AdaptadorOpenData:
@@ -24,9 +25,11 @@ class AdaptadorOpenData:
         timeout_s: float,
         cliente: httpx.Client | None = None,
         auth: httpx.Auth | None = None,
+        fuentes: tuple[str, ...] | None = None,
     ) -> None:
         self._timeout_s = timeout_s
         self._cliente = cliente or httpx.Client(base_url=base_url.rstrip("/"), auth=auth)
+        self._fuentes = fuentes or fuentes_open_data() or FUENTES_SOPORTADAS
 
     def consultar(self, consulta: ConsultaFuente, timeout_s: float | None = None) -> DatosFuente:
         timeout = timeout_s if timeout_s is not None else self._timeout_s
@@ -47,7 +50,7 @@ class AdaptadorOpenData:
         """Ver `AdaptadorOpenFinance.sondear`: llamada sintética solo para la sonda
         de recuperación del circuito, nunca para una petición de usuario."""
         consulta = ConsultaFuente(
-            cliente_id="sonda", consentimiento_id="sonda", fuente=FUENTES_SOPORTADAS[0]
+            cliente_id="sonda", consentimiento_id="sonda", fuente=self._fuentes[0]
         )
         self.consultar(consulta)
 

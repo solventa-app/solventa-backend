@@ -19,30 +19,29 @@ ACL Worker, RISK y RATING y traduce al contrato de `contracts/graphql/schema.gra
 
 | Operación | Estado |
 |---|---|
-| `registrarConsentimiento` / `revocarConsentimiento` | AUTH (tabla append-only en PostgreSQL, ver `services/auth/README.md`) |
-| `solicitarOferta` | Completo: ver el flujo abajo |
-| `oferta(id)` | Devuelve `null`: RATING no persiste ofertas todavía |
+| `registrarConsentimiento` / `revocarConsentimiento` | AUTH (tabla append-only en PostgreSQL con `titular_id`, `vence_en` a 30 días y `estado`; al revocar, si tiene `titular_id` invalida además las fuentes cacheadas en el ACL Worker en segundos — CA-W01-08) |
+| `solicitarOferta` | Completo (contrato v0.8): ver el flujo abajo |
+| `oferta(id)` | Devuelve `null`: guardar la oferta pasa al Sprint 2 con HU-W03 |
 | `contactarAsesor` | **MOCK**: solo confirma (no hay servicio de asesores) |
 | `cobros(polizaId, estado)` / `crearCobro` / `reintentarCobro` | Completas (KAN-28), sobre PAYMENTS: solo BACKOFFICE y **siempre con token**. `crearCobro` recibe `idIntentoCobro` del cliente (idempotencia) y devuelve `Cobro` o `ErrorCobro`. `Usuario.nombre` solo lo traen `iniciarSesion` y `yo` (el propio; nunca el JWT). Los cobros traen `idTransaccion` (referencia de la pasarela) y `cliente { id nombre }`: el BFF pide los nombres a AUTH en lotes de 200 y, si AUTH falla, los entrega sin nombre. El reintento concilia con la pasarela antes de cobrar (ver [`docs/cobros-conciliacion.md`](../../docs/cobros-conciliacion.md)) |
 | `iniciarSesion`, `yo`, `usuarios`, `crearUsuario`, `cambiarRolUsuario`, `suspenderUsuario` | Completas (HU-M02), sobre AUTH |
 
-## Autenticación y permisos (HU-M02)
+## Autenticación y permisos (HU-M02 y API Gateway)
 
-`app/autenticacion_usuarios.py` verifica el JWT (`Authorization: Bearer <token>`) que emite AUTH, y cada resolutor de
+`app/autenticacion_usuarios.py` verifica el JWT (`X-Forwarded-Authorization: Bearer <token>` cuando pasa por GCP API Gateway o `Authorization: Bearer <token>` directo) que emite AUTH, y cada resolutor de
 `app/esquema.py` aplica su regla con `exigir_rol`. La matriz de permisos, las decisiones y el paso a paso con ejemplos
 están en [`docs/autenticacion-usuarios.md`](../../docs/autenticacion-usuarios.md). Con `AUTENTICACION_USUARIOS=opcional`
 (valor actual) las operaciones de antes siguen funcionando sin token; la gestión de usuarios y `yo` siempre lo exigen.
 
 ## Flujo de `solicitarOferta` (`app/servicio_oferta.py`)
 
-1. AUTH: consentimiento vigente **antes** de consultar nada (regla #7). Si no lo hay → `ErrorOferta` sin reintento.
+1. AUTH: consentimiento vigente **antes** de consultar nada (regla #7). Si no existe, fue revocado o venció (`vence_en` > 30 días), o si su `titular_id` no coincide con el `cliente_id` derivado del `documentoIdentidad` de la solicitud → `ErrorOferta` sin reintento con `motivo: CONSENTIMIENTO_NO_VIGENTE`.
 2. `cliente_id` opaco = HMAC-SHA256 del documento con `CLIENTE_ID_CLAVE` (`app/identificadores.py`).
-   **REWIRE:** cuando AUTH tenga la tabla de identidad (T-W01-4 / JWT del Sprint 2), el `cliente_id` lo resolverá AUTH.
-3. ACL Worker: las 5 fuentes en paralelo. El ACL ya degrada solo (caché o valor por defecto); si el ACL mismo no
+3. ACL Worker: las fuentes definidas en `contracts/fuentes.json` (dentro de la imagen, su copia `app/fuentes.json`, idéntica: `scripts/sincronizar_fuentes.py`) en paralelo (enviando `consentimiento_id` y `finalidad`). El ACL ya degrada solo (caché o valor por defecto); si el ACL mismo no
    responde, la fuente va `degradado` y la oferta sale PRELIMINAR.
-4. RISK escribe el perfil y devuelve `operation_time`; RATING calcula la oferta con lectura causal (D-02).
-5. Cualquier falla de RISK/RATING → `ErrorOferta` con reintento; `valorCredito` inválido → sin reintento.
-   Sin historial crediticio (RATING responde 422 `datos_insuficientes`, CA-W01-05) → `ErrorOferta` con reintento.
+4. RISK escribe el perfil cifrado, guarda `ScoreCacheado` en Redis y devuelve `operation_time`; RATING calcula la oferta con lectura causal (D-02) e incluye `perfilRiesgo { score nivelRiesgo fechaVigencia }`.
+5. Cualquier falla de RISK/RATING → `ErrorOferta` con reintento y `motivo: FUENTES_NO_DISPONIBLES`; `valorCredito` inválido → sin reintento (`motivo: DATOS_INSUFICIENTES`).
+   Sin historial crediticio (RATING responde 422 `datos_insuficientes`, CA-W01-05) → `ErrorOferta` con reintento y `motivo: DATOS_INSUFICIENTES`.
 
 Antes del paso 1 se valida la solicitud (mismos límites que el formulario W01-01): documento con al menos 6 dígitos
 y máximo 20 caracteres, `valorCredito` decimal mayor que 0, `plazoMeses` de 1 a 360 y `direccionInmueble` no vacía

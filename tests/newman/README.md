@@ -67,3 +67,9 @@ npx --yes newman@6.2.2 run tests/newman/solventa-bff.postman_collection.json \
 - **Datos ficticios.** El documento `CC-NEWMAN-100001` no es una persona real. No pongas datos reales en la colección.
 - **Los umbrales de tiempo son un piso**, medidos en un portátil con proveedores simulados (regla 9 de
   `CLAUDE.md`). No reemplazan las pruebas de carga con k6 de EC003 / EC004 (`tests/k6/`).
+
+## Colección corta de HU-W01 (`hu-w01.postman_collection.json`)
+
+Recorrido mínimo del caso insignia (oferta completa, degradada, timeout duro y consentimiento revocado), el mismo
+de `docs/evidencias/flujo-prueba-local-hu-w01.md` y `scripts/humo_bff.py`. Útil para abrirlo en la app de Postman;
+para la verificación completa usa `solventa-bff.postman_collection.json`.

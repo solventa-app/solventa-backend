@@ -253,7 +253,7 @@ Si encuentras uno, es un defecto: repórtalo.
 En Grafana (http://localhost:3100) y Prometheus (http://localhost:9190) ves las métricas de cada servicio mientras corres
 los pasos anteriores.
 
-## 8. Pruebas automáticas (opcional)
+## 8. Pruebas automáticas y medición con k6 (staging)
 
 ```bash
 python3 scripts/humo_bff.py                                  # humo de punta a punta (necesita el stack arriba)
@@ -264,6 +264,19 @@ npx --yes newman@6.2.2 run tests/newman/solventa-bff.postman_collection.json \
 
 **Esperado:** `OK: humo del BFF en verde` y Newman con todas las aserciones en cero fallidas. Las pruebas unitarias de
 cada servicio (`python -m pytest` dentro de `services/<servicio>`) se explican en el [README](../README.md).
+
+### Medición con k6 contra staging (`scripts/correr_k6.sh`)
+
+Toda medición de escenarios (EC001/EC002/EC008, EC003/EC004, EC009/EC010, EC011/EC012) se corre **contra staging
+desplegado** en una sola sesión reducida (decisión 3 y 14, ver `docs/plan-completar-hu-w01.md`):
+
+1. Encender Cloud SQL y Memorystore desde *GitHub Actions → Costos staging → encender*.
+2. Abrir Grafana local conectado a GCP (`gcloud auth application-default login && docker compose --profile gcp up -d grafana-gcp`, http://localhost:3200, tableros `HU-W01` y `HU-W05`).
+3. Ejecutar los guiones contra la URL del API Gateway (o del BFF antes del gateway):
+   ```bash
+   STAGING_URL="https://<gateway-o-bff-staging>" bash scripts/correr_k6.sh
+   ```
+4. Guardar los resúmenes en `docs/evidencias/` y apagar recursos con *Costos staging → apagar*.
 
 ## 9. Apagar
 

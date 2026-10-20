@@ -96,4 +96,21 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Incluye parámetros regulatorios, límites de montos, plazos, DTI máximo y régimen de finanzas abiertas.
 - Afecta al frontend: sí (catálogo compartido y validación de documentos por país).
 
+## v0.10 — 2026-10-19
+
+- KAN-24 (HU-W01, bloques 2, 4 y 8): cierre de pendientes de consentimiento, perfil de riesgo y motivos de error de
+  oferta. Solo cambios aditivos.
+- `ConsentimientoInput` suma los campos opcionales `documentoIdentidad`, `tipoDato`, `fuenteDatos` y `canal` (`= null`
+  por defecto) para ligar el consentimiento al titular (hash opaco en AUTH, nunca documento en claro).
+- `Consentimiento` suma `venceEn: DateTime!` (vigencia de 30 días por defecto, calculada al leer) y
+  `estado: EstadoConsentimiento!` (`VIGENTE`, `REVOCADO`, `VENCIDO`).
+- `ErrorOferta` suma `motivo: MotivoErrorOferta` (`CONSENTIMIENTO_NO_VIGENTE`, `DATOS_INSUFICIENTES`,
+  `FUENTES_NO_DISPONIBLES`) para que el frontend distinga un consentimiento vencido/revocado sin depender del texto del
+  mensaje.
+- `PerfilRiesgo { score, nivelRiesgo, fechaVigencia }` (`NivelRiesgo`: `BAJO`, `MEDIO`, `ALTO`) y `Oferta.perfilRiesgo`
+  (opcional), junto con el score calculado y cacheado en RISK.
+- Evento `perfil.actualizado`: suma los campos opcionales `nivelRiesgo`, `fechaVigencia` y `versionReglas` para la
+  suscripción de Pub/Sub en RATING (`crear_pubsub`).
+- Afecta al frontend: sí (`useCotizacion` envía los campos de titular/canal en `registrarConsentimiento` y reacciona a
+  `motivo = CONSENTIMIENTO_NO_VIGENTE`). Requiere el PR gemelo en `solventa-frontend-web`.
 

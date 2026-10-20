@@ -16,7 +16,25 @@ RISK es el **único escritor del perfil de riesgo** (MongoDB primaria, réplica 
   después de escribir, lo serializa a texto y lo devuelve en la respuesta HTTP — es lo que el
   llamador (hoy, directo en el body; en producción lo reenviaría el BFF) le pasa a RATING para su
   sesión causal.
-- Emite `perfil.actualizado` por un bus de eventos **placeholder** (ver huecos abajo).
+- **Score, `nivelRiesgo` y `fechaVigencia` (HA-LAT-001, `PerfilRiesgo`):** calcula el score de
+  riesgo ponderado (`score_total`), clasifica `nivel_riesgo` (`ALTO` 0-39, `MEDIO` 40-69, `BAJO`
+  70-100), calcula `fecha_vigencia` (+30 días ISO-8601), persiste los 4 campos junto al perfil en
+  MongoDB y escribe el `ScoreCacheado` en Redis (`oferta:{id_opaco}:{perfil_version}:{version_reglas}`).
+  Carga pesos, orígenes y obligatoriedad desde `contracts/fuentes.json` o, dentro de la imagen, de su
+  copia `app/fuentes.json` (idéntica; `scripts/sincronizar_fuentes.py`), con fallback a constantes.
+- **Cifrado de campo + sobre KMS (SEG-002 / D-04 / CA-W01-10 / EC022):** antes de insertar en
+  MongoDB, cifra cada `fuente.datos` con AES-256-GCM y sobre KMS (`datos_cifrados`) y persiste
+  `datos: {}` en reposo.
+- **Eventos (`perfil.actualizado`):** emite `perfil.actualizado` por `BusEventosLog` (local) o
+  `BusEventosPubSub` (cuando `PUBSUB_TOPIC_PERFIL_ACTUALIZADO` está configurado), incluyendo
+  `nivelRiesgo`, `fechaVigencia` y `versionReglas`.
+- **Batch nocturno `risk-reproceso` (HA-ESC-004, EC017):** ejecutable como
+  `python -m app.batch_reproceso` para recalcular perfiles vencidos o con `version_reglas`
+  anterior en lotes idempotentes sin contención con el tráfico interactivo. **Reparto entre tareas:** con
+  `task_count = N` (variable `batch_tareas` de Terraform), cada tarea toma solo los perfiles cuyo hash de
+  `cliente_id` cae en su partición (`CLOUD_RUN_TASK_INDEX` / `CLOUD_RUN_TASK_COUNT`, `construir_filtro`): las
+  particiones son disjuntas y el caudal crece casi lineal con N. Sembrar perfiles para probarlo:
+  `scripts/sembrar_perfiles.py`.
 - Logs sin datos personales: `cliente_id` nunca se loguea en crudo (hash opaco, mismo patrón que
   `acl-worker/app/application/identificadores.py`).
 
@@ -37,7 +55,8 @@ que nunca se construyó.
   BSON binario ni JSON extendido de Mongo. Ver `app/application/tiempo_causal.py`. RATING usa el
   mismo formato (duplicado a propósito, sin código compartido entre servicios).
 - **Forma del documento de perfil** (`risk.perfiles`): `{cliente_id, perfil_version, fuentes,
-  creado_en}`, donde `fuentes` es la lista de `DatosFuente` recibida tal cual. Es append-only por
+  creado_en, score_total, nivel_riesgo, fecha_vigencia, version_reglas}`, donde cada elemento de
+  `fuentes` persiste `datos: {}` y `datos_cifrados: <sobre KMS + AES-256-GCM>`. Es append-only por
   versión (no se sobreescribe la versión anterior): cada escritura inserta un documento nuevo.
 - **Asignación atómica de versión:** `find_one_and_update($inc)` sobre una colección de contadores
   (`risk.contadores_version`, `_id = cliente_id`) en la MISMA sesión que el `insert_one` del
@@ -45,22 +64,20 @@ que nunca se construyó.
   diferencia de leer el máximo existente y sumarle 1 sin atomicidad), y hace que
   `session.operation_time` final sea el de la escritura más reciente (el `insert_one`).
 - **Bus de eventos:** interfaz mínima (`PuertoBusEventos`, función/clase — **sin** puertos y
-  adaptadores formales, regla de arquitectura #3: hexagonal es solo para `acl-worker`) con un
-  adaptador `BusEventosLog` que por ahora solo loguea el evento. Ver huecos.
+  adaptadores formales, regla de arquitectura #3: hexagonal es solo para `acl-worker`) con
+  `BusEventosLog` (por defecto) y `BusEventosPubSub` (activo si se define
+  `PUBSUB_TOPIC_PERFIL_ACTUALIZADO`).
 
-## Pendiente, fuera de alcance de esta tarea (huecos documentados)
+## Huecos cerrados y alcances pendientes
 
-- **Cifrado de campo (SEG-002/D-04/CA-W01-10):** no hay Cloud KMS disponible (sin proyecto GCP,
-  ver `CLAUDE.md`) y no existe todavía ningún helper de cifrado en el repo (AUTH tampoco lo ha
-  construido). Los datos de las fuentes se persisten **sin cifrar**. Deliberadamente no se simula
-  con un cifrado de juguete (daría falsa confianza). Pendiente para cuando AUTH y/o
-  `infra-engineer` tengan el helper + KMS.
-- **Bus de eventos real:** no existe infraestructura de Pub/Sub (sin proyecto GCP). `BusEventosLog`
-  es un placeholder que solo loguea una versión **redactada** del evento (con el `cliente_id`
-  hasheado, nunca en crudo — regla de arquitectura #6; el evento que se "publica" internamente sí
-  lleva `clienteId` en claro, tal como exige el contrato). Cuando `infra-engineer` levante Pub/Sub
-  real, se sustituye `BusEventosLog` por un publicador real detrás del mismo `PuertoBusEventos`,
-  sin tocar `ServicioPerfiles`.
+- **Cifrado de campo (SEG-002/D-04/CA-W01-10/EC022) — CERRADO:** `app/application/cifrado.py`
+  implementa cifrado de sobre AES-256-GCM con DEK aleatoria por campo envuelta por una KEK de 256
+  bits (`RISK_KEK_BASE64`, compartida con RATING; en local usa una clave de desarrollo determinista
+  con warning explícito). Ningún documento en `risk.perfiles` guarda PII ni datos financieros en
+  texto plano (`datos: {}`, payload en `datos_cifrados`).
+- **Bus de eventos Pub/Sub — CERRADO:** `BusEventosPubSub` publica el contrato JSON en Cloud
+  Pub/Sub (o en el emulador local si `PUBSUB_EMULATOR_HOST` está definido) cuando se configura
+  `PUBSUB_TOPIC_PERFIL_ACTUALIZADO`, con degradación segura a log si Pub/Sub falla.
 - **Idempotencia de `POST /perfiles` ante reintentos de red:** cada llamada crea una nueva versión;
   no hay deduplicación por clave de idempotencia (no pedida por ningún CA de esta tarea).
 
@@ -68,10 +85,11 @@ que nunca se construyó.
 
 - Puerto local: `8002`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.
 - `POST /perfiles` `{cliente_id, fuentes: [{fuente, datos, capturado_en, de_cache, degradado}, ...]}`
-  → `{cliente_id, perfil_version, operation_time}`.
-- Variables de entorno: `MONGO_URI`, `ACL_URL` (no se usa en esta tarea — RISK no llama al ACL
-  Worker directamente, recibe los datos ya resueltos en el cuerpo de la petición; se mantiene
-  porque ya está en `docker-compose.yml`).
+  → `{cliente_id, perfil_version, operation_time, score_total, nivel_riesgo, fecha_vigencia, version_reglas}`.
+- Batch nocturno: `python -m app.batch_reproceso` (variables opcionales `BATCH_LIMITE`, `BATCH_TAMANO_LOTE`, `BATCH_PAUSA_MS`).
+- Variables de entorno: `MONGO_URI`, `MONGO_DB` (`risk`), `REDIS_URL`, `OFERTA_CACHE_TTL_SEGUNDOS`
+  (`300`), `RISK_KEK_BASE64` (32 bytes en base64 para cifrado AES-256-GCM), `RISK_KMS_KEY_ID`
+  (`local-dev-kek`), `PUBSUB_PROJECT_ID`, `PUBSUB_TOPIC_PERFIL_ACTUALIZADO`, `ACL_URL`.
 - Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest`
   (desde esta carpeta). Las pruebas usan dobles de prueba (`tests/fakes.py`), no MongoDB real —
   ver "Verificación en vivo" más abajo para la prueba con el replica set real.
@@ -88,6 +106,8 @@ MongoDB `risk` (este servicio es su único escritor; RATING solo lee y **no** mi
 - El índice compuesto que necesita RATING para `find_one({"cliente_id": ...}, sort=[("perfil_version", -1)])`
   (T-W01-7) va en la migración `migrations/versiones/0002_perfiles.py` (`cliente_id` ascendente,
   `perfil_version` descendente); la base es `0001`.
+- La migración `migrations/versiones/0003_cifrar_datos_fuentes.py` (con alias `v0002_cifrar_datos_fuentes.py`)
+  cifra in-place e idempotentemente cualquier documento existente que aún tenga `fuentes[].datos` en claro.
 
 ### Verificación en vivo (read-your-writes real, D-02/HA-LAT-003)
 

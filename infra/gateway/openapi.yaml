@@ -1,0 +1,55 @@
+# Especificación OpenAPI 2.0 (Swagger) para Google Cloud API Gateway (HA-LAT-004: EC001, EC002, EC008).
+# El plazo duro de extremo a extremo es de 700 ms (deadline: 0.7).
+# En local se replica con Envoy (infra/gateway/envoy.yaml) y se valida en CI con scripts/validar_gateway.py.
+swagger: "2.0"
+info:
+  title: Solventa API Gateway
+  description: Puerta pública delante del BFF con corte duro de 700 ms (HA-LAT-004).
+  version: "1.0.0"
+schemes:
+  - https
+produces:
+  - application/json
+consumes:
+  - application/json
+paths:
+  /health:
+    get:
+      summary: Salud del BFF a través del API Gateway
+      operationId: healthCheck
+      x-google-backend:
+        address: ${bff_url}/health
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /graphql/web:
+    post:
+      summary: Canal GraphQL Web (clientes, asesores y back-office)
+      operationId: graphqlWeb
+      x-google-backend:
+        address: ${bff_url}/graphql/web
+        deadline: 0.7
+      responses:
+        "200":
+          description: Respuesta GraphQL
+  /graphql/movil:
+    post:
+      summary: Canal GraphQL Móvil
+      operationId: graphqlMovil
+      x-google-backend:
+        address: ${bff_url}/graphql/movil
+        deadline: 0.7
+      responses:
+        "200":
+          description: Respuesta GraphQL
+  /graphql/app:
+    post:
+      summary: Alias del canal GraphQL de aplicación móvil
+      operationId: graphqlApp
+      x-google-backend:
+        address: ${bff_url}/graphql/app
+        deadline: 0.7
+      responses:
+        "200":
+          description: Respuesta GraphQL

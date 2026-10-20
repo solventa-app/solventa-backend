@@ -14,7 +14,11 @@ from fastapi import FastAPI, Request
 from prometheus_fastapi_instrumentator import Instrumentator
 from strawberry.fastapi import GraphQLRouter
 
-from app.autenticacion_usuarios import TokenInvalido, leer_usuario
+from app.autenticacion_usuarios import (
+    TokenInvalido,
+    extraer_cabecera_autorizacion,
+    leer_usuario,
+)
 from app.clientes import Clientes, construir_clientes
 from app.configuracion import Configuracion
 from app.esquema import schema
@@ -25,7 +29,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 
 configurar_trazas("bff", instrumentos=("httpx",))
 
-CANALES = ("web", "app")
+CANALES = ("web", "app", "movil")
 
 
 def create_app(config: Configuracion | None = None, clientes: Clientes | None = None) -> FastAPI:
@@ -58,9 +62,11 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
         async def contexto(request: Request) -> dict[str, Any]:
             # El token se lee aquí, una vez por petición; cada resolutor decide con
             # `exigir_rol` (app/esquema.py) si lo exige y qué roles admite.
+            # Si viene detrás de GCP API Gateway (ESPv2), lee `X-Forwarded-Authorization`.
             usuario, error_token = None, None
+            cabecera_auth = extraer_cabecera_autorizacion(request.headers)
             try:
-                usuario = leer_usuario(request.headers.get("authorization"), config.jwt_secreto)
+                usuario = leer_usuario(cabecera_auth, config.jwt_secreto)
             except TokenInvalido as error:
                 error_token = str(error)
             return {
@@ -70,6 +76,7 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
                 "usuario": usuario,
                 "error_token": error_token,
                 "modo_autenticacion": config.autenticacion_usuarios,
+                "cliente_id_clave": config.cliente_id_clave,
             }
 
         return contexto

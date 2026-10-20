@@ -28,6 +28,9 @@ infra/.builds/
 # Resultados crudos de k6 muy grandes (los resúmenes sí van en docs/evidencias/)
 tests/k6/resultados-crudos/
 
+# Reporte HTML de Newman: se regenera en cada corrida (ver tests/newman/README.md)
+tests/newman/reporte.html
+
 # Editores y SO
 .idea/
 .vscode/

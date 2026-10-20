@@ -11,9 +11,10 @@ from datetime import UTC, datetime
 
 import httpx
 
+from app.application.fuentes_config import fuentes_open_finance
 from app.domain.puertos import ConsultaFuente, DatosFuente
 
-FUENTES_SOPORTADAS = ("cuentas-bancarias", "historial-crediticio")
+FUENTES_SOPORTADAS = fuentes_open_finance()
 
 
 class AdaptadorOpenFinance:
@@ -25,15 +26,29 @@ class AdaptadorOpenFinance:
         timeout_s: float,
         cliente: httpx.Client | None = None,
         auth: httpx.Auth | None = None,
+        fuentes: tuple[str, ...] | None = None,
     ) -> None:
         self._timeout_s = timeout_s
         self._cliente = cliente or httpx.Client(base_url=base_url.rstrip("/"), auth=auth)
+        self._fuentes = fuentes or fuentes_open_finance() or FUENTES_SOPORTADAS
 
     def consultar(self, consulta: ConsultaFuente, timeout_s: float | None = None) -> DatosFuente:
         timeout = timeout_s if timeout_s is not None else self._timeout_s
         respuesta = self._cliente.post(
             f"/v1/fuentes/{consulta.fuente}/consulta",
-            json={"cliente_id": consulta.cliente_id},
+            json={
+                "cliente_id": consulta.cliente_id,
+                "consentimiento_id": consulta.consentimiento_id,
+                "finalidad": consulta.finalidad,
+            },
+            params={
+                "consentimiento_id": consulta.consentimiento_id,
+                "finalidad": consulta.finalidad,
+            },
+            headers={
+                "X-Consentimiento-Id": consulta.consentimiento_id,
+                "X-Finalidad": consulta.finalidad,
+            },
             timeout=timeout,
         )
         respuesta.raise_for_status()
@@ -50,7 +65,10 @@ class AdaptadorOpenFinance:
         petición de usuario debe pagar el costo de probar si el proveedor volvió.
         """
         consulta = ConsultaFuente(
-            cliente_id="sonda", consentimiento_id="sonda", fuente=FUENTES_SOPORTADAS[0]
+            cliente_id="sonda",
+            consentimiento_id="sonda",
+            fuente=self._fuentes[0],
+            finalidad="sonda",
         )
         self.consultar(consulta)
 

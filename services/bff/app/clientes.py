@@ -29,7 +29,14 @@ class DatosInsuficientes(Exception):
 
 class PuertoAuth(Protocol):
     async def registrar_consentimiento(
-        self, finalidad: str, version_texto: str, actor: dict | None = None
+        self,
+        finalidad: str,
+        version_texto: str,
+        actor: dict | None = None,
+        titular_id: str | None = None,
+        tipo_dato: str | None = None,
+        fuente_datos: str | None = None,
+        canal: str | None = None,
     ) -> dict: ...
 
     async def obtener_consentimiento(self, consentimiento_id: str) -> dict | None: ...
@@ -57,6 +64,8 @@ class PuertoAcl(Protocol):
     async def consultar_fuente(
         self, cliente_id: str, consentimiento_id: str, fuente: str
     ) -> dict: ...
+
+    async def invalidar_cache_cliente(self, cliente_id: str) -> None: ...
 
 
 class PuertoRisk(Protocol):
@@ -123,13 +132,33 @@ class ClienteAuthHttp:
         self._cliente = cliente
 
     async def registrar_consentimiento(
-        self, finalidad: str, version_texto: str, actor: dict | None = None
+        self,
+        finalidad: str,
+        version_texto: str,
+        actor: dict | None = None,
+        titular_id: str | None = None,
+        tipo_dato: str | None = None,
+        fuente_datos: str | None = None,
+        canal: str | None = None,
     ) -> dict:
+        cuerpo_peticion: dict[str, Any] = {
+            "finalidad": finalidad,
+            "version_texto": version_texto,
+            "actor": actor,
+        }
+        if titular_id is not None:
+            cuerpo_peticion["titular_id"] = titular_id
+        if tipo_dato is not None:
+            cuerpo_peticion["tipo_dato"] = tipo_dato
+        if fuente_datos is not None:
+            cuerpo_peticion["fuente_datos"] = fuente_datos
+        if canal is not None:
+            cuerpo_peticion["canal"] = canal
         respuesta = await _pedir(
             self._cliente,
             "POST",
             "/consentimientos",
-            {"finalidad": finalidad, "version_texto": version_texto, "actor": actor},
+            cuerpo_peticion,
         )
         cuerpo = _json_o_none(respuesta)
         if cuerpo is None:
@@ -214,6 +243,16 @@ class ClienteAclHttp:
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
+
+    async def invalidar_cache_cliente(self, cliente_id: str) -> None:
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            "/fuentes/invalidar-cache",
+            {"cliente_id": cliente_id},
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
 
 
 class ClienteRiskHttp:

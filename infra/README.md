@@ -17,13 +17,18 @@ agrega nada hasta que alguien las enciende.
 |---|---|---|---|
 | APIs (Cloud Run, Artifact Registry, Secret Manager, Pub/Sub, IAM, IAM Credentials, STS, Resource Manager) | siempre | $0 | `disable_on_destroy = false` |
 | Repositorio de Artifact Registry | siempre | centavos por GB | imágenes de los servicios/stubs |
-| Cloud KMS (key ring + llave de cifrado de campo) | `crear_kms` | ~USD 0,06/mes por versión de llave | un key ring **no se puede borrar** |
+| Cloud KMS (key ring `solventa-backend` + llave `campos-personales` + IAM para AUTH, RISK y RATING) | `crear_kms` | ~USD 0,06/mes por versión de llave + ~USD 0,03 / 10.000 ops | `kms.tf`; un key ring **no se puede borrar** nunca; activado en `staging.tfvars` |
+| CMEK en Cloud SQL y Memorystore Redis | `usar_cmek_sql` / `usar_cmek_redis` | $0 adicional (usa la misma llave de KMS) | Cloud SQL exige recrear/migrar la instancia (`export/import` en ventana acordada); Redis se aplica en el próximo encendido |
 | Workload Identity Federation (GitHub) + service account de despliegue + sus permisos | `crear_pipeline` | $0 | `cicd.tf`; sin llaves; limitada a este repo y al entorno `staging` |
-| Un servicio de Cloud Run por entrada de `.github/servicios.json`, sus jobs de migración, una service account por servicio y los secretos | `crear_servicios` | ~$0 en reposo | `servicios.tf`; máx. `max_instancias` por servicio |
+| Un servicio de Cloud Run por entrada de `.github/servicios.json`, sus jobs de migración, una service account por servicio y los secretos | `crear_servicios` | ~$0 en reposo | `servicios.tf`; máx. `max_instancias` por servicio (`calentar_camino_critico = true` sube `min_instance_count = 1` solo durante sesiones de medición) |
 | Cola de Cloud Tasks `reintento-cobros` + trabajo de Cloud Scheduler `sonda-acl` y `DISPARADOR=externo` en PAYMENTS y el ACL Worker | `crear_tareas` | $0 (capa gratuita: 1 M de operaciones de Cloud Tasks; 3 trabajos de Scheduler por cuenta) | `tareas.tf`. En Cloud Run los bucles de fondo no corren de forma confiable (`cpu_idle = true`, mínimo 0). Ver «Disparadores externos» |
-| Memorystore Redis (BASIC, 1GB) + conector VPC | `crear_redis` | **~USD 0,12/h juntos** (estimación estándar de GCP; no se verificó empíricamente en ningún experimento de `solventa-arquitectura` — ese repo no tiene Redis en Terraform, solo en docker-compose local) | **no escala a cero**: crear y destruir por sesión |
-| Cloud SQL PostgreSQL (`db-f1-micro`, 1 instancia, bases `auth` + `payments`) | `crear_cloud_sql` | ~USD 9-12/mes (instancia shared-core + 10GB disco; sin respaldos automáticos para no sumarles costo) | **no escala a cero**: cobra por hora aunque no haya tráfico |
-| MongoDB Atlas M0 (RISK) | `crear_mongo_atlas` | $0 (nivel gratuito) | requiere cuenta/organización de Atlas y API keys que **no existen todavía** (ver más abajo) |
+| Memorystore Redis (BASIC, 1GB) + conector VPC | `crear_redis` | **~USD 0,12/h juntos** (estimación estándar de GCP; no se verificó empíricamente en ningún experimento de `solventa-arquitectura` — ese repo no tiene Redis en Terraform, solo en docker-compose local) | **no escala a cero**: crear y destruir por sesión (`redis_encendida`) |
+| Cloud SQL PostgreSQL (`db-f1-micro`, 1 instancia, bases `auth` + `payments`) | `crear_cloud_sql` | ~USD 9-12/mes (instancia shared-core + 10GB disco; sin respaldos automáticos para no sumarles costo) | **no escala a cero**: cobra por hora aunque no haya tráfico (`cloud_sql_encendida`) |
+| MongoDB Atlas M0 (RISK y RATING) | `crear_mongo_atlas` | $0 (nivel gratuito) | sin CMEK en M0 (CMEK exige M10 ~USD 57/mes): cubierto por el cifrado de campo AES-GCM con llave de KMS |
+| Pub/Sub (`perfil-actualizado` + suscripción de `rating`) | `crear_pubsub` | $0 (capa gratuita hasta 10 GB/mes) | `pubsub.tf`; `risk` publica y `rating` invalida la caché del score |
+| Batch nocturno (`risk-reproceso` Cloud Run Job + Cloud Scheduler `30 23 * * *`) | `crear_batch` | $0 Scheduler (capa gratuita) + minutos de Job | `batch.tf`; corre a las 23:30 America/Bogota, antes del apagado automático de las 2:00 a.m. |
+| Métricas basadas en logs (ofertas por tipo, circuito abierto y cobros por estado) | `crear_metricas_logs` | ~$0 (volumen mínimo, capa gratuita de Cloud Monitoring) | `metricas-logs.tf`; las leen los paneles de `hu-w01.json` y `hu-w05.json`. Los filtros asumen el log como `textPayload`: verificar en Logs Explorer tras aplicar |
+| API Gateway delante del BFF (`solventa-gateway`, deadline duro de 700 ms) + cuenta `gateway-bff` | `crear_gateway` | $0 hasta 2 M llamadas/mes | `gateway.tf` + `gateway/openapi.yaml`; el BFF deja de ser público y la salida `gateway_url` es la única puerta pública |
 | Presupuesto + Pub/Sub + función `frenar-gasto` | `crear_presupuesto` | ~$0 (capa gratuita de Cloud Functions; solo paga las pocas invocaciones que dispara el presupuesto) | requiere `billing_account_id`; debe estar activo **antes** de cualquier despliegue real (regla 2 de `CLAUDE.md`) |
 
 Cloud Run y Cloud Run Jobs escalan a cero. Secret Manager cobra ~USD 0,06/mes por versión activa (una marcadora por secreto).
@@ -275,14 +280,73 @@ usuario vuelve a iniciar sesión), no pierde datos:
 openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add clave-jwt --data-file=-
 ```
 
-`clave-cifrado` es la llave AES-256 (32 bytes en base64) con la que AUTH cifra el nombre de los clientes (KAN-28).
-AUTH se niega a arrancar en Cloud Run con el valor marcador o con la llave local. **Rotarla sin migrar los datos deja
-los nombres ilegibles** (los cobros saldrían sin nombre): antes de rotar hay que re-cifrar. Pendiente: pasar a Cloud KMS
-(decisión D-04) detrás de la misma interfaz:
+`clave-cifrado` es la llave de datos AES-256-GCM (DEK de 32 bytes) con la que AUTH y RISK cifran los campos personales
+(y RATING los descifra al leer de la réplica). Con `crear_kms = true` (`kms.tf`), solo las cuentas de servicio
+`rt-auth`, `rt-risk` y `rt-rating` tienen `roles/cloudkms.cryptoKeyEncrypterDecrypter` sobre la llave `campos-personales`
+(rotación automática cada 90 días). En Cloud Run se soporta **cifrado de sobre (envelope encryption)**: el secreto puede
+guardar la llave envuelta por KMS (`kms:<ciphertext_b64>`) para que el servicio la desenvuelva al arrancar sin tener que
+re-cifrar las bases cuando KMS rota la llave maestra:
 
 ```bash
+# Opción 1 (sobre KMS): envolver una DEK de 32 bytes con la llave `campos-personales` y guardarla en Secret Manager
+DEK=$(openssl rand 32 | base64 | tr -d '\n')
+CIPHERTEXT=$(printf '%s' "$DEK" | base64 -d | gcloud kms encrypt \
+  --project=solventa-511815 --location=us-central1 --keyring=solventa-backend --key=campos-personales \
+  --plaintext-file=- --ciphertext-file=- | base64 | tr -d '\n')
+printf 'kms:%s' "$CIPHERTEXT" | gcloud secrets versions add clave-cifrado --project=solventa-511815 --data-file=-
+unset DEK CIPHERTEXT
+
+# Opción 2 (DEK directa en base64 urlsafe):
 openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n' | gcloud secrets versions add clave-cifrado --data-file=-
 ```
+
+### CMEK en los almacenes de datos (HA-SEG-002, D-04 cerrada)
+
+- **Cloud SQL (`usar_cmek_sql`):** PostgreSQL en Cloud SQL solo acepta `encryption_key_name` **al crear la instancia**.
+  Activar `usar_cmek_sql = true` sobre una instancia existente fuerza su reemplazo (que el guardia `scripts/revisar_plan.py`
+  bloquea por seguridad). Por eso la migración a CMEK se hace en un PR propio con ventana acordada con el equipo:
+  1. Exportar las bases `auth` y `payments` con `gcloud sql export sql`.
+  2. Mergear `usar_cmek_sql = true` y correr *Deploy staging* con `permitir_destruir = true` para recrear la instancia con CMEK.
+  3. Importar los volcados o correr las migraciones y `scripts/crear_usuarios.py`.
+- **Memorystore Redis (`usar_cmek_redis`):** como Redis es caché efímera y el botón *Costos staging → apagar* la destruye
+  a diario, basta con activar `usar_cmek_redis = true` cuando esté apagada: en el próximo *encender* nace con
+  `customer_managed_key` apuntando a `campos-personales`.
+- **MongoDB Atlas (`M0`):** se queda en M0 **sin CMEK de disco** (decisión 6 de `docs/plan-completar-hu-w01.md`). En Atlas,
+  *Encryption at Rest using Customer Key Management* exige subir el clúster a **M10 (~USD 57/mes)**, casi una quinta parte
+  del presupuesto total del equipo. En M0, Atlas cifra el disco por defecto con AES-256 y los campos personales/financieros
+  de `risk` se guardan cifrados en la aplicación con AES-256-GCM bajo nuestra llave de KMS (`campos-personales`): sin esa
+  llave los documentos de Mongo son ilegibles, cumpliendo HA-SEG-002 y EC022 sin pagar M10.
+
+### API Gateway delante del BFF (`crear_gateway`, HA-LAT-004)
+
+Con `crear_gateway = true` (`gateway.tf`), Terraform crea en `us-central1` el API Gateway `solventa-gateway` configurado con
+`infra/gateway/openapi.yaml` (rutas `POST /graphql/web`, `POST /graphql/movil`, `POST /graphql/app` y `GET /health`, todas con
+`deadline: 0.7` = 700 ms). El BFF **deja de ser público** (sin `allUsers`): solo la cuenta `gateway-bff` tiene
+`roles/run.invoker` sobre `bff`. La URL pública sale en `terraform output -raw gateway_url` y en el informe de
+`deploy-staging.yml`.
+
+En local, `docker-compose.yml` levanta el servicio `gateway` (Envoy en `:8080`) con `infra/gateway/envoy.yaml`, y
+`scripts/validar_gateway.py` verifica en CI que `openapi.yaml` y `envoy.yaml` tengan exactamente las mismas rutas y el
+mismo corte de 700 ms. Durante sesiones de medición con k6 se puede activar `calentar_camino_critico = true` para fijar
+`min_instance_count = 1` en los servicios del camino crítico de HU-W01 y evitar arranques en frío; al terminar la sesión
+se vuelve a poner en `false`.
+
+### Pub/Sub (`crear_pubsub`) y Batch nocturno (`crear_batch`)
+
+- **`crear_pubsub = true` (`pubsub.tf`):** crea el tema `perfil-actualizado` y la suscripción `rating-perfil-actualizado`
+  (capa gratuita de Pub/Sub: 10 GB/mes). Otorga `roles/pubsub.publisher` únicamente a `rt-risk` y `roles/pubsub.subscriber`
+  únicamente a `rt-rating` para invalidar el score cacheado cuando cambia el perfil.
+- **`crear_batch = true` (`batch.tf`, HA-ESC-004 / EC017):** crea el Cloud Run Job `risk-reproceso` (`python -m app.batch_reproceso`,
+  con la imagen y cuenta de `risk`) y la tarea de Cloud Scheduler `risk-reproceso-nocturno` programada a las `30 23 * * *`
+  (`America/Bogota`), para que termine antes del apagado automático de costos de las 2:00 a.m. `batch_tareas` (default `1`) fija `task_count`: cada tarea procesa una partición de los perfiles, así que para 10 M de perfiles en < 2 h se escala subiendo `batch_tareas` (la cifra sale de la medición de `docs/evidencias/EC017-2026-10-18.md`).
+
+### Secretos de SonarCloud en GitHub Actions (Bloque 6)
+
+El job `sonar` de `.github/workflows/ci.yml` escanea el código con SonarCloud (gratis para repos públicos) en cada push a
+`main` o `develop`. Para activarlo, un administrador de la organización carga en *Settings → Secrets and variables → Actions*:
+
+- `SONAR_TOKEN`: token del proyecto `solventa-backend` generado en SonarCloud.
+- `SONAR_HOST_URL`: `https://sonarcloud.io`.
 
 ### Usuarios de staging: el primer BACKOFFICE y los de prueba
 
@@ -358,10 +422,12 @@ Cloud SQL o Redis no atienden: es lo esperado.
 **Apagado automático:** por si se olvida apagarlo, el workflow **apaga solo todos los días a las 2:00 a.m. hora de
 Colombia** (`cron: '0 7 * * *'`, 07:00 UTC; Colombia no tiene horario de verano). Así, lo que se encienda para una
 prueba no sigue cobrando de un día para otro. Por eso cada mañana estará **apagado**: para usarlo, `encender`.
-Para quitarlo, borra el bloque `schedule` de `.github/workflows/costos-staging.yml`. Tres cosas a saber:
+Como GitHub no garantiza la hora (el 18-oct la ejecución llegó casi 5 h tarde y el 19-oct no llegó), el bloque `schedule`
+trae **tres reintentos** (08:30, 10:00 y 12:00 UTC). Apagar es idempotente: si la primera pasada funcionó, las otras no
+tienen cambios que aplicar. Para quitarlo, borra el bloque `schedule` de `.github/workflows/costos-staging.yml`. Tres cosas a saber:
 
-- GitHub puede demorar unos minutos en lanzar una ejecución programada, y en un repositorio público las desactiva tras
-  60 días sin actividad.
+- GitHub puede demorar o saltarse una ejecución programada, y en un repositorio público las desactiva tras
+  60 días sin actividad. Si el 1.er intento falla, GitHub avisa por correo a quien editó el cron por última vez.
 - Si alguien está trabajando pasadas las 2:00 a.m., se le apagará: basta con volver a ejecutar `encender`.
 - Mientras `main` no traiga este cambio, la ejecución programada se omite con un aviso (no falla cada noche).
 
@@ -512,3 +578,13 @@ configuración, en los servicios que despliega el pipeline.
 escribe las tres URLs `redis-url-*` en Secret Manager con la contraseña (AUTH) que genera Memorystore: no hay que cargar
 nada a mano. **Sin probar en ejecución:** conectividad real servicio → Memorystore, que solo se comprueba con Redis creado
 (`crear_redis = false` hoy; cuesta ~USD 0,12/h según este README).
+
+## Paso del BFF al API Gateway sin caída (2026-10-20)
+
+El primer release con `crear_gateway = true` deja el BFF **todavía público** (`publico` + `publico_temporal` en
+`.github/servicios.json`; `scripts/validar_servicios.py` solo lo acepta así para el BFF). Orden:
+
+1. Release del backend: se crea el gateway y la web sigue entrando directo al BFF.
+2. Con la `gateway_url` del informe del despliegue, el front cambia `apps/web/vercel.json` para apuntar al gateway.
+3. Otro release quita `publico` y `publico_temporal` del BFF: desde ahí solo el gateway lo invoca.
+

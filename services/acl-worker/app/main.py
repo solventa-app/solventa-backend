@@ -14,9 +14,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 
 from app.adapters.autenticacion_servicios import autenticacion_para
-from app.adapters.open_data import FUENTES_SOPORTADAS as FUENTES_OPEN_DATA
 from app.adapters.open_data import AdaptadorOpenData
-from app.adapters.open_finance import FUENTES_SOPORTADAS as FUENTES_OPEN_FINANCE
 from app.adapters.open_finance import AdaptadorOpenFinance
 from app.adapters.pasarela import AdaptadorPasarela
 from app.adapters.pasarela_alterna import AdaptadorPasarelaAlterna
@@ -29,6 +27,10 @@ from app.application.circuitos import (
 )
 from app.application.cola_tareas import ColaReconciliacionCloudTasks
 from app.application.configuracion import Configuracion
+from app.application.fuentes_config import (
+    fuentes_open_data,
+    fuentes_open_finance,
+)
 from app.application.reconciliacion import (
     NOMBRE_COLA,
     ColaReconciliacionRQ,
@@ -60,6 +62,16 @@ class ConsultaFuenteRequest(BaseModel):
     cliente_id: str
     consentimiento_id: str
     fuente: str
+    finalidad: str = "perfilamiento"
+    forzar_proveedor: bool = False
+
+
+class InvalidarCacheRequest(BaseModel):
+    cliente_id: str
+
+
+class InvalidarCacheResponse(BaseModel):
+    invalidado: bool
 
 
 class DatosFuenteResponse(BaseModel):
@@ -99,37 +111,51 @@ def _construir_servicios_fuentes(
     fabrica,
     cache_redis,
     productor_reconciliacion,
+    cache: CacheFuentes | None = None,
 ) -> tuple[dict[str, ServicioConsultaFuentes], AdaptadorOpenFinance, AdaptadorOpenData]:
     modo = config.autenticacion_servicios
+    fuentes_of = fuentes_open_finance(config.fuentes_config_path)
+    fuentes_od = fuentes_open_data(config.fuentes_config_path)
+    presupuesto_of_s = config.presupuesto_proveedor_s("open-finance")
+    presupuesto_od_s = config.presupuesto_proveedor_s("open-data")
+
     adaptador_open_finance = AdaptadorOpenFinance(
         config.open_finance_url,
-        config.timeout_s,
+        presupuesto_of_s,
         auth=autenticacion_para(modo, "stub-open-finance"),
+        fuentes=fuentes_of,
     )
     adaptador_open_data = AdaptadorOpenData(
-        config.open_data_url, config.timeout_s, auth=autenticacion_para(modo, "stub-open-data")
+        config.open_data_url,
+        presupuesto_od_s,
+        auth=autenticacion_para(modo, "stub-open-data"),
+        fuentes=fuentes_od,
     )
-    cache = CacheFuentes(cache_redis, config.cache_ttl_segundos)
+    cache_fuentes = cache or CacheFuentes(cache_redis, config.cache_ttl_segundos)
 
     servicio_open_finance = ServicioConsultaFuentes(
         adaptador_open_finance,
         fabrica,
         NOMBRE_CIRCUITO_OPEN_FINANCE,
-        cache,
-        config.timeout_s,
+        cache_fuentes,
+        presupuesto_of_s,
         productor_reconciliacion,
+        presupuesto_con_cache_s=min(presupuesto_of_s, config.presupuesto_con_cache_s),
+        servir_cache_en_ttl=config.cache_servir_en_ttl,
     )
     servicio_open_data = ServicioConsultaFuentes(
         adaptador_open_data,
         fabrica,
         NOMBRE_CIRCUITO_OPEN_DATA,
-        cache,
-        config.timeout_s,
+        cache_fuentes,
+        presupuesto_od_s,
         productor_reconciliacion,
+        presupuesto_con_cache_s=min(presupuesto_od_s, config.presupuesto_con_cache_s),
+        servir_cache_en_ttl=config.cache_servir_en_ttl,
     )
 
-    servicios_por_fuente = {fuente: servicio_open_finance for fuente in FUENTES_OPEN_FINANCE}
-    servicios_por_fuente.update({fuente: servicio_open_data for fuente in FUENTES_OPEN_DATA})
+    servicios_por_fuente = {fuente: servicio_open_finance for fuente in fuentes_of}
+    servicios_por_fuente.update({fuente: servicio_open_data for fuente in fuentes_od})
 
     return servicios_por_fuente, adaptador_open_finance, adaptador_open_data
 
@@ -163,10 +189,14 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             dedup=MarcaDedupRedis(redis_cola),
         )
 
+        cache_fuentes = CacheFuentes(cache_redis, config.cache_ttl_segundos)
         servicios_por_fuente, adaptador_open_finance, adaptador_open_data = (
-            _construir_servicios_fuentes(config, fabrica, cache_redis, productor_reconciliacion)
+            _construir_servicios_fuentes(
+                config, fabrica, cache_redis, productor_reconciliacion, cache=cache_fuentes
+            )
         )
 
+        presupuesto_pasarela_s = config.presupuesto_proveedor_s("pasarela")
         # EC031: cambiar de proveedor de pagos es elegir otro adaptador; nada más cambia.
         clase_pasarela = (
             AdaptadorPasarelaAlterna
@@ -175,11 +205,11 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         )
         adaptador_pasarela = clase_pasarela(
             config.pasarela_url,
-            config.timeout_s,
+            presupuesto_pasarela_s,
             auth=autenticacion_para(config.autenticacion_servicios, "stub-pasarela"),
         )
         servicio_cobro = ServicioCobro(
-            adaptador_pasarela, fabrica, NOMBRE_CIRCUITO_PASARELA, config.timeout_s
+            adaptador_pasarela, fabrica, NOMBRE_CIRCUITO_PASARELA, presupuesto_pasarela_s
         )
 
         sonda = SondaRecuperacion(
@@ -198,6 +228,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         app.state.sonda = sonda
         app.state.fabrica_circuitos = fabrica
         app.state.servicios_por_fuente = servicios_por_fuente
+        app.state.cache_fuentes = cache_fuentes
         app.state.servicio_cobro = servicio_cobro
 
         try:
@@ -252,6 +283,8 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             cliente_id=body.cliente_id,
             consentimiento_id=body.consentimiento_id,
             fuente=body.fuente,
+            finalidad=body.finalidad,
+            forzar_proveedor=body.forzar_proveedor,
         )
         datos = servicio.consultar(consulta)
         return DatosFuenteResponse(
@@ -261,6 +294,19 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             de_cache=datos.de_cache,
             degradado=datos.degradado,
         )
+
+    @app.post(
+        "/fuentes/invalidar-cache",
+        tags=["fuentes"],
+        response_model=InvalidarCacheResponse,
+    )
+    def invalidar_cache(body: InvalidarCacheRequest) -> InvalidarCacheResponse:
+        """Invalida en la caché todas las fuentes asociadas a `cliente_id` al
+        revocar el consentimiento (CA-W01-08). El identificador nunca viaja en
+        la URL (regla de arquitectura #6)."""
+        fuentes = tuple(app.state.servicios_por_fuente.keys())
+        app.state.cache_fuentes.invalidar_cliente(body.cliente_id, fuentes)
+        return InvalidarCacheResponse(invalidado=True)
 
     @app.post("/pagos/cobrar", tags=["pagos"], response_model=ResultadoCobroResponse)
     def cobrar(body: OrdenCobroRequest) -> ResultadoCobroResponse:

@@ -68,7 +68,14 @@ resource "google_redis_instance" "cache" {
   # Manager (abajo); no está en el repositorio. Matiz de ADR-09: también queda en el estado de Terraform.
   auth_enabled = true
 
-  depends_on = [google_project_service.redis_apis]
+  # CMEK en Memorystore (HA-SEG-002): como Redis se destruye al apagar costos y se recrea al encender,
+  # activar `usar_cmek_redis = true` aplica en el próximo encendido sin migración de datos.
+  customer_managed_key = (var.crear_kms && var.usar_cmek_redis) ? google_kms_crypto_key.campos_personales[0].id : null
+
+  depends_on = [
+    google_project_service.redis_apis,
+    google_kms_crypto_key_iam_member.cmek_redis,
+  ]
 }
 
 # --- Secretos de conexión (Secret Manager, nunca en el repo) ---
@@ -83,6 +90,28 @@ locals {
     "redis-url-rating"              = 1
     "redis-url-cola-reconciliacion" = 2
   } : {}
+}
+
+# Con Redis apagado (`redis_encendida = false`) las versiones reales de arriba se destruyen, pero los servicios siguen
+# montando estos secretos con `version = "latest"`. Si la más nueva queda DESTRUIDA, Cloud Run no puede crear ninguna
+# revisión («Secret Version ... is in DESTROYED state») y el propio apagado falla al bajar las instancias fijas.
+# Por eso, apagado, se escribe una versión nueva con una URL que no resuelve: es la más reciente, así que `latest` la
+# toma, y las aplicaciones tratan Redis como caché caída (es una caché derivada y desechable). Al encender se crea la
+# real (más nueva todavía) y esta se destruye.
+locals {
+  redis_bases_apagado = (var.crear_redis && !var.redis_encendida && var.crear_servicios) ? {
+    "redis-url-acl"                 = 0
+    "redis-url-rating"              = 1
+    "redis-url-cola-reconciliacion" = 2
+  } : {}
+}
+
+resource "google_secret_manager_secret_version" "redis_url_apagado" {
+  for_each   = local.redis_bases_apagado
+  secret     = google_secret_manager_secret.secreto[each.key].id
+  depends_on = [google_secret_manager_secret_version.marcador]
+
+  secret_data = "redis://redis-apagado.invalid:6379/${each.value}"
 }
 
 resource "google_secret_manager_secret_version" "redis_url" {
