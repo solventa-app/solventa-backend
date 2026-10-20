@@ -4,6 +4,8 @@
     "ruta": "services/bff",
     "instancia_fija": true,
     "puerto": 8000,
+    "publico": true,
+    "publico_temporal": "Hasta que Vercel apunte a la URL del API Gateway; luego se quita (plan de HU-W01, bloque 10)",
     "llama": ["auth", "acl-worker", "risk", "rating", "payments"],
     "entorno": {
       "AUTENTICACION_SERVICIOS": "id_token",
