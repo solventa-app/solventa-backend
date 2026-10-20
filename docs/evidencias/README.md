@@ -4,3 +4,8 @@ Evidencia de escenarios de calidad: `<EC>-<fecha>.md` (ver docs/convenciones.md)
 
 `burndown.png`, `velocity.png`, `value.png` — generadas a partir de datos reales del tablero
 KAN (no inventados), metodología y trazabilidad en `metricas-sprint-1.md`.
+
+## Cobertura de código del Sprint 1 (SonarQube Cloud)
+
+`cobertura-sprint-1.png` — evolución de la cobertura del backend y del frontend y cobertura por servicio, a partir de los
+análisis reales de Sonar; metodología, tablas y trazabilidad en `cobertura-sprint-1.md`.
