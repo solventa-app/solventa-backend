@@ -18,6 +18,7 @@ from app.adapters.open_data import AdaptadorOpenData
 from app.adapters.open_finance import AdaptadorOpenFinance
 from app.adapters.pasarela import AdaptadorPasarela
 from app.adapters.pasarela_alterna import AdaptadorPasarelaAlterna
+from app.adapters.tasas_cambio import AdaptadorTasasReferencia
 from app.application.cache import CacheFuentes
 from app.application.circuitos import (
     NOMBRE_CIRCUITO_OPEN_DATA,
@@ -104,6 +105,13 @@ class ConsultaCobroResponse(BaseModel):
     estado: str | None = None
     referencia: str | None = None
     motivo: str | None = None
+
+
+class TasasCambioResponse(BaseModel):
+    base: str
+    cop_por_unidad: dict[str, str]
+    fecha: str
+    fuente: str
 
 
 def _construir_servicios_fuentes(
@@ -246,6 +254,8 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             redis_cola.close()
 
     app = FastAPI(title="solventa-acl-worker", version="0.1.0", lifespan=lifespan)
+    # No depende de Redis ni de un proveedor externo: se crea aquí y no en el lifespan.
+    tasas_cambio = AdaptadorTasasReferencia()
 
     @app.get("/health", tags=["operacion"])
     def health() -> dict[str, str]:
@@ -340,6 +350,15 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             estado=cobro.estado if cobro else None,
             referencia=cobro.referencia if cobro else None,
             motivo=cobro.motivo if cobro else None,
+        )
+
+    @app.get("/tasas-cambio", tags=["tasas"], response_model=TasasCambioResponse)
+    def tasas() -> TasasCambioResponse:
+        """KAN-209: cuántos COP vale una unidad de cada moneda, para que el BFF muestre los
+        montos en la moneda que el usuario eligió. Texto decimal, nunca float."""
+        tabla = tasas_cambio.tasas()
+        return TasasCambioResponse(
+            base="COP", cop_por_unidad=tabla.cop_por_unidad, fecha=tabla.fecha, fuente=tabla.fuente
         )
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)

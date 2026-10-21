@@ -80,6 +80,18 @@ EN: dict[str, str] = {
     "Estabilidad de Ingresos": "Income Stability",
     "Comportamiento Bancario": "Banking Behavior",
     "Historial en Centrales de Riesgo": "Credit Bureau History",
+    # Conversión de montos (app/monedas.py)
+    "Moneda no soportada.": "Unsupported currency.",
+    "El monto no es válido.": "The amount is not valid.",
+    "Se pueden convertir hasta 50 montos a la vez.": "Up to 50 amounts can be converted at once.",
+    "No pudimos convertir los montos en este momento.": (
+        "We couldn't convert the amounts right now."
+    ),
+    # Preferencias (AUTH, app/usuarios.py)
+    "Idioma no válido. Usa uno de: ES, EN.": "Invalid language. Use one of: ES, EN.",
+    "Moneda no válida. Usa una de: COP, MXN, BRL, CLP, PEN, USD, EUR.": (
+        "Invalid currency. Use one of: COP, MXN, BRL, CLP, PEN, USD, EUR."
+    ),
     # Detalles que PAYMENTS y AUTH devuelven tal cual (app/clientes.py)
     "Solicitud inválida.": "Invalid request.",
     "No se puede reintentar.": "This payment can't be retried.",

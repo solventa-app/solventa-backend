@@ -114,3 +114,14 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Afecta al frontend: sí (`useCotizacion` envía los campos de titular/canal en `registrarConsentimiento` y reacciona a
   `motivo = CONSENTIMIENTO_NO_VIGENTE`). Requiere el PR gemelo en `solventa-frontend-web`.
 
+
+## v0.11 — 2026-10-21
+
+- KAN-209 (idioma y moneda): `Usuario` suma `idioma: String!` y `moneda: String!` (por defecto `ES` y `COP`), que
+  `iniciarSesion` y `yo` devuelven para que la web aplique las preferencias al entrar. Mutación nueva
+  `actualizarPreferencias(entrada: PreferenciasInput!): ResultadoUsuario!` (el propio usuario, con token) y consulta
+  nueva `convertirMontos(montos: [MontoInput!]!, moneda: String!): [Monto!]!`, que convierte montos para mostrarlos con
+  las tasas del ACL Worker (`GET /tasas-cambio`). Solo cambios aditivos.
+- Sin cambio de esquema: el BFF devuelve sus mensajes en inglés si la petición trae `Accept-Language: en`.
+- Afecta al frontend: sí (selectores de idioma y moneda del header y preferencias en Mi perfil). Requiere el PR gemelo
+  en `solventa-frontend-web`.

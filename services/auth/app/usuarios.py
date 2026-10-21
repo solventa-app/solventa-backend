@@ -36,9 +36,12 @@ CLAVE_LONGITUD_MAXIMA = 128
 NOMBRE_LONGITUD_MINIMA = 2
 NOMBRE_LONGITUD_MAXIMA = 100
 MAXIMO_IDS_POR_CONSULTA = 200
+# Preferencias de la interfaz (KAN-209): las mismas que ofrecen los selectores del header de la web.
+IDIOMAS: tuple[str, ...] = ("ES", "EN")
+MONEDAS: tuple[str, ...] = ("COP", "MXN", "BRL", "CLP", "PEN", "USD", "EUR")
 
 # Columnas que pueden salir del servicio: nunca el hash ni el estado del bloqueo.
-_PUBLICAS = "id, usuario, rol, estado, creado_en"
+_PUBLICAS = "id, usuario, rol, estado, creado_en, idioma, moneda"
 _TODAS = f"{_PUBLICAS}, hash_clave, intentos_fallidos, bloqueado_hasta, nombre_cifrado"
 
 
@@ -88,9 +91,17 @@ def normalizar_nombre(nombre: str) -> str:
     return limpio
 
 
+def validar_preferencias(idioma: str, moneda: str) -> None:
+    if idioma not in IDIOMAS:
+        raise DatoInvalido(f"Idioma no válido. Usa uno de: {', '.join(IDIOMAS)}.")
+    if moneda not in MONEDAS:
+        raise DatoInvalido(f"Moneda no válida. Usa una de: {', '.join(MONEDAS)}.")
+
+
 def publico(fila: dict[str, Any]) -> dict[str, Any]:
     """Lo único que se devuelve hacia afuera de un usuario (sin hash ni intentos)."""
-    return {campo: fila[campo] for campo in ("id", "usuario", "rol", "estado", "creado_en")}
+    campos = ("id", "usuario", "rol", "estado", "creado_en", "idioma", "moneda")
+    return {campo: fila[campo] for campo in campos}
 
 
 class RepositorioUsuarios(Protocol):
@@ -114,6 +125,8 @@ class RepositorioUsuarios(Protocol):
     def cambiar_rol(self, usuario_id: str, rol: str) -> dict | None: ...
 
     def suspender(self, usuario_id: str) -> dict | None: ...
+
+    def actualizar_preferencias(self, usuario_id: str, idioma: str, moneda: str) -> dict | None: ...
 
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int: ...
 
@@ -204,6 +217,15 @@ class RepositorioUsuariosPostgres:
             WHERE id = %(id)s RETURNING {_TODAS}
             """,
             {"id": usuario_id},
+        )
+
+    def actualizar_preferencias(self, usuario_id: str, idioma: str, moneda: str) -> dict | None:
+        return self._una(
+            f"""
+            UPDATE usuarios SET idioma = %(idioma)s, moneda = %(moneda)s, actualizado_en = now()
+            WHERE id = %(id)s RETURNING {_TODAS}
+            """,
+            {"id": usuario_id, "idioma": idioma, "moneda": moneda},
         )
 
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int:
@@ -321,4 +343,11 @@ class ServicioUsuarios:
     def suspender(self, usuario_id: str) -> dict | None:
         """Baja lógica: el usuario se conserva, pero ya no puede iniciar sesión."""
         fila = self._repositorio.suspender(usuario_id)
+        return publico(fila) if fila else None
+
+    def actualizar_preferencias(self, usuario_id: str, idioma: str, moneda: str) -> dict | None:
+        """Idioma y moneda por defecto del propio usuario (el BFF solo lo llama con el id del
+        token). `None` si el usuario no existe."""
+        validar_preferencias(idioma, moneda)
+        fila = self._repositorio.actualizar_preferencias(usuario_id, idioma, moneda)
         return publico(fila) if fila else None

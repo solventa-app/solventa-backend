@@ -86,6 +86,8 @@ def _usuario_publico(usuario_id: str, alias: str, rol: str, estado: str = "ACTIV
         "rol": rol,
         "estado": estado,
         "creado_en": "2026-10-14T12:00:00+00:00",
+        "idioma": "ES",
+        "moneda": "COP",
     }
 
 
@@ -210,6 +212,22 @@ class AuthFalso:
         self.usuarios[usuario_id] = {**self.usuarios[usuario_id], "estado": "SUSPENDIDO"}
         return self.usuarios[usuario_id]
 
+    async def actualizar_preferencias(
+        self, usuario_id: str, idioma: str, moneda: str
+    ) -> dict | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        if idioma not in ("ES", "EN"):
+            raise SolicitudInvalida("Idioma no válido. Usa uno de: ES, EN.")
+        if usuario_id not in self.usuarios:
+            return None
+        self.usuarios[usuario_id] = {
+            **self.usuarios[usuario_id],
+            "idioma": idioma,
+            "moneda": moneda,
+        }
+        return self.usuarios[usuario_id]
+
 
 class AclFalso:
     def __init__(self, fallan: set[str] | None = None) -> None:
@@ -231,6 +249,11 @@ class AclFalso:
 
     async def invalidar_cache_cliente(self, cliente_id: str) -> None:
         self.invalidaciones.append(cliente_id)
+
+    async def tasas_cambio(self) -> dict[str, str]:
+        if "tasas" in self.fallan:
+            raise ErrorServicio("timeout")
+        return {"COP": "1", "USD": "4000", "EUR": "4400", "CLP": "4"}
 
 
 class RiskFalso:

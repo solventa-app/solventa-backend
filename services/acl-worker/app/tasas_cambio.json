@@ -1,0 +1,13 @@
+{
+  "fecha": "2026-10-21",
+  "fuente": "Tabla de referencia fija del proyecto (no es una cotización en vivo)",
+  "cop_por_unidad": {
+    "COP": "1",
+    "USD": "4100",
+    "EUR": "4450",
+    "MXN": "225",
+    "BRL": "760",
+    "CLP": "4.35",
+    "PEN": "1090"
+  }
+}

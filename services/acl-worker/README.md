@@ -87,6 +87,11 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
 - **Clave de caché sin `cliente_id` en crudo:** la clave en Redis guarda el hash SHA-256 del
   cliente, no el id en crudo (defensa en profundidad, además de que ni logs ni etiquetas de
   métricas usan el id sin hashear — `app/application/identificadores.py`).
+- **Tasas de cambio (KAN-209):** `GET /tasas-cambio` devuelve cuántos COP vale una unidad de cada moneda del
+  selector de la web (texto decimal). Hoy sale de una tabla de referencia fija versionada
+  (`app/tasas_cambio.json`, `AdaptadorTasasReferencia`) que hace de stub del proveedor; el BFF la usa para
+  `convertirMontos`. Un proveedor real es otro adaptador de `PuertoTasasCambio` (con circuito y caché como Open
+  Finance), sin tocar el BFF.
 
 ## Pendiente, fuera de alcance de esta tarea
 
