@@ -11,6 +11,10 @@ ACL Worker, RISK y RATING y traduce al contrato de `contracts/graphql/schema.gra
 - Historias: HU-W01 (T-W01-7), HU-M02 (autenticación) y HU-W05 (KAN-28, cobros del back-office). La API REST B2B `/v1` llega con HU-W07 (Sprint 2).
 - Regla: nunca devuelve un 5xx crudo al cliente; traduce la degradación a oferta preliminar o error con reintento (CA-W01-04/05).
   Los errores internos se enmascaran ("Unexpected error."); solo `ErrorPublico` muestra su mensaje.
+- Idioma: con `Accept-Language: en` (lo manda la web según el selector del header) los mensajes para el usuario
+  (`mensaje`, `resumen`, factores del score y errores públicos) salen en inglés; sin cabecera, en español. Los
+  servicios siguen escribiendo en español y la traducción se hace en la frontera (`app/idioma.py`); un mensaje nuevo
+  se agrega a su catálogo `EN`.
 
 ## Contrato
 

@@ -27,6 +27,7 @@ from strawberry.types import Info
 from app.autenticacion_usuarios import MENSAJE_SIN_PERMISO, MENSAJE_SIN_SESION, UsuarioActual
 from app.clientes import ErrorServicio, SolicitudInvalida
 from app.identificadores import cliente_id_desde_documento, id_opaco
+from app.idioma import TraducirMensajes
 from app.servicio_oferta import ErrorOfertaDatos
 from app.trazas_graphql import TrazaGraphQL
 
@@ -721,5 +722,6 @@ schema = strawberry.Schema(
     extensions=[
         lambda: MaskErrors(should_mask_error=_mostrar_solo_errores_publicos),
         TrazaGraphQL,
+        TraducirMensajes,
     ],
 )
