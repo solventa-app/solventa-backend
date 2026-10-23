@@ -10,7 +10,10 @@ cobro para cada uno, usando el modo del stub de la pasarela para dejar cada esta
   así se ve el reintento automático en la demo.
 
 Es idempotente: los alias y los `idIntentoCobro` son fijos, así que correrlo dos veces no
-duplica nada (los usuarios se reutilizan y los cobros se devuelven como estaban).
+duplica nada (los usuarios se reutilizan y los cobros se devuelven como estaban). Para sembrar
+cobros nuevos (p. ej. repetir la demo del reintento automático) pasa `SUFIJO=<texto>`: se agrega
+a la póliza y al `idIntentoCobro`, los clientes se reutilizan y cada sufijo distinto crea cinco
+cobros nuevos (el mismo sufijo, otra vez, no duplica).
 
 Necesita el stub de la pasarela (`STUB_PASARELA_URL`) para poner cada cobro en su estado. Datos
 ficticios. En staging el stub es privado: pasa `TOKEN_PASARELA` (o deja que lo pida a `gcloud`) y
@@ -19,6 +22,7 @@ real de staging (sus claves quedan en Secret Manager, ver `scripts/crear_usuario
 
 Uso (con `docker compose --profile servicios up -d`):
     python3 scripts/sembrar_cobros.py
+    SUFIJO=ronda2 python3 scripts/sembrar_cobros.py   # cinco cobros nuevos
 """
 
 import json
@@ -32,6 +36,7 @@ STUB_PASARELA = os.getenv("STUB_PASARELA_URL", "http://localhost:8103")
 USUARIO_BACKOFFICE = os.getenv("USUARIO_BACKOFFICE", "admin.solventa")
 CLAVE_BACKOFFICE = os.getenv("CLAVE_BACKOFFICE", "admin-local-solventa")
 CLAVE_CLIENTES = "clave-demo-cliente"
+SUFIJO = os.getenv("SUFIJO", "").strip()
 
 # (alias, nombre, póliza, prima mensual, modo de la pasarela) — como el prototipo W05-01.
 # El orden importa: los PENDIENTE van al final para que el reintento automático de PAYMENTS no
@@ -118,6 +123,8 @@ def main() -> int:
 
     try:
         for alias, nombre, poliza, prima, modo in COBROS:
+            if SUFIJO:
+                poliza = f"{poliza}-{SUFIJO}"
             cliente_id = _cliente(alias, nombre, token, existentes)
             _modo_pasarela(modo)
             cobro = _graphql(
