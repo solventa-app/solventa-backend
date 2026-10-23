@@ -82,6 +82,7 @@ jobs:
             services/risk: ['services/risk/**']
             services/rating: ['services/rating/**']
             services/payments: ['services/payments/**']
+            services/policy: ['services/policy/**']
             services/acl-worker: ['services/acl-worker/**']
             services/consolidador-fuentes: ['services/consolidador-fuentes/**']
             stubs/open-finance: ['stubs/open-finance/**']

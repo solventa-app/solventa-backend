@@ -5,7 +5,7 @@ import uuid
 
 import jwt
 
-from app.clientes import Clientes, ErrorServicio, SolicitudInvalida
+from app.clientes import Clientes, ErrorServicio, PropuestaRechazada, SolicitudInvalida
 from app.configuracion import JWT_SECRETO_LOCAL
 
 CONSENTIMIENTO_VIGENTE = {
@@ -269,10 +269,20 @@ class RiskFalso:
 
 
 class RatingFalso:
-    def __init__(self, oferta: dict | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        oferta: dict | None = None,
+        error: Exception | None = None,
+        guardadas: dict[str, dict] | None = None,
+        error_lectura: Exception | None = None,
+    ) -> None:
         self.oferta = oferta or OFERTA_COMPLETA
         self.error = error
         self.llamadas: list[tuple[str, str, str, int, str]] = []
+        self.consentimientos_enviados: list[str | None] = []
+        # Lo que RATING guardó para aceptar (`GET /ofertas/{id}`), por id de oferta.
+        self.guardadas = guardadas or {}
+        self.error_lectura = error_lectura
 
     async def generar_oferta(
         self,
@@ -281,13 +291,20 @@ class RatingFalso:
         cobertura: str,
         plazo_meses: int,
         direccion_inmueble: str,
+        consentimiento_id: str | None = None,
     ) -> dict:
         self.llamadas.append(
             (cliente_id, operation_time, cobertura, plazo_meses, direccion_inmueble)
         )
+        self.consentimientos_enviados.append(consentimiento_id)
         if self.error is not None:
             raise self.error
         return self.oferta
+
+    async def obtener_oferta(self, oferta_id: str) -> dict | None:
+        if self.error_lectura is not None:
+            raise self.error_lectura
+        return self.guardadas.get(oferta_id)
 
 
 def cobro_de_payments(cobro_id: str, poliza_id: str, estado: str, **extra) -> dict:
@@ -388,12 +405,51 @@ class PaymentsFalso:
         return cobro
 
 
+class PolicyFalso:
+    """Doble de POLICY: acepta con el precio que RATING guardó, como el real."""
+
+    def __init__(self, rechazo: str | None = None, error: Exception | None = None) -> None:
+        self.rechazo = rechazo
+        self.error = error
+        self.propuestas: dict[str, dict] = {}
+        self.llamadas: list[tuple[str, str | None]] = []
+
+    async def crear_propuesta(self, oferta_id: str, actor_usuario_id: str | None) -> dict:
+        self.llamadas.append((oferta_id, actor_usuario_id))
+        if self.error is not None:
+            raise self.error
+        if self.rechazo is not None:
+            raise PropuestaRechazada(self.rechazo)
+        propuesta = self.propuestas.setdefault(
+            oferta_id,
+            {
+                "id": f"propuesta-{oferta_id}",
+                "oferta_id": oferta_id,
+                "cliente_id": "cliente-opaco",
+                "actor_usuario_id": actor_usuario_id,
+                "estado": "ACEPTADA",
+                "prima": {"valor": "185000", "moneda": "COP"},
+                "cobertura": {"valor": "200000000", "moneda": "COP"},
+                "plazo_meses": 60,
+                "poliza_id": None,
+                "actualizado_en": "2026-10-22T12:00:00+00:00",
+            },
+        )
+        return propuesta
+
+    async def obtener_propuesta(self, propuesta_id: str) -> dict | None:
+        if self.error is not None:
+            raise self.error
+        return next((p for p in self.propuestas.values() if p["id"] == propuesta_id), None)
+
+
 def clientes_falsos(
     auth: AuthFalso | None = None,
     acl: AclFalso | None = None,
     risk: RiskFalso | None = None,
     rating: RatingFalso | None = None,
     payments: PaymentsFalso | None = None,
+    policy: PolicyFalso | None = None,
 ) -> Clientes:
     return Clientes(
         auth=auth or AuthFalso(),
@@ -401,4 +457,5 @@ def clientes_falsos(
         risk=risk or RiskFalso(),
         rating=rating or RatingFalso(),
         payments=payments or PaymentsFalso(),
+        policy=policy or PolicyFalso(),
     )

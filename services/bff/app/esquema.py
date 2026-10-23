@@ -5,10 +5,12 @@ esquema con el contrato en ambos sentidos: si difieren, se corrige el código,
 no el contrato.
 
 Operaciones sin backend todavía (alcance del Sprint 1, KAN-24):
-- `oferta(id)` devuelve `null`: RATING no persiste ofertas aún.
+- `oferta(id)` devuelve `null`: RATING ya guarda la oferta para aceptarla (HU-W03), pero nada
+  valida aún que quien la pide sea su titular, así que no se expone por esta consulta.
 - `contactarAsesor` es un MOCK que solo confirma.
-- HU-W03 (KAN-26, bloque 0): `propuesta`, `documentoFirma` y `poliza` devuelven `null`, y
-  `aceptarOferta` / `firmarPropuesta` responden un error con reintento hasta que POLICY exista.
+- HU-W03 (KAN-26): `aceptarOferta` y `propuesta` ya leen y escriben en POLICY (bloque 1). Siguen
+  sin backend `documentoFirma` y `firmarPropuesta` (bloque 2) y `poliza` (bloque 4): devuelven
+  `null` o un error con reintento.
 `cobros` y `reintentarCobro` (KAN-28) leen y reintentan en PAYMENTS, que concilia
 con la pasarela antes de cobrar (ver `docs/cobros-conciliacion.md`).
 Ninguna produce un 5xx: los errores de GraphQL viajan con HTTP 200.
@@ -38,6 +40,11 @@ from app.monedas import (
     convertir,
 )
 from app.servicio_oferta import ErrorOfertaDatos
+from app.servicio_suscripcion import (
+    MENSAJE_SUSCRIPCION_NO_DISPONIBLE,
+    ErrorAceptacionDatos,
+    ServicioSuscripcion,
+)
 from app.trazas_graphql import TrazaGraphQL
 
 logger = logging.getLogger("bff.cobros")
@@ -494,6 +501,19 @@ def _monto(datos: dict | None) -> Monto | None:
     return Monto(valor=datos["valor"], moneda=datos["moneda"]) if datos else None
 
 
+def _propuesta(datos: dict) -> Propuesta:
+    return Propuesta(
+        id=datos["id"],
+        oferta_id=datos["oferta_id"],
+        estado=EstadoPropuesta(datos["estado"]),
+        prima=Monto(valor=datos["prima"]["valor"], moneda=datos["prima"]["moneda"]),
+        cobertura=Monto(valor=datos["cobertura"]["valor"], moneda=datos["cobertura"]["moneda"]),
+        plazo_meses=datos.get("plazo_meses") or 0,
+        actualizado_en=_fecha(datos["actualizado_en"]),
+        poliza_id=datos.get("poliza_id"),
+    )
+
+
 def _perfil_riesgo(datos: dict | None) -> PerfilRiesgo | None:
     if not datos:
         return None
@@ -577,7 +597,6 @@ SOLO_BACKOFFICE = ("BACKOFFICE",)
 MENSAJE_AUTH_NO_DISPONIBLE = "No pudimos procesar la solicitud. Intenta de nuevo."
 MENSAJE_USUARIO_NO_ENCONTRADO = "Usuario no encontrado."
 MENSAJE_COBROS_NO_DISPONIBLES = "No pudimos consultar los cobros. Intenta de nuevo."
-MENSAJE_SUSCRIPCION_NO_DISPONIBLE = "No pudimos procesar tu suscripción. Intenta de nuevo."
 
 
 def _auth(info: Info):
@@ -624,10 +643,15 @@ class Query:
         return None
 
     @strawberry.field
-    def propuesta(self, info: Info, id: strawberry.ID) -> Propuesta | None:
-        exigir_rol(info, *CLIENTE_O_ASESOR)
-        # HU-W03, bloque 1: POLICY aún no existe, no hay de dónde leerla.
-        return None
+    async def propuesta(self, info: Info, id: strawberry.ID) -> Propuesta | None:
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
+        try:
+            datos = await ServicioSuscripcion(info.context["clientes"]).obtener_propuesta(
+                str(id), usuario
+            )
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_SUSCRIPCION_NO_DISPONIBLE) from error
+        return _propuesta(datos) if datos else None
 
     @strawberry.field
     def documento_firma(self, info: Info, propuesta_id: strawberry.ID) -> DocumentoFirma | None:
@@ -788,11 +812,18 @@ class Mutation:
         )
 
     @strawberry.mutation
-    def aceptar_oferta(self, info: Info, oferta_id: strawberry.ID) -> ResultadoAceptacion:
-        exigir_rol(info, *CLIENTE_O_ASESOR)
-        # HU-W03, bloque 1: POLICY guarda la propuesta. Mientras no exista, responde error con
-        # reintento y no un 5xx.
-        return ErrorAceptacion(mensaje=MENSAJE_SUSCRIPCION_NO_DISPONIBLE, puede_reintentar=True)
+    async def aceptar_oferta(self, info: Info, oferta_id: strawberry.ID) -> ResultadoAceptacion:
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
+        resultado = await ServicioSuscripcion(info.context["clientes"]).aceptar(
+            str(oferta_id), usuario
+        )
+        if isinstance(resultado, ErrorAceptacionDatos):
+            return ErrorAceptacion(
+                mensaje=resultado.mensaje,
+                puede_reintentar=resultado.puede_reintentar,
+                motivo=MotivoErrorAceptacion(resultado.motivo) if resultado.motivo else None,
+            )
+        return _propuesta(resultado)
 
     @strawberry.mutation
     def firmar_propuesta(self, info: Info, entrada: FirmarPropuestaInput) -> ResultadoFirma:

@@ -178,6 +178,7 @@ class ServicioOferta:
                 valor_credito,
                 plazo_meses,
                 direccion_inmueble.strip(),
+                consentimiento_id,
             )
         except DatosInsuficientes:
             # CA-W01-05: sin historial crediticio (ni en caché) no hay oferta posible.

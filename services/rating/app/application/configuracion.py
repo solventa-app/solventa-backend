@@ -14,6 +14,8 @@ class Configuracion:
     redis_url: str
     max_time_ms: int
     oferta_cache_ttl_segundos: int
+    # Cuánto vive la oferta generada para poder aceptarla (HU-W03, decisión W03-1).
+    oferta_vigencia_segundos: int = 86400
     cifrado_clave: str = CIFRADO_CLAVE_LOCAL
     kms_key_name: str = ""
     cifrado_clave_envuelta: str = ""
@@ -34,6 +36,7 @@ class Configuracion:
             # la fórmula se sube `VERSION_REGLAS` en servicio_oferta.py; la
             # caché vieja queda huérfana y expira sola dentro de este TTL.
             oferta_cache_ttl_segundos=int(os.getenv("OFERTA_CACHE_TTL_SEGUNDOS", "300")),
+            oferta_vigencia_segundos=int(os.getenv("OFERTA_VIGENCIA_SEGUNDOS", "86400")),
             cifrado_clave=os.getenv("CIFRADO_CLAVE", CIFRADO_CLAVE_LOCAL),
             kms_key_name=os.getenv("KMS_KEY_NAME", "").strip(),
             cifrado_clave_envuelta=os.getenv("CIFRADO_CLAVE_ENVUELTA", "").strip(),

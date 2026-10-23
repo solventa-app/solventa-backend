@@ -34,6 +34,14 @@ EN: dict[str, str] = {
     "No pudimos consultar los cobros. Intenta de nuevo.": (
         "We couldn't load the payments. Please try again."
     ),
+    "La oferta ya no está disponible. Vuelve a cotizar.": (
+        "The offer is no longer available. Please get a new quote."
+    ),
+    "Solo puedes aceptar una oferta completa.": "You can only accept a complete offer.",
+    "La oferta venció. Vuelve a cotizar.": "The offer has expired. Please get a new quote.",
+    "No hay un consentimiento vigente para esta oferta.": (
+        "There is no valid consent for this offer."
+    ),
     "No pudimos procesar tu suscripción. Intenta de nuevo.": (
         "We couldn't process your subscription. Please try again."
     ),

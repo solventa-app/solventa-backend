@@ -6,6 +6,7 @@ updates:
   - { package-ecosystem: pip, directory: /services/risk, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /services/rating, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /services/payments, target-branch: develop, schedule: { interval: weekly } }
+  - { package-ecosystem: pip, directory: /services/policy, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /services/acl-worker, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /services/consolidador-fuentes, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /stubs/open-finance, target-branch: develop, schedule: { interval: weekly } }
@@ -19,6 +20,7 @@ updates:
   - { package-ecosystem: docker, directory: /services/risk, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /services/rating, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /services/payments, target-branch: develop, schedule: { interval: weekly } }
+  - { package-ecosystem: docker, directory: /services/policy, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /services/acl-worker, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /services/consolidador-fuentes, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /stubs/open-finance, target-branch: develop, schedule: { interval: weekly } }

@@ -86,9 +86,9 @@ poliza.emitida      ─► POLICY ─► ACL /notificaciones (stub) con el enlac
 
 | Dónde | Cambio |
 |---|---|
-| `services/policy` (nuevo, puerto 8007) | FastAPI con capas simples (sin hexagonal) y PostgreSQL `policy`. Migración `0001` con `propuestas`, `polizas` y `evidencias_firma` (append-only con el trigger de `services/auth/migrations/versions/0005_*.py`). Cifrado por campo copiado de `services/auth/app/cifrado.py`. `POST /propuestas` idempotente por `ofertaId` |
-| `services/rating` | Escribir la oferta en Redis con TTL de vigencia y exponer `GET /ofertas/{id}` |
-| `services/bff` | `aceptarOferta` valida titular y consentimiento (`cliente_id_desde_documento`, `auth.obtener_consentimiento`); `Query.oferta` deja de devolver `null`; `PuertoPolicy` / `ClientePolicyHttp` |
+| `services/policy` (nuevo, puerto 8007) | FastAPI con capas simples (sin hexagonal) y PostgreSQL `policy`. Migración `0001` con `propuestas`; `polizas` (bloque 4) y `evidencias_firma` (bloque 2, append-only con el trigger de `services/auth/migrations/versions/0005_*.py`) llegan en su propia migración. Cifrado por campo copiado de PAYMENTS (llave directa; el cifrado de sobre con KMS de `services/auth/app/cifrado.py` queda para cuando `policy` entre en `kms.tf`). `POST /propuestas` idempotente por `oferta_id` |
+| `services/rating` | Escribir la oferta en Redis con TTL de vigencia (`OFERTA_VIGENCIA_SEGUNDOS`, 24 h) y exponer `GET /ofertas/{id}`. La solicitud lleva ahora `consentimiento_id` (aditivo) para ligar la oferta a su consentimiento |
+| `services/bff` | `aceptarOferta` lee la oferta de RATING, valida el consentimiento vigente, el titular y (para un CLIENTE) que él lo registró, y luego llama a POLICY; `propuesta(id)` lee de POLICY y un CLIENTE solo ve las suyas. `PuertoPolicy` / `ClientePolicyHttp`. **`Query.oferta` sigue en `null`**: nada liga hoy al usuario con el titular de la oferta, así que exponerla por id sería una fuga (ver decisiones abiertas) |
 | Registro del servicio | `.github/servicios.json`; `python scripts/validar_servicios.py` dice qué más falta (compose con `migrar-policy`, `dev/postgres/01-bases.sql`, `ci.yml`, `dependabot.yml`, `scripts/verificar-migraciones.sh`, `infra/cloud-sql.tf`) |
 
 ### Bloque 2 · Firma electrónica con no repudio (KAN-211, KAN-210, CA-W03-02, 03 y 10)
@@ -159,7 +159,7 @@ Terraform se aplica desde el pipeline al hacer merge a `main` (ADR-09); nadie lo
 | Bloque | Estado | Detalle |
 |---|---|---|
 | 0 · Contratos y plan | **En curso** | Contrato v0.12, evento y esqueleto del BFF listos y con pruebas en verde; falta el PR |
-| 1 · POLICY y oferta aceptada | Pendiente | |
+| 1 · POLICY y oferta aceptada | **Hecho en código (2026-10-22), rama `feat/KAN-209-hu-w03-bloque-1-policy`** | POLICY, RATING y BFF con pruebas en verde (policy 23, rating 85, bff 197). Migración probada en Postgres real (upgrade, downgrade, upgrade) y el servicio en vivo contra Postgres con un RATING simulado: 8 aceptaciones simultáneas dan una fila, la prima queda cifrada y los logs no llevan cliente ni prima. **Sin verificar:** el compose completo (Docker no estaba corriendo), el PR y el CI. `policy` no es instancia fija (mínimo 0): decidir en el bloque 6 si se fija para medir EC005/EC007 |
 | 2 · Firma electrónica | Pendiente | |
 | 3 · UNDER y KYC | Pendiente | |
 | 4 · Cobro y emisión | Pendiente | Requiere el visto bueno de W03-7 |
@@ -168,6 +168,7 @@ Terraform se aplica desde el pipeline al hacer merge a `main` (ADR-09); nadie lo
 
 ## Decisiones abiertas
 
+- Ligar al usuario con el titular de la oferta: hoy un CLIENTE solo acepta lo que él mismo consintió (si el consentimiento guarda su actor), pero AUTH no sabe de qué documento es titular el usuario. Mientras tanto `Query.oferta` queda en `null`.
 - Confirmar W03-1, 3 a 10 y los CA propuestos; sobre todo **W03-7** (Pub/Sub para `cobro.estado-cambiado`).
 - De dónde sale realmente el `tokenMedioPago` cuando la prima va con la cuota del crédito (convenio de recaudo): hoy es una
   configuración simulada.
