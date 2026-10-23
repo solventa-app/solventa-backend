@@ -38,6 +38,7 @@ EC031 (reemplazo de adaptador).
 | W03-9 | PDF | Se genera al pedirlo con `fpdf2` a partir de los datos de la póliza. Sin GCS ni costo nuevo | Propuesta |
 | W03-10 | KYC | Puerto `PuertoKyc` en el ACL con un stub que simula Truora. El consolidador de KYC real queda para el Sprint 3 | Propuesta |
 | W03-11 | Servicios | **Dos servicios nuevos**: `under` (sin almacén, decide) y `policy` (PostgreSQL, escritor único de pólizas) | **Cerrada** |
+| W03-12 | Proveedor de firma | Solventa **no** construye un servicio de firma electrónica: lo contrata a un tercero detrás del ACL. `stubs/firma` simula solo lo que es de Solventa (idempotencia por referencia, hash, modos de falla) y **no** la identidad del firmante, el certificado ni el sello de tiempo, que son del proveedor. Su contrato (`referencia_comercio`, `documento_hash`, `SIGNED`) es inventado, no el de un proveedor real. Con uno elegido, el puerto y `evidencias_firma` ganarán campos opcionales (referencia del certificado, sello de tiempo, enlace al documento firmado) en una migración aditiva. Qué tipo de firma hace exigible la póliza lo valida el equipo con legal | Propuesta |
 
 ## Criterios de aceptación (propuestos)
 
