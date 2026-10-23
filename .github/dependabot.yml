@@ -12,6 +12,7 @@ updates:
   - { package-ecosystem: pip, directory: /stubs/open-finance, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /stubs/open-data, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /stubs/pasarela, target-branch: develop, schedule: { interval: weekly } }
+  - { package-ecosystem: pip, directory: /stubs/firma, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /, target-branch: develop, schedule: { interval: weekly } }  # requirements-dev.in / .txt
 
   # --- Imágenes base de Docker ---
@@ -26,6 +27,7 @@ updates:
   - { package-ecosystem: docker, directory: /stubs/open-finance, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /stubs/open-data, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /stubs/pasarela, target-branch: develop, schedule: { interval: weekly } }
+  - { package-ecosystem: docker, directory: /stubs/firma, target-branch: develop, schedule: { interval: weekly } }
 
   # --- Infraestructura y automatización ---
   - { package-ecosystem: terraform, directory: /infra, target-branch: develop, schedule: { interval: monthly } }

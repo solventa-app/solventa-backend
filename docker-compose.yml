@@ -257,6 +257,7 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/policy
       RATING_URL: http://rating:8003
+      ACL_URL: http://acl-worker:8005
     depends_on:
       postgres: { condition: service_healthy }
       migrar-policy: { condition: service_completed_successfully }
@@ -270,6 +271,7 @@ services:
       OPEN_FINANCE_URL: http://stub-open-finance:8101
       OPEN_DATA_URL: http://stub-open-data:8102
       PASARELA_URL: http://stub-pasarela:8103
+      FIRMA_URL: http://stub-firma:8104
       TIMEOUT_MS: "700"        # umbral duro de EC009/EC010
       BREAKER_UMBRAL_FALLOS: "3"       # fallos consecutivos que abren el circuito
       BREAKER_TTL_SEGUNDOS: "5"        # tiempo abierto antes de permitir la próxima sonda
@@ -310,6 +312,11 @@ services:
     <<: *servicio
     build: ./stubs/pasarela
     ports: ["8103:8103"]
+
+  stub-firma:
+    <<: *servicio
+    build: ./stubs/firma
+    ports: ["8104:8104"]
 
   # -------------------------------------------------------- observabilidad
   prometheus:

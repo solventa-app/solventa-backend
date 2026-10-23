@@ -75,7 +75,7 @@
     "puerto": 8007,
     "url_env": "POLICY_URL",
     "migracion": ["alembic", "upgrade", "head"],
-    "llama": ["rating"],
+    "llama": ["rating", "acl-worker"],
     "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": { "DATABASE_URL": "database-url-policy", "CIFRADO_CLAVE": "clave-cifrado" }
   },
@@ -85,7 +85,7 @@
     "instancia_fija": true,
     "puerto": 8005,
     "url_env": "ACL_URL",
-    "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela", "consolidador-fuentes"],
+    "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela", "stub-firma", "consolidador-fuentes"],
     "disparador_externo": true,
     "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": {
@@ -125,6 +125,13 @@
     "instancia_fija": true,
     "puerto": 8103,
     "url_env": "PASARELA_URL",
+    "entorno": { "TRAZAS_GCP": "true" }
+  },
+  {
+    "nombre": "stub-firma",
+    "ruta": "stubs/firma",
+    "puerto": 8104,
+    "url_env": "FIRMA_URL",
     "entorno": { "TRAZAS_GCP": "true" }
   }
 ]

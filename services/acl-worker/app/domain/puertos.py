@@ -93,6 +93,36 @@ class PuertoPasarelaPagos(Protocol):
         ...
 
 
+EstadoFirma = Literal["firmada", "pendiente"]
+
+
+@dataclass
+class SolicitudFirma:
+    """Firma electrónica del documento de la póliza (HU-W03, CA-W03-03, no repudio).
+
+    El proveedor recibe solo el **hash** del documento, nunca su contenido: el contenido (con la
+    prima) vive cifrado en POLICY junto a la evidencia, y con el hash se puede probar que es el que
+    se firmó."""
+
+    id_firma: str  # un mismo id recibido dos veces devuelve la misma evidencia (idempotente)
+    documento_hash: str  # SHA-256 en hexadecimal
+    version_documento: str
+    firmante_id: str  # identificador opaco del usuario que firma, nunca un documento ni un correo
+
+
+@dataclass
+class ResultadoFirma:
+    estado: EstadoFirma
+    referencia: str | None = None  # la evidencia que entrega el proveedor
+    firmada_en: str | None = None  # sello de tiempo del proveedor (ISO 8601)
+    motivo: str | None = None
+    detalle: dict[str, Any] = field(default_factory=dict)
+
+
+class PuertoFirmaElectronica(Protocol):
+    def firmar(self, solicitud: SolicitudFirma) -> ResultadoFirma: ...
+
+
 @dataclass
 class TablaTasas:
     """Cuántos COP vale una unidad de cada moneda (KAN-209). Valores como texto decimal: nunca

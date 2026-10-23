@@ -110,3 +110,21 @@ def test_presupuesto_por_proveedor_ec008_se_acota_por_timeout_s(monkeypatch) -> 
     assert cfg.presupuesto_proveedor_s("open-data") == 0.12
     assert cfg.presupuesto_proveedor_s("pasarela") == 0.12
     assert cfg.cache_servir_en_ttl is True
+
+
+def test_firmar_con_el_proveedor_caido_responde_200_pendiente_sin_5xx() -> None:
+    # FIRMA_URL apunta a un puerto sin servicio: el ACL degrada, no propaga el fallo.
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post(
+            "/firma/firmar",
+            json={
+                "id_firma": "p-1",
+                "documento_hash": "a" * 64,
+                "version_documento": "v1",
+                "firmante_id": "u-1",
+            },
+        )
+
+    assert r.status_code == 200
+    assert r.json()["estado"] == "pendiente"
+    assert r.json()["motivo"] == "firma_no_disponible"

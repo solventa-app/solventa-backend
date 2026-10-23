@@ -5,6 +5,7 @@ import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from app.application.cliente_acl import ResultadoFirma, SolicitudFirma
 from app.application.cliente_rating import OfertaNoEncontrada, RatingNoDisponible
 
 
@@ -47,6 +48,8 @@ class RepositorioPropuestasFalso:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._por_oferta: dict[str, dict[str, Any]] = {}
+        self._evidencias: dict[str, dict[str, Any]] = {}
+        self.documentos_guardados: dict[str, str] = {}
 
     def obtener(self, propuesta_id: str) -> dict[str, Any] | None:
         for propuesta in self._por_oferta.values():
@@ -57,6 +60,32 @@ class RepositorioPropuestasFalso:
     def obtener_por_oferta(self, oferta_id: str) -> dict[str, Any] | None:
         propuesta = self._por_oferta.get(oferta_id)
         return dict(propuesta) if propuesta else None
+
+    def obtener_evidencia(self, propuesta_id: str) -> dict[str, Any] | None:
+        evidencia = self._evidencias.get(propuesta_id)
+        return dict(evidencia) if evidencia else None
+
+    def registrar_firma(self, propuesta_id: str, evidencia: dict[str, Any]) -> tuple[dict, bool]:
+        with self._lock:
+            existente = self._evidencias.get(propuesta_id)
+            if existente is not None:
+                return dict(existente), False
+            guardada = {
+                "id": evidencia["id"],
+                "propuesta_id": propuesta_id,
+                "documento_hash": evidencia["documento_hash"],
+                "version_documento": evidencia["version_documento"],
+                "firmante_id": evidencia["firmante_id"],
+                "referencia_proveedor": evidencia["referencia_proveedor"],
+                "firmada_en": evidencia["firmada_en"],
+                "creado_en": datetime.now(UTC),
+            }
+            self._evidencias[propuesta_id] = guardada
+            self.documentos_guardados[propuesta_id] = evidencia["documento"]
+            for propuesta in self._por_oferta.values():
+                if propuesta["id"] == propuesta_id and propuesta["estado"] == "ACEPTADA":
+                    propuesta["estado"] = "EN_EMISION"
+            return dict(guardada), True
 
     def crear_o_obtener(self, propuesta_id: str, datos: dict[str, Any]) -> tuple[dict, bool]:
         with self._lock:
@@ -79,3 +108,25 @@ class RepositorioPropuestasFalso:
             }
             self._por_oferta[datos["oferta_id"]] = propuesta
             return dict(propuesta), True
+
+
+class AclFalso:
+    """Doble del ACL Worker: firma una sola vez por `id_firma`, como el proveedor real."""
+
+    def __init__(self, resultados: list[ResultadoFirma] | None = None) -> None:
+        self.resultados = list(resultados or [])
+        self.solicitudes: list[SolicitudFirma] = []
+        self._firmadas: dict[str, ResultadoFirma] = {}
+
+    def firmar(self, solicitud: SolicitudFirma) -> ResultadoFirma:
+        self.solicitudes.append(solicitud)
+        if self.resultados:
+            return self.resultados.pop(0)
+        return self._firmadas.setdefault(
+            solicitud.id_firma,
+            ResultadoFirma(
+                estado="firmada",
+                referencia=f"fe-{solicitud.id_firma}",
+                firmada_en="2026-10-22T12:00:00+00:00",
+            ),
+        )

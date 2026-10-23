@@ -95,7 +95,7 @@ poliza.emitida      ─► POLICY ─► ACL /notificaciones (stub) con el enlac
 
 | Dónde | Cambio |
 |---|---|
-| `services/acl-worker` | `PuertoFirmaElectronica` en `app/domain/puertos.py`; `app/adapters/firma.py` (copia de `AdaptadorPasarela`, con `sondear()`, circuito `NOMBRE_CIRCUITO_FIRMA`, `con_reintento` y `presupuesto_ms_firma` de 700 ms); `ServicioFirma` con la misma degradación que `ServicioCobro`; `POST /firma/firmar`; segundo adaptador `firma_alterna.py` elegido por `PROVEEDOR_FIRMA` (EC031) |
+| `services/acl-worker` | `PuertoFirmaElectronica` en `app/domain/puertos.py` (recibe solo el hash del documento); `app/adapters/firma.py` (copia de `AdaptadorPasarela`, con `sondear()`, circuito `NOMBRE_CIRCUITO_FIRMA`, `con_reintento` y `presupuesto_ms_firma` de 700 ms); `ServicioFirma` con la misma degradación que `ServicioCobro`; `POST /firma/firmar`; segundo adaptador `firma_alterna.py` elegido por `PROVEEDOR_FIRMA` (EC031) |
 | `stubs/firma` (puerto 8104) | Modos sano, lento, error y caído |
 | `services/policy` | `GET /propuestas/{id}/documento-firma` y `POST /propuestas/{id}/firma`: llama al ACL, guarda la evidencia y agenda `_emitir` |
 | `services/bff` | `documentoFirma` y `firmarPropuesta`, solo para el CLIENTE titular |
@@ -160,7 +160,7 @@ Terraform se aplica desde el pipeline al hacer merge a `main` (ADR-09); nadie lo
 |---|---|---|
 | 0 · Contratos y plan | **En curso** | Contrato v0.12, evento y esqueleto del BFF listos y con pruebas en verde; falta el PR |
 | 1 · POLICY y oferta aceptada | **Hecho en código (2026-10-22), rama `feat/KAN-209-hu-w03-bloque-1-policy`** | POLICY, RATING y BFF con pruebas en verde (policy 23, rating 85, bff 197). Migración probada en Postgres real (upgrade, downgrade, upgrade) y el servicio en vivo contra Postgres con un RATING simulado: 8 aceptaciones simultáneas dan una fila, la prima queda cifrada y los logs no llevan cliente ni prima. **Sin verificar:** el compose completo (Docker no estaba corriendo), el PR y el CI. `policy` no es instancia fija (mínimo 0): decidir en el bloque 6 si se fija para medir EC005/EC007 |
-| 2 · Firma electrónica | Pendiente | |
+| 2 · Firma electrónica | **Hecho en código (2026-10-22), rama `feat/KAN-211-hu-w03-bloque-2-firma`** | ACL (130 pruebas), `stubs/firma` (12), POLICY (47) y BFF (213) en verde. Migración `0002` y triggers append-only probados en Postgres real. En vivo con el ACL y el stub reales: camino feliz, idempotencia, proveedor lento (corte a ~719 ms, reintento con la misma referencia), caído (circuito abre al 3.er intento, falla en ~10 ms) y recuperación por la sonda; los logs no llevan firmante ni prima. **Sin verificar:** el compose completo, el PR y el CI. `stub-firma` no es instancia fija: su memoria y su modo se pierden si Cloud Run recicla la instancia (decidirlo en el bloque 6) |
 | 3 · UNDER y KYC | Pendiente | |
 | 4 · Cobro y emisión | Pendiente | Requiere el visto bueno de W03-7 |
 | 5 · PDF y notificación | Pendiente | |

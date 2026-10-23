@@ -125,7 +125,7 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
 ### Verificación en vivo (Circuit Breaker + sonda)
 
 ```bash
-docker compose --profile servicios up -d --build redis acl-worker stub-open-finance stub-open-data stub-pasarela
+docker compose --profile servicios up -d --build redis acl-worker stub-open-finance stub-open-data stub-pasarela stub-firma
 
 # (a) camino sano
 curl -s -X POST localhost:8005/fuentes/consultar \
@@ -147,3 +147,14 @@ sleep 6
 curl -s localhost:8005/circuitos   # -> open-finance: "closed"
 ```
 
+
+## Firma electrónica (HU-W03, bloque 2)
+
+- `POST /firma/firmar` `{id_firma, documento_hash, version_documento, firmante_id}` → `{estado: firmada | pendiente,
+  referencia, firmada_en, motivo}`. Siempre 200: con el proveedor caído, lento o el circuito abierto responde `pendiente`
+  (`firma_no_disponible` / `circuito_abierto`) y POLICY ofrece reintentar. El proveedor es idempotente por `id_firma`, así
+  que reintentar tras un corte a los 700 ms devuelve la misma evidencia en vez de firmar dos veces.
+- Solo viaja el **hash** del documento: el contenido (con la prima) vive cifrado en POLICY junto a la evidencia.
+- Circuito `firma`, con su sonda de recuperación (`GET /v1/estado`, que nunca firma), igual que la pasarela.
+- EC031 / CA-W03-10: dos adaptadores (`app/adapters/firma.py` y `firma_alterna.py`), elegidos con `PROVEEDOR_FIRMA`
+  (`estandar` | `alterna`). Variables nuevas: `FIRMA_URL` (`http://localhost:8104`), `PRESUPUESTO_MS_FIRMA` (700).

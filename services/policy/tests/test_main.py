@@ -1,18 +1,21 @@
 """Endpoints de POLICY con dobles de prueba (sin PostgreSQL ni RATING reales: la verificación con
 los reales se hace en vivo con `docker compose`)."""
 
-from fakes import RatingFalso, RepositorioPropuestasFalso, oferta_de_rating
+from fakes import AclFalso, RatingFalso, RepositorioPropuestasFalso, oferta_de_rating
 from fastapi.testclient import TestClient
 
 from app.application.configuracion import Configuracion
+from app.application.servicio_firma import ServicioFirma
 from app.application.servicio_propuestas import ServicioPropuestas
 from app.main import create_app
 
 
-def _cliente(rating: RatingFalso | None = None) -> TestClient:
-    servicio = ServicioPropuestas(RepositorioPropuestasFalso(), rating or RatingFalso())
+def _cliente(rating: RatingFalso | None = None, acl: AclFalso | None = None) -> TestClient:
+    repositorio = RepositorioPropuestasFalso()
+    servicio = ServicioPropuestas(repositorio, rating or RatingFalso())
+    firma = ServicioFirma(repositorio, acl or AclFalso())
     config = Configuracion("", "http://rating", 1.0, "ninguna")
-    return TestClient(create_app(config=config, servicio_propuestas=servicio))
+    return TestClient(create_app(config=config, servicio_propuestas=servicio, servicio_firma=firma))
 
 
 def test_health() -> None:
@@ -70,3 +73,78 @@ def test_rating_caido_responde_503_para_que_el_bff_ofrezca_reintentar() -> None:
 def test_propuesta_desconocida_responde_404() -> None:
     with _cliente() as client:
         assert client.get("/propuestas/no-existe").status_code == 404
+
+
+FIRMA = {"autoriza_cobro": True, "version_documento": "v1", "firmante_id": "usuario-1"}
+
+
+def _propuesta(client: TestClient) -> str:
+    return client.post("/propuestas", json={"oferta_id": "oferta-1"}).json()["id"]
+
+
+def test_documento_de_firma_con_el_monto_de_la_clausula_de_cobro() -> None:
+    with _cliente() as client:
+        r = client.get(f"/propuestas/{_propuesta(client)}/documento-firma")
+
+    assert r.status_code == 200
+    assert r.json()["monto_mensual"] == {"valor": "185000", "moneda": "COP"}
+    assert r.json()["meses"] == 60
+    assert r.json()["version"] == "v1"
+
+
+def test_firmar_responde_la_evidencia_y_la_propuesta_queda_en_emision() -> None:
+    with _cliente() as client:
+        propuesta_id = _propuesta(client)
+        r = client.post(f"/propuestas/{propuesta_id}/firma", json=FIRMA)
+        leida = client.get(f"/propuestas/{propuesta_id}")
+
+    assert r.status_code == 200
+    assert r.json()["estado"] == "EN_EMISION"
+    assert r.json()["referencia"] == f"fe-{propuesta_id}"
+    assert leida.json()["estado"] == "EN_EMISION"
+
+
+def test_firmar_dos_veces_devuelve_la_misma_referencia() -> None:
+    with _cliente() as client:
+        propuesta_id = _propuesta(client)
+        primera = client.post(f"/propuestas/{propuesta_id}/firma", json=FIRMA).json()
+        segunda = client.post(f"/propuestas/{propuesta_id}/firma", json=FIRMA).json()
+
+    assert primera["referencia"] == segunda["referencia"]
+
+
+def test_sin_autorizar_el_cobro_responde_422() -> None:
+    with _cliente() as client:
+        r = client.post(
+            f"/propuestas/{_propuesta(client)}/firma", json={**FIRMA, "autoriza_cobro": False}
+        )
+
+    assert r.status_code == 422
+    assert r.json()["detail"] == "COBRO_NO_AUTORIZADO"
+
+
+def test_documento_desactualizado_responde_409() -> None:
+    with _cliente() as client:
+        r = client.post(
+            f"/propuestas/{_propuesta(client)}/firma", json={**FIRMA, "version_documento": "v0"}
+        )
+
+    assert r.status_code == 409
+    assert r.json()["detail"] == "VERSION_DOCUMENTO_DESACTUALIZADA"
+
+
+def test_proveedor_de_firma_caido_responde_503_para_reintentar() -> None:
+    from app.application.cliente_acl import ResultadoFirma
+
+    acl = AclFalso([ResultadoFirma(estado="pendiente", motivo="acl_no_disponible")])
+    with _cliente(acl=acl) as client:
+        r = client.post(f"/propuestas/{_propuesta(client)}/firma", json=FIRMA)
+
+    assert r.status_code == 503
+    assert r.json()["detail"] == "SERVICIO_FIRMA_NO_DISPONIBLE"
+
+
+def test_firmar_una_propuesta_desconocida_responde_404() -> None:
+    with _cliente() as client:
+        assert client.post("/propuestas/no-existe/firma", json=FIRMA).status_code == 404
+        assert client.get("/propuestas/no-existe/documento-firma").status_code == 404

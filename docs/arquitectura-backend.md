@@ -18,6 +18,7 @@ se actualiza este archivo en el mismo cambio.
 | `stubs/open-finance` | 8101 | Proveedor simulado (2 fuentes) | — | 1 |
 | `stubs/open-data` | 8102 | Proveedor simulado (3 fuentes) | — | 1 |
 | `stubs/pasarela` | 8103 | Pasarela de pago simulada | — | 1 |
+| `stubs/firma` | 8104 | Proveedor de firma electrónica simulado (idempotente por referencia; 2 APIs para EC031) | — | 2 |
 | `consolidador-fuentes` | 8006 | Reconciliación diferida de Open Finance/Open Data degradadas (`rq` sobre Redis) | Redis (cola, db 2) | 1 (ampliación de alcance) |
 | `under`, `claims`, `consolidador-kyc` | — | Suscripción, siniestros y Consolidador de KYC (Truora) | — | 2–3 |
 
@@ -65,7 +66,13 @@ audience = nombre del servicio destino. Todos los que llaman a otro servicio lo 
 
 ## Puertos del ACL Worker
 
-Definidos en `services/acl-worker/app/domain/puertos.py` (propuesta del Sprint 1): `PuertoFuenteFinanciera`, `PuertoFuenteAbierta`, `PuertoPasarelaPagos`. KYC y firma electrónica se agregan en el Sprint 2.
+Definidos en `services/acl-worker/app/domain/puertos.py` (propuesta del Sprint 1): `PuertoFuenteFinanciera`, `PuertoFuenteAbierta`, `PuertoPasarelaPagos`, y `PuertoFirmaElectronica` (HU-W03, bloque 2). KYC y notificaciones se agregan en el Sprint 2.
+
+`PuertoFirmaElectronica` tiene `firmar(SolicitudFirma)`: recibe solo el **hash** del documento (nunca su contenido), la
+versión y el id opaco del firmante, y es idempotente por `id_firma` (= el id de la propuesta), así que reintentar tras un
+corte por tiempo devuelve la misma evidencia. Va por el mismo Circuit Breaker, presupuesto de 700 ms y sonda que la pasarela
+(circuito `firma`); con el proveedor caído responde `pendiente`, nunca un 5xx. Hay dos adaptadores (`firma` y
+`firma_alterna`, elegidos con `PROVEEDOR_FIRMA`) para demostrar EC031. La evidencia la guarda POLICY, no el ACL.
 
 `PuertoPasarelaPagos` tiene `cobrar` y `consultar` (KAN-28). `consultar` busca un cobro por la **referencia del
 comercio** (el `id_intento_cobro` que Solventa envía), como consultan las pasarelas reales; la usa PAYMENTS para

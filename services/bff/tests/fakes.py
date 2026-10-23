@@ -5,7 +5,13 @@ import uuid
 
 import jwt
 
-from app.clientes import Clientes, ErrorServicio, PropuestaRechazada, SolicitudInvalida
+from app.clientes import (
+    Clientes,
+    ErrorServicio,
+    FirmaRechazada,
+    PropuestaRechazada,
+    SolicitudInvalida,
+)
 from app.configuracion import JWT_SECRETO_LOCAL
 
 CONSENTIMIENTO_VIGENTE = {
@@ -408,11 +414,21 @@ class PaymentsFalso:
 class PolicyFalso:
     """Doble de POLICY: acepta con el precio que RATING guardó, como el real."""
 
-    def __init__(self, rechazo: str | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        rechazo: str | None = None,
+        error: Exception | None = None,
+        rechazo_firma: str | None = None,
+        error_firma: Exception | None = None,
+    ) -> None:
         self.rechazo = rechazo
         self.error = error
+        self.rechazo_firma = rechazo_firma
+        self.error_firma = error_firma
         self.propuestas: dict[str, dict] = {}
         self.llamadas: list[tuple[str, str | None]] = []
+        self.firmas: dict[str, dict] = {}
+        self.firmas_pedidas: list[tuple[str, bool, str, str]] = []
 
     async def crear_propuesta(self, oferta_id: str, actor_usuario_id: str | None) -> dict:
         self.llamadas.append((oferta_id, actor_usuario_id))
@@ -441,6 +457,38 @@ class PolicyFalso:
         if self.error is not None:
             raise self.error
         return next((p for p in self.propuestas.values() if p["id"] == propuesta_id), None)
+
+    async def documento_firma(self, propuesta_id: str) -> dict | None:
+        if self.error is not None:
+            raise self.error
+        if await self.obtener_propuesta(propuesta_id) is None:
+            return None
+        return {
+            "propuesta_id": propuesta_id,
+            "version": "v1",
+            "resumen": "Seguro de vida: prima de 185000 COP al mes durante 60 meses.",
+            "monto_mensual": {"valor": "185000", "moneda": "COP"},
+            "meses": 60,
+            "forma_cobro": "con la cuota de tu crédito",
+        }
+
+    async def firmar_propuesta(
+        self, propuesta_id: str, autoriza_cobro: bool, version_documento: str, firmante_id: str
+    ) -> dict:
+        self.firmas_pedidas.append((propuesta_id, autoriza_cobro, version_documento, firmante_id))
+        if self.error_firma is not None:
+            raise self.error_firma
+        if self.rechazo_firma is not None:
+            raise FirmaRechazada(self.rechazo_firma)
+        return self.firmas.setdefault(
+            propuesta_id,
+            {
+                "propuesta_id": propuesta_id,
+                "firmada_en": "2026-10-22T12:00:00+00:00",
+                "referencia": f"fe-{propuesta_id}",
+                "estado": "EN_EMISION",
+            },
+        )
 
 
 def clientes_falsos(
