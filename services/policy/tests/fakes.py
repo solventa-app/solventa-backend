@@ -5,7 +5,12 @@ import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from app.application.cliente_acl import ResultadoFirma, SolicitudFirma
+from app.application.cliente_acl import (
+    ResultadoFirma,
+    ResultadoNotificacion,
+    SolicitudFirma,
+    SolicitudNotificacion,
+)
 from app.application.cliente_payments import (
     CobroEnConflicto,
     OrdenPrimerCobro,
@@ -111,6 +116,7 @@ class RepositorioPropuestasFalso:
                 "estado": "EMITIDA",
                 "vigencia_desde": vigencia_desde,
                 "vigencia_hasta": vigencia_hasta,
+                "notificada_en": None,
             }
             self._polizas[propuesta_id] = poliza
             propuesta["estado"] = "EMITIDA"
@@ -121,13 +127,21 @@ class RepositorioPropuestasFalso:
         for propuesta_id, poliza in self._polizas.items():
             if poliza["id"] == poliza_id:
                 propuesta = self._propuesta(propuesta_id)
+                evidencia = self._evidencias.get(propuesta_id)
                 return {
                     **poliza,
                     "prima": propuesta["prima"],
                     "cobertura": propuesta["cobertura"],
+                    "plazo_meses": propuesta["plazo_meses"],
                     "actor_usuario_id": propuesta["actor_usuario_id"],
+                    "firmante_id": evidencia["firmante_id"] if evidencia else None,
                 }
         return None
+
+    def marcar_notificada(self, poliza_id: str) -> None:
+        for poliza in self._polizas.values():
+            if poliza["id"] == poliza_id and poliza["notificada_en"] is None:
+                poliza["notificada_en"] = datetime.now(UTC)
 
     def obtener_evidencia(self, propuesta_id: str) -> dict[str, Any] | None:
         evidencia = self._evidencias.get(propuesta_id)
@@ -256,3 +270,21 @@ class BusFalso:
 
     def publicar(self, evento: dict[str, Any]) -> None:
         self.eventos.append(evento)
+
+
+class NotificadorFalso:
+    """Doble del ACL para los avisos: idempotente por `id_notificacion`, como el proveedor real.
+    `resultados` es una secuencia de estados (`enviada`/`pendiente`); el último se repite."""
+
+    def __init__(self, resultados: list[str] | None = None) -> None:
+        self.resultados = list(resultados or ["enviada"])
+        self.solicitudes: list[SolicitudNotificacion] = []
+        self.enviadas: dict[str, SolicitudNotificacion] = {}
+
+    def notificar(self, solicitud: SolicitudNotificacion) -> ResultadoNotificacion:
+        self.solicitudes.append(solicitud)
+        estado = self.resultados.pop(0) if len(self.resultados) > 1 else self.resultados[0]
+        if estado == "enviada":
+            self.enviadas.setdefault(solicitud.id_notificacion, solicitud)
+            return ResultadoNotificacion("enviada", f"nt-{solicitud.id_notificacion}")
+        return ResultadoNotificacion("pendiente", motivo="acl_no_disponible")

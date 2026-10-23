@@ -125,7 +125,7 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
 ### Verificación en vivo (Circuit Breaker + sonda)
 
 ```bash
-docker compose --profile servicios up -d --build redis acl-worker stub-open-finance stub-open-data stub-pasarela stub-firma stub-kyc
+docker compose --profile servicios up -d --build redis acl-worker stub-open-finance stub-open-data stub-pasarela stub-firma stub-kyc stub-notificaciones
 
 # (a) camino sano
 curl -s -X POST localhost:8005/fuentes/consultar \
@@ -168,3 +168,15 @@ curl -s localhost:8005/circuitos   # -> open-finance: "closed"
   biométrica por un canal propio (decisión W03-10); el contrato del stub es inventado.
 - Circuito `kyc` con su sonda (`GET /v1/estado`, que nunca verifica). Variables nuevas: `KYC_URL` (`http://localhost:8105`),
   `PRESUPUESTO_MS_KYC` (700).
+
+## Notificaciones (HU-W03, bloque 5)
+
+- `POST /notificaciones/enviar` `{id_notificacion, plantilla, destinatario_id, datos}` → `{estado: enviada | pendiente, referencia,
+  motivo}`. Siempre 200: con el proveedor caído, lento o el circuito abierto responde `pendiente`
+  (`notificaciones_no_disponibles` / `circuito_abierto`) y POLICY reintenta. Idempotente por `id_notificacion`: repetirlo no
+  manda dos avisos.
+- Solo viajan la plantilla, el identificador opaco del usuario y los datos de la plantilla (número de póliza y ruta del
+  documento): nunca un correo, un teléfono ni el contenido del documento. El proveedor resuelve el contacto; el contrato del stub
+  es inventado.
+- Circuito `notificaciones` con su sonda (`GET /v1/estado`, que nunca envía). Variables nuevas: `NOTIFICACIONES_URL`
+  (`http://localhost:8106`), `PRESUPUESTO_MS_NOTIFICACIONES` (700).

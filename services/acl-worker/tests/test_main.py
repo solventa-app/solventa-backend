@@ -140,3 +140,21 @@ def test_verificar_kyc_con_el_proveedor_caido_responde_200_pendiente_sin_5xx() -
     assert r.status_code == 200
     assert r.json()["estado"] == "pendiente"
     assert r.json()["motivo"] == "kyc_no_disponible"
+
+
+def test_enviar_notificacion_con_el_proveedor_caido_responde_200_pendiente_sin_5xx() -> None:
+    # NOTIFICACIONES_URL apunta a un puerto sin servicio: el ACL degrada, no propaga el fallo.
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post(
+            "/notificaciones/enviar",
+            json={
+                "id_notificacion": "n-1",
+                "plantilla": "poliza-emitida",
+                "destinatario_id": "u-1",
+                "datos": {"numero_poliza": "SOL-2026-000001"},
+            },
+        )
+
+    assert r.status_code == 200
+    assert r.json()["estado"] == "pendiente"
+    assert r.json()["motivo"] == "notificaciones_no_disponibles"

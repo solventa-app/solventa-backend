@@ -21,7 +21,9 @@ RUTAS_ESPERADAS = {
     ("POST", "/graphql/web"),
     ("POST", "/graphql/movil"),
     ("POST", "/graphql/app"),
+    ("GET", "/polizas/{*}/documento"),
 }
+PARAMETRO = "{*}"  # cómo se escribe cualquier parámetro de ruta al comparar OpenAPI con Envoy
 
 
 def extraer_openapi(texto: str) -> dict[tuple[str, str], float]:
@@ -43,7 +45,8 @@ def extraer_openapi(texto: str) -> dict[tuple[str, str], float]:
 
         m_ruta = re.match(r"^  (/[^:]+):\s*$", linea)
         if m_ruta:
-            ruta_actual = m_ruta.group(1).strip()
+            # `/polizas/{poliza_id}/documento` -> `/polizas/{*}/documento`
+            ruta_actual = re.sub(r"\{[^}]+\}", PARAMETRO, m_ruta.group(1).strip())
             metodo_actual = None
             continue
 
@@ -65,6 +68,11 @@ def extraer_envoy(texto: str) -> dict[tuple[str, str], float]:
     bloques = re.split(r"\n\s*-\s+match:\s*\n", texto)
     for bloque in bloques[1:]:
         m_path = re.search(r'path:\s*"([^"]+)"', bloque)
+        if m_path is None:
+            # Ruta con parámetro: `safe_regex` con `[^/]+` en lugar de cada parámetro.
+            m_regex = re.search(r'regex:\s*"([^"]+)"', bloque)
+            if m_regex:
+                m_path = re.match(r"(.+)", m_regex.group(1).replace("[^/]+", PARAMETRO))
         m_metodo = re.search(r'exact:\s*"([A-Z]+)"', bloque)
         m_timeout = re.search(r"timeout:\s*([0-9.]+)s\b", bloque)
         if m_path and m_metodo and m_timeout:

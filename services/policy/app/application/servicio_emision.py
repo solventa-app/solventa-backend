@@ -26,6 +26,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from app.application.bus_eventos import PuertoBusEventos, construir_evento_poliza_emitida
+from app.application.cliente_acl import PuertoNotificador, SolicitudNotificacion
 from app.application.cliente_payments import (
     CobroEnConflicto,
     OrdenPrimerCobro,
@@ -63,6 +64,10 @@ class PuertoRepositorioEmision(Protocol):
         self, propuesta_id: str, cliente_id: str, vigencia_desde: Any, vigencia_hasta: Any
     ) -> tuple[dict[str, Any], bool]: ...
 
+    def obtener_poliza(self, poliza_id: str) -> dict[str, Any] | None: ...
+
+    def marcar_notificada(self, poliza_id: str) -> None: ...
+
 
 class PropuestaNoEncontradaParaEmitir(Exception):
     pass
@@ -93,6 +98,7 @@ class ServicioEmision:
         payments: PuertoPayments,
         bus: PuertoBusEventos,
         planificador: PuertoPlanificador,
+        notificador: PuertoNotificador,
         token_medio_pago: str,
         demora_cobro_pendiente_s: float = 10.0,
         max_intentos: int = 12,
@@ -102,6 +108,7 @@ class ServicioEmision:
         self._payments = payments
         self._bus = bus
         self._planificador = planificador
+        self._notificador = notificador
         self._token = token_medio_pago
         self._demora_s = demora_cobro_pendiente_s
         self._max_intentos = max_intentos
@@ -112,8 +119,11 @@ class ServicioEmision:
         if propuesta is None:
             raise PropuestaNoEncontradaParaEmitir(propuesta_id)
         estado = propuesta["estado"]
+        if estado == "EMITIDA":
+            self._completar_aviso(propuesta)  # si el aviso quedó sin enviar, se reintenta
+            return estado
         if estado not in DESDE_COBRO:
-            return estado  # ya emitida, en un estado final, o todavía sin firmar
+            return estado  # en un estado final, o todavía sin firmar
 
         evidencia = self._repositorio.obtener_evidencia(propuesta_id)
         if evidencia is None:
@@ -220,4 +230,36 @@ class ServicioEmision:
                 )
             )
             logger.info("póliza emitida propuesta=%s", id_opaco(propuesta["id"]))
+        numero = numero_de_poliza(poliza["numero"], poliza["vigencia_desde"])
+        self._avisar(poliza, propuesta["id"], numero)
         return "EMITIDA"
+
+    def _completar_aviso(self, propuesta: dict[str, Any]) -> None:
+        """Una póliza ya emitida a la que no se le pudo avisar: se reintenta el aviso."""
+        poliza = self._repositorio.obtener_poliza(propuesta["poliza_id"])
+        if poliza is None or poliza["notificada_en"] is not None:
+            return
+        numero = numero_de_poliza(poliza["numero"], poliza["vigencia_desde"])
+        self._avisar(poliza, propuesta["id"], numero)
+
+    def _avisar(self, poliza: dict[str, Any], propuesta_id: str, numero: str) -> None:
+        """Avisa al titular que firmó, una sola vez por póliza (CA-W03-08). Si no se puede, lanza
+        `EmisionPendiente`: la póliza ya está emitida y no se deshace; solo se reintenta el
+        aviso."""
+        if poliza.get("notificada_en") is not None:
+            return
+        evidencia = self._repositorio.obtener_evidencia(propuesta_id)
+        resultado = self._notificador.notificar(
+            SolicitudNotificacion(
+                id_notificacion=f"poliza-emitida-{poliza['id']}",
+                plantilla="poliza-emitida",
+                destinatario_id=evidencia["firmante_id"],
+                datos={
+                    "numero_poliza": numero,
+                    "enlace_documento": f"/polizas/{poliza['id']}/documento",
+                },
+            )
+        )
+        if resultado.estado != "enviada":
+            raise EmisionPendiente("notificaciones no disponibles")
+        self._repositorio.marcar_notificada(poliza["id"])

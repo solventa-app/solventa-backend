@@ -282,6 +282,7 @@ services:
       PASARELA_URL: http://stub-pasarela:8103
       FIRMA_URL: http://stub-firma:8104
       KYC_URL: http://stub-kyc:8105
+      NOTIFICACIONES_URL: http://stub-notificaciones:8106
       TIMEOUT_MS: "700"        # umbral duro de EC009/EC010
       BREAKER_UMBRAL_FALLOS: "3"       # fallos consecutivos que abren el circuito
       BREAKER_TTL_SEGUNDOS: "5"        # tiempo abierto antes de permitir la próxima sonda
@@ -332,6 +333,11 @@ services:
     <<: *servicio
     build: ./stubs/kyc
     ports: ["8105:8105"]
+
+  stub-notificaciones:
+    <<: *servicio
+    build: ./stubs/notificaciones
+    ports: ["8106:8106"]
 
   # -------------------------------------------------------- observabilidad
   prometheus:

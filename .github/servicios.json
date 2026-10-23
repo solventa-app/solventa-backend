@@ -98,7 +98,7 @@
     "instancia_fija": true,
     "puerto": 8005,
     "url_env": "ACL_URL",
-    "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela", "stub-firma", "stub-kyc", "consolidador-fuentes"],
+    "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela", "stub-firma", "stub-kyc", "stub-notificaciones", "consolidador-fuentes"],
     "disparador_externo": true,
     "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": {
@@ -152,6 +152,13 @@
     "ruta": "stubs/kyc",
     "puerto": 8105,
     "url_env": "KYC_URL",
+    "entorno": { "TRAZAS_GCP": "true" }
+  },
+  {
+    "nombre": "stub-notificaciones",
+    "ruta": "stubs/notificaciones",
+    "puerto": 8106,
+    "url_env": "NOTIFICACIONES_URL",
     "entorno": { "TRAZAS_GCP": "true" }
   }
 ]

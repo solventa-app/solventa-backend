@@ -1,6 +1,6 @@
 """ACL Worker: capa anticorrupción hexagonal. Único punto de contacto con
-proveedores externos (Open Finance, Open Data, pasarela de pagos, firma electrónica, KYC) — ver
-`app/domain/puertos.py` y el README de este servicio.
+proveedores externos (Open Finance, Open Data, pasarela de pagos, firma electrónica, KYC y
+notificaciones) — ver `app/domain/puertos.py` y el README de este servicio.
 """
 
 import logging
@@ -17,6 +17,7 @@ from app.adapters.autenticacion_servicios import autenticacion_para
 from app.adapters.firma import AdaptadorFirma
 from app.adapters.firma_alterna import AdaptadorFirmaAlterna
 from app.adapters.kyc import AdaptadorKyc
+from app.adapters.notificaciones import AdaptadorNotificaciones
 from app.adapters.open_data import AdaptadorOpenData
 from app.adapters.open_finance import AdaptadorOpenFinance
 from app.adapters.pasarela import AdaptadorPasarela
@@ -26,6 +27,7 @@ from app.application.cache import CacheFuentes
 from app.application.circuitos import (
     NOMBRE_CIRCUITO_FIRMA,
     NOMBRE_CIRCUITO_KYC,
+    NOMBRE_CIRCUITO_NOTIFICACIONES,
     NOMBRE_CIRCUITO_OPEN_DATA,
     NOMBRE_CIRCUITO_OPEN_FINANCE,
     NOMBRE_CIRCUITO_PASARELA,
@@ -46,9 +48,16 @@ from app.application.reconciliacion import (
 from app.application.servicio_firma import ServicioFirma
 from app.application.servicio_fuentes import ServicioConsultaFuentes
 from app.application.servicio_kyc import ServicioKyc
+from app.application.servicio_notificaciones import ServicioNotificaciones
 from app.application.servicio_pagos import ServicioCobro
 from app.application.sonda import SondaRecuperacion
-from app.domain.puertos import ConsultaFuente, OrdenCobro, SolicitudFirma, SolicitudKyc
+from app.domain.puertos import (
+    ConsultaFuente,
+    OrdenCobro,
+    SolicitudFirma,
+    SolicitudKyc,
+    SolicitudNotificacion,
+)
 from app.observabilidad import configurar_trazas
 
 # Backoff acotado de la reconciliación diferida (contrato punto 5): 5 intentos,
@@ -129,6 +138,19 @@ class ResultadoKycResponse(BaseModel):
     referencia: str | None
     motivo: str | None
     verificada_en: str | None
+
+
+class SolicitudNotificacionRequest(BaseModel):
+    id_notificacion: str
+    plantilla: str
+    destinatario_id: str
+    datos: dict[str, str] = {}
+
+
+class ResultadoNotificacionResponse(BaseModel):
+    estado: str
+    referencia: str | None
+    motivo: str | None
 
 
 class ConsultaCobroResponse(BaseModel):
@@ -275,6 +297,19 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         )
         servicio_kyc = ServicioKyc(adaptador_kyc, fabrica, NOMBRE_CIRCUITO_KYC, presupuesto_kyc_s)
 
+        presupuesto_notificaciones_s = config.presupuesto_proveedor_s("notificaciones")
+        adaptador_notificaciones = AdaptadorNotificaciones(
+            config.notificaciones_url,
+            presupuesto_notificaciones_s,
+            auth=autenticacion_para(config.autenticacion_servicios, "stub-notificaciones"),
+        )
+        servicio_notificaciones = ServicioNotificaciones(
+            adaptador_notificaciones,
+            fabrica,
+            NOMBRE_CIRCUITO_NOTIFICACIONES,
+            presupuesto_notificaciones_s,
+        )
+
         sonda = SondaRecuperacion(
             fabrica,
             sondeos={
@@ -283,6 +318,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 NOMBRE_CIRCUITO_PASARELA: adaptador_pasarela.sondear,
                 NOMBRE_CIRCUITO_FIRMA: adaptador_firma.sondear,
                 NOMBRE_CIRCUITO_KYC: adaptador_kyc.sondear,
+                NOMBRE_CIRCUITO_NOTIFICACIONES: adaptador_notificaciones.sondear,
             },
             intervalo_s=config.sonda_intervalo_segundos,
         )
@@ -297,6 +333,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         app.state.servicio_cobro = servicio_cobro
         app.state.servicio_firma = servicio_firma
         app.state.servicio_kyc = servicio_kyc
+        app.state.servicio_notificaciones = servicio_notificaciones
 
         try:
             yield
@@ -308,6 +345,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 adaptador_pasarela.cerrar,
                 adaptador_firma.cerrar,
                 adaptador_kyc.cerrar,
+                adaptador_notificaciones.cerrar,
             )
             for cerrar in cierres:
                 cerrar()
@@ -334,6 +372,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             NOMBRE_CIRCUITO_PASARELA,
             NOMBRE_CIRCUITO_FIRMA,
             NOMBRE_CIRCUITO_KYC,
+            NOMBRE_CIRCUITO_NOTIFICACIONES,
         )
         return {nombre: fabrica.get_breaker(nombre).context.state for nombre in nombres}
 
@@ -448,6 +487,27 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             referencia=resultado.referencia,
             motivo=resultado.motivo,
             verificada_en=resultado.verificada_en,
+        )
+
+    @app.post(
+        "/notificaciones/enviar",
+        tags=["notificaciones"],
+        response_model=ResultadoNotificacionResponse,
+    )
+    def enviar_notificacion(body: SolicitudNotificacionRequest) -> ResultadoNotificacionResponse:
+        """Aviso al cliente (HU-W03). Siempre 200: si el proveedor no responde o el circuito está
+        abierto, `pendiente` con su motivo (regla #4) y POLICY lo reintenta. Idempotente por
+        `id_notificacion`: repetirlo no manda dos avisos."""
+        resultado = app.state.servicio_notificaciones.enviar(
+            SolicitudNotificacion(
+                id_notificacion=body.id_notificacion,
+                plantilla=body.plantilla,
+                destinatario_id=body.destinatario_id,
+                datos=body.datos,
+            )
+        )
+        return ResultadoNotificacionResponse(
+            estado=resultado.estado, referencia=resultado.referencia, motivo=resultado.motivo
         )
 
     @app.get("/tasas-cambio", tags=["tasas"], response_model=TasasCambioResponse)

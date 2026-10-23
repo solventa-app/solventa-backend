@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from prometheus_fastapi_instrumentator import Instrumentator
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, Field
@@ -123,6 +123,15 @@ class PolizaResponse(BaseModel):
     cobertura: MontoResponse
     # Quién aceptó: el BFF deja que un CLIENTE vea solo sus pólizas.
     actor_usuario_id: str | None = None
+    # Quien firmó (el CLIENTE titular): de él es el nombre del documento y a él se le avisa.
+    firmante_id: str | None = None
+    # Cuándo se avisó al cliente; nulo mientras el aviso siga pendiente.
+    notificada_en: datetime | None = None
+
+
+class DocumentoRequest(BaseModel):
+    # Va en el CUERPO, nunca en la URL (las URL quedan en los logs de acceso, regla #6).
+    asegurado: str | None = Field(default=None, max_length=200)
 
 
 class ErrorResponse(BaseModel):
@@ -199,6 +208,7 @@ def create_app(
                 cliente_payments,
                 BusEventosLog(),
                 planificador,
+                cliente_acl,
                 config.token_recaudo_credito,
                 config.cobro_pendiente_demora_segundos,
                 config.emision_max_intentos,
@@ -208,7 +218,9 @@ def create_app(
             app.state.servicio_propuestas = ServicioPropuestas(repositorio, cliente_rating)
             app.state.servicio_firma = ServicioFirma(repositorio, cliente_acl, planificador)
             app.state.servicio_emision = emision
-            app.state.servicio_polizas = ServicioPolizas(repositorio)
+            app.state.servicio_polizas = ServicioPolizas(
+                repositorio, config.documento_ambiente_pruebas
+            )
         try:
             yield
         finally:
@@ -341,6 +353,22 @@ def create_app(
         if poliza is None:
             raise HTTPException(status_code=404, detail="póliza no encontrada")
         return PolizaResponse(**poliza)
+
+    @app.post(
+        "/polizas/{poliza_id}/documento",
+        tags=["polizas"],
+        response_class=Response,
+        responses={200: {"content": {"application/pdf": {}}}, 404: {"model": ErrorResponse}},
+    )
+    def documento_poliza(poliza_id: str, body: DocumentoRequest) -> Response:
+        """CA-W03-08: el PDF de la póliza, generado al pedirlo. Es un POST para que el nombre del
+        asegurado viaje en el cuerpo y no en la URL. Quién puede pedirlo lo decide el BFF."""
+        pdf = app.state.servicio_polizas.documento(poliza_id, body.asegurado)
+        if pdf is None:
+            raise HTTPException(status_code=404, detail="póliza no encontrada")
+        return Response(
+            content=pdf, media_type="application/pdf", headers={"Cache-Control": "no-store"}
+        )
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app

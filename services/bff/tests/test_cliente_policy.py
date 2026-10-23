@@ -125,3 +125,35 @@ def test_obtener_poliza_devuelve_none_si_no_existe_y_los_datos_si_existe() -> No
     assert asyncio.run(correr(httpx.Response(200, json={"id": "pz-1"}))) == {"id": "pz-1"}
     with pytest.raises(ErrorServicio):
         asyncio.run(correr(httpx.Response(503)))
+
+
+def test_generar_documento_manda_el_nombre_en_el_cuerpo_y_no_en_la_url() -> None:
+    vistas: list[httpx.Request] = []
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        vistas.append(peticion)
+        return httpx.Response(200, content=b"%PDF-1.3")
+
+    async def correr() -> bytes | None:
+        transporte = httpx.MockTransport(responder)
+        async with httpx.AsyncClient(base_url="http://policy", transport=transporte) as cliente:
+            return await ClientePolicyHttp(cliente).generar_documento("pz-1", "Ana Maria Perez")
+
+    assert asyncio.run(correr()) == b"%PDF-1.3"
+    assert vistas[0].method == "POST"
+    assert vistas[0].url.path == "/polizas/pz-1/documento"
+    assert "Ana" not in str(vistas[0].url)
+    assert json.loads(vistas[0].content) == {"asegurado": "Ana Maria Perez"}
+
+
+def test_generar_documento_devuelve_none_si_no_existe_y_falla_si_policy_falla() -> None:
+    async def correr(respuesta: httpx.Response) -> bytes | None:
+        transporte = httpx.MockTransport(lambda peticion: respuesta)
+        async with httpx.AsyncClient(base_url="http://policy", transport=transporte) as cliente:
+            return await ClientePolicyHttp(cliente).generar_documento("pz-1", None)
+
+    assert asyncio.run(correr(httpx.Response(404))) is None
+    with pytest.raises(ErrorServicio):
+        asyncio.run(correr(httpx.Response(500)))
+    with pytest.raises(ErrorServicio):
+        asyncio.run(correr(httpx.Response(422)))

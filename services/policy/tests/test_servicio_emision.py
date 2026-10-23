@@ -10,6 +10,7 @@ import pytest
 from fakes import (
     AclFalso,
     BusFalso,
+    NotificadorFalso,
     PaymentsFalso,
     PlanificadorFalso,
     RatingFalso,
@@ -33,7 +34,7 @@ ESQUEMA = (
 )
 
 
-def _armar(under=None, payments=None, firmar=True, max_intentos=12):
+def _armar(under=None, payments=None, firmar=True, max_intentos=12, notificador=None):
     repositorio = RepositorioPropuestasFalso()
     propuesta = ServicioPropuestas(repositorio, RatingFalso()).aceptar("oferta-1", "usuario-1")
     if firmar:
@@ -41,9 +42,12 @@ def _armar(under=None, payments=None, firmar=True, max_intentos=12):
     under = under or UnderFalso()
     payments = payments or PaymentsFalso()
     planificador, bus = PlanificadorFalso(), BusFalso()
+    notificador = notificador or NotificadorFalso()
     servicio = ServicioEmision(
-        repositorio, under, payments, bus, planificador, "tok_recaudo", 10.0, max_intentos
-    )
+        repositorio, under, payments, bus, planificador, notificador, "tok_recaudo", 10.0,
+        max_intentos,
+    )  # fmt: skip
+    servicio.notificador = notificador  # para que las pruebas lo vean
     return servicio, repositorio, under, payments, planificador, bus, propuesta["id"]
 
 
@@ -259,3 +263,77 @@ def test_los_logs_no_llevan_el_cliente_ni_la_prima(caplog) -> None:
     assert "cliente-opaco" not in caplog.text
     assert "185000" not in caplog.text
     assert propuesta_id not in caplog.text
+
+
+def test_al_emitir_se_avisa_al_titular_que_firmo_con_la_plantilla_y_el_enlace() -> None:
+    servicio, repositorio, *_, propuesta_id = _armar()
+
+    servicio.emitir(propuesta_id)
+
+    (aviso,) = servicio.notificador.solicitudes
+    assert aviso.plantilla == "poliza-emitida"
+    assert aviso.destinatario_id == "usuario-1"  # quien firmó
+    assert aviso.id_notificacion == "poliza-emitida-poliza-1"
+    assert aviso.datos["numero_poliza"].startswith("SOL-")
+    assert aviso.datos["enlace_documento"] == "/polizas/poliza-1/documento"
+    assert repositorio._polizas[propuesta_id]["notificada_en"] is not None
+
+
+def test_el_aviso_no_lleva_la_prima_ni_el_cliente_ni_el_documento() -> None:
+    servicio, *_, propuesta_id = _armar()
+
+    servicio.emitir(propuesta_id)
+
+    texto = repr(servicio.notificador.solicitudes[0])
+    assert "185000" not in texto
+    assert "cliente-opaco" not in texto
+    assert set(servicio.notificador.solicitudes[0].datos) == {"numero_poliza", "enlace_documento"}
+
+
+def test_si_el_aviso_no_sale_la_poliza_queda_emitida_y_se_reintenta_solo_el_aviso() -> None:
+    servicio, repositorio, _, payments, _, bus, propuesta_id = _armar(
+        notificador=NotificadorFalso(["pendiente", "enviada"])
+    )
+
+    with pytest.raises(EmisionPendiente):
+        servicio.emitir(propuesta_id)
+
+    assert repositorio.obtener(propuesta_id)["estado"] == "EMITIDA"  # la póliza no se deshace
+    assert repositorio._polizas[propuesta_id]["notificada_en"] is None
+    assert len(bus.eventos) == 1
+
+    assert servicio.emitir(propuesta_id) == "EMITIDA"  # el reintento de la tarea
+
+    assert repositorio._polizas[propuesta_id]["notificada_en"] is not None
+    assert len(bus.eventos) == 1  # el evento no se vuelve a publicar
+    assert len(payments.ordenes) == 1  # ni se vuelve a cobrar
+
+
+def test_una_poliza_ya_notificada_no_vuelve_a_avisar() -> None:
+    servicio, *_, propuesta_id = _armar()
+    servicio.emitir(propuesta_id)
+
+    servicio.emitir(propuesta_id)
+    servicio.emitir(propuesta_id)
+
+    assert len(servicio.notificador.solicitudes) == 1
+
+
+def test_emisiones_simultaneas_avisan_una_sola_vez() -> None:
+    servicio, *_, propuesta_id = _armar()
+
+    hilos = [threading.Thread(target=servicio.emitir, args=(propuesta_id,)) for _ in range(8)]
+    for hilo in hilos:
+        hilo.start()
+    for hilo in hilos:
+        hilo.join()
+
+    assert len(servicio.notificador.enviadas) == 1  # el proveedor es idempotente por id
+
+
+def test_una_propuesta_que_no_se_emite_no_avisa() -> None:
+    servicio, *_, propuesta_id = _armar(under=UnderFalso("REVISION_MANUAL", ["RIESGO_ALTO"]))
+
+    servicio.emitir(propuesta_id)
+
+    assert servicio.notificador.solicitudes == []

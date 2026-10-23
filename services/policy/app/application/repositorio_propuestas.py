@@ -29,7 +29,9 @@ _COLUMNAS = (
 # La póliza de la propuesta, si ya se emitió (una subconsulta: `polizas.propuesta_id` es UNIQUE).
 _POLIZA_ID = "(SELECT p.id FROM polizas p WHERE p.propuesta_id = propuestas.id) AS poliza_id"
 
-_COLUMNAS_POLIZA = "id, propuesta_id, numero, cliente_id, estado, vigencia_desde, vigencia_hasta"
+_COLUMNAS_POLIZA = (
+    "id, propuesta_id, numero, cliente_id, estado, vigencia_desde, vigencia_hasta, notificada_en"
+)
 
 _COLUMNAS_EVIDENCIA = (
     "id, propuesta_id, documento_hash, version_documento, firmante_id, "
@@ -169,12 +171,26 @@ class RepositorioPropuestasPostgres:
         if poliza is None:
             return None
         propuesta = self.obtener(poliza["propuesta_id"])
+        evidencia = self.obtener_evidencia(poliza["propuesta_id"])
         return {
             **poliza,
             "prima": propuesta["prima"],
             "cobertura": propuesta["cobertura"],
+            "plazo_meses": propuesta["plazo_meses"],
             "actor_usuario_id": propuesta["actor_usuario_id"],
+            # Quien firmó es el CLIENTE titular: a él se le avisa y de él es el nombre del
+            # documento.
+            "firmante_id": evidencia["firmante_id"] if evidencia else None,
         }
+
+    def marcar_notificada(self, poliza_id: str) -> None:
+        """Registra que ya se avisó al cliente. Solo la primera vez: no pisa una fecha anterior."""
+        with self._pool.connection() as conexion:
+            conexion.execute(
+                "UPDATE polizas SET notificada_en = now() "
+                "WHERE id = %(id)s AND notificada_en IS NULL",
+                {"id": poliza_id},
+            )
 
     def obtener_evidencia(self, propuesta_id: str) -> dict[str, Any] | None:
         with self._pool.connection() as conexion:

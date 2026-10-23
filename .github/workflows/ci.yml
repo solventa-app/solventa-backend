@@ -91,6 +91,7 @@ jobs:
             stubs/pasarela: ['stubs/pasarela/**']
             stubs/firma: ['stubs/firma/**']
             stubs/kyc: ['stubs/kyc/**']
+            stubs/notificaciones: ['stubs/notificaciones/**']
       - name: Matrices de servicios afectados
         id: matriz
         env:

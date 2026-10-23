@@ -36,6 +36,8 @@ class Configuracion:
     # Cada cuánto se vuelve a consultar un primer cobro pendiente, y cuántas veces como máximo.
     cobro_pendiente_demora_segundos: float = 10.0
     emision_max_intentos: int = 12
+    # El PDF avisa que la firma y el cobro son simulados. Apagarlo solo con un proveedor real.
+    documento_ambiente_pruebas: bool = True
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -78,4 +80,6 @@ class Configuracion:
                 os.getenv("COBRO_PENDIENTE_DEMORA_SEGUNDOS", "10")
             ),
             emision_max_intentos=int(os.getenv("EMISION_MAX_INTENTOS", "12")),
+            documento_ambiente_pruebas=os.getenv("DOCUMENTO_AMBIENTE_PRUEBAS", "true").lower()
+            in ("1", "true", "yes", "si"),
         )

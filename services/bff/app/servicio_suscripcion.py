@@ -18,6 +18,7 @@ MENSAJE_OFERTA_VENCIDA = "La oferta venció. Vuelve a cotizar."
 MENSAJE_ACEPTACION_SIN_CONSENTIMIENTO = "No hay un consentimiento vigente para esta oferta."
 MENSAJE_SUSCRIPCION_NO_DISPONIBLE = "No pudimos procesar tu suscripción. Intenta de nuevo."
 
+MENSAJE_DOCUMENTO_NO_DISPONIBLE = "No pudimos generar el documento. Intenta de nuevo."
 MENSAJE_COBRO_NO_AUTORIZADO = "Debes autorizar el cobro de la prima para firmar."
 MENSAJE_DOCUMENTO_DESACTUALIZADO = "El documento cambió. Revísalo de nuevo antes de firmar."
 MENSAJE_PROPUESTA_NO_FIRMABLE = "Esta propuesta no se puede firmar."
@@ -185,3 +186,29 @@ class ServicioSuscripcion:
         if usuario is not None and usuario.rol == "CLIENTE" and dueno not in (None, usuario.id):
             return None
         return poliza
+
+    async def documento_poliza(
+        self, poliza_id: str, usuario: UsuarioActual | None
+    ) -> tuple[str, bytes] | None:
+        """El PDF de la póliza y su número, o `None` si no existe o, para un CLIENTE, es de otra
+        persona. Si POLICY no responde lanza `ErrorServicio`.
+
+        El nombre del asegurado (el CLIENTE que firmó) se pide a AUTH solo para ponerlo en el
+        documento: no se guarda ni se loguea. Si AUTH no responde, el documento sale igual con la
+        referencia opaca del titular: una falla de AUTH no debe impedir descargar la póliza."""
+        poliza = await self.obtener_poliza(poliza_id, usuario)
+        if poliza is None:
+            return None
+        asegurado = await self._nombre_del_asegurado(poliza.get("firmante_id"))
+        pdf = await self._clientes.policy.generar_documento(poliza_id, asegurado)
+        return (poliza["numero"], pdf) if pdf is not None else None
+
+    async def _nombre_del_asegurado(self, firmante_id: str | None) -> str | None:
+        if not firmante_id:
+            return None
+        try:
+            nombres = await self._clientes.auth.nombres_de_clientes([firmante_id])
+        except ErrorServicio:
+            logger.warning("AUTH no disponible al armar el documento")
+            return None
+        return nombres.get(firmante_id)

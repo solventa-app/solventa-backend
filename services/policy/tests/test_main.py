@@ -4,6 +4,7 @@ los reales se hace en vivo con `docker compose`)."""
 from fakes import (
     AclFalso,
     BusFalso,
+    NotificadorFalso,
     PaymentsFalso,
     PlanificadorFalso,
     RatingFalso,
@@ -37,6 +38,7 @@ def _cliente(
         payments or PaymentsFalso(),
         BusFalso(),
         planificador,
+        NotificadorFalso(),
         "tok_recaudo",
     )
     config = Configuracion("", "http://rating", 1.0, "ninguna")
@@ -255,3 +257,55 @@ def test_emitir_una_propuesta_desconocida_responde_404() -> None:
 def test_poliza_desconocida_responde_404() -> None:
     with _cliente() as client:
         assert client.get("/polizas/no-existe").status_code == 404
+
+
+def test_el_documento_de_la_poliza_es_un_pdf() -> None:
+    with _cliente() as client:
+        propuesta_id = _firmada(client)
+        client.post(f"/propuestas/{propuesta_id}/_emitir")
+        poliza_id = client.get(f"/propuestas/{propuesta_id}").json()["poliza_id"]
+        r = client.post(f"/polizas/{poliza_id}/documento", json={"asegurado": "Ana Maria Perez"})
+
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.headers["cache-control"] == "no-store"
+    assert r.content.startswith(b"%PDF-")
+    assert b"Ana Maria Perez" in r.content
+    assert b"SOL-" in r.content
+
+
+def test_el_documento_se_genera_sin_el_nombre_del_asegurado() -> None:
+    with _cliente() as client:
+        propuesta_id = _firmada(client)
+        client.post(f"/propuestas/{propuesta_id}/_emitir")
+        poliza_id = client.get(f"/propuestas/{propuesta_id}").json()["poliza_id"]
+        r = client.post(f"/polizas/{poliza_id}/documento", json={})
+
+    assert r.status_code == 200
+    assert r.content.startswith(b"%PDF-")
+
+
+def test_el_documento_de_una_poliza_desconocida_responde_404() -> None:
+    with _cliente() as client:
+        assert client.post("/polizas/no-existe/documento", json={}).status_code == 404
+
+
+def test_la_poliza_dice_quien_firmo_y_si_ya_se_aviso() -> None:
+    with _cliente() as client:
+        propuesta_id = _firmada(client)
+        client.post(f"/propuestas/{propuesta_id}/_emitir")
+        poliza_id = client.get(f"/propuestas/{propuesta_id}").json()["poliza_id"]
+        poliza = client.get(f"/polizas/{poliza_id}").json()
+
+    assert poliza["firmante_id"] == "usuario-1"
+    assert poliza["notificada_en"] is not None
+
+
+def test_el_documento_solo_se_pide_por_post_para_que_el_nombre_no_viaje_en_la_url() -> None:
+    rutas = {
+        ruta.path: ruta.methods
+        for ruta in create_app(Configuracion("", "", 1.0, "ninguna")).routes
+        if hasattr(ruta, "methods")
+    }
+
+    assert rutas["/polizas/{poliza_id}/documento"] == {"POST"}

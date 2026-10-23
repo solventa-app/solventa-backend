@@ -4,10 +4,10 @@ POLICY: propuestas y pólizas (HU-W03, KAN-26). Servicio nuevo del Sprint 2.
 
 ## Responsabilidad
 
-Único escritor de las tablas de suscripción (regla de arquitectura #1). Hoy, los **bloques 1, 2 y 4** del plan
+Único escritor de las tablas de suscripción (regla de arquitectura #1). Hoy, los **bloques 1, 2, 4 y 5** del plan
 ([`docs/plan-completar-hu-w03.md`](../../docs/plan-completar-hu-w03.md)): aceptar una oferta COMPLETA y guardarla como
-propuesta, firmarla con evidencia de no repudio y emitir la póliza tras la decisión de UNDER y el primer cobro. El PDF y
-la notificación (bloque 5) llegan después.
+propuesta, firmarla con evidencia de no repudio y emitir la póliza tras la decisión de UNDER y el primer cobro, generar su PDF y avisar al
+cliente.
 
 - `POST /propuestas` `{oferta_id, actor_usuario_id?}`: lee la oferta de RATING (`GET /ofertas/{id}`) y crea la
   propuesta en estado `ACEPTADA`. **El precio sale de RATING, nunca del cliente.** Idempotente por `oferta_id`: aceptar
@@ -49,6 +49,20 @@ EN_EMISION ──UNDER──► RECHAZADA        ─► NO_EMITIDA
   (Pub/Sub real solo está aprobado para `perfil.actualizado`, W05-8; ver W03-7 en el plan).
 - La póliza no guarda dinero: la prima y la cobertura viven cifradas en la propuesta.
 
+### El documento y el aviso (bloque 5)
+
+- `POST /polizas/{id}/documento` `{asegurado?}` → el PDF (`application/pdf`, `Cache-Control: no-store`). Se genera **al pedirlo**,
+  a partir de los datos guardados (no se almacena, así nunca queda desactualizado): membrete, asegurado, plazo y valor asegurado,
+  prima mensual, vigencia y el sello de la firma (referencia, fecha y huella SHA-256 del documento firmado). Es un `POST` para que
+  el nombre del asegurado viaje en el **cuerpo** y no en la URL (regla #6); no se guarda ni se loguea. Sin él, el documento
+  identifica al titular por la referencia opaca de su cliente. Quién puede pedirlo lo decide el BFF.
+- Con `DOCUMENTO_AMBIENTE_PRUEBAS=true` (por defecto) el PDF avisa que la firma y el cobro son simulados y que no tiene validez
+  legal. Apagarlo solo con un proveedor real.
+- **Aviso al cliente, una sola vez por póliza:** al emitir, POLICY avisa al titular que firmó por el ACL Worker con el id
+  `poliza-emitida-{id}` (idempotente en el proveedor) y registra `polizas.notificada_en`. Si el aviso no sale, **la póliza queda
+  emitida** (no se deshace) y `_emitir` contesta 503 para que Cloud Tasks (o el hilo local) reintente solo el aviso; ya notificada,
+  repetir la emisión no avisa de nuevo.
+
 ## Diseño
 
 - **Capas simples** (sin puertos y adaptadores): hexagonal es solo para `acl-worker` (regla #3). POLICY no llama a
@@ -70,7 +84,7 @@ EN_EMISION ──UNDER──► RECHAZADA        ─► NO_EMITIDA
 `evidencias_firma` (migración `0002_evidencias_firma.py`): `propuesta_id` (UNIQUE, FK), `documento_hash`,
 `version_documento`, `documento_cifrado` (el documento exacto que se hasheó, cifrado), `firmante_id` (id opaco),
 `referencia_proveedor`, `firmada_en`. **Append-only en la base**: triggers rechazan `UPDATE`, `DELETE` y `TRUNCATE`. Con
-`documento_cifrado` se recalcula el hash y se prueba qué se firmó. `polizas` (migración `0003_polizas.py`): `propuesta_id` (UNIQUE, FK), `numero` (de la secuencia `polizas_numero_seq`, UNIQUE), `cliente_id` opaco, `vigencia_desde` y `vigencia_hasta`. `propuestas` suma `intentos_emision` (acota los reintentos del cobro pendiente) y `motivo_estado` (códigos de por qué quedó en revisión o no se emitió).
+`documento_cifrado` se recalcula el hash y se prueba qué se firmó. `polizas` (migraciones `0003_polizas.py` y `0004_poliza_notificada.py`, esta última suma `notificada_en`): `propuesta_id` (UNIQUE, FK), `numero` (de la secuencia `polizas_numero_seq`, UNIQUE), `cliente_id` opaco, `vigencia_desde` y `vigencia_hasta`. `propuestas` suma `intentos_emision` (acota los reintentos del cobro pendiente) y `motivo_estado` (códigos de por qué quedó en revisión o no se emitió).
 
 ## Configuración
 
@@ -86,6 +100,7 @@ EN_EMISION ──UNDER──► RECHAZADA        ─► NO_EMITIDA
 | `POLICY_UNDER_TIMEOUT_SEGUNDOS`, `POLICY_PAYMENTS_TIMEOUT_SEGUNDOS` | `3.0`, `5.0` | Espera máxima |
 | `TOKEN_RECAUDO_CREDITO` | `tok_recaudo_local` | Token opaco del convenio de recaudo con el banco del crédito (W03-5, REWIRE): la prima va con la cuota del crédito, no con tarjeta. En la nube no puede ser el valor local |
 | `DISPARADOR` | `bucle` | `externo` en Cloud Run (los fija Terraform): `GCP_PROYECTO`, `GCP_REGION`, `TAREAS_CUENTA`, `URL_PROPIA`, `TAREAS_COLA` |
+| `DOCUMENTO_AMBIENTE_PRUEBAS` | `true` | Pie del PDF que avisa que la firma y el cobro son simulados |
 | `COBRO_PENDIENTE_DEMORA_SEGUNDOS`, `EMISION_MAX_INTENTOS` | `10`, `12` | Cada cuánto se vuelve a consultar un cobro pendiente y cuántas veces |
 | `AUTENTICACION_SERVICIOS` | `ninguna` | `id_token` en Cloud Run (RATING, el ACL, UNDER y PAYMENTS son privados) |
 
