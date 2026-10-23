@@ -420,9 +420,9 @@ google-auth==2.62.0 \
     #   -r requirements.in
     #   google-api-core
     #   google-cloud-kms
-google-cloud-kms==3.17.0 \
-    --hash=sha256:081e790d1b94d8145ba49e6a391335e0372e2c3bf4f8174124249f37ab06ca8f \
-    --hash=sha256:b0a64538bef12851837a34ba567b52c147b89f809a45b5bcfedcfd63608c87a7
+google-cloud-kms==3.18.0 \
+    --hash=sha256:019754cbcd57d032027d288e9c138c062c7870585c461b2e2772c1bc61c6d40a \
+    --hash=sha256:475d3d8fd4e2697cab71493b99e48dcb5e0bbf347a663907942df1eaa009b5f6
     # via -r requirements.in
 googleapis-common-protos[grpc]==1.75.5 \
     --hash=sha256:c7a866fc34ed29a3b10af627a4b9b1dc2433313ca6e959f0ae4feb132047ed72 \
