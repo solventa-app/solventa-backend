@@ -19,7 +19,7 @@ ENTRADA_OFERTA = {
     "consentimientoId": "c-1",
     "documentoIdentidad": "CC-1020304050",
     "valorCredito": "200000000",
-    "plazoMeses": 240,
+    "plazoMeses": 60,
     "direccionInmueble": "Calle 1 # 2-3",
 }
 

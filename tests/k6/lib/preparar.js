@@ -132,7 +132,7 @@ export function pedirOferta(graphqlUrl, sesion, extra, parametros) {
       entrada: {
         documentoIdentidad: sesion.documento,
         valorCredito: "200000000",
-        plazoMeses: 240,
+        plazoMeses: 60,
         direccionInmueble: "Bogotá D.C., Chapinero",
         consentimientoId: sesion.consentimientoId,
         ...(extra || {}),

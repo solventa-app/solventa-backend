@@ -75,7 +75,7 @@
               "mode": "graphql",
               "graphql": {
                 "query": "mutation($entrada: SolicitudOfertaInput!) { solicitarOferta(entrada: $entrada) { __typename ... on Oferta { id tipo prima { valor moneda } rangoPrima { minima { valor } } fuentes { nombre estado } } ... on ErrorOferta { mensaje puedeReintentar } } }",
-                "variables": "{\"entrada\": {\"consentimientoId\": \"{{consentimientoId}}\", \"documentoIdentidad\": \"{{documentoIdentidad}}\", \"valorCredito\": \"200000000\", \"plazoMeses\": 240, \"direccionInmueble\": \"Calle 1 # 2-3\"}}"
+                "variables": "{\"entrada\": {\"consentimientoId\": \"{{consentimientoId}}\", \"documentoIdentidad\": \"{{documentoIdentidad}}\", \"valorCredito\": \"200000000\", \"plazoMeses\": 60, \"direccionInmueble\": \"Calle 1 # 2-3\"}}"
               }
             }
           },
@@ -148,7 +148,7 @@
               "mode": "graphql",
               "graphql": {
                 "query": "mutation($entrada: SolicitudOfertaInput!) { solicitarOferta(entrada: $entrada) { __typename ... on Oferta { tipo rangoPrima { minima { valor } maxima { valor } } fuentes { nombre estado } } ... on ErrorOferta { mensaje } } }",
-                "variables": "{\"entrada\": {\"consentimientoId\": \"{{consentimientoId}}\", \"documentoIdentidad\": \"{{documentoIdentidad}}\", \"valorCredito\": \"200000000\", \"plazoMeses\": 240, \"direccionInmueble\": \"Calle 1 # 2-3\"}}"
+                "variables": "{\"entrada\": {\"consentimientoId\": \"{{consentimientoId}}\", \"documentoIdentidad\": \"{{documentoIdentidad}}\", \"valorCredito\": \"200000000\", \"plazoMeses\": 60, \"direccionInmueble\": \"Calle 1 # 2-3\"}}"
               }
             }
           },
@@ -273,7 +273,7 @@
               "mode": "graphql",
               "graphql": {
                 "query": "mutation($entrada: SolicitudOfertaInput!) { solicitarOferta(entrada: $entrada) { __typename ... on ErrorOferta { mensaje puedeReintentar } ... on Oferta { id } } }",
-                "variables": "{\"entrada\": {\"consentimientoId\": \"{{consentimientoId}}\", \"documentoIdentidad\": \"{{documentoIdentidad}}\", \"valorCredito\": \"200000000\", \"plazoMeses\": 240, \"direccionInmueble\": \"Calle 1 # 2-3\"}}"
+                "variables": "{\"entrada\": {\"consentimientoId\": \"{{consentimientoId}}\", \"documentoIdentidad\": \"{{documentoIdentidad}}\", \"valorCredito\": \"200000000\", \"plazoMeses\": 60, \"direccionInmueble\": \"Calle 1 # 2-3\"}}"
               }
             }
           },

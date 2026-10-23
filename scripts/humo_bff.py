@@ -47,7 +47,7 @@ ENTRADA = {
     # El BFF exige al menos 6 dígitos en el documento (mismo límite que el formulario W01-01).
     "documentoIdentidad": "CC-HUMO-100001",
     "valorCredito": "200000000",
-    "plazoMeses": 240,
+    "plazoMeses": 60,
     "direccionInmueble": "Direccion de prueba",
 }
 CLAVE_ASESOR = "clave-humo-0001"
