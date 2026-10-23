@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/poliza.emitida/v1",
+  "title": "poliza.emitida",
+  "description": "POLICY emitió una póliza: la firma quedó registrada, la suscripción aprobó y el primer cobro está cobrado. Sin datos personales: el cliente va como identificador opaco.",
+  "type": "object",
+  "required": ["eventId", "tipo", "version", "ocurridoEn", "datos"],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "tipo": { "const": "poliza.emitida" },
+    "version": { "const": 1 },
+    "ocurridoEn": { "type": "string", "format": "date-time" },
+    "datos": {
+      "type": "object",
+      "required": ["polizaId", "numeroPoliza", "propuestaId", "clienteId", "vigenciaDesde", "vigenciaHasta"],
+      "additionalProperties": false,
+      "properties": {
+        "polizaId": { "type": "string" },
+        "numeroPoliza": { "type": "string" },
+        "propuestaId": { "type": "string" },
+        "clienteId": { "type": "string" },
+        "vigenciaDesde": { "type": "string", "format": "date-time" },
+        "vigenciaHasta": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

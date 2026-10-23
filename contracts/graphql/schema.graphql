@@ -189,6 +189,99 @@ type ErrorCobro {
 
 union ResultadoCobro = Cobro | ErrorCobro
 
+# ---------- Suscripción, firma y póliza (HU-W03) ----------
+# Flujo: aceptarOferta -> documentoFirma -> firmarPropuesta -> (en segundo plano: decisión, cobro y emisión).
+# El cliente consulta `propuesta` hasta ver EMITIDA. El precio nunca lo manda el cliente: POLICY lo lee de la oferta.
+
+enum EstadoPropuesta {
+  ACEPTADA # oferta aceptada, falta firmar
+  EN_EMISION # firmada; se está decidiendo, cobrando y emitiendo
+  EN_REVISION # la suscripción pasó a revisión manual
+  PENDIENTE_PAGO # el primer cobro quedó pendiente; se emite sola cuando se cobre
+  PAGO_RECHAZADO # el primer cobro fue rechazado; no hay póliza
+  NO_EMITIDA # la suscripción rechazó la propuesta
+  EMITIDA # hay póliza (ver Propuesta.polizaId)
+}
+
+enum MotivoErrorAceptacion {
+  OFERTA_PRELIMINAR
+  OFERTA_VENCIDA
+  OFERTA_NO_ENCONTRADA
+  CONSENTIMIENTO_NO_VIGENTE
+}
+
+enum MotivoErrorFirma {
+  COBRO_NO_AUTORIZADO
+  VERSION_DOCUMENTO_DESACTUALIZADA
+  PROPUESTA_NO_FIRMABLE
+  SERVICIO_FIRMA_NO_DISPONIBLE
+}
+
+type Propuesta {
+  id: ID!
+  ofertaId: ID!
+  estado: EstadoPropuesta!
+  prima: Monto!
+  cobertura: Monto!
+  plazoMeses: Int!
+  polizaId: ID # presente cuando el estado es EMITIDA
+  actualizadoEn: DateTime!
+}
+
+type ErrorAceptacion {
+  mensaje: String!
+  puedeReintentar: Boolean!
+  motivo: MotivoErrorAceptacion
+}
+
+union ResultadoAceptacion = Propuesta | ErrorAceptacion
+
+# Lo que el cliente lee antes de firmar (W03-02a y W03-02b): el monto sale de la cláusula de cobro.
+type DocumentoFirma {
+  propuestaId: ID!
+  version: String! # se reenvía en FirmarPropuestaInput.versionDocumento
+  resumen: String!
+  montoMensual: Monto!
+  meses: Int!
+  formaCobro: String! # p. ej. "con la cuota de tu crédito"
+}
+
+input FirmarPropuestaInput {
+  propuestaId: ID!
+  autorizaCobro: Boolean! # debe ser true: la firma autoriza el cobro recurrente
+  versionDocumento: String!
+}
+
+type FirmaRegistrada {
+  propuestaId: ID!
+  firmadaEn: DateTime!
+  referencia: String! # referencia de la evidencia de no repudio
+  estado: EstadoPropuesta!
+}
+
+type ErrorFirma {
+  mensaje: String!
+  puedeReintentar: Boolean!
+  motivo: MotivoErrorFirma
+}
+
+union ResultadoFirma = FirmaRegistrada | ErrorFirma
+
+enum EstadoPoliza {
+  EMITIDA
+}
+
+type Poliza {
+  id: ID!
+  numero: String!
+  estado: EstadoPoliza!
+  vigenciaDesde: DateTime!
+  vigenciaHasta: DateTime!
+  prima: Monto!
+  cobertura: Monto!
+  documentoUrl: String! # ruta del BFF que entrega el PDF; solo el titular, su asesor o un BACKOFFICE
+}
+
 # ---------- Usuarios y sesión (HU-M02, CA-W01-11) ----------
 # El token de `Sesion` viaja en la cabecera `Authorization: Bearer <token>` de las demás operaciones.
 
@@ -261,6 +354,9 @@ type Query {
   usuarios(rol: RolUsuario): [Usuario!]!
   # Solo para mostrar: los montos en otra moneda con las tasas del ACL Worker (hasta 50 por llamada).
   convertirMontos(montos: [MontoInput!]!, moneda: String!): [Monto!]!
+  propuesta(id: ID!): Propuesta
+  documentoFirma(propuestaId: ID!): DocumentoFirma
+  poliza(id: ID!): Poliza
 }
 
 type Mutation {
@@ -278,4 +374,8 @@ type Mutation {
   suspenderUsuario(id: ID!): ResultadoUsuario!
   # Idioma y moneda por defecto del propio usuario (el id sale del token).
   actualizarPreferencias(entrada: PreferenciasInput!): ResultadoUsuario!
+  # Solo una oferta COMPLETA y vigente. Aceptar dos veces la misma oferta devuelve la misma propuesta.
+  aceptarOferta(ofertaId: ID!): ResultadoAceptacion!
+  # Solo el CLIENTE titular firma (no repudio). Firmar dos veces devuelve la misma evidencia.
+  firmarPropuesta(entrada: FirmarPropuestaInput!): ResultadoFirma!
 }
