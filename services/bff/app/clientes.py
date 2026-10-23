@@ -27,6 +27,14 @@ class PropuestaRechazada(Exception):
         self.motivo = motivo
 
 
+class FirmaRechazada(Exception):
+    """POLICY no aceptó la firma. `motivo` es un `MotivoErrorFirma` del contrato."""
+
+    def __init__(self, motivo: str) -> None:
+        super().__init__(motivo)
+        self.motivo = motivo
+
+
 class SolicitudInvalida(Exception):
     """El servicio rechazó la solicitud (4xx): reintentar no la arregla."""
 
@@ -105,6 +113,12 @@ class PuertoPolicy(Protocol):
     async def crear_propuesta(self, oferta_id: str, actor_usuario_id: str | None) -> dict: ...
 
     async def obtener_propuesta(self, propuesta_id: str) -> dict | None: ...
+
+    async def documento_firma(self, propuesta_id: str) -> dict | None: ...
+
+    async def firmar_propuesta(
+        self, propuesta_id: str, autoriza_cobro: bool, version_documento: str, firmante_id: str
+    ) -> dict: ...
 
 
 class PuertoPayments(Protocol):
@@ -400,6 +414,39 @@ class ClientePolicyHttp:
 
     async def obtener_propuesta(self, propuesta_id: str) -> dict | None:
         return _json_o_none(await _pedir(self._cliente, "GET", f"/propuestas/{propuesta_id}"))
+
+    async def documento_firma(self, propuesta_id: str) -> dict | None:
+        """`None` si no existe o no se puede armar el documento (409)."""
+        respuesta = await _pedir(
+            self._cliente, "GET", f"/propuestas/{propuesta_id}/documento-firma"
+        )
+        if respuesta.status_code == 409:
+            return None
+        return _json_o_none(respuesta)
+
+    async def firmar_propuesta(
+        self, propuesta_id: str, autoriza_cobro: bool, version_documento: str, firmante_id: str
+    ) -> dict:
+        """404, 409 y 422 son rechazos de negocio (`FirmaRechazada` con el motivo del contrato); un
+        5xx o un 503 (el proveedor no responde) llega como `ErrorServicio`, que se ofrece
+        reintentar."""
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            f"/propuestas/{propuesta_id}/firma",
+            {
+                "autoriza_cobro": autoriza_cobro,
+                "version_documento": version_documento,
+                "firmante_id": firmante_id,
+            },
+        )
+        if respuesta.status_code == 404:
+            raise FirmaRechazada("PROPUESTA_NO_FIRMABLE")
+        if respuesta.status_code in (409, 422):
+            raise FirmaRechazada(str(_detalle(respuesta)))
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
 
 
 class ClientePaymentsHttp:

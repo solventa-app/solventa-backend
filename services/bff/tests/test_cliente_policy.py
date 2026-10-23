@@ -6,7 +6,7 @@ import json
 import httpx
 import pytest
 
-from app.clientes import ClientePolicyHttp, ErrorServicio, PropuestaRechazada
+from app.clientes import ClientePolicyHttp, ErrorServicio, FirmaRechazada, PropuestaRechazada
 
 
 def _crear(responder) -> tuple[dict, list[dict]]:
@@ -55,3 +55,61 @@ def test_obtener_propuesta_devuelve_none_si_no_existe() -> None:
             return await ClientePolicyHttp(cliente).obtener_propuesta("p-1")
 
     assert asyncio.run(correr()) is None
+
+
+def _firmar(responder) -> dict:
+    async def correr() -> dict:
+        transporte = httpx.MockTransport(lambda peticion: responder(peticion))
+        async with httpx.AsyncClient(base_url="http://policy", transport=transporte) as cliente:
+            return await ClientePolicyHttp(cliente).firmar_propuesta("p-1", True, "v1", "u-1")
+
+    return asyncio.run(correr())
+
+
+def test_firmar_manda_el_firmante_de_la_sesion_y_la_autorizacion() -> None:
+    vistas: list[httpx.Request] = []
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        vistas.append(peticion)
+        return httpx.Response(200, json={"referencia": "fe-1"})
+
+    assert _firmar(responder) == {"referencia": "fe-1"}
+    assert vistas[0].url.path == "/propuestas/p-1/firma"
+    assert json.loads(vistas[0].content) == {
+        "autoriza_cobro": True,
+        "version_documento": "v1",
+        "firmante_id": "u-1",
+    }
+
+
+@pytest.mark.parametrize(
+    ("estado", "detalle", "motivo"),
+    [
+        (404, "propuesta no encontrada", "PROPUESTA_NO_FIRMABLE"),
+        (409, "VERSION_DOCUMENTO_DESACTUALIZADA", "VERSION_DOCUMENTO_DESACTUALIZADA"),
+        (422, "COBRO_NO_AUTORIZADO", "COBRO_NO_AUTORIZADO"),
+    ],
+)
+def test_firmar_traduce_los_rechazos_de_negocio(estado: int, detalle: str, motivo: str) -> None:
+    with pytest.raises(FirmaRechazada) as error:
+        _firmar(lambda peticion: httpx.Response(estado, json={"detail": detalle}))
+
+    assert error.value.motivo == motivo
+
+
+def test_firmar_con_el_proveedor_caido_es_error_de_servicio() -> None:
+    with pytest.raises(ErrorServicio):
+        _firmar(
+            lambda peticion: httpx.Response(503, json={"detail": "SERVICIO_FIRMA_NO_DISPONIBLE"})
+        )
+
+
+def test_documento_firma_409_o_404_es_none() -> None:
+    for estado in (404, 409):
+
+        async def correr(estado=estado) -> dict | None:
+            transporte = httpx.MockTransport(lambda peticion: httpx.Response(estado))
+            async with httpx.AsyncClient(base_url="http://policy", transport=transporte) as cliente:
+                return await ClientePolicyHttp(cliente).documento_firma("p-1")
+
+        assert asyncio.run(correr()) is None

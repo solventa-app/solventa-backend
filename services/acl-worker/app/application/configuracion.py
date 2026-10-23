@@ -23,6 +23,9 @@ class Configuracion:
     # Qué adaptador de pasarela se usa (EC031): "estandar" o "alterna". Cambiar de proveedor es
     # esto.
     proveedor_pasarela: str = "estandar"
+    # Firma electrónica (HU-W03): dónde está y qué adaptador se usa (EC031, igual que la pasarela).
+    firma_url: str = "http://localhost:8104"
+    proveedor_firma: str = "estandar"
     # Quién dispara la sonda: "bucle" (local y CI) o "externo" (Cloud Scheduler, en Cloud Run).
     disparador: str = "bucle"
     # Solo con DISPARADOR=externo (los fija Terraform): la cola de reconciliación de Cloud Tasks y a
@@ -40,6 +43,7 @@ class Configuracion:
     presupuesto_ms_open_finance: int = 700
     presupuesto_ms_open_data: int = 700
     presupuesto_ms_pasarela: int = 700
+    presupuesto_ms_firma: int = 700
     # Bloque 5: ruta opcional al catálogo de fuentes (contracts/fuentes.json).
     fuentes_config_path: str | None = None
 
@@ -50,6 +54,7 @@ class Configuracion:
             "open-finance": self.presupuesto_ms_open_finance,
             "open-data": self.presupuesto_ms_open_data,
             "pasarela": self.presupuesto_ms_pasarela,
+            "firma": self.presupuesto_ms_firma,
         }
         ms = mapa_ms.get(clave)
         if ms is None:
@@ -66,6 +71,9 @@ class Configuracion:
         proveedor_pasarela = os.getenv("PROVEEDOR_PASARELA", "estandar")
         if proveedor_pasarela not in ("estandar", "alterna"):
             raise ValueError("PROVEEDOR_PASARELA debe ser 'estandar' o 'alterna'")
+        proveedor_firma = os.getenv("PROVEEDOR_FIRMA", "estandar")
+        if proveedor_firma not in ("estandar", "alterna"):
+            raise ValueError("PROVEEDOR_FIRMA debe ser 'estandar' o 'alterna'")
         disparador = os.getenv("DISPARADOR", "bucle")
         if disparador not in ("bucle", "externo"):
             raise ValueError("DISPARADOR debe ser 'bucle' o 'externo'")
@@ -82,6 +90,7 @@ class Configuracion:
             open_finance_url=os.getenv("OPEN_FINANCE_URL", "http://localhost:8101"),
             open_data_url=os.getenv("OPEN_DATA_URL", "http://localhost:8102"),
             pasarela_url=os.getenv("PASARELA_URL", "http://localhost:8103"),
+            firma_url=os.getenv("FIRMA_URL", "http://localhost:8104"),
             timeout_s=int(timeout_ms_default) / 1000,
             breaker_umbral_fallos=int(os.getenv("BREAKER_UMBRAL_FALLOS", "3")),
             breaker_ttl_segundos=float(os.getenv("BREAKER_TTL_SEGUNDOS", "5")),
@@ -101,8 +110,10 @@ class Configuracion:
             ),
             presupuesto_ms_open_data=int(os.getenv("PRESUPUESTO_MS_OPEN_DATA", timeout_ms_default)),
             presupuesto_ms_pasarela=int(os.getenv("PRESUPUESTO_MS_PASARELA", timeout_ms_default)),
+            presupuesto_ms_firma=int(os.getenv("PRESUPUESTO_MS_FIRMA", timeout_ms_default)),
             fuentes_config_path=os.getenv("FUENTES_CONFIG_PATH") or None,
             proveedor_pasarela=proveedor_pasarela,
+            proveedor_firma=proveedor_firma,
             disparador=disparador,
             tareas_proyecto=os.getenv("GCP_PROYECTO", ""),
             tareas_region=os.getenv("GCP_REGION", ""),

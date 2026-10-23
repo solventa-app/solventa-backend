@@ -1,5 +1,5 @@
 """ACL Worker: capa anticorrupción hexagonal. Único punto de contacto con
-proveedores externos (Open Finance, Open Data, pasarela de pagos) — ver
+proveedores externos (Open Finance, Open Data, pasarela de pagos, firma electrónica) — ver
 `app/domain/puertos.py` y el README de este servicio.
 """
 
@@ -14,6 +14,8 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 
 from app.adapters.autenticacion_servicios import autenticacion_para
+from app.adapters.firma import AdaptadorFirma
+from app.adapters.firma_alterna import AdaptadorFirmaAlterna
 from app.adapters.open_data import AdaptadorOpenData
 from app.adapters.open_finance import AdaptadorOpenFinance
 from app.adapters.pasarela import AdaptadorPasarela
@@ -21,6 +23,7 @@ from app.adapters.pasarela_alterna import AdaptadorPasarelaAlterna
 from app.adapters.tasas_cambio import AdaptadorTasasReferencia
 from app.application.cache import CacheFuentes
 from app.application.circuitos import (
+    NOMBRE_CIRCUITO_FIRMA,
     NOMBRE_CIRCUITO_OPEN_DATA,
     NOMBRE_CIRCUITO_OPEN_FINANCE,
     NOMBRE_CIRCUITO_PASARELA,
@@ -38,10 +41,11 @@ from app.application.reconciliacion import (
     MarcaDedupRedis,
     ProductorReconciliacion,
 )
+from app.application.servicio_firma import ServicioFirma
 from app.application.servicio_fuentes import ServicioConsultaFuentes
 from app.application.servicio_pagos import ServicioCobro
 from app.application.sonda import SondaRecuperacion
-from app.domain.puertos import ConsultaFuente, OrdenCobro
+from app.domain.puertos import ConsultaFuente, OrdenCobro, SolicitudFirma
 from app.observabilidad import configurar_trazas
 
 # Backoff acotado de la reconciliación diferida (contrato punto 5): 5 intentos,
@@ -96,6 +100,20 @@ class ResultadoCobroResponse(BaseModel):
     referencia: str | None
     motivo: str | None
     detalle: dict
+
+
+class SolicitudFirmaRequest(BaseModel):
+    id_firma: str
+    documento_hash: str
+    version_documento: str
+    firmante_id: str
+
+
+class ResultadoFirmaResponse(BaseModel):
+    estado: str
+    referencia: str | None
+    firmada_en: str | None
+    motivo: str | None
 
 
 class ConsultaCobroResponse(BaseModel):
@@ -220,12 +238,27 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             adaptador_pasarela, fabrica, NOMBRE_CIRCUITO_PASARELA, presupuesto_pasarela_s
         )
 
+        presupuesto_firma_s = config.presupuesto_proveedor_s("firma")
+        # EC031: cambiar de proveedor de firma es elegir otro adaptador; nada más cambia.
+        clase_firma = (
+            AdaptadorFirmaAlterna if config.proveedor_firma == "alterna" else AdaptadorFirma
+        )
+        adaptador_firma = clase_firma(
+            config.firma_url,
+            presupuesto_firma_s,
+            auth=autenticacion_para(config.autenticacion_servicios, "stub-firma"),
+        )
+        servicio_firma = ServicioFirma(
+            adaptador_firma, fabrica, NOMBRE_CIRCUITO_FIRMA, presupuesto_firma_s
+        )
+
         sonda = SondaRecuperacion(
             fabrica,
             sondeos={
                 NOMBRE_CIRCUITO_OPEN_FINANCE: adaptador_open_finance.sondear,
                 NOMBRE_CIRCUITO_OPEN_DATA: adaptador_open_data.sondear,
                 NOMBRE_CIRCUITO_PASARELA: adaptador_pasarela.sondear,
+                NOMBRE_CIRCUITO_FIRMA: adaptador_firma.sondear,
             },
             intervalo_s=config.sonda_intervalo_segundos,
         )
@@ -238,6 +271,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         app.state.servicios_por_fuente = servicios_por_fuente
         app.state.cache_fuentes = cache_fuentes
         app.state.servicio_cobro = servicio_cobro
+        app.state.servicio_firma = servicio_firma
 
         try:
             yield
@@ -247,6 +281,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 adaptador_open_finance.cerrar,
                 adaptador_open_data.cerrar,
                 adaptador_pasarela.cerrar,
+                adaptador_firma.cerrar,
             )
             for cerrar in cierres:
                 cerrar()
@@ -271,6 +306,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             NOMBRE_CIRCUITO_OPEN_FINANCE,
             NOMBRE_CIRCUITO_OPEN_DATA,
             NOMBRE_CIRCUITO_PASARELA,
+            NOMBRE_CIRCUITO_FIRMA,
         )
         return {nombre: fabrica.get_breaker(nombre).context.state for nombre in nombres}
 
@@ -350,6 +386,26 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             estado=cobro.estado if cobro else None,
             referencia=cobro.referencia if cobro else None,
             motivo=cobro.motivo if cobro else None,
+        )
+
+    @app.post("/firma/firmar", tags=["firma"], response_model=ResultadoFirmaResponse)
+    def firmar(body: SolicitudFirmaRequest) -> ResultadoFirmaResponse:
+        """Firma electrónica del documento de la póliza (HU-W03). Recibe solo el hash. Siempre 200:
+        si el proveedor no responde o el circuito está abierto, `pendiente` con su motivo (regla
+        #4), y POLICY ofrece reintentar. Repetir el mismo `id_firma` devuelve la misma evidencia."""
+        resultado = app.state.servicio_firma.firmar(
+            SolicitudFirma(
+                id_firma=body.id_firma,
+                documento_hash=body.documento_hash,
+                version_documento=body.version_documento,
+                firmante_id=body.firmante_id,
+            )
+        )
+        return ResultadoFirmaResponse(
+            estado=resultado.estado,
+            referencia=resultado.referencia,
+            firmada_en=resultado.firmada_en,
+            motivo=resultado.motivo,
         )
 
     @app.get("/tasas-cambio", tags=["tasas"], response_model=TasasCambioResponse)

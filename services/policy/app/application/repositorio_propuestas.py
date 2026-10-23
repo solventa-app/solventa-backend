@@ -10,7 +10,8 @@ la primera. El pool va en `autocommit` (una sentencia = una transacción) para q
 dependa solo de ese lock.
 
 La oferta (prima, cobertura, plazo) se guarda cifrada por campo (HA-SEG-002), con el id de la
-propuesta como dato asociado."""
+propuesta como dato asociado. La evidencia de firma (`evidencias_firma`) es append-only en la base y
+guarda el documento firmado cifrado, con el id de la evidencia como dato asociado."""
 
 import json
 from typing import Any
@@ -23,6 +24,11 @@ from app.application.cifrado import CifradorCampos
 _COLUMNAS = (
     "id, oferta_id, cliente_id, consentimiento_id, actor_usuario_id, estado, oferta_cifrada, "
     "creado_en, actualizado_en"
+)
+
+_COLUMNAS_EVIDENCIA = (
+    "id, propuesta_id, documento_hash, version_documento, firmante_id, "
+    "referencia_proveedor, firmada_en, creado_en"
 )
 
 
@@ -83,6 +89,54 @@ class RepositorioPropuestasPostgres:
                 {"oferta_id": datos["oferta_id"]},
             ).fetchone()
         return self._a_propuesta(existente), False
+
+    def obtener_evidencia(self, propuesta_id: str) -> dict[str, Any] | None:
+        with self._pool.connection() as conexion:
+            fila = conexion.execute(
+                f"SELECT {_COLUMNAS_EVIDENCIA} FROM evidencias_firma "
+                "WHERE propuesta_id = %(propuesta_id)s",
+                {"propuesta_id": propuesta_id},
+            ).fetchone()
+        return fila
+
+    def registrar_firma(self, propuesta_id: str, evidencia: dict[str, Any]) -> tuple[dict, bool]:
+        """Guarda la evidencia (una sola vez por propuesta) y pasa la propuesta a `EN_EMISION`,
+        todo en una transacción: nunca queda firmada sin evidencia ni con evidencia sin estado.
+        Devuelve la evidencia y si se creó ahora (False = otra petición ya la había guardado)."""
+        documento = self._cifrador.cifrar(evidencia["documento"], evidencia["id"])
+        with self._pool.connection() as conexion, conexion.transaction():
+            fila = conexion.execute(
+                f"""
+                INSERT INTO evidencias_firma
+                    (id, propuesta_id, documento_hash, version_documento, documento_cifrado,
+                     firmante_id, consentimiento_id, referencia_proveedor, firmada_en)
+                VALUES
+                    (%(id)s, %(propuesta_id)s, %(documento_hash)s, %(version_documento)s,
+                     %(documento_cifrado)s, %(firmante_id)s, %(consentimiento_id)s,
+                     %(referencia_proveedor)s, %(firmada_en)s)
+                ON CONFLICT (propuesta_id) DO NOTHING
+                RETURNING {_COLUMNAS_EVIDENCIA}
+                """,
+                {
+                    **{k: v for k, v in evidencia.items() if k != "documento"},
+                    "propuesta_id": propuesta_id,
+                    "documento_cifrado": documento,
+                },
+            ).fetchone()
+            creada = fila is not None
+            if creada:
+                conexion.execute(
+                    "UPDATE propuestas SET estado = 'EN_EMISION', actualizado_en = now() "
+                    "WHERE id = %(id)s AND estado = 'ACEPTADA'",
+                    {"id": propuesta_id},
+                )
+            else:
+                fila = conexion.execute(
+                    f"SELECT {_COLUMNAS_EVIDENCIA} FROM evidencias_firma "
+                    "WHERE propuesta_id = %(propuesta_id)s",
+                    {"propuesta_id": propuesta_id},
+                ).fetchone()
+        return fila, creada
 
 
 def construir_pool(database_url: str) -> ConnectionPool:

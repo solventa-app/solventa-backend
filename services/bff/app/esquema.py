@@ -8,9 +8,8 @@ Operaciones sin backend todavía (alcance del Sprint 1, KAN-24):
 - `oferta(id)` devuelve `null`: RATING ya guarda la oferta para aceptarla (HU-W03), pero nada
   valida aún que quien la pide sea su titular, así que no se expone por esta consulta.
 - `contactarAsesor` es un MOCK que solo confirma.
-- HU-W03 (KAN-26): `aceptarOferta` y `propuesta` ya leen y escriben en POLICY (bloque 1). Siguen
-  sin backend `documentoFirma` y `firmarPropuesta` (bloque 2) y `poliza` (bloque 4): devuelven
-  `null` o un error con reintento.
+- HU-W03 (KAN-26): `aceptarOferta`, `propuesta`, `documentoFirma` y `firmarPropuesta` ya leen y
+  escriben en POLICY (bloques 1 y 2). Sigue sin backend `poliza` (bloque 4): devuelve `null`.
 `cobros` y `reintentarCobro` (KAN-28) leen y reintentan en PAYMENTS, que concilia
 con la pasarela antes de cobrar (ver `docs/cobros-conciliacion.md`).
 Ninguna produce un 5xx: los errores de GraphQL viajan con HTTP 200.
@@ -43,6 +42,7 @@ from app.servicio_oferta import ErrorOfertaDatos
 from app.servicio_suscripcion import (
     MENSAJE_SUSCRIPCION_NO_DISPONIBLE,
     ErrorAceptacionDatos,
+    ErrorFirmaDatos,
     ServicioSuscripcion,
 )
 from app.trazas_graphql import TrazaGraphQL
@@ -514,6 +514,19 @@ def _propuesta(datos: dict) -> Propuesta:
     )
 
 
+def _documento_firma(datos: dict) -> DocumentoFirma:
+    return DocumentoFirma(
+        propuesta_id=datos["propuesta_id"],
+        version=datos["version"],
+        resumen=datos["resumen"],
+        monto_mensual=Monto(
+            valor=datos["monto_mensual"]["valor"], moneda=datos["monto_mensual"]["moneda"]
+        ),
+        meses=datos["meses"],
+        forma_cobro=datos["forma_cobro"],
+    )
+
+
 def _perfil_riesgo(datos: dict | None) -> PerfilRiesgo | None:
     if not datos:
         return None
@@ -654,10 +667,17 @@ class Query:
         return _propuesta(datos) if datos else None
 
     @strawberry.field
-    def documento_firma(self, info: Info, propuesta_id: strawberry.ID) -> DocumentoFirma | None:
-        exigir_rol(info, *CLIENTE_O_ASESOR)
-        # HU-W03, bloque 2: el documento a firmar lo arma POLICY.
-        return None
+    async def documento_firma(
+        self, info: Info, propuesta_id: strawberry.ID
+    ) -> DocumentoFirma | None:
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
+        try:
+            datos = await ServicioSuscripcion(info.context["clientes"]).documento_firma(
+                str(propuesta_id), usuario
+            )
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_SUSCRIPCION_NO_DISPONIBLE) from error
+        return _documento_firma(datos) if datos else None
 
     @strawberry.field
     def poliza(self, info: Info, id: strawberry.ID) -> Poliza | None:
@@ -826,14 +846,24 @@ class Mutation:
         return _propuesta(resultado)
 
     @strawberry.mutation
-    def firmar_propuesta(self, info: Info, entrada: FirmarPropuestaInput) -> ResultadoFirma:
-        # Solo el CLIENTE titular firma: el no repudio no admite que firme otro (decisión W03-8).
-        exigir_rol(info, "CLIENTE")
-        # HU-W03, bloque 2: la firma pasa por el ACL Worker y se guarda en POLICY.
-        return ErrorFirma(
-            mensaje=MENSAJE_SUSCRIPCION_NO_DISPONIBLE,
-            puede_reintentar=True,
-            motivo=MotivoErrorFirma.SERVICIO_FIRMA_NO_DISPONIBLE,
+    async def firmar_propuesta(self, info: Info, entrada: FirmarPropuestaInput) -> ResultadoFirma:
+        # Solo el CLIENTE titular firma: el no repudio no admite que firme otro (decisión W03-8), y
+        # siempre con sesión aunque la bandera de autenticación esté en `opcional`.
+        usuario = exigir_rol(info, "CLIENTE", siempre=True)
+        resultado = await ServicioSuscripcion(info.context["clientes"]).firmar(
+            str(entrada.propuesta_id), entrada.autoriza_cobro, entrada.version_documento, usuario
+        )
+        if isinstance(resultado, ErrorFirmaDatos):
+            return ErrorFirma(
+                mensaje=resultado.mensaje,
+                puede_reintentar=resultado.puede_reintentar,
+                motivo=MotivoErrorFirma(resultado.motivo),
+            )
+        return FirmaRegistrada(
+            propuesta_id=resultado["propuesta_id"],
+            firmada_en=_fecha(resultado["firmada_en"]),
+            referencia=resultado["referencia"],
+            estado=EstadoPropuesta(resultado["estado"]),
         )
 
     @strawberry.mutation

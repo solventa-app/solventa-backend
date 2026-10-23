@@ -14,6 +14,10 @@ class Configuracion:
     rating_timeout_segundos: float
     # "ninguna" en local; "id_token" en Cloud Run (RATING es privado).
     autenticacion_servicios: str
+    # La firma pasa por el ACL Worker, nunca directo al proveedor (regla #2). El ACL corta a los
+    # 700 ms; este timeout cubre que el propio ACL esté inalcanzable.
+    acl_url: str = "http://localhost:8005"
+    acl_timeout_segundos: float = 3.0
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -24,4 +28,6 @@ class Configuracion:
             rating_url=os.getenv("RATING_URL", "http://localhost:8003"),
             rating_timeout_segundos=float(os.getenv("POLICY_RATING_TIMEOUT_SEGUNDOS", "3.0")),
             autenticacion_servicios=modo_desde_entorno(),
+            acl_url=os.getenv("ACL_URL", "http://localhost:8005"),
+            acl_timeout_segundos=float(os.getenv("POLICY_ACL_TIMEOUT_SEGUNDOS", "3.0")),
         )

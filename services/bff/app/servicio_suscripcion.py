@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 
 from app.autenticacion_usuarios import UsuarioActual
-from app.clientes import Clientes, ErrorServicio, PropuestaRechazada
+from app.clientes import Clientes, ErrorServicio, FirmaRechazada, PropuestaRechazada
 from app.identificadores import id_opaco
 
 logger = logging.getLogger("bff.suscripcion")
@@ -18,6 +18,11 @@ MENSAJE_OFERTA_VENCIDA = "La oferta venció. Vuelve a cotizar."
 MENSAJE_ACEPTACION_SIN_CONSENTIMIENTO = "No hay un consentimiento vigente para esta oferta."
 MENSAJE_SUSCRIPCION_NO_DISPONIBLE = "No pudimos procesar tu suscripción. Intenta de nuevo."
 
+MENSAJE_COBRO_NO_AUTORIZADO = "Debes autorizar el cobro de la prima para firmar."
+MENSAJE_DOCUMENTO_DESACTUALIZADO = "El documento cambió. Revísalo de nuevo antes de firmar."
+MENSAJE_PROPUESTA_NO_FIRMABLE = "Esta propuesta no se puede firmar."
+MENSAJE_FIRMA_NO_DISPONIBLE = "No pudimos registrar tu firma. Intenta de nuevo."
+
 # Motivos del contrato (`MotivoErrorAceptacion`) y su texto para el usuario.
 _MENSAJE_POR_MOTIVO = {
     "OFERTA_NO_ENCONTRADA": MENSAJE_OFERTA_NO_DISPONIBLE,
@@ -25,6 +30,27 @@ _MENSAJE_POR_MOTIVO = {
     "OFERTA_VENCIDA": MENSAJE_OFERTA_VENCIDA,
     "CONSENTIMIENTO_NO_VIGENTE": MENSAJE_ACEPTACION_SIN_CONSENTIMIENTO,
 }
+
+
+# Motivos de `MotivoErrorFirma`: texto para el usuario y si tiene sentido volver a intentarlo.
+_FIRMA_POR_MOTIVO = {
+    "COBRO_NO_AUTORIZADO": (MENSAJE_COBRO_NO_AUTORIZADO, True),
+    "VERSION_DOCUMENTO_DESACTUALIZADA": (MENSAJE_DOCUMENTO_DESACTUALIZADO, True),
+    "PROPUESTA_NO_FIRMABLE": (MENSAJE_PROPUESTA_NO_FIRMABLE, False),
+    "SERVICIO_FIRMA_NO_DISPONIBLE": (MENSAJE_FIRMA_NO_DISPONIBLE, True),
+}
+
+
+@dataclass
+class ErrorFirmaDatos:
+    mensaje: str
+    puede_reintentar: bool
+    motivo: str
+
+
+def _error_firma(motivo: str) -> ErrorFirmaDatos:
+    mensaje, puede_reintentar = _FIRMA_POR_MOTIVO[motivo]
+    return ErrorFirmaDatos(mensaje, puede_reintentar, motivo)
 
 
 @dataclass
@@ -109,3 +135,42 @@ class ServicioSuscripcion:
         if usuario is not None and usuario.rol == "CLIENTE" and dueno not in (None, usuario.id):
             return None
         return propuesta
+
+    async def documento_firma(
+        self, propuesta_id: str, usuario: UsuarioActual | None
+    ) -> dict | None:
+        """El documento a firmar, o `None` si la propuesta no existe, no es de este cliente o no se
+        puede armar. Si POLICY no responde lanza `ErrorServicio`."""
+        if await self.obtener_propuesta(propuesta_id, usuario) is None:
+            return None
+        return await self._clientes.policy.documento_firma(propuesta_id)
+
+    async def firmar(
+        self,
+        propuesta_id: str,
+        autoriza_cobro: bool,
+        version_documento: str,
+        usuario: UsuarioActual,
+    ) -> dict | ErrorFirmaDatos:
+        """La evidencia tal como la entrega POLICY, o un `ErrorFirmaDatos`. Solo el CLIENTE titular
+        firma (no repudio): se exige sesión y que la propuesta sea suya. Nunca lanza por una falla
+        de un servicio: se devuelve un error con reintento."""
+        try:
+            propuesta = await self.obtener_propuesta(propuesta_id, usuario)
+        except ErrorServicio as error:
+            logger.warning("POLICY no disponible al firmar error=%s", error)
+            return _error_firma("SERVICIO_FIRMA_NO_DISPONIBLE")
+        if propuesta is None:
+            return _error_firma("PROPUESTA_NO_FIRMABLE")
+        try:
+            return await self._clientes.policy.firmar_propuesta(
+                propuesta_id, autoriza_cobro, version_documento, usuario.id
+            )
+        except FirmaRechazada as rechazo:
+            if rechazo.motivo not in _FIRMA_POR_MOTIVO:
+                logger.warning("POLICY rechazó la firma con un motivo desconocido")
+                return _error_firma("SERVICIO_FIRMA_NO_DISPONIBLE")
+            return _error_firma(rechazo.motivo)
+        except ErrorServicio as error:
+            logger.warning("POLICY no disponible al firmar error=%s", error)
+            return _error_firma("SERVICIO_FIRMA_NO_DISPONIBLE")

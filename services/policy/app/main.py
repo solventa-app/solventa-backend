@@ -18,9 +18,18 @@ from pydantic import BaseModel, Field
 
 from app.application.autenticacion_servicios import autenticacion_para
 from app.application.cifrado import cifrador_desde_entorno
+from app.application.cliente_acl import ClienteAcl
 from app.application.cliente_rating import ClienteRating, RatingNoDisponible
 from app.application.configuracion import Configuracion
 from app.application.repositorio_propuestas import RepositorioPropuestasPostgres, construir_pool
+from app.application.servicio_firma import (
+    COBRO_NO_AUTORIZADO,
+    PROPUESTA_NO_FIRMABLE,
+    SERVICIO_FIRMA_NO_DISPONIBLE,
+    FirmaNoPermitida,
+    PropuestaNoEncontrada,
+    ServicioFirma,
+)
 from app.application.servicio_propuestas import (
     OFERTA_NO_ENCONTRADA,
     OfertaNoAceptable,
@@ -59,6 +68,29 @@ class PropuestaResponse(BaseModel):
     actualizado_en: datetime | None = None
 
 
+class DocumentoFirmaResponse(BaseModel):
+    propuesta_id: str
+    version: str
+    resumen: str
+    monto_mensual: MontoResponse
+    meses: int
+    forma_cobro: str
+
+
+class FirmarRequest(BaseModel):
+    autoriza_cobro: bool
+    version_documento: str = Field(min_length=1)
+    # Solo el id opaco del usuario que firma, nunca un documento ni un correo.
+    firmante_id: str = Field(min_length=1)
+
+
+class FirmaResponse(BaseModel):
+    propuesta_id: str
+    firmada_en: datetime
+    referencia: str  # la referencia de la evidencia de no repudio
+    estado: str  # el estado de la propuesta después de firmar
+
+
 class ErrorResponse(BaseModel):
     detail: str
 
@@ -70,17 +102,21 @@ def _respuesta(propuesta: dict[str, Any]) -> PropuestaResponse:
 def create_app(
     config: Configuracion | None = None,
     servicio_propuestas: ServicioPropuestas | None = None,
+    servicio_firma: ServicioFirma | None = None,
 ) -> FastAPI:
-    """`servicio_propuestas` permite inyectar dobles de prueba sin PostgreSQL ni RATING reales (ver
-    `tests/fakes.py`). En producción se omite y `create_app` lo construye desde `Configuracion`."""
+    """`servicio_propuestas`/`servicio_firma` permiten inyectar dobles de prueba sin PostgreSQL ni
+    RATING reales (ver `tests/fakes.py`). En producción se omiten y `create_app` los construye
+    desde `Configuracion`."""
     config = config or Configuracion.desde_entorno()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         pool: ConnectionPool | None = None
         cliente_rating: ClienteRating | None = None
+        cliente_acl: ClienteAcl | None = None
         if servicio_propuestas is not None:
             app.state.servicio_propuestas = servicio_propuestas
+            app.state.servicio_firma = servicio_firma
         else:
             pool = construir_pool(config.database_url)
             cliente_rating = ClienteRating(
@@ -88,12 +124,19 @@ def create_app(
                 config.rating_timeout_segundos,
                 autenticacion_para(config.autenticacion_servicios, "rating"),
             )
-            app.state.servicio_propuestas = ServicioPropuestas(
-                RepositorioPropuestasPostgres(pool, cifrador_desde_entorno()), cliente_rating
+            repositorio = RepositorioPropuestasPostgres(pool, cifrador_desde_entorno())
+            cliente_acl = ClienteAcl(
+                config.acl_url,
+                config.acl_timeout_segundos,
+                autenticacion_para(config.autenticacion_servicios, "acl-worker"),
             )
+            app.state.servicio_propuestas = ServicioPropuestas(repositorio, cliente_rating)
+            app.state.servicio_firma = ServicioFirma(repositorio, cliente_acl)
         try:
             yield
         finally:
+            if cliente_acl is not None:
+                cliente_acl.cerrar()
             if cliente_rating is not None:
                 cliente_rating.cerrar()
             if pool is not None:
@@ -137,6 +180,56 @@ def create_app(
         if propuesta is None:
             raise HTTPException(status_code=404, detail="propuesta no encontrada")
         return _respuesta(propuesta)
+
+    @app.get(
+        "/propuestas/{propuesta_id}/documento-firma",
+        tags=["firma"],
+        response_model=DocumentoFirmaResponse,
+        responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
+    )
+    def documento_firma(propuesta_id: str) -> DocumentoFirmaResponse:
+        """CA-W03-02: lo que el cliente lee antes de firmar, armado desde la propuesta guardada."""
+        try:
+            documento = app.state.servicio_firma.documento(propuesta_id)
+        except PropuestaNoEncontrada as error:
+            raise HTTPException(status_code=404, detail="propuesta no encontrada") from error
+        except FirmaNoPermitida as error:
+            raise HTTPException(status_code=409, detail=error.motivo) from error
+        return DocumentoFirmaResponse(**documento)
+
+    @app.post(
+        "/propuestas/{propuesta_id}/firma",
+        tags=["firma"],
+        response_model=FirmaResponse,
+        responses={
+            404: {"model": ErrorResponse},
+            409: {"model": ErrorResponse, "description": "no firmable o documento desactualizado"},
+            422: {"model": ErrorResponse, "description": "COBRO_NO_AUTORIZADO"},
+            503: {"model": ErrorResponse, "description": "el proveedor no responde; reintentar"},
+        },
+    )
+    def firmar_propuesta(propuesta_id: str, body: FirmarRequest) -> FirmaResponse:
+        """CA-W03-03: firma con el proveedor (vía el ACL) y guarda la evidencia de no repudio.
+        Idempotente: firmar dos veces devuelve la misma evidencia."""
+        try:
+            evidencia, estado = app.state.servicio_firma.firmar(
+                propuesta_id, body.autoriza_cobro, body.version_documento, body.firmante_id
+            )
+        except PropuestaNoEncontrada as error:
+            raise HTTPException(status_code=404, detail="propuesta no encontrada") from error
+        except FirmaNoPermitida as error:
+            codigo = {
+                COBRO_NO_AUTORIZADO: 422,
+                SERVICIO_FIRMA_NO_DISPONIBLE: 503,
+                PROPUESTA_NO_FIRMABLE: 409,
+            }.get(error.motivo, 409)
+            raise HTTPException(status_code=codigo, detail=error.motivo) from error
+        return FirmaResponse(
+            propuesta_id=propuesta_id,
+            firmada_en=evidencia["firmada_en"],
+            referencia=evidencia["referencia_proveedor"],
+            estado=estado,
+        )
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app
