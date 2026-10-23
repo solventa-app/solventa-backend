@@ -3,7 +3,7 @@
 import threading
 
 import pytest
-from fakes import AclFalso, RatingFalso, RepositorioPropuestasFalso
+from fakes import AclFalso, PlanificadorFalso, RatingFalso, RepositorioPropuestasFalso
 
 from app.application.cliente_acl import ResultadoFirma
 from app.application.documento_firma import hash_documento
@@ -139,3 +139,62 @@ def test_el_documento_a_firmar_sale_de_la_propuesta_guardada() -> None:
     assert documento["monto_mensual"] == {"valor": "185000", "moneda": "COP"}
     assert documento["meses"] == 60
     assert documento["version"] == "v1"
+
+
+def _armar_con_planificador(planificador: PlanificadorFalso, acl: AclFalso | None = None):
+    repositorio = RepositorioPropuestasFalso()
+    propuesta = ServicioPropuestas(repositorio, RatingFalso()).aceptar("oferta-1", "usuario-1")
+    servicio = ServicioFirma(repositorio, acl or AclFalso(), planificador)
+    return servicio, repositorio, propuesta["id"]
+
+
+def test_al_firmar_se_encola_la_emision() -> None:
+    planificador = PlanificadorFalso()
+    servicio, _, propuesta_id = _armar_con_planificador(planificador)
+
+    servicio.firmar(propuesta_id, True, "v1", "usuario-1")
+
+    assert planificador.encolados == [(propuesta_id, 0)]
+
+
+def test_una_firma_rechazada_no_encola_la_emision() -> None:
+    planificador = PlanificadorFalso()
+    pendiente = ResultadoFirma(estado="pendiente", motivo="firma_no_disponible")
+    servicio, _, propuesta_id = _armar_con_planificador(planificador, AclFalso([pendiente]))
+
+    with pytest.raises(FirmaNoPermitida):
+        servicio.firmar(propuesta_id, True, "v1", "usuario-1")
+
+    assert planificador.encolados == []
+
+
+def test_si_no_se_puede_encolar_la_firma_igual_queda_registrada() -> None:
+    planificador = PlanificadorFalso(falla=True)
+    servicio, repositorio, propuesta_id = _armar_con_planificador(planificador)
+
+    evidencia, estado = servicio.firmar(propuesta_id, True, "v1", "usuario-1")
+
+    assert estado == "EN_EMISION"
+    assert repositorio.obtener_evidencia(propuesta_id) is not None
+    assert evidencia["referencia_proveedor"]
+
+
+def test_volver_a_firmar_una_propuesta_que_quedo_sin_avanzar_la_vuelve_a_encolar() -> None:
+    planificador = PlanificadorFalso()
+    servicio, _, propuesta_id = _armar_con_planificador(planificador)
+    servicio.firmar(propuesta_id, True, "v1", "usuario-1")
+
+    servicio.firmar(propuesta_id, True, "v1", "usuario-1")
+
+    assert len(planificador.encolados) == 2
+
+
+def test_volver_a_firmar_una_propuesta_ya_emitida_no_encola_nada() -> None:
+    planificador = PlanificadorFalso()
+    servicio, repositorio, propuesta_id = _armar_con_planificador(planificador)
+    servicio.firmar(propuesta_id, True, "v1", "usuario-1")
+    repositorio._propuesta(propuesta_id)["estado"] = "EMITIDA"
+
+    servicio.firmar(propuesta_id, True, "v1", "usuario-1")
+
+    assert len(planificador.encolados) == 1

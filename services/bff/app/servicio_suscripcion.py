@@ -174,3 +174,14 @@ class ServicioSuscripcion:
         except ErrorServicio as error:
             logger.warning("POLICY no disponible al firmar error=%s", error)
             return _error_firma("SERVICIO_FIRMA_NO_DISPONIBLE")
+
+    async def obtener_poliza(self, poliza_id: str, usuario: UsuarioActual | None) -> dict | None:
+        """La póliza, o `None` si no existe o, para un CLIENTE, si la aceptó otra persona. Si POLICY
+        no responde lanza `ErrorServicio`: el llamador no debe confundirlo con "no existe"."""
+        poliza = await self._clientes.policy.obtener_poliza(poliza_id)
+        if poliza is None:
+            return None
+        dueno = poliza.get("actor_usuario_id")
+        if usuario is not None and usuario.rol == "CLIENTE" and dueno not in (None, usuario.id):
+            return None
+        return poliza

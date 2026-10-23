@@ -13,6 +13,10 @@
 #     `POST /reconciliar` del consolidador (en lugar de la cola `rq`, cuyo trabajador es un hilo de fondo), y la
 #     cola reintenta con backoff mientras el consolidador responda 503 (la fuente sigue degradada).
 #
+#   - Emisión de la póliza (W03-6): Cloud Tasks. Al firmar, POLICY encola una tarea HTTP hacia su propio
+#     `POST /propuestas/{id}/_emitir` (decisión de UNDER, primer cobro con PAYMENTS y emisión), y la vuelve a encolar
+#     mientras el primer cobro siga pendiente. La cola reintenta con backoff si UNDER o PAYMENTS no responden (503).
+#
 # Solo `variables de entorno` + estos recursos: el código de los servicios no cambia entre local (bucle) y nube.
 # Gate: var.crear_tareas (default false) y var.crear_servicios.
 #
@@ -87,6 +91,59 @@ resource "google_cloud_run_v2_service_iam_member" "payments_se_invoca" {
   name     = google_cloud_run_v2_service.servicio["payments"].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.runtime["payments"].email}"
+}
+
+# ------------------------------------------------------------------ emisión de pólizas (Cloud Tasks)
+resource "google_cloud_tasks_queue" "emision_polizas" {
+  count      = local.hay_tareas ? 1 : 0
+  depends_on = [google_project_service.tareas_apis]
+  project    = var.project_id
+  name       = "emision-polizas"
+  location   = var.region
+
+  # Cada tarea es independiente (la emisión es idempotente y la orden de cobro lleva un identificador fijo),
+  # así que puede haber varias a la vez.
+  rate_limits {
+    max_dispatches_per_second = 5
+    max_concurrent_dispatches = 5
+  }
+
+  # Si UNDER o PAYMENTS no responden, POLICY contesta 503 y Cloud Tasks reintenta unas veces. Agotados, la
+  # propuesta queda EN_EMISION y volver a firmarla (idempotente) la vuelve a encolar.
+  retry_config {
+    max_attempts  = 5
+    min_backoff   = "5s"
+    max_backoff   = "60s"
+    max_doublings = 3
+  }
+}
+
+# POLICY puede crear tareas en esa cola...
+resource "google_cloud_tasks_queue_iam_member" "policy_encola" {
+  count    = local.hay_tareas ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_tasks_queue.emision_polizas[0].name
+  role     = "roles/cloudtasks.enqueuer"
+  member   = "serviceAccount:${google_service_account.runtime["policy"].email}"
+}
+
+# ...firmadas con su propia identidad (para eso necesita poder «actuar como» ella misma)...
+resource "google_service_account_iam_member" "policy_firma_tareas" {
+  count              = local.hay_tareas ? 1 : 0
+  service_account_id = google_service_account.runtime["policy"].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.runtime["policy"].email}"
+}
+
+# ...y esa identidad puede invocar a POLICY (el servicio es privado).
+resource "google_cloud_run_v2_service_iam_member" "policy_se_invoca" {
+  count    = local.hay_tareas ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.servicio["policy"].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.runtime["policy"].email}"
 }
 
 # --------------------------------------------------------------- reconciliación de fuentes (Cloud Tasks)

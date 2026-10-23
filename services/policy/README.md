@@ -4,9 +4,10 @@ POLICY: propuestas y pólizas (HU-W03, KAN-26). Servicio nuevo del Sprint 2.
 
 ## Responsabilidad
 
-Único escritor de las tablas de suscripción (regla de arquitectura #1). Hoy, los **bloques 1 y 2** del plan
+Único escritor de las tablas de suscripción (regla de arquitectura #1). Hoy, los **bloques 1, 2 y 4** del plan
 ([`docs/plan-completar-hu-w03.md`](../../docs/plan-completar-hu-w03.md)): aceptar una oferta COMPLETA y guardarla como
-propuesta, y firmarla con evidencia de no repudio. La emisión (bloque 4) y el PDF (bloque 5) llegan después.
+propuesta, firmarla con evidencia de no repudio y emitir la póliza tras la decisión de UNDER y el primer cobro. El PDF y
+la notificación (bloque 5) llegan después.
 
 - `POST /propuestas` `{oferta_id, actor_usuario_id?}`: lee la oferta de RATING (`GET /ofertas/{id}`) y crea la
   propuesta en estado `ACEPTADA`. **El precio sale de RATING, nunca del cliente.** Idempotente por `oferta_id`: aceptar
@@ -21,7 +22,32 @@ propuesta, y firmarla con evidencia de no repudio. La emisión (bloque 4) y el P
   el ACL Worker** (solo el hash del documento) y guarda la evidencia; la propuesta pasa a `EN_EMISION`. Idempotente: firmar
   dos veces devuelve la misma evidencia. `422 COBRO_NO_AUTORIZADO`; `409 VERSION_DOCUMENTO_DESACTUALIZADA` /
   `PROPUESTA_NO_FIRMABLE`; `503 SERVICIO_FIRMA_NO_DISPONIBLE` (el proveedor no responde: reintentar; no queda evidencia).
-  Hasta el bloque 4 nada saca a la propuesta de `EN_EMISION`.
+  Al firmar se encola la emisión (ver abajo).
+
+## Emisión de la póliza (bloque 4)
+
+`POST /propuestas/{id}/_emitir` (privado: lo invoca Cloud Tasks; en local, un hilo) avanza la propuesta. Idempotente.
+
+```
+EN_EMISION ──UNDER──► RECHAZADA        ─► NO_EMITIDA
+                   ├─ REVISION_MANUAL  ─► EN_REVISION
+                   └─ APROBADA ──cobro──► cobrado    ─► EMITIDA  (póliza + evento `poliza.emitida`)
+                                      ├─ rechazado  ─► PAGO_RECHAZADO
+                                      └─ pendiente  ─► PENDIENTE_PAGO (se vuelve a consultar cada ~10 s, hasta 12 veces)
+```
+
+- **D-03:** se cobra antes de emitir, y UNDER decide antes del cobro para no cobrar a quien luego se rechaza. Un cobro
+  pendiente o rechazado **nunca** deja una póliza emitida (CA-W03-06).
+- **Idempotencia:** la orden de cobro lleva un `id_intento_cobro` derivado de la propuesta (`uuid5`), así que PAYMENTS
+  devuelve el cobro que ya existe sin cobrar de nuevo; así se vuelve a consultar un cobro pendiente. La póliza es `UNIQUE`
+  por propuesta y el cambio de estado es condicional. Verificado: 8 emisiones simultáneas dejan 1 póliza y 1 cobro.
+- **Fallas transitorias:** si UNDER o PAYMENTS no responden, `_emitir` contesta `503 EMISION_PENDIENTE`, la propuesta no
+  cambia y Cloud Tasks reintenta (o el hilo local). Nunca se decide a ciegas ni se da el cobro por hecho.
+- **Quién dispara:** `DISPARADOR=bucle` (local y CI) usa un hilo; `externo` (Cloud Run) usa Cloud Tasks (cola
+  `emision-polizas`). Firmar encola la emisión, y volver a firmar una propuesta que quedó `EN_EMISION` la reencola.
+- `GET /polizas/{id}`: número (`SOL-AAAA-NNNNNN`), vigencia, prima y cobertura. `poliza.emitida` va al bus de **log**
+  (Pub/Sub real solo está aprobado para `perfil.actualizado`, W05-8; ver W03-7 en el plan).
+- La póliza no guarda dinero: la prima y la cobertura viven cifradas en la propuesta.
 
 ## Diseño
 
@@ -44,7 +70,7 @@ propuesta, y firmarla con evidencia de no repudio. La emisión (bloque 4) y el P
 `evidencias_firma` (migración `0002_evidencias_firma.py`): `propuesta_id` (UNIQUE, FK), `documento_hash`,
 `version_documento`, `documento_cifrado` (el documento exacto que se hasheó, cifrado), `firmante_id` (id opaco),
 `referencia_proveedor`, `firmada_en`. **Append-only en la base**: triggers rechazan `UPDATE`, `DELETE` y `TRUNCATE`. Con
-`documento_cifrado` se recalcula el hash y se prueba qué se firmó. La tabla de pólizas llega con el bloque 4.
+`documento_cifrado` se recalcula el hash y se prueba qué se firmó. `polizas` (migración `0003_polizas.py`): `propuesta_id` (UNIQUE, FK), `numero` (de la secuencia `polizas_numero_seq`, UNIQUE), `cliente_id` opaco, `vigencia_desde` y `vigencia_hasta`. `propuestas` suma `intentos_emision` (acota los reintentos del cobro pendiente) y `motivo_estado` (códigos de por qué quedó en revisión o no se emitió).
 
 ## Configuración
 
@@ -56,7 +82,12 @@ propuesta, y firmarla con evidencia de no repudio. La emisión (bloque 4) y el P
 | `CIFRADO_CLAVE` | llave local pública | 32 bytes en base64; en Cloud Run llega de Secret Manager (`clave-cifrado`) y no puede ser la local |
 | `ACL_URL` | `http://localhost:8005` | ACL Worker (la firma pasa por él, nunca directo al proveedor) |
 | `POLICY_ACL_TIMEOUT_SEGUNDOS` | `3.0` | Espera máxima al ACL (el ACL corta a 700 ms) |
-| `AUTENTICACION_SERVICIOS` | `ninguna` | `id_token` en Cloud Run (RATING y el ACL son privados) |
+| `UNDER_URL`, `PAYMENTS_URL` | `http://localhost:8008`, `http://localhost:8004` | Decisión y primer cobro |
+| `POLICY_UNDER_TIMEOUT_SEGUNDOS`, `POLICY_PAYMENTS_TIMEOUT_SEGUNDOS` | `3.0`, `5.0` | Espera máxima |
+| `TOKEN_RECAUDO_CREDITO` | `tok_recaudo_local` | Token opaco del convenio de recaudo con el banco del crédito (W03-5, REWIRE): la prima va con la cuota del crédito, no con tarjeta. En la nube no puede ser el valor local |
+| `DISPARADOR` | `bucle` | `externo` en Cloud Run (los fija Terraform): `GCP_PROYECTO`, `GCP_REGION`, `TAREAS_CUENTA`, `URL_PROPIA`, `TAREAS_COLA` |
+| `COBRO_PENDIENTE_DEMORA_SEGUNDOS`, `EMISION_MAX_INTENTOS` | `10`, `12` | Cada cuánto se vuelve a consultar un cobro pendiente y cuántas veces |
+| `AUTENTICACION_SERVICIOS` | `ninguna` | `id_token` en Cloud Run (RATING, el ACL, UNDER y PAYMENTS son privados) |
 
 ## Migraciones y pruebas
 

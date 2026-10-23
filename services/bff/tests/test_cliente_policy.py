@@ -113,3 +113,15 @@ def test_documento_firma_409_o_404_es_none() -> None:
                 return await ClientePolicyHttp(cliente).documento_firma("p-1")
 
         assert asyncio.run(correr()) is None
+
+
+def test_obtener_poliza_devuelve_none_si_no_existe_y_los_datos_si_existe() -> None:
+    async def correr(respuesta: httpx.Response) -> dict | None:
+        transporte = httpx.MockTransport(lambda peticion: respuesta)
+        async with httpx.AsyncClient(base_url="http://policy", transport=transporte) as cliente:
+            return await ClientePolicyHttp(cliente).obtener_poliza("pz-1")
+
+    assert asyncio.run(correr(httpx.Response(404))) is None
+    assert asyncio.run(correr(httpx.Response(200, json={"id": "pz-1"}))) == {"id": "pz-1"}
+    with pytest.raises(ErrorServicio):
+        asyncio.run(correr(httpx.Response(503)))

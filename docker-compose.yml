@@ -258,6 +258,8 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/policy
       RATING_URL: http://rating:8003
       ACL_URL: http://acl-worker:8005
+      UNDER_URL: http://under:8008
+      PAYMENTS_URL: http://payments:8004
     depends_on:
       postgres: { condition: service_healthy }
       migrar-policy: { condition: service_completed_successfully }

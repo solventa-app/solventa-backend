@@ -75,8 +75,13 @@
     "puerto": 8007,
     "url_env": "POLICY_URL",
     "migracion": ["alembic", "upgrade", "head"],
-    "llama": ["rating", "acl-worker", "under"],
-    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
+    "llama": ["rating", "acl-worker", "under", "payments"],
+    "disparador_externo": true,
+    "entorno": {
+      "AUTENTICACION_SERVICIOS": "id_token",
+      "TRAZAS_GCP": "true",
+      "TOKEN_RECAUDO_CREDITO": "tok_recaudo_staging"
+    },
     "secretos": { "DATABASE_URL": "database-url-policy", "CIFRADO_CLAVE": "clave-cifrado" }
   },
   {

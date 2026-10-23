@@ -67,6 +67,8 @@ class ServicioPropuestas:
                 "prima": oferta["prima"],
                 "cobertura": oferta["cobertura"],
                 "plazo_meses": oferta.get("plazoMeses"),
+                # Lo necesita UNDER al decidir; si la oferta no lo trae, UNDER la manda a revisión.
+                "nivel_riesgo": (oferta.get("perfilRiesgo") or {}).get("nivelRiesgo"),
             },
         )
         logger.info(

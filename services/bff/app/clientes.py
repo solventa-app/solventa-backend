@@ -116,6 +116,8 @@ class PuertoPolicy(Protocol):
 
     async def documento_firma(self, propuesta_id: str) -> dict | None: ...
 
+    async def obtener_poliza(self, poliza_id: str) -> dict | None: ...
+
     async def firmar_propuesta(
         self, propuesta_id: str, autoriza_cobro: bool, version_documento: str, firmante_id: str
     ) -> dict: ...
@@ -414,6 +416,9 @@ class ClientePolicyHttp:
 
     async def obtener_propuesta(self, propuesta_id: str) -> dict | None:
         return _json_o_none(await _pedir(self._cliente, "GET", f"/propuestas/{propuesta_id}"))
+
+    async def obtener_poliza(self, poliza_id: str) -> dict | None:
+        return _json_o_none(await _pedir(self._cliente, "GET", f"/polizas/{poliza_id}"))
 
     async def documento_firma(self, propuesta_id: str) -> dict | None:
         """`None` si no existe o no se puede armar el documento (409)."""
