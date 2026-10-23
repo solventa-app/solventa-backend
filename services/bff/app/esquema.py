@@ -27,6 +27,14 @@ from strawberry.types import Info
 from app.autenticacion_usuarios import MENSAJE_SIN_PERMISO, MENSAJE_SIN_SESION, UsuarioActual
 from app.clientes import ErrorServicio, SolicitudInvalida
 from app.identificadores import cliente_id_desde_documento, id_opaco
+from app.idioma import TraducirMensajes
+from app.monedas import (
+    MAXIMO_MONTOS,
+    MENSAJE_DEMASIADOS_MONTOS,
+    MENSAJE_TASAS_NO_DISPONIBLES,
+    ConversionInvalida,
+    convertir,
+)
 from app.servicio_oferta import ErrorOfertaDatos
 from app.trazas_graphql import TrazaGraphQL
 
@@ -290,6 +298,9 @@ class Usuario:
     # Dato personal: solo `iniciarSesion` y `yo` lo traen (cada quien, el suyo); AUTH lo
     # deja en null en listas y altas. Nunca viaja dentro del JWT.
     nombre: str | None = None
+    # Preferencias de la interfaz (KAN-209): la web las aplica al iniciar sesión.
+    idioma: str = "ES"
+    moneda: str = "COP"
 
 
 @strawberry.type
@@ -327,6 +338,12 @@ class CrearUsuarioInput:
     clave: str
     rol: RolUsuario
     nombre: str | None = None  # solo CLIENTE; AUTH lo guarda cifrado y no lo devuelve
+
+
+@strawberry.input
+class PreferenciasInput:
+    idioma: str  # ES | EN
+    moneda: str  # COP | USD | EUR | MXN | BRL | CLP | PEN
 
 
 # ---------- Traducción desde los servicios ----------
@@ -439,6 +456,8 @@ def _usuario(datos: dict) -> Usuario:
         estado=EstadoUsuario(datos["estado"]),
         creado_en=datetime.fromisoformat(datos["creado_en"]),
         nombre=datos.get("nombre"),
+        idioma=datos.get("idioma", "ES"),
+        moneda=datos.get("moneda", "COP"),
     )
 
 
@@ -525,6 +544,27 @@ class Query:
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_AUTH_NO_DISPONIBLE) from error
         return _usuario(datos) if datos else None
+
+    @strawberry.field
+    async def convertir_montos(
+        self, info: Info, montos: list[MontoInput], moneda: str
+    ) -> list[Monto]:
+        """KAN-209: los montos en la moneda que el usuario eligió en el header, con las tasas
+        del ACL Worker. Solo para mostrar: no recalcula nada ni cambia lo cobrado."""
+        exigir_rol(info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True)
+        if len(montos) > MAXIMO_MONTOS:
+            raise ErrorPublico(MENSAJE_DEMASIADOS_MONTOS)
+        try:
+            tasas = await info.context["clientes"].acl.tasas_cambio()
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_TASAS_NO_DISPONIBLES) from error
+        try:
+            return [
+                Monto(valor=convertir(m.valor, m.moneda, moneda, tasas), moneda=moneda)
+                for m in montos
+            ]
+        except ConversionInvalida as error:
+            raise ErrorPublico(str(error)) from error
 
     @strawberry.field
     async def usuarios(
@@ -704,6 +744,24 @@ class Mutation:
         return _usuario(datos)
 
     @strawberry.mutation
+    async def actualizar_preferencias(
+        self, info: Info, entrada: PreferenciasInput
+    ) -> ResultadoUsuario:
+        """KAN-209: idioma y moneda por defecto del propio usuario (el id sale del token)."""
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True)
+        try:
+            datos = await _auth(info).actualizar_preferencias(
+                usuario.id, entrada.idioma, entrada.moneda
+            )
+        except SolicitudInvalida as error:
+            return ErrorUsuario(mensaje=str(error))
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_AUTH_NO_DISPONIBLE) from error
+        if datos is None:
+            return ErrorUsuario(mensaje=MENSAJE_USUARIO_NO_ENCONTRADO)
+        return _usuario(datos)
+
+    @strawberry.mutation
     async def suspender_usuario(self, info: Info, id: strawberry.ID) -> ResultadoUsuario:
         exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
         try:
@@ -721,5 +779,6 @@ schema = strawberry.Schema(
     extensions=[
         lambda: MaskErrors(should_mask_error=_mostrar_solo_errores_publicos),
         TrazaGraphQL,
+        TraducirMensajes,
     ],
 )

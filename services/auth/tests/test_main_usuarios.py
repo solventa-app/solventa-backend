@@ -81,3 +81,31 @@ def test_usuario_inexistente_404() -> None:
         assert client.get("/usuarios/no-existe").status_code == 404
         assert client.post("/usuarios/no-existe/suspender").status_code == 404
         assert client.post("/usuarios/no-existe/rol", json={"rol": "ASESOR"}).status_code == 404
+
+
+def test_preferencias_de_idioma_y_moneda() -> None:
+    """KAN-209: se guardan, salen al iniciar sesión y en `GET /usuarios/{id}`, y se validan."""
+    with _cliente() as client:
+        creado = client.post(
+            "/usuarios", json={"usuario": "cliente.pref", "clave": CLAVE, "rol": "CLIENTE"}
+        ).json()
+        assert (creado["idioma"], creado["moneda"]) == ("ES", "COP")
+
+        cambio = client.post(
+            f"/usuarios/{creado['id']}/preferencias", json={"idioma": "EN", "moneda": "USD"}
+        )
+        sesion = client.post("/sesiones", json={"usuario": "cliente.pref", "clave": CLAVE})
+        leido = client.get(f"/usuarios/{creado['id']}")
+        invalido = client.post(
+            f"/usuarios/{creado['id']}/preferencias", json={"idioma": "FR", "moneda": "USD"}
+        )
+        inexistente = client.post(
+            "/usuarios/no-existe/preferencias", json={"idioma": "EN", "moneda": "USD"}
+        )
+
+    assert cambio.status_code == 200
+    assert (cambio.json()["idioma"], cambio.json()["moneda"]) == ("EN", "USD")
+    assert sesion.json()["usuario"]["idioma"] == "EN"
+    assert leido.json()["moneda"] == "USD"
+    assert invalido.status_code == 400
+    assert inexistente.status_code == 404

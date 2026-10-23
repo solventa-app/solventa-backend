@@ -5,6 +5,7 @@ levantar los servicios. Las fallas de red, timeouts y 5xx se convierten en
 `ErrorServicio`; quien orquesta decide cómo degradar (regla #4: nunca un 5xx
 crudo al cliente). Ningún cuerpo de petición ni de respuesta se loguea."""
 
+import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -59,6 +60,10 @@ class PuertoAuth(Protocol):
 
     async def suspender_usuario(self, usuario_id: str) -> dict | None: ...
 
+    async def actualizar_preferencias(
+        self, usuario_id: str, idioma: str, moneda: str
+    ) -> dict | None: ...
+
 
 class PuertoAcl(Protocol):
     async def consultar_fuente(
@@ -66,6 +71,8 @@ class PuertoAcl(Protocol):
     ) -> dict: ...
 
     async def invalidar_cache_cliente(self, cliente_id: str) -> None: ...
+
+    async def tasas_cambio(self) -> dict[str, str]: ...
 
 
 class PuertoRisk(Protocol):
@@ -219,6 +226,19 @@ class ClienteAuthHttp:
             await _pedir(self._cliente, "POST", f"/usuarios/{usuario_id}/suspender")
         )
 
+    async def actualizar_preferencias(
+        self, usuario_id: str, idioma: str, moneda: str
+    ) -> dict | None:
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            f"/usuarios/{usuario_id}/preferencias",
+            {"idioma": idioma, "moneda": moneda},
+        )
+        if respuesta.status_code == 404:
+            return None
+        return _json_o_error(respuesta)
+
 
 def _json_o_error(respuesta: httpx.Response) -> Any:
     """400/409 de AUTH traen un mensaje pensado para el usuario: viaja en `SolicitudInvalida`."""
@@ -229,9 +249,27 @@ def _json_o_error(respuesta: httpx.Response) -> Any:
     return respuesta.json()
 
 
+# Las tasas de referencia cambian poco: se guardan 10 minutos por instancia del BFF.
+TTL_TASAS_SEGUNDOS = 600
+
+
 class ClienteAclHttp:
     def __init__(self, cliente: httpx.AsyncClient) -> None:
         self._cliente = cliente
+        self._tasas: dict[str, str] | None = None
+        self._tasas_vencen = 0.0
+
+    async def tasas_cambio(self) -> dict[str, str]:
+        """Cuántos COP vale una unidad de cada moneda (KAN-209), como texto decimal."""
+        ahora = time.monotonic()
+        if self._tasas is not None and ahora < self._tasas_vencen:
+            return self._tasas
+        respuesta = await _pedir(self._cliente, "GET", "/tasas-cambio")
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        self._tasas = dict(respuesta.json()["cop_por_unidad"])
+        self._tasas_vencen = ahora + TTL_TASAS_SEGUNDOS
+        return self._tasas
 
     async def consultar_fuente(self, cliente_id: str, consentimiento_id: str, fuente: str) -> dict:
         respuesta = await _pedir(

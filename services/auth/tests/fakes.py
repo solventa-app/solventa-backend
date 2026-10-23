@@ -41,6 +41,8 @@ class RepositorioUsuariosMemoria:
             "bloqueado_hasta": None,
             "creado_en": datetime.now(UTC),
             "nombre_cifrado": nombre_cifrado,
+            "idioma": "ES",
+            "moneda": "COP",
         }
         self.filas[usuario_id] = fila
         return dict(fila)
@@ -77,6 +79,12 @@ class RepositorioUsuariosMemoria:
         if usuario_id not in self.filas:
             return None
         self.filas[usuario_id]["estado"] = "SUSPENDIDO"
+        return dict(self.filas[usuario_id])
+
+    def actualizar_preferencias(self, usuario_id: str, idioma: str, moneda: str) -> dict | None:
+        if usuario_id not in self.filas:
+            return None
+        self.filas[usuario_id] |= {"idioma": idioma, "moneda": moneda}
         return dict(self.filas[usuario_id])
 
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int:

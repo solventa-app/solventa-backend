@@ -212,6 +212,9 @@ type Usuario {
   # Dato personal. Solo viene en `iniciarSesion` y `yo` (cada usuario ve el suyo); en `usuarios`,
   # `crearUsuario` y los demás cambios va en null. Nunca viaja dentro del JWT.
   nombre: String
+  # Preferencias de la interfaz (KAN-209): idioma (ES | EN) y moneda por defecto. No son datos personales.
+  idioma: String!
+  moneda: String!
 }
 
 type Sesion {
@@ -244,6 +247,11 @@ input CrearUsuarioInput {
   nombre: String = null # cualquier rol (2 a 100 caracteres); se guarda cifrado y `crearUsuario` no lo devuelve
 }
 
+input PreferenciasInput {
+  idioma: String! # ES | EN
+  moneda: String! # COP | USD | EUR | MXN | BRL | CLP | PEN
+}
+
 # ---------- Operaciones ----------
 
 type Query {
@@ -251,6 +259,8 @@ type Query {
   cobros(polizaId: ID, estado: EstadoCobro, pagina: Int = 1, tamano: Int = 10): [Cobro!]!
   yo: Usuario
   usuarios(rol: RolUsuario): [Usuario!]!
+  # Solo para mostrar: los montos en otra moneda con las tasas del ACL Worker (hasta 50 por llamada).
+  convertirMontos(montos: [MontoInput!]!, moneda: String!): [Monto!]!
 }
 
 type Mutation {
@@ -266,4 +276,6 @@ type Mutation {
   crearUsuario(entrada: CrearUsuarioInput!): ResultadoUsuario!
   cambiarRolUsuario(id: ID!, rol: RolUsuario!): ResultadoUsuario!
   suspenderUsuario(id: ID!): ResultadoUsuario!
+  # Idioma y moneda por defecto del propio usuario (el id sale del token).
+  actualizarPreferencias(entrada: PreferenciasInput!): ResultadoUsuario!
 }

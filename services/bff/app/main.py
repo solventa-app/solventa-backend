@@ -22,6 +22,7 @@ from app.autenticacion_usuarios import (
 from app.clientes import Clientes, construir_clientes
 from app.configuracion import Configuracion
 from app.esquema import schema
+from app.idioma import idioma_de
 from app.observabilidad import configurar_trazas
 from app.servicio_oferta import ServicioOferta
 
@@ -75,6 +76,8 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
                 "servicio_oferta": app.state.servicio_oferta,
                 "usuario": usuario,
                 "error_token": error_token,
+                # Idioma del selector del header (lo manda el frontend); ver app/idioma.py.
+                "idioma": idioma_de(request.headers.get("accept-language")),
                 "modo_autenticacion": config.autenticacion_usuarios,
                 "cliente_id_clave": config.cliente_id_clave,
             }

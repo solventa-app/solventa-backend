@@ -16,7 +16,7 @@ def test_crear_devuelve_solo_datos_publicos() -> None:
 
     usuario = servicio.crear("asesor.017", "clave-segura-1", "ASESOR")
 
-    assert set(usuario) == {"id", "usuario", "rol", "estado", "creado_en"}
+    assert set(usuario) == {"id", "usuario", "rol", "estado", "creado_en", "idioma", "moneda"}
     assert usuario["estado"] == "ACTIVO"
 
 

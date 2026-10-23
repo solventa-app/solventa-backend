@@ -91,3 +91,19 @@ class PuertoPasarelaPagos(Protocol):
         reales (p. ej. Wompi `reference`, PayU `referenceCode`), de modo que cambiar de
         proveedor sigue siendo solo agregar un adaptador (CA-W05-06). `None` si no existe."""
         ...
+
+
+@dataclass
+class TablaTasas:
+    """Cuántos COP vale una unidad de cada moneda (KAN-209). Valores como texto decimal: nunca
+    float. `fecha` y `fuente` dicen de cuándo y de dónde es la tabla."""
+
+    cop_por_unidad: dict[str, str]
+    fecha: str
+    fuente: str
+
+
+class PuertoTasasCambio(Protocol):
+    """Tasas de cambio para mostrar montos en la moneda que el usuario elige en la web."""
+
+    def tasas(self) -> TablaTasas: ...

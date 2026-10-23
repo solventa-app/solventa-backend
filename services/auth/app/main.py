@@ -106,6 +106,14 @@ class UsuarioResponse(BaseModel):
     # Solo lo llenan `POST /sesiones` y `GET /usuarios/{id}` (el propio usuario); en listas,
     # altas y cambios va en null para no exponer nombres ajenos.
     nombre: str | None = None
+    # Preferencias de la interfaz (KAN-209); la web las aplica al iniciar sesión.
+    idioma: str = "ES"
+    moneda: str = "COP"
+
+
+class SolicitudPreferencias(BaseModel):
+    idioma: str
+    moneda: str
 
 
 class SesionResponse(BaseModel):
@@ -275,6 +283,22 @@ def create_app(
         if usuario is None:
             raise HTTPException(status_code=404, detail="usuario no encontrado")
         logger_usuarios.info("usuario suspendido id=%s", id_opaco(usuario_id))
+        return UsuarioResponse(**usuario)
+
+    @app.post(
+        "/usuarios/{usuario_id}/preferencias", tags=["usuarios"], response_model=UsuarioResponse
+    )
+    def actualizar_preferencias(usuario_id: str, body: SolicitudPreferencias) -> UsuarioResponse:
+        """Idioma y moneda por defecto. El BFF solo lo llama con el id del propio usuario."""
+        try:
+            usuario = app.state.usuarios.actualizar_preferencias(
+                usuario_id, body.idioma, body.moneda
+            )
+        except DatoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        if usuario is None:
+            raise HTTPException(status_code=404, detail="usuario no encontrado")
+        logger_usuarios.info("preferencias actualizadas id=%s", id_opaco(usuario_id))
         return UsuarioResponse(**usuario)
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
