@@ -191,6 +191,19 @@ jobs:
               echo "No hay $secreto en Secret Manager (solo hace falta si crear_mongo_atlas = true)."
             fi
           done
+      # Cada despliegue deja una revisión con etiqueta `sha-…` y una revisión con etiqueta mantiene sus instancias mínimas:
+      # se acumularon 3 a 6 por servicio, con 1 vCPU cada una, y sumadas pasaron la cuota de 20 vCPU de la región
+      # (`Quota exceeded for total allowable CPU`, 2026-10-19/20). Sin etiqueta y sin tráfico, la revisión escala a cero.
+      - name: Liberar las etiquetas de revisiones viejas
+        run: |
+          set -euo pipefail
+          for servicio in $(gcloud run services list --region "$REGION" --project "$PROYECTO" --format='value(metadata.name)'); do
+            etiquetas=$(gcloud run services describe "$servicio" --region "$REGION" --project "$PROYECTO" --format=json \
+              | jq -r '[.status.traffic[]? | .tag // empty] | join(",")')
+            if [ -n "$etiquetas" ]; then
+              gcloud run services update-traffic "$servicio" --region "$REGION" --project "$PROYECTO" --remove-tags "$etiquetas" --quiet
+            fi
+          done
       # Lo que cobra por hora (Cloud SQL, Redis, instancias fijas) puede estar APAGADO a propósito (workflow `Costos staging`).
       # Un release no debe volver a encenderlo: la marca guardada (job `costos`) manda sobre `staging.tfvars`.
       - name: Plan
@@ -213,14 +226,24 @@ jobs:
           if [ "$PERMITIR" = "true" ]; then args+=(--permitir-destruir); fi
           python3 ../scripts/revisar_plan.py plan.json "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
       # De a pocos: cada servicio que cambia crea una revisión nueva y su instancia de arranque cuenta contra la cuota
-      # de CPU de la región (20 vCPU). Con los 10 en paralelo se pasó (2026-10-18), y las instancias fijas ya ocupan 9.
+      # de CPU de la región (20 vCPU). Con los 10 en paralelo se pasó (2026-10-18), y las instancias fijas ya ocupan 9. Con 3 en
+      # paralelo también se pasó (2026-10-19, `Quota exceeded for total allowable CPU`): se aplica de a uno.
       - name: Aplicar
-        run: terraform apply -parallelism=3 plan.bin
+        run: terraform apply -parallelism=1 plan.bin
       - name: Leer URL del API Gateway (si existe)
         id: gw_out
         run: |
           gw=$(terraform output -raw gateway_url 2>/dev/null || true)
           echo "gateway_url=${gw}" >> "$GITHUB_OUTPUT"
+          # Queda en el resumen de Terraform aunque después falle construir, migrar o desplegar.
+          if [ -n "$gw" ]; then
+            {
+              echo "## API Gateway (salida de Terraform)"
+              echo "- **\`gateway_url\`:** \`${gw}\`"
+              echo "- **GraphQL Web:** \`${gw}/graphql/web\`"
+              echo "- **Salud:** \`${gw}/health\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   construir:
     # Construir una vez: la imagen que pasó CI es la que llega a staging (etiqueta = SHA, nunca "latest").
@@ -367,6 +390,17 @@ jobs:
         env:
           NOMBRE: ${{ matrix.servicio }}
         run: gcloud run services update-traffic "$NOMBRE" --region "$REGION" --to-latest
+      # La etiqueta solo servía para la prueba de humo: quitarla deja que la revisión anterior escale a cero.
+      - name: Quitar las etiquetas de revisiones
+        env:
+          NOMBRE: ${{ matrix.servicio }}
+        run: |
+          set -euo pipefail
+          etiquetas=$(gcloud run services describe "$NOMBRE" --region "$REGION" --format=json \
+            | jq -r '[.status.traffic[]? | .tag // empty] | join(",")')
+          if [ -n "$etiquetas" ]; then
+            gcloud run services update-traffic "$NOMBRE" --region "$REGION" --remove-tags "$etiquetas" --quiet
+          fi
       - name: Resumen
         env:
           NOMBRE: ${{ matrix.servicio }}

@@ -9,3 +9,4 @@ google-auth==2.62.0
 requests==2.34.2
 opentelemetry-instrumentation-httpx==0.66b1
 opentelemetry-instrumentation-pymongo==0.66b1
+google-cloud-kms==3.17.0

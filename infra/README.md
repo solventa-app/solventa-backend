@@ -471,7 +471,7 @@ tras un rato sin uso sumaba el BFF en frío más AUTH en frío.
 - **El BFF espera a los demás hasta 15 s** (`SERVICIOS_TIMEOUT_SEGUNDOS` y `ACL_TIMEOUT_SEGUNDOS`, en el manifiesto). Antes
   eran 2 s y 1 s (los valores por defecto del código, que siguen valiendo en local, donde no hay arranque en frío), y el
   primer login fallaba con "servicio no disponible". Ahora tarda, pero entra.
-- **`startup_cpu_boost`** en todos los servicios: Cloud Run da más CPU solo mientras arranca el contenedor.
+- **`startup_cpu_boost` apagado** (2026-10-19): con el boost cada instancia que arranca pide 2 vCPU y el deploy pasó la cuota de 20 vCPU de la región.
 - **No se toca el presupuesto de 700 ms del ACL con los proveedores externos** (`TIMEOUT_MS`, EC009/EC010): es otra
   frontera, la del ACL hacia Open Finance, Open Data y la pasarela.
 - **PAYMENTS hacia el ACL** sigue en 3 s: con el ACL frío, un cobro queda `pendiente` y se reintenta (degradación prevista).
