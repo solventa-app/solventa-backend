@@ -135,7 +135,7 @@ se consulta ninguna fuente** (regla 7): el consentimiento se registra antes.
 
 ```bash
 DOC="CC-DEMO-$(python3 -c "import random;print(random.randint(10**7,10**8-1))")"
-OFERTA='{"query":"mutation($e: SolicitudOfertaInput!) { solicitarOferta(entrada: $e) { __typename ... on Oferta { tipo prima { valor moneda } rangoPrima { minima { valor } maxima { valor } } fuentes { nombre estado } } ... on ErrorOferta { mensaje puedeReintentar } } }","variables":{"e":{"consentimientoId":"'"$CONSENTIMIENTO"'","documentoIdentidad":"'"$DOC"'","valorCredito":"200000000","plazoMeses":240,"direccionInmueble":"Calle 1 # 2-3"}}}'
+OFERTA='{"query":"mutation($e: SolicitudOfertaInput!) { solicitarOferta(entrada: $e) { __typename ... on Oferta { tipo prima { valor moneda } rangoPrima { minima { valor } maxima { valor } } fuentes { nombre estado } } ... on ErrorOferta { mensaje puedeReintentar } } }","variables":{"e":{"consentimientoId":"'"$CONSENTIMIENTO"'","documentoIdentidad":"'"$DOC"'","valorCredito":"200000000","plazoMeses":60,"direccionInmueble":"Calle 1 # 2-3"}}}'
 gql "$OFERTA" "$TOKEN_ASESOR"
 ```
 
@@ -156,7 +156,7 @@ Con un documento **nuevo** (sin dato en caché) no hay de dónde sacar el histor
 obligatoria:
 
 ```bash
-OTRO='{"query":"mutation($e: SolicitudOfertaInput!) { solicitarOferta(entrada: $e) { __typename ... on ErrorOferta { mensaje puedeReintentar } } }","variables":{"e":{"consentimientoId":"'"$CONSENTIMIENTO"'","documentoIdentidad":"CC-DEMO-99887766","valorCredito":"200000000","plazoMeses":240,"direccionInmueble":"Calle 1 # 2-3"}}}'
+OTRO='{"query":"mutation($e: SolicitudOfertaInput!) { solicitarOferta(entrada: $e) { __typename ... on ErrorOferta { mensaje puedeReintentar } } }","variables":{"e":{"consentimientoId":"'"$CONSENTIMIENTO"'","documentoIdentidad":"CC-DEMO-99887766","valorCredito":"200000000","plazoMeses":60,"direccionInmueble":"Calle 1 # 2-3"}}}'
 gql "$OTRO" "$TOKEN_ASESOR"
 curl -s $ACL/circuitos
 ```

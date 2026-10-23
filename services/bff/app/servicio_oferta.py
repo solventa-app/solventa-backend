@@ -55,7 +55,7 @@ MENSAJE_REINTENTAR = (
 )
 MENSAJE_VALOR_INVALIDO = "El valor del crédito no es válido."
 MENSAJE_DOCUMENTO_INVALIDO = "El documento de identidad no es válido."
-MENSAJE_PLAZO_INVALIDO = "El plazo del crédito debe estar entre 1 y 360 meses."
+MENSAJE_PLAZO_INVALIDO = "El plazo del crédito debe estar entre 1 y 60 meses."
 MENSAJE_DIRECCION_INVALIDA = "Ingresa la dirección del inmueble."
 MENSAJE_DATOS_INSUFICIENTES = (
     "No pudimos consultar tu historial crediticio en este momento. "
@@ -70,7 +70,7 @@ MOTIVO_FUENTES_NO_DISPONIBLES = "FUENTES_NO_DISPONIBLES"
 MIN_DIGITOS_DOCUMENTO = 6
 MAX_LARGO_DOCUMENTO = 20
 PLAZO_MINIMO_MESES = 1
-PLAZO_MAXIMO_MESES = 360
+PLAZO_MAXIMO_MESES = 60
 MAX_LARGO_DIRECCION = 200
 
 

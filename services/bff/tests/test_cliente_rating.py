@@ -20,7 +20,7 @@ def _generar(responder) -> tuple[dict | None, list[dict]]:
         transporte = httpx.MockTransport(manejar)
         async with httpx.AsyncClient(base_url="http://rating", transport=transporte) as cliente:
             return await ClienteRatingHttp(cliente).generar_oferta(
-                "cli-1", "1700000000.1", "200000000", 240, "Calle 1 # 2-3, Cali"
+                "cli-1", "1700000000.1", "200000000", 60, "Calle 1 # 2-3, Cali"
             )
 
     return asyncio.run(correr()), enviados
@@ -35,7 +35,7 @@ def test_envia_plazo_y_direccion_a_rating() -> None:
             "cliente_id": "cli-1",
             "operation_time": "1700000000.1",
             "cobertura": "200000000",
-            "plazo_meses": 240,
+            "plazo_meses": 60,
             "direccion_inmueble": "Calle 1 # 2-3, Cali",
         }
     ]

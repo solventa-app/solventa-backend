@@ -48,7 +48,7 @@ están en [`docs/autenticacion-usuarios.md`](../../docs/autenticacion-usuarios.m
    Sin historial crediticio (RATING responde 422 `datos_insuficientes`, CA-W01-05) → `ErrorOferta` con reintento y `motivo: DATOS_INSUFICIENTES`.
 
 Antes del paso 1 se valida la solicitud (mismos límites que el formulario W01-01): documento con al menos 6 dígitos
-y máximo 20 caracteres, `valorCredito` decimal mayor que 0, `plazoMeses` de 1 a 360 y `direccionInmueble` no vacía
+y máximo 20 caracteres, `valorCredito` decimal mayor que 0, `plazoMeses` de 1 a 60 y `direccionInmueble` no vacía
 (máximo 200 caracteres). Si algo falla → `ErrorOferta` sin reintento, sin tocar AUTH ni las fuentes.
 
 `plazoMeses` y `direccionInmueble` viajan a RATING, que los usa en la prima (ver `services/rating/README.md`).
