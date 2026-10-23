@@ -51,15 +51,17 @@ class ClienteAcl:
             )
             respuesta.raise_for_status()
             cuerpo = respuesta.json()
-        except (httpx.HTTPError, ValueError) as error:
+            # Una respuesta sin `estado` (o que no es un objeto) se trata como no disponible.
+            resultado = ResultadoFirma(
+                estado=cuerpo["estado"],
+                referencia=cuerpo.get("referencia"),
+                firmada_en=cuerpo.get("firmada_en"),
+                motivo=cuerpo.get("motivo"),
+            )
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as error:
             logger.warning("ACL no disponible al firmar error=%s", type(error).__name__)
             return ResultadoFirma(estado="pendiente", motivo="acl_no_disponible")
-        return ResultadoFirma(
-            estado=cuerpo["estado"],
-            referencia=cuerpo.get("referencia"),
-            firmada_en=cuerpo.get("firmada_en"),
-            motivo=cuerpo.get("motivo"),
-        )
+        return resultado
 
     def cerrar(self) -> None:
         self._cliente.close()

@@ -83,12 +83,14 @@ jobs:
             services/rating: ['services/rating/**']
             services/payments: ['services/payments/**']
             services/policy: ['services/policy/**']
+            services/under: ['services/under/**']
             services/acl-worker: ['services/acl-worker/**']
             services/consolidador-fuentes: ['services/consolidador-fuentes/**']
             stubs/open-finance: ['stubs/open-finance/**']
             stubs/open-data: ['stubs/open-data/**']
             stubs/pasarela: ['stubs/pasarela/**']
             stubs/firma: ['stubs/firma/**']
+            stubs/kyc: ['stubs/kyc/**']
       - name: Matrices de servicios afectados
         id: matriz
         env:

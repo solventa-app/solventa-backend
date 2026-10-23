@@ -123,6 +123,37 @@ class PuertoFirmaElectronica(Protocol):
     def firmar(self, solicitud: SolicitudFirma) -> ResultadoFirma: ...
 
 
+EstadoKyc = Literal["aprobada", "rechazada", "pendiente"]
+
+
+@dataclass
+class SolicitudKyc:
+    """Verificación de identidad del cliente (KYC) para decidir la suscripción (HU-W03).
+
+    Solo viaja el identificador opaco del cliente (el HMAC que calcula el BFF), nunca un documento
+    ni un dato personal. Un proveedor real pediría más (documento, validación biométrica): ese dato
+    llegaría por un canal propio, no por este puerto (ver `docs/plan-completar-hu-w03.md`, W03-10).
+    """
+
+    id_verificacion: str  # un mismo id recibido dos veces devuelve el mismo resultado (idempotente)
+    cliente_id: str
+
+
+@dataclass
+class ResultadoKyc:
+    # `pendiente` = no se pudo verificar (proveedor caído o circuito abierto), no que el proveedor
+    # esté revisando: quien decide la suscripción lo manda a revisión manual.
+    estado: EstadoKyc
+    referencia: str | None = None
+    motivo: str | None = None
+    verificada_en: str | None = None
+    detalle: dict[str, Any] = field(default_factory=dict)
+
+
+class PuertoKyc(Protocol):
+    def verificar(self, solicitud: SolicitudKyc) -> ResultadoKyc: ...
+
+
 @dataclass
 class TablaTasas:
     """Cuántos COP vale una unidad de cada moneda (KAN-209). Valores como texto decimal: nunca
