@@ -4,7 +4,7 @@ import pytest
 from fakes import clientes_falsos
 from fastapi.testclient import TestClient
 
-from app import autenticacion_usuarios, esquema, monedas, servicio_oferta
+from app import autenticacion_usuarios, esquema, monedas, servicio_oferta, servicio_suscripcion
 from app.configuracion import Configuracion
 from app.idioma import EN, idioma_de, traducir
 from app.main import create_app
@@ -44,7 +44,13 @@ def test_idioma_de_la_cabecera(cabecera: str | None, esperado: str) -> None:
 def test_todos_los_mensajes_del_bff_tienen_traduccion() -> None:
     mensajes = [
         valor
-        for modulo in (autenticacion_usuarios, esquema, monedas, servicio_oferta)
+        for modulo in (
+            autenticacion_usuarios,
+            esquema,
+            monedas,
+            servicio_oferta,
+            servicio_suscripcion,
+        )
         for nombre, valor in vars(modulo).items()
         if nombre.startswith("MENSAJE_") and isinstance(valor, str)
     ]

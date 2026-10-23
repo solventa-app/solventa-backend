@@ -4,7 +4,7 @@
     "ruta": "services/bff",
     "instancia_fija": true,
     "puerto": 8000,
-    "llama": ["auth", "acl-worker", "risk", "rating", "payments"],
+    "llama": ["auth", "acl-worker", "risk", "rating", "payments", "policy"],
     "entorno": {
       "AUTENTICACION_SERVICIOS": "id_token",
       "TRAZAS_GCP": "true",
@@ -68,6 +68,16 @@
     "disparador_externo": true,
     "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": { "DATABASE_URL": "database-url-payments", "CIFRADO_CLAVE": "clave-cifrado" }
+  },
+  {
+    "nombre": "policy",
+    "ruta": "services/policy",
+    "puerto": 8007,
+    "url_env": "POLICY_URL",
+    "migracion": ["alembic", "upgrade", "head"],
+    "llama": ["rating"],
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
+    "secretos": { "DATABASE_URL": "database-url-policy", "CIFRADO_CLAVE": "clave-cifrado" }
   },
   {
     "nombre": "acl-worker",

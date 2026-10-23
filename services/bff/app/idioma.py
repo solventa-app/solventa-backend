@@ -34,6 +34,17 @@ EN: dict[str, str] = {
     "No pudimos consultar los cobros. Intenta de nuevo.": (
         "We couldn't load the payments. Please try again."
     ),
+    "La oferta ya no está disponible. Vuelve a cotizar.": (
+        "The offer is no longer available. Please get a new quote."
+    ),
+    "Solo puedes aceptar una oferta completa.": "You can only accept a complete offer.",
+    "La oferta venció. Vuelve a cotizar.": "The offer has expired. Please get a new quote.",
+    "No hay un consentimiento vigente para esta oferta.": (
+        "There is no valid consent for this offer."
+    ),
+    "No pudimos procesar tu suscripción. Intenta de nuevo.": (
+        "We couldn't process your subscription. Please try again."
+    ),
     "No pudimos registrar el consentimiento. Intenta de nuevo.": (
         "We couldn't record the consent. Please try again."
     ),
@@ -67,8 +78,8 @@ EN: dict[str, str] = {
     ),
     "El valor del crédito no es válido.": "The loan amount is not valid.",
     "El documento de identidad no es válido.": "The ID number is not valid.",
-    "El plazo del crédito debe estar entre 1 y 360 meses.": (
-        "The loan term must be between 1 and 360 months."
+    "El plazo del crédito debe estar entre 1 y 60 meses.": (
+        "The loan term must be between 1 and 60 months."
     ),
     "Ingresa la dirección del inmueble.": "Enter the property address.",
     "No pudimos consultar tu historial crediticio en este momento. "

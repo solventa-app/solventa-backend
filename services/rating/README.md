@@ -15,7 +15,12 @@ RATING calcula la oferta de vida hipotecario. **Nunca escribe en Riesgo.**
   MISMA solicitud — nunca un error al usuario por este motivo (D-02, alternativa explícita del
   plan).
 - `POST /ofertas`: calcula la oferta (score de riesgo + prima) sobre ese mismo perfil, con
-  Cache-Aside del score en Redis (HA-LAT-001). Ver la sección siguiente.
+  Cache-Aside del score en Redis (HA-LAT-001). Ver la sección siguiente. Si la solicitud trae
+  `consentimiento_id`, la oferta generada se guarda en Redis (`oferta-aceptable:{id}`, TTL
+  `OFERTA_VIGENCIA_SEGUNDOS`, 24 h por defecto) para poder aceptarla (HU-W03).
+- `GET /ofertas/{id}`: la oferta guardada, con el `clienteId` opaco, el `consentimientoId`, el
+  `plazoMeses` y `vigenteHasta`. La leen POLICY (el precio sale de aquí, nunca del cliente) y el BFF
+  (para validar el consentimiento). Vencida o desconocida: 404. Un fallo de Redis no rompe la oferta.
 
 ## Ampliación de alcance (pedida explícitamente por el usuario, sin ID de Jira)
 

@@ -125,3 +125,18 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Sin cambio de esquema: el BFF devuelve sus mensajes en inglés si la petición trae `Accept-Language: en`.
 - Afecta al frontend: sí (selectores de idioma y moneda del header y preferencias en Mi perfil). Requiere el PR gemelo
   en `solventa-frontend-web`.
+
+## v0.12 — 2026-10-22
+
+- KAN-26 (HU-W03, bloque 0): suscripción, firma y emisión de la póliza. Solo cambios aditivos.
+- Mutaciones nuevas `aceptarOferta(ofertaId: ID!): ResultadoAceptacion!` y `firmarPropuesta(entrada: FirmarPropuestaInput!):
+  ResultadoFirma!`; consultas nuevas `propuesta(id)`, `documentoFirma(propuestaId)` y `poliza(id)`.
+- Tipos nuevos: `Propuesta`, `EstadoPropuesta` (`ACEPTADA`, `EN_EMISION`, `EN_REVISION`, `PENDIENTE_PAGO`,
+  `PAGO_RECHAZADO`, `NO_EMITIDA`, `EMITIDA`), `DocumentoFirma`, `FirmaRegistrada`, `Poliza`, `EstadoPoliza`, los errores
+  `ErrorAceptacion` y `ErrorFirma` con sus motivos (`MotivoErrorAceptacion`, `MotivoErrorFirma`) y las uniones
+  `ResultadoAceptacion` y `ResultadoFirma`.
+- La emisión corre en segundo plano después de firmar: el cliente consulta `propuesta` hasta ver `EMITIDA`. El precio
+  nunca lo manda el cliente. Solo el CLIENTE titular firma.
+- Evento nuevo `poliza.emitida` v1 (`polizaId`, `numeroPoliza`, `propuestaId`, `clienteId` opaco, `vigenciaDesde`,
+  `vigenciaHasta`).
+- Afecta al frontend: sí (pantallas W03-01 a W03-05). Requiere el PR gemelo en `solventa-frontend-web`.

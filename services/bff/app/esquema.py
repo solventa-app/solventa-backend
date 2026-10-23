@@ -5,8 +5,12 @@ esquema con el contrato en ambos sentidos: si difieren, se corrige el código,
 no el contrato.
 
 Operaciones sin backend todavía (alcance del Sprint 1, KAN-24):
-- `oferta(id)` devuelve `null`: RATING no persiste ofertas aún.
+- `oferta(id)` devuelve `null`: RATING ya guarda la oferta para aceptarla (HU-W03), pero nada
+  valida aún que quien la pide sea su titular, así que no se expone por esta consulta.
 - `contactarAsesor` es un MOCK que solo confirma.
+- HU-W03 (KAN-26): `aceptarOferta` y `propuesta` ya leen y escriben en POLICY (bloque 1). Siguen
+  sin backend `documentoFirma` y `firmarPropuesta` (bloque 2) y `poliza` (bloque 4): devuelven
+  `null` o un error con reintento.
 `cobros` y `reintentarCobro` (KAN-28) leen y reintentan en PAYMENTS, que concilia
 con la pasarela antes de cobrar (ver `docs/cobros-conciliacion.md`).
 Ninguna produce un 5xx: los errores de GraphQL viajan con HTTP 200.
@@ -36,6 +40,11 @@ from app.monedas import (
     convertir,
 )
 from app.servicio_oferta import ErrorOfertaDatos
+from app.servicio_suscripcion import (
+    MENSAJE_SUSCRIPCION_NO_DISPONIBLE,
+    ErrorAceptacionDatos,
+    ServicioSuscripcion,
+)
 from app.trazas_graphql import TrazaGraphQL
 
 logger = logging.getLogger("bff.cobros")
@@ -272,6 +281,112 @@ class ErrorCobro:
 ResultadoCobro = Annotated[Cobro | ErrorCobro, strawberry.union("ResultadoCobro")]
 
 
+# ---------- Suscripción, firma y póliza (HU-W03) ----------
+
+
+@strawberry.enum
+class EstadoPropuesta(Enum):
+    ACEPTADA = "ACEPTADA"
+    EN_EMISION = "EN_EMISION"
+    EN_REVISION = "EN_REVISION"
+    PENDIENTE_PAGO = "PENDIENTE_PAGO"
+    PAGO_RECHAZADO = "PAGO_RECHAZADO"
+    NO_EMITIDA = "NO_EMITIDA"
+    EMITIDA = "EMITIDA"
+
+
+@strawberry.enum
+class MotivoErrorAceptacion(Enum):
+    OFERTA_PRELIMINAR = "OFERTA_PRELIMINAR"
+    OFERTA_VENCIDA = "OFERTA_VENCIDA"
+    OFERTA_NO_ENCONTRADA = "OFERTA_NO_ENCONTRADA"
+    CONSENTIMIENTO_NO_VIGENTE = "CONSENTIMIENTO_NO_VIGENTE"
+
+
+@strawberry.enum
+class MotivoErrorFirma(Enum):
+    COBRO_NO_AUTORIZADO = "COBRO_NO_AUTORIZADO"
+    VERSION_DOCUMENTO_DESACTUALIZADA = "VERSION_DOCUMENTO_DESACTUALIZADA"
+    PROPUESTA_NO_FIRMABLE = "PROPUESTA_NO_FIRMABLE"
+    SERVICIO_FIRMA_NO_DISPONIBLE = "SERVICIO_FIRMA_NO_DISPONIBLE"
+
+
+@strawberry.enum
+class EstadoPoliza(Enum):
+    EMITIDA = "EMITIDA"
+
+
+@strawberry.type
+class Propuesta:
+    id: strawberry.ID
+    oferta_id: strawberry.ID
+    estado: EstadoPropuesta
+    prima: Monto
+    cobertura: Monto
+    plazo_meses: int
+    actualizado_en: datetime
+    poliza_id: strawberry.ID | None = None  # presente cuando el estado es EMITIDA
+
+
+@strawberry.type
+class ErrorAceptacion:
+    mensaje: str
+    puede_reintentar: bool
+    motivo: MotivoErrorAceptacion | None = None
+
+
+ResultadoAceptacion = Annotated[
+    Propuesta | ErrorAceptacion, strawberry.union("ResultadoAceptacion")
+]
+
+
+@strawberry.type
+class DocumentoFirma:
+    propuesta_id: strawberry.ID
+    version: str  # se reenvía en `FirmarPropuestaInput.versionDocumento`
+    resumen: str
+    monto_mensual: Monto
+    meses: int
+    forma_cobro: str
+
+
+@strawberry.input
+class FirmarPropuestaInput:
+    propuesta_id: strawberry.ID
+    autoriza_cobro: bool  # debe ser true: la firma autoriza el cobro recurrente
+    version_documento: str
+
+
+@strawberry.type
+class FirmaRegistrada:
+    propuesta_id: strawberry.ID
+    firmada_en: datetime
+    referencia: str  # referencia de la evidencia de no repudio
+    estado: EstadoPropuesta
+
+
+@strawberry.type
+class ErrorFirma:
+    mensaje: str
+    puede_reintentar: bool
+    motivo: MotivoErrorFirma | None = None
+
+
+ResultadoFirma = Annotated[FirmaRegistrada | ErrorFirma, strawberry.union("ResultadoFirma")]
+
+
+@strawberry.type
+class Poliza:
+    id: strawberry.ID
+    numero: str
+    estado: EstadoPoliza
+    vigencia_desde: datetime
+    vigencia_hasta: datetime
+    prima: Monto
+    cobertura: Monto
+    documento_url: str  # ruta del BFF que entrega el PDF
+
+
 # ---------- Usuarios y sesión (HU-M02) ----------
 
 
@@ -384,6 +499,19 @@ def _consentimiento(datos: dict) -> Consentimiento:
 
 def _monto(datos: dict | None) -> Monto | None:
     return Monto(valor=datos["valor"], moneda=datos["moneda"]) if datos else None
+
+
+def _propuesta(datos: dict) -> Propuesta:
+    return Propuesta(
+        id=datos["id"],
+        oferta_id=datos["oferta_id"],
+        estado=EstadoPropuesta(datos["estado"]),
+        prima=Monto(valor=datos["prima"]["valor"], moneda=datos["prima"]["moneda"]),
+        cobertura=Monto(valor=datos["cobertura"]["valor"], moneda=datos["cobertura"]["moneda"]),
+        plazo_meses=datos.get("plazo_meses") or 0,
+        actualizado_en=_fecha(datos["actualizado_en"]),
+        poliza_id=datos.get("poliza_id"),
+    )
 
 
 def _perfil_riesgo(datos: dict | None) -> PerfilRiesgo | None:
@@ -512,6 +640,29 @@ class Query:
     def oferta(self, info: Info, id: strawberry.ID) -> Oferta | None:
         exigir_rol(info, *CLIENTE_O_ASESOR)
         # RATING no persiste ofertas todavía: no hay de dónde leerla.
+        return None
+
+    @strawberry.field
+    async def propuesta(self, info: Info, id: strawberry.ID) -> Propuesta | None:
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
+        try:
+            datos = await ServicioSuscripcion(info.context["clientes"]).obtener_propuesta(
+                str(id), usuario
+            )
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_SUSCRIPCION_NO_DISPONIBLE) from error
+        return _propuesta(datos) if datos else None
+
+    @strawberry.field
+    def documento_firma(self, info: Info, propuesta_id: strawberry.ID) -> DocumentoFirma | None:
+        exigir_rol(info, *CLIENTE_O_ASESOR)
+        # HU-W03, bloque 2: el documento a firmar lo arma POLICY.
+        return None
+
+    @strawberry.field
+    def poliza(self, info: Info, id: strawberry.ID) -> Poliza | None:
+        exigir_rol(info, *CLIENTE_O_ASESOR)
+        # HU-W03, bloque 4: la emisión la hace POLICY.
         return None
 
     @strawberry.field
@@ -658,6 +809,31 @@ class Mutation:
             canal=canal,
             resumen=f"Recibimos tu solicitud de {RESUMEN_CANAL[canal]}. "
             "Un asesor te contactará para continuar tu cotización.",
+        )
+
+    @strawberry.mutation
+    async def aceptar_oferta(self, info: Info, oferta_id: strawberry.ID) -> ResultadoAceptacion:
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
+        resultado = await ServicioSuscripcion(info.context["clientes"]).aceptar(
+            str(oferta_id), usuario
+        )
+        if isinstance(resultado, ErrorAceptacionDatos):
+            return ErrorAceptacion(
+                mensaje=resultado.mensaje,
+                puede_reintentar=resultado.puede_reintentar,
+                motivo=MotivoErrorAceptacion(resultado.motivo) if resultado.motivo else None,
+            )
+        return _propuesta(resultado)
+
+    @strawberry.mutation
+    def firmar_propuesta(self, info: Info, entrada: FirmarPropuestaInput) -> ResultadoFirma:
+        # Solo el CLIENTE titular firma: el no repudio no admite que firme otro (decisión W03-8).
+        exigir_rol(info, "CLIENTE")
+        # HU-W03, bloque 2: la firma pasa por el ACL Worker y se guarda en POLICY.
+        return ErrorFirma(
+            mensaje=MENSAJE_SUSCRIPCION_NO_DISPONIBLE,
+            puede_reintentar=True,
+            motivo=MotivoErrorFirma.SERVICIO_FIRMA_NO_DISPONIBLE,
         )
 
     @strawberry.mutation

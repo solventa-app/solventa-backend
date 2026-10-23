@@ -23,7 +23,7 @@ agrega nada hasta que alguien las enciende.
 | Un servicio de Cloud Run por entrada de `.github/servicios.json`, sus jobs de migración, una service account por servicio y los secretos | `crear_servicios` | ~$0 en reposo | `servicios.tf`; máx. `max_instancias` por servicio (`calentar_camino_critico = true` sube `min_instance_count = 1` solo durante sesiones de medición) |
 | Cola de Cloud Tasks `reintento-cobros` + trabajo de Cloud Scheduler `sonda-acl` y `DISPARADOR=externo` en PAYMENTS y el ACL Worker | `crear_tareas` | $0 (capa gratuita: 1 M de operaciones de Cloud Tasks; 3 trabajos de Scheduler por cuenta) | `tareas.tf`. En Cloud Run los bucles de fondo no corren de forma confiable (`cpu_idle = true`, mínimo 0). Ver «Disparadores externos» |
 | Memorystore Redis (BASIC, 1GB) + conector VPC | `crear_redis` | **~USD 0,12/h juntos** (estimación estándar de GCP; no se verificó empíricamente en ningún experimento de `solventa-arquitectura` — ese repo no tiene Redis en Terraform, solo en docker-compose local) | **no escala a cero**: crear y destruir por sesión (`redis_encendida`) |
-| Cloud SQL PostgreSQL (`db-f1-micro`, 1 instancia, bases `auth` + `payments`) | `crear_cloud_sql` | ~USD 9-12/mes (instancia shared-core + 10GB disco; sin respaldos automáticos para no sumarles costo) | **no escala a cero**: cobra por hora aunque no haya tráfico (`cloud_sql_encendida`) |
+| Cloud SQL PostgreSQL (`db-f1-micro`, 1 instancia, bases `auth`, `payments` + `policy`) | `crear_cloud_sql` | ~USD 9-12/mes (instancia shared-core + 10GB disco; sin respaldos automáticos para no sumarles costo) | **no escala a cero**: cobra por hora aunque no haya tráfico (`cloud_sql_encendida`) |
 | MongoDB Atlas M0 (RISK y RATING) | `crear_mongo_atlas` | $0 (nivel gratuito) | sin CMEK en M0 (CMEK exige M10 ~USD 57/mes): cubierto por el cifrado de campo AES-GCM con llave de KMS |
 | Pub/Sub (`perfil-actualizado` + suscripción de `rating`) | `crear_pubsub` | $0 (capa gratuita hasta 10 GB/mes) | `pubsub.tf`; `risk` publica y `rating` invalida la caché del score |
 | Batch nocturno (`risk-reproceso` Cloud Run Job + Cloud Scheduler `30 23 * * *`) | `crear_batch` | $0 Scheduler (capa gratuita) + minutos de Job | `batch.tf`; corre a las 23:30 America/Bogota, antes del apagado automático de las 2:00 a.m. |
@@ -104,8 +104,8 @@ del equipo (regla de costos de `CLAUDE.md`).
   `cloud-sql.tf` y `mongo-atlas.tf` solo le agregan la versión con el valor real (si `crear_servicios` está activo).
   Así `crear_cloud_sql`/`crear_mongo_atlas` se pueden activar antes o después de `crear_servicios` sin que dos
   recursos intenten crear el mismo `secret_id`.
-- **Postgres desde Cloud Run.** Con `crear_cloud_sql`, los servicios con un secreto `database-url-*` (hoy `auth` y
-  `payments`) y sus jobs de migración montan el socket de Cloud SQL en `/cloudsql`, y solo sus cuentas
+- **Postgres desde Cloud Run.** Con `crear_cloud_sql`, los servicios con un secreto `database-url-*` (hoy `auth`,
+  `payments` y `policy`) y sus jobs de migración montan el socket de Cloud SQL en `/cloudsql`, y solo sus cuentas
   `rt-<servicio>` reciben `roles/cloudsql.client`. Sin ese montaje la URL `...@/auth?host=/cloudsql/...` no
   conecta y la migración falla antes de aplicar nada.
 
@@ -221,7 +221,7 @@ el merge. Localmente: `export TF_VAR_project_id=... TF_VAR_billing_account_id=..
 
 `terraform output secretos_a_cargar` lista **todos** los secretos del manifiesto. Terraform crea cada contenedor con un
 valor marcador (`pendiente-de-cargar`). Con `crear_cloud_sql` (y `crear_servicios`) Terraform ya escribe solo
-`database-url-auth` y `database-url-payments`; con `crear_redis`, `redis-url-*`; y con `crear_mongo_atlas`,
+`database-url-auth`, `database-url-payments` y `database-url-policy`; con `crear_redis`, `redis-url-*`; y con `crear_mongo_atlas`,
 `mongo-uri-risk` y `mongo-uri-rating`: esos no hay que cargarlos. Lo que se agrega aparte es `clave-jwt`,
 `clave-cliente-id` y `clave-cifrado`, y ese valor nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
 
@@ -305,7 +305,7 @@ openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n' | gcloud secrets versions ad
 - **Cloud SQL (`usar_cmek_sql`):** PostgreSQL en Cloud SQL solo acepta `encryption_key_name` **al crear la instancia**.
   Activar `usar_cmek_sql = true` sobre una instancia existente fuerza su reemplazo (que el guardia `scripts/revisar_plan.py`
   bloquea por seguridad). Por eso la migración a CMEK se hace en un PR propio con ventana acordada con el equipo:
-  1. Exportar las bases `auth` y `payments` con `gcloud sql export sql`.
+  1. Exportar las bases `auth`, `payments` y `policy` con `gcloud sql export sql`.
   2. Mergear `usar_cmek_sql = true` y correr *Deploy staging* con `permitir_destruir = true` para recrear la instancia con CMEK.
   3. Importar los volcados o correr las migraciones y `scripts/crear_usuarios.py`.
 - **Memorystore Redis (`usar_cmek_redis`):** como Redis es caché efímera y el botón *Costos staging → apagar* la destruye
@@ -386,7 +386,7 @@ el tiempo. Cualquiera del equipo puede apagarlo y volver a subirlo con un botón
 
 | Recurso | Cobra por hora | Al apagar | Al encender |
 |---|---|---|---|
-| **Cloud SQL** (`auth`, `payments`) | Sí (~USD 9-12/mes con `db-f1-micro`, según este README) | Se **detiene**: conserva las bases, los usuarios y las migraciones; solo se paga el disco | Arranca (1-3 min); no hay que volver a migrar |
+| **Cloud SQL** (`auth`, `payments`, `policy`) | Sí (~USD 9-12/mes con `db-f1-micro`, según este README) | Se **detiene**: conserva las bases, los usuarios y las migraciones; solo se paga el disco | Arranca (1-3 min); no hay que volver a migrar |
 | **Redis + conector VPC** (`rating`, `acl-worker`, `consolidador-fuentes`) | Sí (~USD 0,12/h juntos, según este README) | Se **borran** la instancia y el conector (es una caché) | Se vuelven a crear (10-15 min) |
 | **Instancias fijas** de Cloud Run (`bff`, `auth`, `risk`, `rating`, `payments`, `acl-worker` y los 3 stubs) | Sí (estimado, sin verificar: ~USD 10 al mes cada una; ~USD 3 al día las 9 juntas) | Vuelven a **mínimo 0** instancias y CPU solo en las peticiones | Mínimo 1 otra vez |
 | Red, subred y APIs de Redis | No | Se quedan (ver abajo) | No se tocan |
@@ -431,7 +431,7 @@ tienen cambios que aplicar. Para quitarlo, borra el bloque `schedule` de `.githu
 - Si alguien está trabajando pasadas las 2:00 a.m., se le apagará: basta con volver a ejecutar `encender`.
 - Mientras `main` no traiga este cambio, la ejecución programada se omite con un aviso (no falla cada noche).
 
-**Desplegar con los costos apagados:** un despliegue que tenga que migrar `auth` o `payments` mientras Cloud SQL está
+**Desplegar con los costos apagados:** un despliegue que tenga que migrar `auth`, `payments` o `policy` mientras Cloud SQL está
 detenida **falla de inmediato con un mensaje claro** (*Cloud SQL está detenida… ejecuta Costos staging → encender*) en
 vez de un error de conexión. Enciende primero y vuelve a lanzar el despliegue. Un release no vuelve a encender lo apagado.
 

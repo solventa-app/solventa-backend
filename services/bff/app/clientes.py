@@ -19,6 +19,14 @@ class ErrorServicio(Exception):
     """El servicio interno no respondió a tiempo o respondió con error."""
 
 
+class PropuestaRechazada(Exception):
+    """POLICY no aceptó la oferta. `motivo` es un `MotivoErrorAceptacion` del contrato."""
+
+    def __init__(self, motivo: str) -> None:
+        super().__init__(motivo)
+        self.motivo = motivo
+
+
 class SolicitudInvalida(Exception):
     """El servicio rechazó la solicitud (4xx): reintentar no la arregla."""
 
@@ -87,7 +95,16 @@ class PuertoRating(Protocol):
         cobertura: str,
         plazo_meses: int,
         direccion_inmueble: str,
+        consentimiento_id: str | None = None,
     ) -> dict: ...
+
+    async def obtener_oferta(self, oferta_id: str) -> dict | None: ...
+
+
+class PuertoPolicy(Protocol):
+    async def crear_propuesta(self, oferta_id: str, actor_usuario_id: str | None) -> dict: ...
+
+    async def obtener_propuesta(self, propuesta_id: str) -> dict | None: ...
 
 
 class PuertoPayments(Protocol):
@@ -111,6 +128,7 @@ class Clientes:
     risk: PuertoRisk
     rating: PuertoRating
     payments: PuertoPayments
+    policy: PuertoPolicy
 
 
 async def _pedir(
@@ -328,6 +346,7 @@ class ClienteRatingHttp:
         cobertura: str,
         plazo_meses: int,
         direccion_inmueble: str,
+        consentimiento_id: str | None = None,
     ) -> dict:
         respuesta = await _pedir(
             self._cliente,
@@ -339,6 +358,8 @@ class ClienteRatingHttp:
                 "cobertura": cobertura,
                 "plazo_meses": plazo_meses,
                 "direccion_inmueble": direccion_inmueble,
+                # Para poder aceptarla después (HU-W03): a qué consentimiento pertenece.
+                "consentimiento_id": consentimiento_id,
             },
         )
         if respuesta.status_code == 422 and _detalle(respuesta) == DETALLE_DATOS_INSUFICIENTES:
@@ -350,6 +371,35 @@ class ClienteRatingHttp:
             # es un problema de lectura (réplica), no del usuario.
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
+
+    async def obtener_oferta(self, oferta_id: str) -> dict | None:
+        """La oferta guardada para aceptarla; `None` si venció o no existe."""
+        return _json_o_none(await _pedir(self._cliente, "GET", f"/ofertas/{oferta_id}"))
+
+
+class ClientePolicyHttp:
+    """Propuestas y pólizas (HU-W03)."""
+
+    def __init__(self, cliente: httpx.AsyncClient) -> None:
+        self._cliente = cliente
+
+    async def crear_propuesta(self, oferta_id: str, actor_usuario_id: str | None) -> dict:
+        """404 y 422 son rechazos de negocio (`PropuestaRechazada` con el motivo del contrato);
+        un 5xx o un 503 (RATING caído) llega como `ErrorServicio`, que se ofrece reintentar."""
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            "/propuestas",
+            {"oferta_id": oferta_id, "actor_usuario_id": actor_usuario_id},
+        )
+        if respuesta.status_code in (404, 422):
+            raise PropuestaRechazada(_detalle(respuesta))
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def obtener_propuesta(self, propuesta_id: str) -> dict | None:
+        return _json_o_none(await _pedir(self._cliente, "GET", f"/propuestas/{propuesta_id}"))
 
 
 class ClientePaymentsHttp:
@@ -420,11 +470,13 @@ def construir_clientes(config: Configuracion) -> tuple[Clientes, list[httpx.Asyn
     risk = http(config.risk_url, "risk", config.servicios_timeout_segundos)
     rating = http(config.rating_url, "rating", config.servicios_timeout_segundos)
     payments = http(config.payments_url, "payments", config.servicios_timeout_segundos)
+    policy = http(config.policy_url, "policy", config.servicios_timeout_segundos)
     clientes = Clientes(
         auth=ClienteAuthHttp(auth),
         acl=ClienteAclHttp(acl),
         risk=ClienteRiskHttp(risk),
         rating=ClienteRatingHttp(rating),
         payments=ClientePaymentsHttp(payments),
+        policy=ClientePolicyHttp(policy),
     )
-    return clientes, [auth, acl, risk, rating, payments]
+    return clientes, [auth, acl, risk, rating, payments, policy]

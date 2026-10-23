@@ -58,7 +58,7 @@ Nunca se loguean (tampoco el documento).
 
 | Variable | Default local | Nota |
 |---|---|---|
-| `AUTH_URL`, `ACL_URL`, `RISK_URL`, `RATING_URL`, `PAYMENTS_URL` | `http://localhost:800x` | En Cloud Run las fija Terraform desde `llama` en `.github/servicios.json` |
+| `AUTH_URL`, `ACL_URL`, `RISK_URL`, `RATING_URL`, `PAYMENTS_URL`, `POLICY_URL` | `http://localhost:800x` | En Cloud Run las fija Terraform desde `llama` en `.github/servicios.json` |
 | `ACL_TIMEOUT_SEGUNDOS` | `1.0` | El ACL corta a los 700 ms; el margen cubre la red |
 | `SERVICIOS_TIMEOUT_SEGUNDOS` | `2.0` | AUTH, RISK y RATING |
 | `CLIENTE_ID_CLAVE` | `solo-local-no-secreta` | En la nube, secreto `clave-cliente-id`; el BFF no arranca con el valor local ni con el marcador de Terraform |

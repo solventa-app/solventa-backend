@@ -91,7 +91,7 @@ variable "vpc_connector_rango" {
 # --------------------------------------------------------------------------------------------------
 
 variable "crear_cloud_sql" {
-  description = "Crea una instancia de Cloud SQL PostgreSQL con las bases `auth` y `payments`. NO escala a cero: cobra por hora aunque esté sin tráfico. La contraseña se genera con `random_password` y se guarda solo en Secret Manager (nunca en el repo)."
+  description = "Crea una instancia de Cloud SQL PostgreSQL con las bases `auth`, `payments` y `policy`. NO escala a cero: cobra por hora aunque esté sin tráfico. La contraseña se genera con `random_password` y se guarda solo en Secret Manager (nunca en el repo)."
   type        = bool
   default     = false
 }
