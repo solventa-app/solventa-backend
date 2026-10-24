@@ -23,8 +23,8 @@ from psycopg_pool import ConnectionPool
 from app.application.cifrado import CifradorCampos
 
 _COLUMNAS = (
-    "id, oferta_id, cliente_id, consentimiento_id, actor_usuario_id, estado, oferta_cifrada, "
-    "intentos_emision, motivo_estado, creado_en, actualizado_en"
+    "id, oferta_id, cliente_id, consentimiento_id, version_reglas, actor_usuario_id, estado, "
+    "oferta_cifrada, intentos_emision, motivo_estado, creado_en, actualizado_en"
 )
 # La póliza de la propuesta, si ya se emitió (una subconsulta: `polizas.propuesta_id` es UNIQUE).
 _POLIZA_ID = "(SELECT p.id FROM polizas p WHERE p.propuesta_id = propuestas.id) AS poliza_id"
@@ -75,11 +75,11 @@ class RepositorioPropuestasPostgres:
             fila = conexion.execute(
                 f"""
                 INSERT INTO propuestas
-                    (id, oferta_id, cliente_id, consentimiento_id, actor_usuario_id, estado,
-                     oferta_cifrada)
+                    (id, oferta_id, cliente_id, consentimiento_id, version_reglas,
+                     actor_usuario_id, estado, oferta_cifrada)
                 VALUES
                     (%(id)s, %(oferta_id)s, %(cliente_id)s, %(consentimiento_id)s,
-                     %(actor_usuario_id)s, 'ACEPTADA', %(oferta_cifrada)s)
+                     %(version_reglas)s, %(actor_usuario_id)s, 'ACEPTADA', %(oferta_cifrada)s)
                 ON CONFLICT (oferta_id) DO NOTHING
                 RETURNING {_COLUMNAS}, NULL::text AS poliza_id
                 """,
@@ -88,6 +88,7 @@ class RepositorioPropuestasPostgres:
                     "oferta_id": datos["oferta_id"],
                     "cliente_id": datos["cliente_id"],
                     "consentimiento_id": datos.get("consentimiento_id"),
+                    "version_reglas": datos.get("version_reglas"),
                     "actor_usuario_id": datos.get("actor_usuario_id"),
                     "oferta_cifrada": cifrada,
                 },

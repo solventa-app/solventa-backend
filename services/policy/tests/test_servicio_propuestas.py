@@ -33,6 +33,30 @@ def test_acepta_una_oferta_completa_con_el_precio_de_rating() -> None:
     assert propuesta["actor_usuario_id"] == "usuario-1"
 
 
+def test_la_propuesta_guarda_la_version_de_reglas_y_el_consentimiento_de_la_oferta() -> None:
+    # CA-W03-01: se guarda la oferta aceptada: prima, cobertura, versión de reglas y consentimiento.
+    servicio, _ = _servicio(RatingFalso({"oferta-1": oferta_de_rating(versionReglas="v7")}))
+
+    propuesta = servicio.aceptar("oferta-1", "usuario-1")
+
+    assert propuesta["version_reglas"] == "v7"
+    assert propuesta["consentimiento_id"] == "consentimiento-1"
+    assert propuesta["prima"] == {"valor": "185000", "moneda": "COP"}
+    assert propuesta["cobertura"] == {"valor": "200000000", "moneda": "COP"}
+
+
+def test_una_oferta_sin_version_de_reglas_se_acepta_y_queda_en_nulo() -> None:
+    # Una oferta que RATING guardó antes de incluir la versión no debe impedir aceptarla.
+    oferta = oferta_de_rating()
+    del oferta["versionReglas"]
+    servicio, _ = _servicio(RatingFalso({"oferta-1": oferta}))
+
+    propuesta = servicio.aceptar("oferta-1", "usuario-1")
+
+    assert propuesta["estado"] == "ACEPTADA"
+    assert propuesta["version_reglas"] is None
+
+
 def test_aceptar_dos_veces_devuelve_la_misma_propuesta_sin_volver_a_leer_a_rating() -> None:
     servicio, rating = _servicio()
 
