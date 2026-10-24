@@ -87,7 +87,7 @@ comparten variables.
 | 1. Camino feliz | Solicitar → `aceptarOferta` (la prima es la de la oferta; aceptar dos veces da la misma propuesta) → `documentoFirma` → firma rechazada sin autorizar el cobro o con una versión vieja (la propuesta sigue `ACEPTADA`) → firma → firmar otra vez da la misma evidencia → espera a `EMITIDA` → `poliza(id)` → PDF por el gateway → el aviso salió una sola vez | CA-W03-01 a 03, 07, 08 |
 | 2. Autorización | Otro CLIENTE no ve ni acepta ni firma ni descarga lo ajeno; un ASESOR no firma pero sí descarga el PDF; BACKOFFICE 403 y sin token 401 en el PDF | W03-8 (decisión), CA-W03-03 |
 | 3. Errores controlados | Oferta, propuesta y póliza inexistentes: error tipado o `null`, nunca 5xx | regla 4 |
-| 4. Degradación | Open Finance lento (la `PRELIMINAR` no se acepta); KYC caído (`EN_REVISION`, sin póliza); pasarela que rechaza (`PAGO_RECHAZADO`, sin póliza); firma caída (`ErrorFirma` reintentable y, al volver, el reintento emite); notificaciones caídas (la póliza se emite y el PDF se descarga, el aviso sale solo al volver). Cada escenario restaura el stub y espera a que cierren los circuitos | CA-W03-05 y 06, EC009 / EC010 |
+| 4. Degradación | Open Finance lento (la `PRELIMINAR` no se acepta); KYC caído (`EN_REVISION`, sin póliza); pasarela que rechaza (`PAGO_RECHAZADO`, sin póliza); firma caída y firma lenta, **por el gateway** (`ErrorFirma` reintentable con HTTP 200, nunca un 5xx, y al volver el reintento emite); notificaciones caídas (la póliza se emite y el PDF se descarga, el aviso sale solo al volver). Cada escenario restaura el stub y espera a que cierren los circuitos | CA-W03-05 y 06, EC009 / EC010 |
 
 ```bash
 npx --yes newman@6.2.2 run tests/newman/hu-w03.postman_collection.json \
@@ -99,6 +99,6 @@ npx --yes newman@6.2.2 run tests/newman/hu-w03.postman_collection.json \
 - **Solo contra local** la carpeta 4 (los stubs y el ACL son privados en staging). Las carpetas 0 a 3 sirven contra staging
   cambiando `gateway_url` y las credenciales del BACKOFFICE en el entorno (nunca las subas al repo).
 - Datos ficticios: los documentos `CC-NEWMAN-W03-*` y los nombres `Cliente Newman *` no son personas reales.
-- **Estado:** corrida dos veces seguidas contra el stack local el 2026-10-24, sin fallos (84 peticiones y 153 aserciones en ~63 s);
-  resultados y hallazgos en `docs/evidencias/HU-W03-newman-EC009-EC010-2026-10-24.md`. La petición 4.29 (firma caída) va directo al
-  BFF porque por el gateway el primer intento da 504. Si el `:8080` o el `:5432` están ocupados, ver «Cómo correrlas».
+- **Estado:** corrida contra el stack local el 2026-10-24 sin fallos (95 peticiones ejecutadas y 171 aserciones; las 88 definidas más los
+  sondeos); resultados y hallazgos en `docs/evidencias/HU-W03-newman-EC009-EC010-2026-10-24.md` y `docs/evidencias/CA-W03-05-firma-2026-10-24.md`.
+  Si el `:8080` o el `:5432` están ocupados, ver «Cómo correrlas».
