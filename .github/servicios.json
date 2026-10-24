@@ -133,5 +133,12 @@
     "puerto": 8104,
     "url_env": "FIRMA_URL",
     "entorno": { "TRAZAS_GCP": "true" }
+  },
+  {
+    "nombre": "stub-siniestros",
+    "ruta": "stubs/siniestros",
+    "puerto": 8105,
+    "dummy": true,
+    "entorno": { "TRAZAS_GCP": "true" }
   }
 ]

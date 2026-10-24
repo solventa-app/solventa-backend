@@ -89,6 +89,7 @@ jobs:
             stubs/open-data: ['stubs/open-data/**']
             stubs/pasarela: ['stubs/pasarela/**']
             stubs/firma: ['stubs/firma/**']
+            stubs/siniestros: ['stubs/siniestros/**']
       - name: Matrices de servicios afectados
         id: matriz
         env:

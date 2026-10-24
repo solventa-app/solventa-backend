@@ -1,0 +1,34 @@
+[
+  {
+    "id": "per-01",
+    "nombre": "Peritajes Andes Ltda.",
+    "ciudad": "Bogotá",
+    "red": "Red Preferente Centro",
+    "registro": "RNPL-SFC 2024-0117",
+    "tiempo_respuesta_dias": 4
+  },
+  {
+    "id": "per-02",
+    "nombre": "Avalúos del Caribe S.A.S.",
+    "ciudad": "Barranquilla",
+    "red": "Red Preferente Caribe",
+    "registro": "RNPL-SFC 2023-0342",
+    "tiempo_respuesta_dias": 5
+  },
+  {
+    "id": "per-03",
+    "nombre": "Ingeniería Pericial Occidente",
+    "ciudad": "Cali",
+    "red": "Red Preferente Occidente",
+    "registro": "RNPL-SFC 2025-0068",
+    "tiempo_respuesta_dias": 3
+  },
+  {
+    "id": "per-04",
+    "nombre": "Peritazgos Antioquia & Cía.",
+    "ciudad": "Medellín",
+    "red": "Red Preferente Noroccidente",
+    "registro": "RNPL-SFC 2024-0215",
+    "tiempo_respuesta_dias": 7
+  }
+]

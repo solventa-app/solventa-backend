@@ -1,0 +1,149 @@
+# Contrato del DUMMY de siniestros (HU-W04, KAN-27) · stubs/siniestros
+#
+# Lo expone un microservicio autónomo (sin base de datos, sin tokens, sin llamar a otros servicios) en
+# /graphql/siniestros; sirve las fotos de evidencia en /graphql/siniestros/medios/. Es un sustituto
+# temporal para que el front construya la mesa de siniestros: cuando exista el servicio real, este
+# contrato se reemplaza y el front solo cambia la URL. Por ahora corre solo en local.
+#
+# Fuente de verdad del código: stubs/siniestros/app/esquema.py (la prueba
+# stubs/siniestros/tests/test_esquema_contrato.py exige que ambos coincidan).
+# Estados: no existe DERIVADO; derivar a perito deja el siniestro EN_REVISION con el perito en la resolución.
+
+type Asegurado {
+  nombre: String!
+  documento: String!
+}
+
+"""Date with time (isoformat)"""
+scalar DateTime
+
+type ErrorSiniestro {
+  mensaje: String!
+}
+
+enum EstadoPoliza {
+  EMITIDA
+}
+
+enum EstadoSiniestro {
+  PENDIENTE
+  EN_REVISION
+  APROBADO
+  RECHAZADO
+}
+
+type Evidencia {
+  id: ID!
+  tipo: TipoEvidencia!
+  titulo: String!
+  archivo: String!
+  url: String!
+  registradaEn: DateTime!
+  geoetiquetada: Boolean!
+  nota: String
+}
+
+type Monto {
+  valor: String!
+  moneda: String!
+}
+
+enum MotivoRechazo {
+  EVIDENCIA_INSUFICIENTE
+  FUERA_DE_COBERTURA
+  POLIZA_NO_VIGENTE
+  INCONSISTENCIA_EN_RELATO
+  OTRO
+}
+
+type Mutation {
+  aprobarSiniestro(id: ID!): ResultadoResolucion!
+  rechazarSiniestro(id: ID!, motivo: MotivoRechazo!, comentario: String = null): ResultadoResolucion!
+  derivarSiniestro(id: ID!, peritoId: ID!, instrucciones: String = null): ResultadoResolucion!
+}
+
+type Perito {
+  id: ID!
+  nombre: String!
+  ciudad: String!
+  red: String!
+  registro: String!
+  tiempoRespuestaDias: Int!
+  vencimientoInforme: DateTime
+}
+
+type Poliza {
+  id: ID!
+  numero: String!
+  estado: EstadoPoliza!
+  vigenciaDesde: DateTime!
+  vigenciaHasta: DateTime!
+  prima: Monto!
+  cobertura: Monto!
+  ramo: String!
+}
+
+type Query {
+  siniestros(estado: EstadoSiniestro = null): [Siniestro!]!
+  siniestro(id: ID!): Siniestro
+  peritos(siniestroId: ID!): [Perito!]!
+}
+
+type Resolucion {
+  tipo: TipoResolucion!
+  resueltaEn: DateTime!
+  notificacion: String!
+  motivo: MotivoRechazo
+  comentario: String
+  viaRecurso: String
+  indemnizacion: Monto
+  metodoTransferencia: String
+  plazoDispersion: String
+  perito: Perito
+  instrucciones: String
+  vencimientoInforme: DateTime
+}
+
+union ResultadoResolucion = Siniestro | ErrorSiniestro
+
+type Siniestro {
+  id: ID!
+  radicado: String!
+  estado: EstadoSiniestro!
+  asegurado: Asegurado!
+  poliza: Poliza!
+  coberturaAplicada: String!
+  entidadAcreedora: String!
+  ocurridoEn: DateTime!
+  notificadoEn: DateTime!
+  ubicacion: Ubicacion!
+  descripcion: String!
+  sumaReclamada: Monto!
+  venceDictamenEn: DateTime!
+  evidencias: [Evidencia!]!
+  verificaciones: [Verificacion!]!
+  resolucion: Resolucion
+}
+
+enum TipoEvidencia {
+  FOTO
+  DOCUMENTO
+}
+
+enum TipoResolucion {
+  APROBACION
+  RECHAZO
+  DERIVACION
+}
+
+type Ubicacion {
+  descripcion: String!
+  ciudad: String!
+  latitud: Float!
+  longitud: Float!
+}
+
+type Verificacion {
+  descripcion: String!
+  cumple: Boolean!
+}

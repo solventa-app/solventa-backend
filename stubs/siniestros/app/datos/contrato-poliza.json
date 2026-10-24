@@ -1,0 +1,45 @@
+{
+  "descripcion": "Contrato de datos que copia el dummy de siniestros para las pólizas de prueba (polizas.json). Es solo una referencia de forma: el dummy no importa código ni consulta el servicio de pólizas.",
+  "origen": {
+    "servicio": "services/policy",
+    "rama": "feat/KAN-215-hu-w03-bloque-5-pdf-notificacion",
+    "commit": "34c05d1",
+    "tambien_en": ["feat/KAN-212-hu-w03-bloque-4-emision"],
+    "migraciones": [
+      "services/policy/migrations/versions/0003_polizas.py",
+      "services/policy/migrations/versions/0004_poliza_notificada.py"
+    ],
+    "tipo_graphql": "contracts/graphql/schema.graphql → type Poliza",
+    "formato_numero": "SOL-<año de vigencia_desde>-<numero con 6 dígitos> (numero_de_poliza en servicio_emision.py)"
+  },
+  "tabla_polizas": [
+    { "columna": "id", "tipo": "text", "nulo": false, "nota": "clave primaria" },
+    { "columna": "propuesta_id", "tipo": "text", "nulo": false, "nota": "FK a propuestas.id, única" },
+    { "columna": "numero", "tipo": "bigint", "nulo": false, "nota": "secuencia polizas_numero_seq, único" },
+    { "columna": "cliente_id", "tipo": "text", "nulo": false, "nota": "cliente opaco" },
+    { "columna": "estado", "tipo": "text", "nulo": false, "nota": "solo EMITIDA" },
+    { "columna": "vigencia_desde", "tipo": "timestamptz", "nulo": false },
+    { "columna": "vigencia_hasta", "tipo": "timestamptz", "nulo": false },
+    { "columna": "creado_en", "tipo": "timestamptz", "nulo": false },
+    { "columna": "notificada_en", "tipo": "timestamptz", "nulo": true, "nota": "migración 0004" }
+  ],
+  "tipo_poliza_graphql": [
+    { "campo": "id", "tipo": "ID!" },
+    { "campo": "numero", "tipo": "String!" },
+    { "campo": "estado", "tipo": "EstadoPoliza!" },
+    { "campo": "vigenciaDesde", "tipo": "DateTime!" },
+    { "campo": "vigenciaHasta", "tipo": "DateTime!" },
+    { "campo": "prima", "tipo": "Monto!", "nota": "en el origen vive cifrada en la propuesta, no en la tabla" },
+    { "campo": "cobertura", "tipo": "Monto!", "nota": "en el origen vive cifrada en la propuesta, no en la tabla" },
+    { "campo": "documentoUrl", "tipo": "String!", "nota": "no lo usa el dummy: W04 no muestra el PDF de la póliza" }
+  ],
+  "agregados_por_el_dummy": [
+    { "campo": "prima", "nota": "se guarda junto a la póliza para no simular la propuesta" },
+    { "campo": "cobertura", "nota": "se guarda junto a la póliza para no simular la propuesta" },
+    { "campo": "ramo", "nota": "no existe en el origen; lo muestra el detalle del siniestro" }
+  ],
+  "campos_polizas_json": [
+    "id", "propuesta_id", "numero", "cliente_id", "estado", "vigencia_desde", "vigencia_hasta",
+    "creado_en", "notificada_en", "prima", "cobertura", "ramo"
+  ]
+}
