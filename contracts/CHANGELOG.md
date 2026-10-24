@@ -155,3 +155,22 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Temporal: se reemplaza por el contrato del servicio real de siniestros. Por ahora solo corre en local.
 - Afecta al frontend: sí (pantallas W04-01 a W04-03c). Requiere el PR gemelo en `solventa-frontend-web`.
 
+## v0.13 — 2026-10-24
+
+- KAN-26 (HU-W03, CA-W03-01 y D-11): **sin cambios de campos ni de tipos**; se aclara una semántica. Una oferta
+  `PRELIMINAR` no se puede aceptar y ahora el BFF lo dice ofreciendo recalcularla: `ErrorAceptacion` con motivo
+  `OFERTA_PRELIMINAR` devuelve `puedeReintentar: true` (antes `false`) y el mensaje «Esta oferta es preliminar y no se
+  puede aceptar. Vuelve a calcularla.». Reintentar significa volver a cotizar (`solicitarOferta`), no repetir
+  `aceptarOferta` con la misma oferta: sería el mismo error. Los demás motivos no cambian.
+- Afecta al frontend: sí, solo en cómo trata ese error (mostrar «Recalcular» y llevar a una cotización nueva). Aún no
+  hay una pantalla W03 construida que lo use.
+
+## v0.14 — 2026-10-24
+
+- KAN-26 (HU-W03, CA-W03-06 y decisión W03-14): **sin cambios de campos ni de tipos**; se aclara una semántica.
+  `PAGO_RECHAZADO` deja de ser un estado final: si el primer cobro se recupera después (el back-office reintenta un cobro
+  rechazado, o la pasarela cobra uno pendiente tras agotar las consultas), POLICY reabre la propuesta y pasa a `EMITIDA`,
+  con su póliza y un solo aviso al cliente. Lo reabren el back-office y el proceso de reconciliación; **el cliente no**
+  puede, y no hay mutación nueva.
+- Afecta al frontend: sí, en cómo trata la consulta de `propuesta`. Un cliente que ve `PAGO_RECHAZADO` y vuelve a
+  consultar puede encontrar `EMITIDA`; no debe tratar el rechazo como definitivo. Aún no hay una pantalla W03 que lo use.

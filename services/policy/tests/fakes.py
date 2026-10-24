@@ -30,6 +30,7 @@ def oferta_de_rating(**cambios: Any) -> dict[str, Any]:
         "cobertura": {"valor": "200000000", "moneda": "COP"},
         "clienteId": "cliente-opaco",
         "consentimientoId": "consentimiento-1",
+        "versionReglas": "v1",
         "plazoMeses": 60,
         "perfilRiesgo": {"score": 700, "nivelRiesgo": "BAJO", "fechaVigencia": "2026-12-01"},
         "vigenteHasta": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
@@ -88,6 +89,17 @@ class RepositorioPropuestasFalso:
             propuesta["intentos_emision"] += 1
             return propuesta["intentos_emision"]
 
+    def reiniciar_intentos(self, propuesta_id: str) -> None:
+        with self._lock:
+            self._propuesta(propuesta_id)["intentos_emision"] = 0
+
+    def listar_para_reconciliar(
+        self, estados: tuple[str, ...], dias: int, limite: int
+    ) -> list[str]:
+        with self._lock:
+            ids = [p["id"] for p in self._por_oferta.values() if p["estado"] in estados]
+        return ids[:limite]
+
     def cambiar_estado(
         self, propuesta_id: str, nuevo: str, desde: tuple[str, ...], motivo: str | None = None
     ) -> bool:
@@ -100,11 +112,16 @@ class RepositorioPropuestasFalso:
             return True
 
     def emitir_poliza(
-        self, propuesta_id: str, cliente_id: str, vigencia_desde: Any, vigencia_hasta: Any
+        self,
+        propuesta_id: str,
+        cliente_id: str,
+        vigencia_desde: Any,
+        vigencia_hasta: Any,
+        desde: tuple[str, ...] = ("EN_EMISION", "PENDIENTE_PAGO"),
     ) -> tuple[dict[str, Any] | None, bool]:
         with self._lock:
             propuesta = self._propuesta(propuesta_id)
-            if propuesta["estado"] not in ("EN_EMISION", "PENDIENTE_PAGO"):
+            if propuesta["estado"] not in desde:
                 existente = self._polizas.get(propuesta_id)
                 return (dict(existente) if existente else None), False
             self._secuencia += 1
@@ -179,6 +196,7 @@ class RepositorioPropuestasFalso:
                 "oferta_id": datos["oferta_id"],
                 "cliente_id": datos["cliente_id"],
                 "consentimiento_id": datos.get("consentimiento_id"),
+                "version_reglas": datos.get("version_reglas"),
                 "actor_usuario_id": datos.get("actor_usuario_id"),
                 "estado": "ACEPTADA",
                 "poliza_id": None,

@@ -15,6 +15,11 @@ PAYMENTS devuelve el cobro que ya existe sin cobrar de nuevo; la póliza se crea
 propuesta. Por eso Cloud Tasks puede repetir la tarea, o dos tareas correr a la vez, sin
 duplicar nada.
 
+Un cobro que se recupera **después** (el back-office reintenta un rechazado, o un pendiente agotó
+las consultas y la pasarela lo cobró más tarde) reabre la propuesta, pero solo por
+`reconciliar_cobro`: la llaman el back-office y el barrido de reconciliación, nunca el cliente
+(decisión W03-14). Un `PAGO_RECHAZADO` no se emite por la emisión normal.
+
 Si UNDER o PAYMENTS no responden se lanza `EmisionPendiente` y la propuesta no cambia: no se decide
 a ciegas ni se da el cobro por hecho. Un primer cobro pendiente se vuelve a consultar con una tarea,
 acotado por `max_intentos` para no reprogramarse para siempre."""
@@ -33,6 +38,7 @@ from app.application.cliente_payments import (
     PaymentsNoDisponible,
     PuertoPayments,
 )
+from app.application.cliente_payments import ResultadoCobro as ResultadoCobroPayments
 from app.application.cliente_under import PuertoUnder, UnderNoDisponible
 from app.application.identificadores import id_opaco
 from app.application.planificador import EmisionPendiente, PuertoPlanificador
@@ -47,6 +53,8 @@ DECISION_RECHAZADA = "RECHAZADA"
 
 DESDE_EMISION = ("EN_EMISION",)
 DESDE_COBRO = ("EN_EMISION", "PENDIENTE_PAGO")
+# Lo que la reconciliación puede reabrir: un pago rechazado o un pendiente que dejó de consultarse.
+DESDE_RECONCILIACION = ("PAGO_RECHAZADO", "PENDIENTE_PAGO")
 
 
 class PuertoRepositorioEmision(Protocol):
@@ -56,12 +64,23 @@ class PuertoRepositorioEmision(Protocol):
 
     def registrar_intento(self, propuesta_id: str) -> int: ...
 
+    def reiniciar_intentos(self, propuesta_id: str) -> None: ...
+
+    def listar_para_reconciliar(
+        self, estados: tuple[str, ...], dias: int, limite: int
+    ) -> list[str]: ...
+
     def cambiar_estado(
         self, propuesta_id: str, nuevo: str, desde: tuple[str, ...], motivo: str | None = None
     ) -> bool: ...
 
     def emitir_poliza(
-        self, propuesta_id: str, cliente_id: str, vigencia_desde: Any, vigencia_hasta: Any
+        self,
+        propuesta_id: str,
+        cliente_id: str,
+        vigencia_desde: Any,
+        vigencia_hasta: Any,
+        desde: tuple[str, ...] = DESDE_COBRO,
     ) -> tuple[dict[str, Any], bool]: ...
 
     def obtener_poliza(self, poliza_id: str) -> dict[str, Any] | None: ...
@@ -102,6 +121,8 @@ class ServicioEmision:
         token_medio_pago: str,
         demora_cobro_pendiente_s: float = 10.0,
         max_intentos: int = 12,
+        lote_reconciliacion: int = 100,
+        dias_reconciliacion: int = 30,
     ) -> None:
         self._repositorio = repositorio
         self._under = under
@@ -112,6 +133,8 @@ class ServicioEmision:
         self._token = token_medio_pago
         self._demora_s = demora_cobro_pendiente_s
         self._max_intentos = max_intentos
+        self._lote_reconciliacion = lote_reconciliacion
+        self._dias_reconciliacion = dias_reconciliacion
 
     def emitir(self, propuesta_id: str) -> str:
         """Avanza la emisión y devuelve el estado de la propuesta. Idempotente."""
@@ -173,24 +196,8 @@ class ServicioEmision:
         self, propuesta: dict[str, Any], evidencia: dict[str, Any], intentos: int
     ) -> str:
         propuesta_id = propuesta["id"]
-        try:
-            cobro = self._payments.crear_cobro(
-                OrdenPrimerCobro(
-                    id_intento_cobro=id_intento_cobro(propuesta_id),
-                    poliza_id=propuesta_id,
-                    cliente_id=evidencia["firmante_id"],
-                    monto=propuesta["prima"]["valor"],
-                    moneda=propuesta["prima"]["moneda"],
-                    token_medio_pago=self._token,
-                )
-            )
-        except PaymentsNoDisponible as error:
-            raise EmisionPendiente("PAYMENTS no disponible") from error
-        except CobroEnConflicto:
-            # No debería pasar con una orden fija. No se emite ni se rechaza: revisión manual.
-            self._repositorio.cambiar_estado(
-                propuesta_id, "EN_REVISION", DESDE_COBRO, "COBRO_EN_CONFLICTO"
-            )
+        cobro = self._pedir_cobro(propuesta, evidencia, DESDE_COBRO)
+        if cobro is None:
             return "EN_REVISION"
 
         if cobro.estado == "cobrado":
@@ -207,13 +214,117 @@ class ServicioEmision:
             self._planificador.encolar(propuesta_id, self._demora_s)
         return "PENDIENTE_PAGO"
 
-    def _emitir_poliza(self, propuesta: dict[str, Any]) -> str:
+    def _pedir_cobro(
+        self, propuesta: dict[str, Any], evidencia: dict[str, Any], desde: tuple[str, ...]
+    ) -> ResultadoCobroPayments | None:
+        """Envía la orden del primer cobro, que es siempre la misma (`id_intento_cobro` fijo):
+        PAYMENTS crea el cobro la primera vez y las siguientes devuelve el que ya existe, en el
+        estado que tenga, **sin cobrar de nuevo**. Por eso sirve también para consultarlo.
+        `None` si la orden chocó con un cobro distinto: la propuesta pasa a revisión manual."""
+        propuesta_id = propuesta["id"]
+        try:
+            return self._payments.crear_cobro(
+                OrdenPrimerCobro(
+                    id_intento_cobro=id_intento_cobro(propuesta_id),
+                    poliza_id=propuesta_id,
+                    cliente_id=evidencia["firmante_id"],
+                    monto=propuesta["prima"]["valor"],
+                    moneda=propuesta["prima"]["moneda"],
+                    token_medio_pago=self._token,
+                )
+            )
+        except PaymentsNoDisponible as error:
+            raise EmisionPendiente("PAYMENTS no disponible") from error
+        except CobroEnConflicto:
+            # No debería pasar con una orden fija. No se emite ni se rechaza: revisión manual.
+            self._repositorio.cambiar_estado(
+                propuesta_id, "EN_REVISION", desde, "COBRO_EN_CONFLICTO"
+            )
+            return None
+
+    def reconciliar_cobro(self, propuesta_id: str) -> str:
+        """Revisa el cobro de una propuesta cuyo pago quedó rechazado o pendiente y, si ya se
+        cobró, emite la póliza (CA-W03-06, decisión W03-14). Idempotente.
+
+        Solo la llaman el back-office (tras reintentar un cobro) y el barrido de reconciliación:
+        el cliente no la dispara. Devuelve el estado de la propuesta."""
+        propuesta = self._repositorio.obtener(propuesta_id)
+        if propuesta is None:
+            raise PropuestaNoEncontradaParaEmitir(propuesta_id)
+        estado = propuesta["estado"]
+        if estado == "EMITIDA":
+            self._completar_aviso(propuesta)
+            return estado
+        if estado not in DESDE_RECONCILIACION:
+            return estado
+        evidencia = self._repositorio.obtener_evidencia(propuesta_id)
+        if evidencia is None:
+            return estado  # nunca se emite sin la firma
+
+        cobro = self._pedir_cobro(propuesta, evidencia, DESDE_RECONCILIACION)
+        if cobro is None:
+            return "EN_REVISION"
+        if cobro.estado == "cobrado":
+            try:
+                return self._emitir_poliza(propuesta, DESDE_RECONCILIACION)
+            except EmisionPendiente:
+                # La póliza ya está emitida y no se deshace; solo falló el aviso. No hay quien
+                # llame a esta ruta otra vez, así que se deja una tarea que lo reintente.
+                self._planificador.encolar(propuesta_id, self._demora_s)
+                return "EMITIDA"
+        if cobro.estado == "rechazado":
+            self._actualizar_motivo(propuesta, "PAGO_RECHAZADO", cobro.motivo)
+            return "PAGO_RECHAZADO"
+
+        # cobrando o pendiente: el cobro se está reintentando.
+        self._actualizar_motivo(propuesta, "PENDIENTE_PAGO", cobro.motivo)
+        if estado == "PAGO_RECHAZADO":
+            # Se reabrió: tiene derecho a otra tanda de consultas, como un primer cobro pendiente.
+            self._repositorio.reiniciar_intentos(propuesta_id)
+            self._planificador.encolar(propuesta_id, self._demora_s)
+        return "PENDIENTE_PAGO"
+
+    def _actualizar_motivo(self, propuesta: dict[str, Any], nuevo: str, motivo: str | None) -> None:
+        """Solo toca la propuesta si algo cambió: si no, cada pasada del barrido renovaría su
+        `actualizado_en` y la propuesta nunca saldría de la ventana de reconciliación."""
+        if propuesta["estado"] != nuevo or propuesta.get("motivo_estado") != motivo:
+            self._repositorio.cambiar_estado(propuesta["id"], nuevo, DESDE_RECONCILIACION, motivo)
+
+    def reconciliar_pendientes(self) -> dict[str, int]:
+        """Una pasada del proceso de reconciliación: revisa, en lotes y de las más antiguas a las
+        más nuevas, las propuestas con el pago rechazado o pendiente de los últimos días. Una que
+        falle (PAYMENTS caído) no detiene a las demás; se cuenta y la próxima pasada la retoma."""
+        resumen = {"revisadas": 0, "emitidas": 0, "rechazadas": 0, "pendientes": 0, "fallidas": 0}
+        ids = self._repositorio.listar_para_reconciliar(
+            DESDE_RECONCILIACION, self._dias_reconciliacion, self._lote_reconciliacion
+        )
+        for propuesta_id in ids:
+            try:
+                estado = self.reconciliar_cobro(propuesta_id)
+            except (EmisionPendiente, PropuestaNoEncontradaParaEmitir):
+                resumen["fallidas"] += 1
+                continue
+            resumen["revisadas"] += 1
+            clave = {
+                "EMITIDA": "emitidas",
+                "PAGO_RECHAZADO": "rechazadas",
+                "PENDIENTE_PAGO": "pendientes",
+            }.get(estado)
+            if clave is not None:
+                resumen[clave] += 1
+        logger.info("reconciliación de cobros %s", resumen)
+        return resumen
+
+    def _emitir_poliza(
+        self, propuesta: dict[str, Any], desde: tuple[str, ...] = DESDE_COBRO
+    ) -> str:
         ahora = datetime.now(UTC)
         poliza, creada = self._repositorio.emitir_poliza(
             propuesta["id"],
             propuesta["cliente_id"],
             ahora,
             sumar_meses(ahora, int(propuesta["plazo_meses"])),
+            desde,
         )
         if poliza is None:
             # Otra emisión movió la propuesta a un estado final mientras tanto: no se pisa.

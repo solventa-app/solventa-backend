@@ -73,3 +73,32 @@ npx --yes newman@6.2.2 run tests/newman/solventa-bff.postman_collection.json \
 Recorrido mínimo del caso insignia (oferta completa, degradada, timeout duro y consentimiento revocado), el mismo
 de `docs/evidencias/flujo-prueba-local-hu-w01.md` y `scripts/humo_bff.py`. Útil para abrirlo en la app de Postman;
 para la verificación completa usa `solventa-bff.postman_collection.json`.
+
+## Colección de HU-W03 (`hu-w03.postman_collection.json`)
+
+Suscripción, firma y póliza (KAN-26, plan de HU-W03 bloque 6). A diferencia de la colección del BFF, **todo entra por el
+API Gateway** (`gateway_url`, `:8080`), como el front; los stubs y el ACL se tocan directo solo para fijar modos de falla.
+Requiere el stack completo (`docker compose --profile servicios up -d --build --wait`) y corre **en orden**: las carpetas
+comparten variables.
+
+| Carpeta | Qué verifica | Criterio / escenario |
+|---|---|---|
+| 0. Preparación | El BACKOFFICE crea un CLIENTE titular, otro CLIENTE ajeno y un ASESOR (alias únicos por corrida) | — |
+| 1. Camino feliz | Solicitar → `aceptarOferta` (la prima es la de la oferta; aceptar dos veces da la misma propuesta) → `documentoFirma` → firma rechazada sin autorizar el cobro o con una versión vieja (la propuesta sigue `ACEPTADA`) → firma → firmar otra vez da la misma evidencia → espera a `EMITIDA` → `poliza(id)` → PDF por el gateway → el aviso salió una sola vez | CA-W03-01 a 03, 07, 08 |
+| 2. Autorización | Otro CLIENTE no ve ni acepta ni firma ni descarga lo ajeno; un ASESOR no firma pero sí descarga el PDF; BACKOFFICE 403 y sin token 401 en el PDF | W03-8 (decisión), CA-W03-03 |
+| 3. Errores controlados | Oferta, propuesta y póliza inexistentes: error tipado o `null`, nunca 5xx | regla 4 |
+| 4. Degradación | Open Finance lento (la `PRELIMINAR` no se acepta); KYC caído (`EN_REVISION`, sin póliza); pasarela que rechaza (`PAGO_RECHAZADO`, sin póliza); pago rechazado que se recupera (lo reabre el back-office: el cliente no puede y la póliza se emite con un solo aviso); firma caída y firma lenta, **por el gateway** (`ErrorFirma` reintentable con HTTP 200, nunca un 5xx, y al volver el reintento emite); notificaciones caídas (la póliza se emite y el PDF se descarga, el aviso sale solo al volver). Cada escenario restaura el stub y espera a que cierren los circuitos | CA-W03-05 y 06, EC009 / EC010 |
+
+```bash
+npx --yes newman@6.2.2 run tests/newman/hu-w03.postman_collection.json \
+  -e tests/newman/solventa-local.postman_environment.json
+```
+
+- Las esperas a la emisión son un sondeo (`postman.setNextRequest`, hasta 40 consultas cada 500 ms) porque la emisión corre en
+  segundo plano; el número de consultas queda en el nombre de la prueba.
+- **Solo contra local** la carpeta 4 (los stubs y el ACL son privados en staging). Las carpetas 0 a 3 sirven contra staging
+  cambiando `gateway_url` y las credenciales del BACKOFFICE en el entorno (nunca las subas al repo).
+- Datos ficticios: los documentos `CC-NEWMAN-W03-*` y los nombres `Cliente Newman *` no son personas reales.
+- **Estado:** corrida contra el stack local el 2026-10-24 sin fallos (111 peticiones ejecutadas y 204 aserciones; las 105 definidas más los
+  sondeos); resultados y hallazgos en `docs/evidencias/HU-W03-newman-EC009-EC010-2026-10-24.md`, `CA-W03-05-firma-2026-10-24.md` y `CA-W03-06-reapertura-2026-10-24.md`.
+  Si el `:8080` o el `:5432` están ocupados, ver «Cómo correrlas».

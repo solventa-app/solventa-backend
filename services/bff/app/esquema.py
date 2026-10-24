@@ -899,6 +899,9 @@ class Mutation:
             raise ErrorPublico(MENSAJE_COBROS_NO_DISPONIBLES) from error
         if datos is None:
             raise ErrorPublico("Cobro no encontrado.")
+        # Si es el primer cobro de una propuesta de W03, POLICY emite la póliza cuando ya se cobró
+        # (decisión W03-14: lo reabren el back-office y la reconciliación, nunca el cliente).
+        await ServicioSuscripcion(info.context["clientes"]).reconciliar_cobro(datos["poliza_id"])
         return _cobro(datos, await _nombres_de_clientes(info, [datos]))
 
     @strawberry.mutation

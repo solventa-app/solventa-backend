@@ -563,6 +563,9 @@ class ServicioOferta:
         oferta: dict[str, Any] = {
             "id": str(uuid.uuid4()),
             "tipo": resultado_score["tipo"],
+            # La versión de las reglas con las que se fijó el precio: POLICY la guarda al aceptar
+            # la oferta (CA-W03-01) para saber, si las reglas cambian, con cuáles se vendió.
+            "versionReglas": resultado_score["version_reglas"],
             "cobertura": {"valor": str(cobertura_decimal), "moneda": MONEDA},
             "desgloseScore": resultado_score["desglose_score"],
             "fuentes": resultado_score["fuentes"],

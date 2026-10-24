@@ -111,6 +111,14 @@ class EmisionResponse(BaseModel):
     estado: str
 
 
+class ResumenReconciliacionResponse(BaseModel):
+    revisadas: int
+    emitidas: int
+    rechazadas: int
+    pendientes: int
+    fallidas: int
+
+
 class PolizaResponse(BaseModel):
     id: str
     numero: str
@@ -212,6 +220,8 @@ def create_app(
                 config.token_recaudo_credito,
                 config.cobro_pendiente_demora_segundos,
                 config.emision_max_intentos,
+                config.reconciliacion_lote_max,
+                config.reconciliacion_dias,
             )
             if isinstance(planificador, PlanificadorLocal):
                 planificador.conectar(emision.emitir)
@@ -341,6 +351,37 @@ def create_app(
         except EmisionPendiente as error:
             raise HTTPException(status_code=503, detail="EMISION_PENDIENTE") from error
         return EmisionResponse(estado=estado)
+
+    @app.post(
+        "/propuestas/{propuesta_id}/_reconciliar-cobro",
+        tags=["operacion"],
+        response_model=EmisionResponse,
+        responses={404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+    )
+    def reconciliar_cobro_propuesta(propuesta_id: str) -> EmisionResponse:
+        """La llama el BFF cuando el back-office reintenta un cobro: si el pago de esa propuesta
+        ya se cobró, emite la póliza (decisión W03-14; el cliente no puede dispararla). Privada
+        (IAM de Cloud Run) e idempotente. 404 si el id no es de una propuesta (un cobro que no es
+        de W03); 503 solo si PAYMENTS no respondió."""
+        try:
+            estado = app.state.servicio_emision.reconciliar_cobro(propuesta_id)
+        except PropuestaNoEncontradaParaEmitir as error:
+            raise HTTPException(status_code=404, detail="propuesta no encontrada") from error
+        except EmisionPendiente as error:
+            raise HTTPException(status_code=503, detail="EMISION_PENDIENTE") from error
+        return EmisionResponse(estado=estado)
+
+    @app.post(
+        "/reconciliacion/cobros",
+        tags=["operacion"],
+        response_model=ResumenReconciliacionResponse,
+    )
+    def reconciliar_cobros() -> ResumenReconciliacionResponse:
+        """Una pasada del proceso de reconciliación: revisa un lote de propuestas con el pago
+        rechazado o pendiente y emite la póliza de las que ya se cobraron. La dispara Cloud
+        Scheduler (privada, IAM de Cloud Run) o quien opere el servicio. Responde 200 aunque
+        alguna propuesta falle: el resumen dice cuántas y la próxima pasada las retoma."""
+        return ResumenReconciliacionResponse(**app.state.servicio_emision.reconciliar_pendientes())
 
     @app.get(
         "/polizas/{poliza_id}",

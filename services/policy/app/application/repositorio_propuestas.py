@@ -23,8 +23,8 @@ from psycopg_pool import ConnectionPool
 from app.application.cifrado import CifradorCampos
 
 _COLUMNAS = (
-    "id, oferta_id, cliente_id, consentimiento_id, actor_usuario_id, estado, oferta_cifrada, "
-    "intentos_emision, motivo_estado, creado_en, actualizado_en"
+    "id, oferta_id, cliente_id, consentimiento_id, version_reglas, actor_usuario_id, estado, "
+    "oferta_cifrada, intentos_emision, motivo_estado, creado_en, actualizado_en"
 )
 # La póliza de la propuesta, si ya se emitió (una subconsulta: `polizas.propuesta_id` es UNIQUE).
 _POLIZA_ID = "(SELECT p.id FROM polizas p WHERE p.propuesta_id = propuestas.id) AS poliza_id"
@@ -75,11 +75,11 @@ class RepositorioPropuestasPostgres:
             fila = conexion.execute(
                 f"""
                 INSERT INTO propuestas
-                    (id, oferta_id, cliente_id, consentimiento_id, actor_usuario_id, estado,
-                     oferta_cifrada)
+                    (id, oferta_id, cliente_id, consentimiento_id, version_reglas,
+                     actor_usuario_id, estado, oferta_cifrada)
                 VALUES
                     (%(id)s, %(oferta_id)s, %(cliente_id)s, %(consentimiento_id)s,
-                     %(actor_usuario_id)s, 'ACEPTADA', %(oferta_cifrada)s)
+                     %(version_reglas)s, %(actor_usuario_id)s, 'ACEPTADA', %(oferta_cifrada)s)
                 ON CONFLICT (oferta_id) DO NOTHING
                 RETURNING {_COLUMNAS}, NULL::text AS poliza_id
                 """,
@@ -88,6 +88,7 @@ class RepositorioPropuestasPostgres:
                     "oferta_id": datos["oferta_id"],
                     "cliente_id": datos["cliente_id"],
                     "consentimiento_id": datos.get("consentimiento_id"),
+                    "version_reglas": datos.get("version_reglas"),
                     "actor_usuario_id": datos.get("actor_usuario_id"),
                     "oferta_cifrada": cifrada,
                 },
@@ -110,6 +111,29 @@ class RepositorioPropuestasPostgres:
             ).fetchone()
         return fila["intentos_emision"]
 
+    def reiniciar_intentos(self, propuesta_id: str) -> None:
+        """Vuelve a cero el contador de intentos: una propuesta que la reconciliación reabre para
+        seguir consultando su cobro tiene derecho a otra tanda completa de consultas."""
+        with self._pool.connection() as conexion:
+            conexion.execute(
+                "UPDATE propuestas SET intentos_emision = 0 WHERE id = %(id)s",
+                {"id": propuesta_id},
+            )
+
+    def listar_para_reconciliar(
+        self, estados: tuple[str, ...], dias: int, limite: int
+    ) -> list[str]:
+        """Ids de las propuestas en `estados` que cambiaron en los últimos `dias`, las más
+        antiguas primero, hasta `limite`. Es la lista de trabajo del barrido de reconciliación."""
+        with self._pool.connection() as conexion:
+            filas = conexion.execute(
+                "SELECT id FROM propuestas WHERE estado = ANY(%(estados)s) "
+                "AND actualizado_en >= now() - make_interval(days => %(dias)s) "
+                "ORDER BY actualizado_en ASC LIMIT %(limite)s",
+                {"estados": list(estados), "dias": dias, "limite": limite},
+            ).fetchall()
+        return [fila["id"] for fila in filas]
+
     def cambiar_estado(
         self, propuesta_id: str, nuevo: str, desde: tuple[str, ...], motivo: str | None = None
     ) -> bool:
@@ -124,18 +148,25 @@ class RepositorioPropuestasPostgres:
         return fila is not None
 
     def emitir_poliza(
-        self, propuesta_id: str, cliente_id: str, vigencia_desde: Any, vigencia_hasta: Any
+        self,
+        propuesta_id: str,
+        cliente_id: str,
+        vigencia_desde: Any,
+        vigencia_hasta: Any,
+        desde: tuple[str, ...] = ("EN_EMISION", "PENDIENTE_PAGO"),
     ) -> tuple[dict[str, Any], bool]:
         """Pasa la propuesta a `EMITIDA` y crea su póliza, todo en una transacción. Devuelve la
         póliza y si se creó ahora (False = ya existía: emitir dos veces no
-        duplica). Si la propuesta ya no está en un estado emisible (p. ej. otra emisión la movió),
-        devuelve la póliza existente o `None`."""
+        duplica). Solo emite si la propuesta sigue en uno de `desde`; por defecto, los de la
+        emisión normal: un `PAGO_RECHAZADO` no se emite por ahí, solo lo reabre la reconciliación
+        (que lo pide explícitamente). Si ya no está en un estado emisible (p. ej. otra emisión la
+        movió), devuelve la póliza existente o `None`."""
         with self._pool.connection() as conexion, conexion.transaction():
             fila = conexion.execute(
                 "UPDATE propuestas SET estado = 'EMITIDA', motivo_estado = NULL, "
                 "actualizado_en = now() WHERE id = %(id)s "
-                "AND estado IN ('EN_EMISION', 'PENDIENTE_PAGO') RETURNING id",
-                {"id": propuesta_id},
+                "AND estado = ANY(%(desde)s) RETURNING id",
+                {"id": propuesta_id, "desde": list(desde)},
             ).fetchone()
             if fila is None:
                 existente = conexion.execute(

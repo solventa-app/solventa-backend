@@ -130,7 +130,19 @@ def test_oferta_preliminar_la_rechaza_policy_con_su_motivo() -> None:
         error = _post(client, ACEPTAR, {"id": "o-1"})["data"]["aceptarOferta"]
 
     assert error["motivo"] == "OFERTA_PRELIMINAR"
-    assert error["puedeReintentar"] is False
+    # D-11: la preliminar no se acepta, se ofrece recalcularla (volver a cotizar).
+    assert error["puedeReintentar"] is True
+    assert "preliminar" in error["mensaje"]
+    assert "Vuelve a calcularla" in error["mensaje"]
+
+
+def test_los_demas_rechazos_de_la_aceptacion_no_ofrecen_reintentar() -> None:
+    for motivo in ("OFERTA_NO_ENCONTRADA", "OFERTA_VENCIDA"):
+        with _cliente(policy=PolicyFalso(rechazo=motivo)) as client:
+            error = _post(client, ACEPTAR, {"id": "o-1"})["data"]["aceptarOferta"]
+
+        assert error["motivo"] == motivo
+        assert error["puedeReintentar"] is False
 
 
 def test_policy_caido_responde_error_con_reintento_sin_5xx() -> None:

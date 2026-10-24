@@ -29,6 +29,21 @@ Variables: `BFF_URL` (en staging, la del gateway), `USUARIO_BACKOFFICE`, `CLAVE_
 `STUB_PASARELA_URL` y `TOKEN_PASARELA` (`gcloud auth print-identity-token --audiences=stub-pasarela`). Ninguna clave va al repo.
 Antes de correr contra staging: *Costos staging → encender*, y `python3 scripts/sembrar_cobros.py` si hace falta el operador.
 
+Guiones de emisión (HU-W03, plan de HU-W03 bloque 6). Un CLIENTE de prueba recorre todo por el gateway (`lib/emision.js`):
+consentimiento → oferta → `aceptarOferta` → `documentoFirma` → `firmarPropuesta` → espera a `EMITIDA`. Lo que se mide es de la
+firma a `EMITIDA` (consulta cada `SONDEO_MS`, 100 ms por defecto, así que la cifra puede traer hasta ese margen de más); lo
+anterior no cuenta. Una emisión que no llega a `EMITIDA` entra con el tiempo que se esperó, y un recorrido que se cae antes de
+firmar rompe el umbral.
+
+| Guion | Escenario | Umbral | Qué mide de verdad |
+|---|---|---|---|
+| `ec005-emision.js` | EC005 (CA-W03-07) | p95 ≤ 1,5 s; ≥ 99 % `EMITIDA`; 0 % 5xx | De `firmarPropuesta` a `EMITIDA` a `RITMO_EMISION` firmas por segundo (**supuesto: 1**) |
+| `ec007-emision-pico.js` | EC007 (CA-W03-07) | p99 ≤ 3 s; ≥ 99 % `EMITIDA`; 0 % 5xx | Lo mismo, subiendo a `FACTOR_PICO` × el ritmo normal (**supuesto: 3×**), sosteniéndolo `DURACION_PICO` y bajando |
+
+**La carga de EC005 y EC007 no sale de ningún documento del repo:** el ritmo y el factor son supuestos que cada informe debe
+declarar (`RITMO_EMISION`, `FACTOR_PICO`; también `CLIENTES_PRUEBA`, `SONDEO_MS` y `TIMEOUT_EMISION_MS`). Los guiones crean
+CLIENTES con el BACKOFFICE (`USUARIO_BACKOFFICE` / `CLAVE_BACKOFFICE`), así que en staging necesitan esas credenciales.
+
 Reglas:
 
 ## Cómo correrlos
