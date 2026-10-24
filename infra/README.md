@@ -341,7 +341,7 @@ se vuelve a poner en `false`.
   únicamente a `rt-rating` para invalidar el score cacheado cuando cambia el perfil.
 - **`crear_batch = true` (`batch.tf`, HA-ESC-004 / EC017):** crea el Cloud Run Job `risk-reproceso` (`python -m app.batch_reproceso`,
   con la imagen y cuenta de `risk`) y la tarea de Cloud Scheduler `risk-reproceso-nocturno` programada a las `30 23 * * *`
-  (`America/Bogota`), para que termine antes del apagado automático de costos de las 2:00 a.m. `batch_tareas` (default `1`) fija `task_count`: cada tarea procesa una partición de los perfiles, así que para 10 M de perfiles en < 2 h se escala subiendo `batch_tareas` (la cifra sale de la medición de `docs/evidencias/EC017-2026-10-18.md`).
+  (`America/Bogota`), para que termine antes del apagado automático de costos de las 2:00 a.m. `batch_tareas` (default `1`) fija `task_count`: cada tarea procesa una partición de los perfiles, así que para 10 M de perfiles en < 2 h se escala subiendo `batch_tareas` (la cifra sale de la medición de `docs/evidencias/EC017-2026-10-18.md`). **Ojo con Atlas M0:** según su documentación admite como máximo 100 operaciones por segundo para todo el clúster, así que el batch no llegaría a EC017 y competiría con el tráfico en línea de RISK y RATING; para medir EC017 en staging hace falta un nivel de pago (sin medir; ver la sección 5 del informe).
 
 ### Secretos de SonarCloud en GitHub Actions (Bloque 6)
 

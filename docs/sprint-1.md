@@ -219,6 +219,7 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   **Estado de las mediciones de esos bloques (honesto):** el código está hecho y probado (pytest, humo por el gateway y Newman en
   verde), pero **ningún escenario de calidad se ha medido todavía contra staging**. Hay corridas **locales** reales
   (`docs/evidencias/`): EC003 ✅, **EC004 ❌** (el pico de 3× satura el BFF), EC009/EC010 ✅, EC011/EC012 ✅, EC001/EC002 ✅ y
-  **EC008 ❌** (p95 por dependencia 126 ms contra 120 ms). EC017 (batch), el informe de seguridad y la exploratoria FC-01 están
-  **pendientes**; EC022 y CA-W01-08 están verificados solo hasta donde lo dice cada informe (sin Cloud KMS real ni staging).
+  **EC008 ❌** (p95 por dependencia 126 ms contra 120 ms). EC017 (batch) se midió **solo en local y a escala reducida** (2026-10-24;
+  `docs/evidencias/EC017-2026-10-18.md`) y no en staging, donde Atlas M0 podría limitarlo a 100 operaciones por segundo; el informe de seguridad y la
+  exploratoria FC-01 están **pendientes**; EC022 y CA-W01-08 están verificados solo hasta donde lo dice cada informe (sin Cloud KMS real ni staging).
   Una versión anterior de esos informes traía cifras que no provenían de ninguna medición; se retiraron.
