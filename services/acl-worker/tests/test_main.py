@@ -13,6 +13,11 @@ CONFIG_SIN_PROVEEDORES = Configuracion(
     open_finance_url="http://127.0.0.1:1",
     open_data_url="http://127.0.0.1:1",
     pasarela_url="http://127.0.0.1:1",
+    # Sin esto usarían los puertos por defecto (8104 a 8106) y la prueba dependería de si el
+    # stack local está encendido.
+    firma_url="http://127.0.0.1:1",
+    kyc_url="http://127.0.0.1:1",
+    notificaciones_url="http://127.0.0.1:1",
     timeout_s=0.2,
     breaker_umbral_fallos=3,
     breaker_ttl_segundos=5,
