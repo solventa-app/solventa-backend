@@ -220,6 +220,22 @@ enum MotivoErrorFirma {
   SERVICIO_FIRMA_NO_DISPONIBLE
 }
 
+# Por qué una propuesta no avanza (CA-W03-06). Son categorías para el cliente: nunca el código interno de la
+# decisión de suscripción ni el de la pasarela.
+enum MotivoEstadoPropuesta {
+  PAGO_FONDOS_INSUFICIENTES # PAGO_RECHAZADO: la pasarela rechazó el cobro por fondos insuficientes
+  PAGO_RECHAZADO # PAGO_RECHAZADO: cualquier otro rechazo de la pasarela
+  PAGO_EN_PROCESO # PENDIENTE_PAGO: el cobro aún no se confirma
+  REVISION_MANUAL # EN_REVISION: un asesor revisa la solicitud
+  NO_APROBADA # NO_EMITIDA: la suscripción no aprobó la solicitud
+}
+
+# Qué debe hacer el cliente. Para CONTACTAR_ASESOR, la mutación `contactarAsesor`.
+enum AccionSugerida {
+  ESPERAR # nada: la propuesta sigue su curso y se le avisa
+  CONTACTAR_ASESOR
+}
+
 type Propuesta {
   id: ID!
   ofertaId: ID!
@@ -229,6 +245,10 @@ type Propuesta {
   plazoMeses: Int!
   polizaId: ID # presente cuando el estado es EMITIDA
   actualizadoEn: DateTime!
+  # Presentes en EN_REVISION, PENDIENTE_PAGO, PAGO_RECHAZADO y NO_EMITIDA; nulos en los demás estados.
+  motivoEstado: MotivoEstadoPropuesta
+  mensajeEstado: String # qué pasa y qué hacer, en el idioma del usuario
+  accionSugerida: AccionSugerida
 }
 
 type ErrorAceptacion {

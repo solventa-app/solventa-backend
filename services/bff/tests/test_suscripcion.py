@@ -1,7 +1,11 @@
 """Aceptar una oferta y consultar la propuesta (HU-W03, KAN-209, CA-W03-01), con dobles."""
 
+from contextlib import contextmanager
+
+import pytest
 from fakes import (
     CONSENTIMIENTO_VIGENTE,
+    OFERTA_COMPLETA,
     AuthFalso,
     PolicyFalso,
     RatingFalso,
@@ -25,6 +29,19 @@ ACEPTAR = """mutation($id: ID!) {
   }
 }"""
 PROPUESTA = """query($id: ID!) { propuesta(id: $id) { id estado ofertaId } }"""
+PROPUESTA_CON_MOTIVO = """query($id: ID!) {
+  propuesta(id: $id) { estado motivoEstado mensajeEstado accionSugerida }
+}"""
+OFERTA = """query($id: ID!) {
+  oferta(id: $id) {
+    id tipo
+    prima { valor moneda }
+    cobertura { valor moneda }
+    desgloseScore { nombre peso }
+    fuentes { id nombre origen estado }
+    perfilRiesgo { nivelRiesgo }
+  }
+}"""
 
 # Lo que RATING guardó al calcular la oferta (`GET /ofertas/{id}`).
 GUARDADA = {
@@ -32,6 +49,16 @@ GUARDADA = {
     "tipo": "COMPLETA",
     "clienteId": "cliente-opaco",
     "consentimientoId": "c-1",
+}
+
+# La oferta completa tal como la guarda RATING: lo que devolvió `POST /ofertas` más el titular y el
+# consentimiento (`almacen_ofertas.py`).
+GUARDADA_COMPLETA = {
+    **OFERTA_COMPLETA,
+    "clienteId": "cliente-opaco",
+    "consentimientoId": "c-1",
+    "plazoMeses": 60,
+    "vigenteHasta": "2026-11-01T12:00:00+00:00",
 }
 
 
@@ -197,3 +224,182 @@ def test_si_policy_no_responde_la_consulta_es_un_error_no_un_null() -> None:
 
     assert cuerpo["data"]["propuesta"] is None
     assert cuerpo["errors"][0]["message"] == "No pudimos procesar tu suscripción. Intenta de nuevo."
+
+
+# ---------- oferta(id): la oferta que RATING guardó (CA-W03-01) ----------
+
+
+def _cliente_con_oferta(auth: AuthFalso | None = None, **rating) -> TestClient:
+    guardadas = {"o-1": GUARDADA_COMPLETA}
+    return _cliente(auth=auth, rating=RatingFalso(guardadas=guardadas, **rating))
+
+
+def test_consulta_la_oferta_guardada_con_sus_fuentes() -> None:
+    with _cliente_con_oferta() as client:
+        oferta = _post(client, OFERTA, {"id": "o-1"})["data"]["oferta"]
+
+    assert oferta["id"] == "o-1"
+    assert oferta["tipo"] == "COMPLETA"
+    assert oferta["prima"] == {"valor": "61200.00", "moneda": "COP"}
+    assert oferta["fuentes"] == [
+        {
+            "id": "historial-crediticio",
+            "nombre": "historial-crediticio",
+            "origen": "OPEN_FINANCE",
+            "estado": "OK",
+        }
+    ]
+    assert oferta["desgloseScore"] == [{"nombre": "historial-crediticio", "peso": 0.3}]
+    assert oferta["perfilRiesgo"] == {"nivelRiesgo": "BAJO"}
+
+
+def test_una_oferta_vencida_o_desconocida_es_null() -> None:
+    with _cliente_con_oferta() as client:
+        assert _post(client, OFERTA, {"id": "o-vencida"})["data"]["oferta"] is None
+
+
+def test_un_cliente_no_ve_la_oferta_que_consintio_otro_usuario() -> None:
+    consentimiento = {**CONSENTIMIENTO_VIGENTE, "actor": {"rol": "CLIENTE", "usuario_id": "u-otro"}}
+    with _cliente_con_oferta(auth=AuthFalso({"c-1": consentimiento})) as client:
+        assert _post(client, OFERTA, {"id": "o-1"}, uid="u-1")["data"]["oferta"] is None
+
+
+def test_un_asesor_ve_la_oferta_del_cliente() -> None:
+    consentimiento = {**CONSENTIMIENTO_VIGENTE, "actor": {"rol": "CLIENTE", "usuario_id": "u-otro"}}
+    with _cliente_con_oferta(auth=AuthFalso({"c-1": consentimiento})) as client:
+        oferta = _post(client, OFERTA, {"id": "o-1"}, rol="ASESOR")["data"]["oferta"]
+
+    assert oferta["id"] == "o-1"
+
+
+def test_la_oferta_de_otro_titular_no_se_ve() -> None:
+    auth = AuthFalso({"c-1": {**CONSENTIMIENTO_VIGENTE, "titular_id": "otro-titular"}})
+    with _cliente_con_oferta(auth=auth) as client:
+        assert _post(client, OFERTA, {"id": "o-1"})["data"]["oferta"] is None
+
+
+def test_sin_consentimiento_vigente_la_oferta_no_se_ve() -> None:
+    auth = AuthFalso({"c-1": {**CONSENTIMIENTO_VIGENTE, "vigente": False, "estado": "REVOCADO"}})
+    with _cliente_con_oferta(auth=auth) as client:
+        assert _post(client, OFERTA, {"id": "o-1"})["data"]["oferta"] is None
+
+
+def test_si_rating_no_responde_la_oferta_es_un_error_no_un_null() -> None:
+    with _cliente_con_oferta(error_lectura=ErrorServicio("caído")) as client:
+        cuerpo = _post(client, OFERTA, {"id": "o-1"})
+
+    assert cuerpo["data"]["oferta"] is None
+    assert cuerpo["errors"][0]["message"] == "No pudimos procesar tu suscripción. Intenta de nuevo."
+
+
+def test_si_auth_no_responde_la_oferta_es_un_error_no_un_null() -> None:
+    with _cliente_con_oferta(auth=AuthFalso(falla=True)) as client:
+        cuerpo = _post(client, OFERTA, {"id": "o-1"})
+
+    assert cuerpo["data"]["oferta"] is None
+    assert cuerpo["errors"][0]["message"] == "No pudimos procesar tu suscripción. Intenta de nuevo."
+
+
+def test_el_back_office_no_consulta_ofertas() -> None:
+    with _cliente_con_oferta() as client:
+        cuerpo = _post(client, OFERTA, {"id": "o-1"}, rol="BACKOFFICE")
+
+    assert cuerpo["data"]["oferta"] is None
+    assert cuerpo["errors"][0]["message"] == "No tienes permiso para esta operación."
+
+
+# ---------- Qué le pasa a la propuesta y qué hacer (CA-W03-06) ----------
+
+CODIGOS_INTERNOS = (
+    "KYC_RECHAZADO",
+    "KYC_NO_DISPONIBLE",
+    "RIESGO_ALTO",
+    "RIESGO_DESCONOCIDO",
+    "COBERTURA_ALTA",
+    "MONEDA_NO_SOPORTADA",
+    "COBRO_EN_CONFLICTO",
+    "acl_no_disponible",
+    "fondos_insuficientes",
+    "tarjeta_vencida",
+)
+
+
+@contextmanager
+def _propuesta_en(estado: str, motivo_estado: str | None):
+    """Un cliente con una propuesta ya aceptada y puesta en `estado`; entrega `(client, id)`."""
+    policy = PolicyFalso()
+    with _cliente(policy=policy) as client:
+        creada = _post(client, ACEPTAR, {"id": "o-1"})["data"]["aceptarOferta"]
+        policy.propuestas["o-1"].update(estado=estado, motivo_estado=motivo_estado)
+        yield client, creada["id"]
+
+
+@pytest.mark.parametrize(
+    ("estado", "motivo_estado", "motivo", "accion"),
+    [
+        ("PAGO_RECHAZADO", "fondos_insuficientes", "PAGO_FONDOS_INSUFICIENTES", "CONTACTAR_ASESOR"),
+        ("PAGO_RECHAZADO", "tarjeta_vencida", "PAGO_RECHAZADO", "CONTACTAR_ASESOR"),
+        ("PAGO_RECHAZADO", None, "PAGO_RECHAZADO", "CONTACTAR_ASESOR"),
+        ("PENDIENTE_PAGO", "acl_no_disponible", "PAGO_EN_PROCESO", "ESPERAR"),
+        ("PENDIENTE_PAGO", None, "PAGO_EN_PROCESO", "ESPERAR"),
+        ("EN_REVISION", "KYC_NO_DISPONIBLE,RIESGO_ALTO", "REVISION_MANUAL", "ESPERAR"),
+        ("EN_REVISION", "COBRO_EN_CONFLICTO", "REVISION_MANUAL", "ESPERAR"),
+        ("NO_EMITIDA", "KYC_RECHAZADO", "NO_APROBADA", "CONTACTAR_ASESOR"),
+    ],
+)
+def test_el_estado_que_no_avanza_dice_por_que_y_que_hacer(
+    estado: str, motivo_estado: str | None, motivo: str, accion: str
+) -> None:
+    with _propuesta_en(estado, motivo_estado) as (client, propuesta_id):
+        cuerpo = _post(client, PROPUESTA_CON_MOTIVO, {"id": propuesta_id})
+
+    propuesta = cuerpo["data"]["propuesta"]
+    assert propuesta["estado"] == estado
+    assert propuesta["motivoEstado"] == motivo
+    assert propuesta["accionSugerida"] == accion
+    assert propuesta["mensajeEstado"]
+    # Ni el código de UNDER ni el de la pasarela llegan al cliente, en ningún campo.
+    texto = str(cuerpo)
+    for codigo in CODIGOS_INTERNOS:
+        assert codigo not in texto
+
+
+@pytest.mark.parametrize("estado", ["ACEPTADA", "EN_EMISION", "EMITIDA"])
+def test_los_estados_sin_novedad_no_traen_motivo(estado: str) -> None:
+    with _propuesta_en(estado, None) as (client, propuesta_id):
+        propuesta = _post(client, PROPUESTA_CON_MOTIVO, {"id": propuesta_id})["data"]["propuesta"]
+
+    assert propuesta["estado"] == estado
+    assert propuesta["motivoEstado"] is None
+    assert propuesta["mensajeEstado"] is None
+    assert propuesta["accionSugerida"] is None
+
+
+def test_el_mensaje_del_estado_sale_en_ingles_si_el_usuario_lo_pide() -> None:
+    with _propuesta_en("EN_REVISION", "RIESGO_ALTO") as (client, propuesta_id):
+        r = client.post(
+            "/graphql/web",
+            json={"query": PROPUESTA_CON_MOTIVO, "variables": {"id": propuesta_id}},
+            headers={
+                "Authorization": f"Bearer {token_de_prueba('CLIENTE', usuario_id='u-1')}",
+                "Accept-Language": "en",
+            },
+        )
+
+    propuesta = r.json()["data"]["propuesta"]
+    assert propuesta["mensajeEstado"] == (
+        "We're reviewing your request. We'll let you know when it's ready."
+    )
+    assert propuesta["motivoEstado"] == "REVISION_MANUAL"  # el código no se traduce
+
+
+def test_aceptar_una_oferta_no_trae_motivo_de_estado() -> None:
+    consulta = """mutation($id: ID!) {
+      aceptarOferta(ofertaId: $id) {
+        ... on Propuesta { estado motivoEstado accionSugerida }
+      }
+    }"""
+    with _cliente() as client:
+        propuesta = _post(client, consulta, {"id": "o-1"})["data"]["aceptarOferta"]
+
+    assert propuesta == {"estado": "ACEPTADA", "motivoEstado": None, "accionSugerida": None}

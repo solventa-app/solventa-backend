@@ -60,6 +60,25 @@ EN: dict[str, str] = {
     "No pudimos procesar tu suscripción. Intenta de nuevo.": (
         "We couldn't process your subscription. Please try again."
     ),
+    # Estado de la propuesta (app/servicio_suscripcion.py, `explicar_estado`)
+    "No pudimos cobrar tu primera cuota porque la cuenta no tiene fondos suficientes. "
+    "Habla con un asesor para resolverlo.": (
+        "We couldn't charge your first installment because the account has insufficient funds. "
+        "Talk to an advisor to sort it out."
+    ),
+    "No pudimos cobrar tu primera cuota. Habla con un asesor para resolverlo.": (
+        "We couldn't charge your first installment. Talk to an advisor to sort it out."
+    ),
+    "Tu pago está en proceso. Emitiremos tu póliza cuando se confirme y te avisaremos.": (
+        "Your payment is being processed. We'll issue your policy once it is confirmed "
+        "and let you know."
+    ),
+    "Estamos revisando tu solicitud. Te avisamos cuando esté lista.": (
+        "We're reviewing your request. We'll let you know when it's ready."
+    ),
+    "No pudimos aprobar tu solicitud. Habla con un asesor para conocer tus opciones.": (
+        "We couldn't approve your request. Talk to an advisor to learn about your options."
+    ),
     "No pudimos registrar el consentimiento. Intenta de nuevo.": (
         "We couldn't record the consent. Please try again."
     ),

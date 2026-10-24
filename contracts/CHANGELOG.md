@@ -160,3 +160,20 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   puede, y no hay mutación nueva.
 - Afecta al frontend: sí, en cómo trata la consulta de `propuesta`. Un cliente que ve `PAGO_RECHAZADO` y vuelve a
   consultar puede encontrar `EMITIDA`; no debe tratar el rechazo como definitivo. Aún no hay una pantalla W03 que lo use.
+
+## v0.15 — 2026-10-24
+
+- KAN-26 (HU-W03, CA-W03-06 y CA-W03-01): **solo cambios aditivos**.
+  - `Propuesta` suma tres campos opcionales: `motivoEstado: MotivoEstadoPropuesta`, `mensajeEstado: String` y
+    `accionSugerida: AccionSugerida`. Vienen cuando la propuesta no avanza (`EN_REVISION`, `PENDIENTE_PAGO`,
+    `PAGO_RECHAZADO` y `NO_EMITIDA`) y son `null` en los demás estados. Enums nuevos: `MotivoEstadoPropuesta`
+    (`PAGO_FONDOS_INSUFICIENTES`, `PAGO_RECHAZADO`, `PAGO_EN_PROCESO`, `REVISION_MANUAL`, `NO_APROBADA`) y
+    `AccionSugerida` (`ESPERAR`, `CONTACTAR_ASESOR`). El motivo es una categoría para el cliente: el código interno de la
+    decisión de suscripción (p. ej. riesgo alto o KYC rechazado) y el de la pasarela **no salen del BFF**. Los textos de
+    `mensajeEstado` son una propuesta (decisión W03-15) y siguen el idioma de `Accept-Language`.
+  - `oferta(id)` ya no devuelve siempre `null`: entrega la oferta que RATING guardó al calcularla, con la misma validación
+    de dueño que `aceptarOferta` (un CLIENTE solo ve la que consintió él; un ASESOR, la de su cliente). Es `null` si venció,
+    no existe o no es suya, y un error con reintento si RATING o AUTH no responden. Sin cambio de esquema.
+- Afecta al frontend: sí. La pantalla «Resultado del pago» (por crear en Figma) puede mostrar `mensajeEstado` y decidir el
+  botón con `accionSugerida` (`CONTACTAR_ASESOR` lleva a `contactarAsesor`); `oferta(id)` sirve para «ver fuentes» sin
+  guardar la oferta en memoria. Los campos son opcionales: no rompen el codegen. Aún no hay una pantalla W03 que los use.

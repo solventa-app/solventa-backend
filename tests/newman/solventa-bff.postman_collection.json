@@ -975,7 +975,7 @@
           }
         },
         {
-          "name": "oferta(id) devuelve null",
+          "name": "oferta(id) devuelve la oferta guardada",
           "event": [
             {
               "listen": "test",
@@ -985,9 +985,12 @@
                   "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const cuerpo = pm.response.json();",
-                  "pm.test('null sin errores', () => {",
+                  "pm.test('es la oferta que RATING guardó, con sus 5 fuentes', () => {",
                   "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(cuerpo.data.oferta).to.be.null;",
+                  "  pm.expect(cuerpo.data.oferta).to.not.be.null;",
+                  "  pm.expect(cuerpo.data.oferta.id).to.eql(pm.collectionVariables.get('oferta_id'));",
+                  "  pm.expect(cuerpo.data.oferta.tipo).to.eql('COMPLETA');",
+                  "  pm.expect(cuerpo.data.oferta.fuentes).to.have.lengthOf(5);",
                   "});"
                 ]
               }
@@ -1013,9 +1016,9 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  oferta(id: $id) {\\n    id tipo\\n  }\\n}\",\n  \"variables\": {\n    \"id\": \"{{oferta_id}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  oferta(id: $id) {\\n    id tipo\\n    fuentes { id estado }\\n  }\\n}\",\n  \"variables\": {\n    \"id\": \"{{oferta_id}}\"\n  }\n}"
             },
-            "description": "RATING todavía no persiste ofertas, así que la consulta por id devuelve null (documentado en el README del BFF)."
+            "description": "RATING guarda la oferta al calcularla (HU-W03): la consulta por id la devuelve, con la misma validación de dueño que aceptarOferta."
           }
         }
       ]

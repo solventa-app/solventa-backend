@@ -44,6 +44,54 @@ _FIRMA_POR_MOTIVO = {
 }
 
 
+# Qué le decimos al cliente cuando la propuesta no avanza (CA-W03-06). Son categorías: el código
+# interno de UNDER (`RIESGO_ALTO`, `KYC_RECHAZADO`...) dice cómo se evalúa a la persona y no sale
+# del BFF.
+# Los textos son una propuesta (decisión W03-15): viven aquí, en un solo lugar, para ajustarlos.
+MENSAJE_PAGO_FONDOS_INSUFICIENTES = (
+    "No pudimos cobrar tu primera cuota porque la cuenta no tiene fondos suficientes. "
+    "Habla con un asesor para resolverlo."
+)
+MENSAJE_PAGO_RECHAZADO = "No pudimos cobrar tu primera cuota. Habla con un asesor para resolverlo."
+MENSAJE_PAGO_EN_PROCESO = (
+    "Tu pago está en proceso. Emitiremos tu póliza cuando se confirme y te avisaremos."
+)
+MENSAJE_REVISION_MANUAL = "Estamos revisando tu solicitud. Te avisamos cuando esté lista."
+MENSAJE_NO_APROBADA = (
+    "No pudimos aprobar tu solicitud. Habla con un asesor para conocer tus opciones."
+)
+
+# Código con el que la pasarela rechaza por falta de fondos; cualquier otro rechazo es genérico.
+MOTIVO_PASARELA_FONDOS_INSUFICIENTES = "fondos_insuficientes"
+
+
+@dataclass(frozen=True)
+class ExplicacionEstado:
+    motivo: str  # un valor de `MotivoEstadoPropuesta`
+    mensaje: str
+    accion: str  # un valor de `AccionSugerida`
+
+
+def explicar_estado(propuesta: dict) -> ExplicacionEstado | None:
+    """Qué le pasa a la propuesta y qué hacer, o `None` si no hay nada que explicar (aceptada,
+    en emisión o emitida). Un motivo desconocido cae en la categoría general del estado: nunca
+    falla ni deja pasar un código interno."""
+    estado = propuesta.get("estado")
+    if estado == "PAGO_RECHAZADO":
+        if propuesta.get("motivo_estado") == MOTIVO_PASARELA_FONDOS_INSUFICIENTES:
+            return ExplicacionEstado(
+                "PAGO_FONDOS_INSUFICIENTES", MENSAJE_PAGO_FONDOS_INSUFICIENTES, "CONTACTAR_ASESOR"
+            )
+        return ExplicacionEstado("PAGO_RECHAZADO", MENSAJE_PAGO_RECHAZADO, "CONTACTAR_ASESOR")
+    if estado == "PENDIENTE_PAGO":
+        return ExplicacionEstado("PAGO_EN_PROCESO", MENSAJE_PAGO_EN_PROCESO, "ESPERAR")
+    if estado == "EN_REVISION":
+        return ExplicacionEstado("REVISION_MANUAL", MENSAJE_REVISION_MANUAL, "ESPERAR")
+    if estado == "NO_EMITIDA":
+        return ExplicacionEstado("NO_APROBADA", MENSAJE_NO_APROBADA, "CONTACTAR_ASESOR")
+    return None
+
+
 @dataclass
 class ErrorFirmaDatos:
     mensaje: str
@@ -107,15 +155,33 @@ class ServicioSuscripcion:
             logger.warning("POLICY no disponible oferta=%s error=%s", id_opaco(oferta_id), error)
             return ErrorAceptacionDatos(MENSAJE_SUSCRIPCION_NO_DISPONIBLE, puede_reintentar=True)
 
+    async def obtener_oferta(self, oferta_id: str, usuario: UsuarioActual | None) -> dict | None:
+        """La oferta que RATING guardó, con la misma validación de dueño que `aceptar`: `None` si
+        venció, no existe, o no es de este cliente o ya no tiene consentimiento vigente. Si
+        RATING o AUTH no responden lanza `ErrorServicio`: el llamador no debe confundirlo con
+        "no existe"."""
+        oferta = await self._clientes.rating.obtener_oferta(oferta_id)
+        if oferta is None:
+            return None
+        if not await self._es_titular_con_consentimiento(oferta, usuario):
+            return None
+        return oferta
+
     async def _consentimiento_vigente(self, oferta: dict, usuario: UsuarioActual | None) -> bool:
-        consentimiento_id = oferta.get("consentimientoId")
-        if not consentimiento_id:
-            return False
         try:
-            consentimiento = await self._clientes.auth.obtener_consentimiento(consentimiento_id)
+            return await self._es_titular_con_consentimiento(oferta, usuario)
         except ErrorServicio as error:
             logger.warning("AUTH no disponible al aceptar error=%s", error)
             return False
+
+    async def _es_titular_con_consentimiento(
+        self, oferta: dict, usuario: UsuarioActual | None
+    ) -> bool:
+        """Lanza `ErrorServicio` si AUTH no responde."""
+        consentimiento_id = oferta.get("consentimientoId")
+        if not consentimiento_id:
+            return False
+        consentimiento = await self._clientes.auth.obtener_consentimiento(consentimiento_id)
         if consentimiento is None or not consentimiento.get("vigente"):
             return False
         titular = consentimiento.get("titular_id")

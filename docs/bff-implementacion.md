@@ -77,7 +77,7 @@ Operaciones del contrato y su estado:
 |---|---|
 | `registrarConsentimiento`, `revocarConsentimiento` | Completas (sobre el mock de AUTH) |
 | `solicitarOferta` | Completa |
-| `oferta(id)` | Devuelve `null`: RATING todavía no guarda ofertas |
+| `oferta(id)` | Devolvía `null` en esta entrega. **Hoy es real** (HU-W03): lee la oferta que RATING guarda, con la validación de dueño de `aceptarOferta` |
 | `contactarAsesor` | **Mock**: solo confirma |
 | `cobros`, `reintentarCobro` | En esta entrega, error "no disponible: KAN-28" (HTTP 200). **Hoy son reales**: ver sección 10 |
 

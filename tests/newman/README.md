@@ -16,7 +16,7 @@ stack real de `docker compose`, sin escribir código.
 | 0. Salud | `/health` y `/metrics` del BFF | — |
 | 1. Autenticación y usuarios | Login del BACKOFFICE, `yo`, alta de ASESOR y de CLIENTE con nombre (alias únicos por corrida; cualquier rol puede tener nombre; cada usuario ve el suyo al iniciar sesión y la lista de usuarios no expone nombres), alias repetido o con forma de correo, clave errónea y login de cada rol; guarda los tokens | HU-M02 |
 | 2. Consentimiento | `registrarConsentimiento` como ASESOR, y en AUTH que el actor es ese ASESOR | CA-W01-02, CA-W01-11 |
-| 3. Oferta con proveedores sanos | Oferta COMPLETA en los canales web y móvil, 5 fuentes, prima puntual, dinero como texto; `oferta(id)` devuelve `null` | CA-W01-03, CA-W01-06 |
+| 3. Oferta con proveedores sanos | Oferta COMPLETA en los canales web y móvil, 5 fuentes, prima puntual, dinero como texto; `oferta(id)` devuelve la oferta guardada | CA-W01-03, CA-W01-06 |
 | 4. Degradación | Con Open Finance lento: oferta PRELIMINAR, rango de prima, fuentes en CACHE, sin error; con un documento sin caché, el historial crediticio no llega y sale `ErrorOferta` con reintento; luego restaura el stub y espera a que cierren los circuitos | CA-W01-04, CA-W01-05, EC009 / EC010 |
 | 5. Errores controlados | Consentimiento inexistente, valor inválido, plazo inválido y consulta inválida: siempre HTTP 200 o 4xx, nunca 5xx | CA-W01-01, CA-W01-05 |
 | 6. Contacto y revocación | `contactarAsesor`, `revocarConsentimiento`, y que la oferta se rechace después de revocar | CA-W01-07, CA-W01-08 |

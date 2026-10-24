@@ -848,7 +848,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_feliz}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn motivoEstado mensajeEstado accionSugerida }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_feliz}}\"\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -1014,6 +1014,11 @@
                   "  });",
                   "  if (p) {",
                   "    pm.test('trae el id de la póliza (CA-W03-07)', () => pm.expect(p.polizaId).to.be.a('string').and.not.empty);",
+                  "    pm.test('una propuesta emitida no trae motivo de estado', () => {",
+                  "      pm.expect(p.motivoEstado).to.be.null;",
+                  "      pm.expect(p.mensajeEstado).to.be.null;",
+                  "      pm.expect(p.accionSugerida).to.be.null;",
+                  "    });",
                   "    pm.collectionVariables.set('poliza_feliz', p.polizaId);",
                   "  }",
                   "}"
@@ -1041,7 +1046,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_feliz}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn motivoEstado mensajeEstado accionSugerida }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_feliz}}\"\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -1207,6 +1212,63 @@
             },
             "description": "Repite la consulta hasta ver el aviso (el stub lo registra al recibirlo; con las notificaciones caídas llega al volver)."
           }
+        },
+        {
+          "name": "1.15 oferta(id) devuelve la oferta guardada, con sus 5 fuentes (CA-W03-01)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const o = cuerpo.data.oferta;",
+                  "pm.test('es la oferta que RATING guardó', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(o).to.not.be.null;",
+                  "  pm.expect(o.id).to.eql(pm.collectionVariables.get('oferta_feliz'));",
+                  "  pm.expect(o.tipo).to.eql('COMPLETA');",
+                  "  pm.expect(o.fuentes).to.have.lengthOf(5);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  oferta(id: $id) { id tipo prima { valor moneda } fuentes { id estado } }\\n}\",\n  \"variables\": {\n    \"id\": \"{{oferta_feliz}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
         }
       ],
       "description": "Recorrido completo del CLIENTE titular por el gateway :8080 (CA-W03-01 a 03, 07 y 08)."
@@ -1253,7 +1315,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_feliz}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn motivoEstado mensajeEstado accionSugerida }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_feliz}}\"\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -1596,6 +1658,112 @@
               ]
             }
           }
+        },
+        {
+          "name": "2.10 otro CLIENTE no ve la oferta ajena (null, como una inexistente)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('oferta ajena -> null', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(cuerpo.data.oferta).to.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  oferta(id: $id) { id tipo prima { valor moneda } fuentes { id estado } }\\n}\",\n  \"variables\": {\n    \"id\": \"{{oferta_feliz}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_ajeno}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "2.11 un ASESOR sí ve la oferta del cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('el ASESOR ve la oferta', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(cuerpo.data.oferta.id).to.eql(pm.collectionVariables.get('oferta_feliz'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  oferta(id: $id) { id tipo prima { valor moneda } fuentes { id estado } }\\n}\",\n  \"variables\": {\n    \"id\": \"{{oferta_feliz}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
         }
       ],
       "description": "El PDF lo entrega el BFF solo a un CLIENTE (el titular) y a un ASESOR; un BACKOFFICE recibe 403 y sin token 401 (plan de HU-W03, bloque 5). El CA-W03-08 propuesto también nombra al BACKOFFICE: diferencia por confirmar."
@@ -1753,7 +1921,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn }\\n}\",\n  \"variables\": {\n    \"id\": \"00000000-0000-4000-8000-000000000000\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn motivoEstado mensajeEstado accionSugerida }\\n}\",\n  \"variables\": {\n    \"id\": \"00000000-0000-4000-8000-000000000000\"\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -2388,6 +2556,12 @@
                   "  });",
                   "  if (p) {",
                   "    pm.test('no hay póliza', () => pm.expect(p.polizaId).to.be.null);",
+                  "    pm.test('explica la revisión sin mostrar el código interno (CA-W03-06)', () => {",
+                  "      pm.expect(p.motivoEstado).to.eql('REVISION_MANUAL');",
+                  "      pm.expect(p.accionSugerida).to.eql('ESPERAR');",
+                  "      pm.expect(p.mensajeEstado).to.be.a('string').and.not.empty;",
+                  "      pm.expect(JSON.stringify(p)).to.not.match(/KYC_|RIESGO_|COBERTURA_|MONEDA_/);",
+                  "    });",
                   "  }",
                   "}"
                 ]
@@ -2414,7 +2588,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_kyc}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn motivoEstado mensajeEstado accionSugerida }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_kyc}}\"\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -2887,6 +3061,12 @@
                   "  });",
                   "  if (p) {",
                   "    pm.test('no hay póliza', () => pm.expect(p.polizaId).to.be.null);",
+                  "    pm.test('dice que fue por fondos y qué hacer, sin el código de la pasarela (CA-W03-06)', () => {",
+                  "      pm.expect(p.motivoEstado).to.eql('PAGO_FONDOS_INSUFICIENTES');",
+                  "      pm.expect(p.accionSugerida).to.eql('CONTACTAR_ASESOR');",
+                  "      pm.expect(p.mensajeEstado).to.include('asesor');",
+                  "      pm.expect(JSON.stringify(p)).to.not.include('fondos_insuficientes');",
+                  "    });",
                   "  }",
                   "}"
                 ]
@@ -2913,7 +3093,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_rechazo}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn motivoEstado mensajeEstado accionSugerida }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_rechazo}}\"\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -3552,7 +3732,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_firma}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn motivoEstado mensajeEstado accionSugerida }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_firma}}\"\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -3965,7 +4145,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_aviso}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn motivoEstado mensajeEstado accionSugerida }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_aviso}}\"\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -4752,7 +4932,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_lenta}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn motivoEstado mensajeEstado accionSugerida }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_lenta}}\"\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -5165,7 +5345,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_reabre}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn motivoEstado mensajeEstado accionSugerida }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_reabre}}\"\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -5410,7 +5590,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_reabre}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn motivoEstado mensajeEstado accionSugerida }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_reabre}}\"\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -5539,7 +5719,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_reabre}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn motivoEstado mensajeEstado accionSugerida }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_reabre}}\"\n  }\n}"
             },
             "auth": {
               "type": "bearer",
