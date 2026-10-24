@@ -1,4 +1,4 @@
-fastapi==0.150.0
+fastapi==0.159.1
 uvicorn[standard]==0.54.0
 strawberry-graphql[fastapi]==0.336.0
 pydantic==2.14.1
