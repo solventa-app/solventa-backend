@@ -6,7 +6,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.application.cliente_acl import ResultadoFirma, SolicitudFirma
+from app.application.cliente_payments import (
+    CobroEnConflicto,
+    OrdenPrimerCobro,
+    PaymentsNoDisponible,
+)
+from app.application.cliente_payments import ResultadoCobro as ResultadoCobroPayments
 from app.application.cliente_rating import OfertaNoEncontrada, RatingNoDisponible
+from app.application.cliente_under import ResultadoDecision, UnderNoDisponible
 
 
 def oferta_de_rating(**cambios: Any) -> dict[str, Any]:
@@ -19,6 +26,7 @@ def oferta_de_rating(**cambios: Any) -> dict[str, Any]:
         "clienteId": "cliente-opaco",
         "consentimientoId": "consentimiento-1",
         "plazoMeses": 60,
+        "perfilRiesgo": {"score": 700, "nivelRiesgo": "BAJO", "fechaVigencia": "2026-12-01"},
         "vigenteHasta": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
     }
     oferta.update(cambios)
@@ -50,6 +58,8 @@ class RepositorioPropuestasFalso:
         self._por_oferta: dict[str, dict[str, Any]] = {}
         self._evidencias: dict[str, dict[str, Any]] = {}
         self.documentos_guardados: dict[str, str] = {}
+        self._polizas: dict[str, dict[str, Any]] = {}
+        self._secuencia = 0
 
     def obtener(self, propuesta_id: str) -> dict[str, Any] | None:
         for propuesta in self._por_oferta.values():
@@ -60,6 +70,64 @@ class RepositorioPropuestasFalso:
     def obtener_por_oferta(self, oferta_id: str) -> dict[str, Any] | None:
         propuesta = self._por_oferta.get(oferta_id)
         return dict(propuesta) if propuesta else None
+
+    def _propuesta(self, propuesta_id: str) -> dict[str, Any] | None:
+        for propuesta in self._por_oferta.values():
+            if propuesta["id"] == propuesta_id:
+                return propuesta
+        return None
+
+    def registrar_intento(self, propuesta_id: str) -> int:
+        with self._lock:
+            propuesta = self._propuesta(propuesta_id)
+            propuesta["intentos_emision"] += 1
+            return propuesta["intentos_emision"]
+
+    def cambiar_estado(
+        self, propuesta_id: str, nuevo: str, desde: tuple[str, ...], motivo: str | None = None
+    ) -> bool:
+        with self._lock:
+            propuesta = self._propuesta(propuesta_id)
+            if propuesta["estado"] not in desde:
+                return False
+            propuesta["estado"] = nuevo
+            propuesta["motivo_estado"] = motivo
+            return True
+
+    def emitir_poliza(
+        self, propuesta_id: str, cliente_id: str, vigencia_desde: Any, vigencia_hasta: Any
+    ) -> tuple[dict[str, Any] | None, bool]:
+        with self._lock:
+            propuesta = self._propuesta(propuesta_id)
+            if propuesta["estado"] not in ("EN_EMISION", "PENDIENTE_PAGO"):
+                existente = self._polizas.get(propuesta_id)
+                return (dict(existente) if existente else None), False
+            self._secuencia += 1
+            poliza = {
+                "id": f"poliza-{self._secuencia}",
+                "propuesta_id": propuesta_id,
+                "numero": self._secuencia,
+                "cliente_id": cliente_id,
+                "estado": "EMITIDA",
+                "vigencia_desde": vigencia_desde,
+                "vigencia_hasta": vigencia_hasta,
+            }
+            self._polizas[propuesta_id] = poliza
+            propuesta["estado"] = "EMITIDA"
+            propuesta["poliza_id"] = poliza["id"]
+            return dict(poliza), True
+
+    def obtener_poliza(self, poliza_id: str) -> dict[str, Any] | None:
+        for propuesta_id, poliza in self._polizas.items():
+            if poliza["id"] == poliza_id:
+                propuesta = self._propuesta(propuesta_id)
+                return {
+                    **poliza,
+                    "prima": propuesta["prima"],
+                    "cobertura": propuesta["cobertura"],
+                    "actor_usuario_id": propuesta["actor_usuario_id"],
+                }
+        return None
 
     def obtener_evidencia(self, propuesta_id: str) -> dict[str, Any] | None:
         evidencia = self._evidencias.get(propuesta_id)
@@ -99,6 +167,10 @@ class RepositorioPropuestasFalso:
                 "consentimiento_id": datos.get("consentimiento_id"),
                 "actor_usuario_id": datos.get("actor_usuario_id"),
                 "estado": "ACEPTADA",
+                "poliza_id": None,
+                "intentos_emision": 0,
+                "motivo_estado": None,
+                "nivel_riesgo": datos.get("nivel_riesgo"),
                 "tipo": datos["tipo"],
                 "prima": datos["prima"],
                 "cobertura": datos["cobertura"],
@@ -130,3 +202,57 @@ class AclFalso:
                 firmada_en="2026-10-22T12:00:00+00:00",
             ),
         )
+
+
+class UnderFalso:
+    def __init__(self, decision: str = "APROBADA", motivos: list[str] | None = None, cae=False):
+        self.decision = decision
+        self.motivos = motivos or []
+        self.cae = cae
+        self.llamadas: list[tuple] = []
+
+    def decidir(self, propuesta_id, cliente_id, nivel_riesgo, cobertura) -> ResultadoDecision:
+        self.llamadas.append((propuesta_id, cliente_id, nivel_riesgo, cobertura))
+        if self.cae:
+            raise UnderNoDisponible("caído")
+        return ResultadoDecision(self.decision, list(self.motivos))
+
+
+class PaymentsFalso:
+    """Doble de PAYMENTS: idempotente por `id_intento_cobro`, como el real. `estados` es la
+    secuencia de estados que devuelve en cada llamada (el último se repite)."""
+
+    def __init__(self, estados: list[str] | None = None, cae=False, conflicto=False):
+        self.estados = list(estados or ["cobrado"])
+        self.cae = cae
+        self.conflicto = conflicto
+        self.ordenes: list[OrdenPrimerCobro] = []
+
+    def crear_cobro(self, orden: OrdenPrimerCobro) -> ResultadoCobroPayments:
+        self.ordenes.append(orden)
+        if self.cae:
+            raise PaymentsNoDisponible("caído")
+        if self.conflicto:
+            raise CobroEnConflicto(orden.id_intento_cobro)
+        estado = self.estados.pop(0) if len(self.estados) > 1 else self.estados[0]
+        motivo = "fondos_insuficientes" if estado == "rechazado" else None
+        return ResultadoCobroPayments(estado, f"cobro-{orden.id_intento_cobro[:8]}", motivo)
+
+
+class PlanificadorFalso:
+    def __init__(self, falla: bool = False) -> None:
+        self.falla = falla
+        self.encolados: list[tuple[str, float]] = []
+
+    def encolar(self, propuesta_id: str, demora_segundos: float = 0) -> None:
+        self.encolados.append((propuesta_id, demora_segundos))
+        if self.falla:
+            raise RuntimeError("Cloud Tasks caído")
+
+
+class BusFalso:
+    def __init__(self) -> None:
+        self.eventos: list[dict[str, Any]] = []
+
+    def publicar(self, evento: dict[str, Any]) -> None:
+        self.eventos.append(evento)

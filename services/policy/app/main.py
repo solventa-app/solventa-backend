@@ -17,11 +17,24 @@ from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, Field
 
 from app.application.autenticacion_servicios import autenticacion_para
+from app.application.bus_eventos import BusEventosLog
 from app.application.cifrado import cifrador_desde_entorno
 from app.application.cliente_acl import ClienteAcl
+from app.application.cliente_payments import ClientePayments
 from app.application.cliente_rating import ClienteRating, RatingNoDisponible
+from app.application.cliente_under import ClienteUnder
 from app.application.configuracion import Configuracion
+from app.application.planificador import (
+    EmisionPendiente,
+    PlanificadorCloudTasks,
+    PlanificadorLocal,
+    PuertoPlanificador,
+)
 from app.application.repositorio_propuestas import RepositorioPropuestasPostgres, construir_pool
+from app.application.servicio_emision import (
+    PropuestaNoEncontradaParaEmitir,
+    ServicioEmision,
+)
 from app.application.servicio_firma import (
     COBRO_NO_AUTORIZADO,
     PROPUESTA_NO_FIRMABLE,
@@ -30,6 +43,7 @@ from app.application.servicio_firma import (
     PropuestaNoEncontrada,
     ServicioFirma,
 )
+from app.application.servicio_polizas import ServicioPolizas
 from app.application.servicio_propuestas import (
     OFERTA_NO_ENCONTRADA,
     OfertaNoAceptable,
@@ -64,6 +78,8 @@ class PropuestaResponse(BaseModel):
     cobertura: MontoResponse
     plazo_meses: int | None = None
     poliza_id: str | None = None
+    # Por qué quedó en revisión o no se emitió (códigos, sin datos personales).
+    motivo_estado: str | None = None
     creado_en: datetime | None = None
     actualizado_en: datetime | None = None
 
@@ -91,6 +107,24 @@ class FirmaResponse(BaseModel):
     estado: str  # el estado de la propuesta después de firmar
 
 
+class EmisionResponse(BaseModel):
+    estado: str
+
+
+class PolizaResponse(BaseModel):
+    id: str
+    numero: str
+    propuesta_id: str
+    cliente_id: str
+    estado: str
+    vigencia_desde: datetime
+    vigencia_hasta: datetime
+    prima: MontoResponse
+    cobertura: MontoResponse
+    # Quién aceptó: el BFF deja que un CLIENTE vea solo sus pólizas.
+    actor_usuario_id: str | None = None
+
+
 class ErrorResponse(BaseModel):
     detail: str
 
@@ -99,12 +133,26 @@ def _respuesta(propuesta: dict[str, Any]) -> PropuestaResponse:
     return PropuestaResponse(**propuesta)
 
 
+def _planificador(config: Configuracion) -> PuertoPlanificador:
+    if config.disparador != "externo":
+        return PlanificadorLocal()
+    return PlanificadorCloudTasks(
+        config.tareas_proyecto,
+        config.tareas_region,
+        config.tareas_cola,
+        config.url_propia,
+        config.tareas_cuenta,
+    )
+
+
 def create_app(
     config: Configuracion | None = None,
     servicio_propuestas: ServicioPropuestas | None = None,
     servicio_firma: ServicioFirma | None = None,
+    servicio_emision: ServicioEmision | None = None,
+    servicio_polizas: ServicioPolizas | None = None,
 ) -> FastAPI:
-    """`servicio_propuestas`/`servicio_firma` permiten inyectar dobles de prueba sin PostgreSQL ni
+    """Los `servicio_*` permiten inyectar dobles de prueba sin PostgreSQL ni
     RATING reales (ver `tests/fakes.py`). En producción se omiten y `create_app` los construye
     desde `Configuracion`."""
     config = config or Configuracion.desde_entorno()
@@ -114,9 +162,13 @@ def create_app(
         pool: ConnectionPool | None = None
         cliente_rating: ClienteRating | None = None
         cliente_acl: ClienteAcl | None = None
+        cliente_under: ClienteUnder | None = None
+        cliente_payments: ClientePayments | None = None
         if servicio_propuestas is not None:
             app.state.servicio_propuestas = servicio_propuestas
             app.state.servicio_firma = servicio_firma
+            app.state.servicio_emision = servicio_emision
+            app.state.servicio_polizas = servicio_polizas
         else:
             pool = construir_pool(config.database_url)
             cliente_rating = ClienteRating(
@@ -130,11 +182,39 @@ def create_app(
                 config.acl_timeout_segundos,
                 autenticacion_para(config.autenticacion_servicios, "acl-worker"),
             )
+            cliente_under = ClienteUnder(
+                config.under_url,
+                config.under_timeout_segundos,
+                autenticacion_para(config.autenticacion_servicios, "under"),
+            )
+            cliente_payments = ClientePayments(
+                config.payments_url,
+                config.payments_timeout_segundos,
+                autenticacion_para(config.autenticacion_servicios, "payments"),
+            )
+            planificador = _planificador(config)
+            emision = ServicioEmision(
+                repositorio,
+                cliente_under,
+                cliente_payments,
+                BusEventosLog(),
+                planificador,
+                config.token_recaudo_credito,
+                config.cobro_pendiente_demora_segundos,
+                config.emision_max_intentos,
+            )
+            if isinstance(planificador, PlanificadorLocal):
+                planificador.conectar(emision.emitir)
             app.state.servicio_propuestas = ServicioPropuestas(repositorio, cliente_rating)
-            app.state.servicio_firma = ServicioFirma(repositorio, cliente_acl)
+            app.state.servicio_firma = ServicioFirma(repositorio, cliente_acl, planificador)
+            app.state.servicio_emision = emision
+            app.state.servicio_polizas = ServicioPolizas(repositorio)
         try:
             yield
         finally:
+            for cliente in (cliente_under, cliente_payments):
+                if cliente is not None:
+                    cliente.cerrar()
             if cliente_acl is not None:
                 cliente_acl.cerrar()
             if cliente_rating is not None:
@@ -230,6 +310,37 @@ def create_app(
             referencia=evidencia["referencia_proveedor"],
             estado=estado,
         )
+
+    @app.post(
+        "/propuestas/{propuesta_id}/_emitir",
+        tags=["operacion"],
+        response_model=EmisionResponse,
+        responses={404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+    )
+    def emitir_propuesta(propuesta_id: str) -> EmisionResponse:
+        """La llama Cloud Tasks (`DISPARADOR=externo`) tras firmar, y de nuevo mientras el primer
+        cobro siga pendiente. Es privada (IAM de Cloud Run) e idempotente. Responde 503 solo si
+        UNDER o PAYMENTS no respondieron: así Cloud Tasks reintenta; nunca por un rechazo de
+        negocio."""
+        try:
+            estado = app.state.servicio_emision.emitir(propuesta_id)
+        except PropuestaNoEncontradaParaEmitir as error:
+            raise HTTPException(status_code=404, detail="propuesta no encontrada") from error
+        except EmisionPendiente as error:
+            raise HTTPException(status_code=503, detail="EMISION_PENDIENTE") from error
+        return EmisionResponse(estado=estado)
+
+    @app.get(
+        "/polizas/{poliza_id}",
+        tags=["polizas"],
+        response_model=PolizaResponse,
+        responses={404: {"model": ErrorResponse}},
+    )
+    def obtener_poliza(poliza_id: str) -> PolizaResponse:
+        poliza = app.state.servicio_polizas.obtener(poliza_id)
+        if poliza is None:
+            raise HTTPException(status_code=404, detail="póliza no encontrada")
+        return PolizaResponse(**poliza)
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app

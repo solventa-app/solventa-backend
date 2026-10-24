@@ -128,3 +128,15 @@ def test_firmar_con_el_proveedor_caido_responde_200_pendiente_sin_5xx() -> None:
     assert r.status_code == 200
     assert r.json()["estado"] == "pendiente"
     assert r.json()["motivo"] == "firma_no_disponible"
+
+
+def test_verificar_kyc_con_el_proveedor_caido_responde_200_pendiente_sin_5xx() -> None:
+    # KYC_URL apunta a un puerto sin servicio: el ACL degrada, no propaga el fallo.
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post(
+            "/kyc/verificar", json={"id_verificacion": "p-1", "cliente_id": "cliente-opaco"}
+        )
+
+    assert r.status_code == 200
+    assert r.json()["estado"] == "pendiente"
+    assert r.json()["motivo"] == "kyc_no_disponible"

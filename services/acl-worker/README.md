@@ -125,7 +125,7 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
 ### Verificación en vivo (Circuit Breaker + sonda)
 
 ```bash
-docker compose --profile servicios up -d --build redis acl-worker stub-open-finance stub-open-data stub-pasarela stub-firma
+docker compose --profile servicios up -d --build redis acl-worker stub-open-finance stub-open-data stub-pasarela stub-firma stub-kyc
 
 # (a) camino sano
 curl -s -X POST localhost:8005/fuentes/consultar \
@@ -158,3 +158,13 @@ curl -s localhost:8005/circuitos   # -> open-finance: "closed"
 - Circuito `firma`, con su sonda de recuperación (`GET /v1/estado`, que nunca firma), igual que la pasarela.
 - EC031 / CA-W03-10: dos adaptadores (`app/adapters/firma.py` y `firma_alterna.py`), elegidos con `PROVEEDOR_FIRMA`
   (`estandar` | `alterna`). Variables nuevas: `FIRMA_URL` (`http://localhost:8104`), `PRESUPUESTO_MS_FIRMA` (700).
+
+## KYC (HU-W03, bloque 3)
+
+- `POST /kyc/verificar` `{id_verificacion, cliente_id}` → `{estado: aprobada | rechazada | pendiente, referencia, motivo,
+  verificada_en}`. Siempre 200: con el proveedor caído, lento o el circuito abierto responde `pendiente`
+  (`kyc_no_disponible` / `circuito_abierto`) y UNDER manda la propuesta a revisión manual. Idempotente por `id_verificacion`.
+- Solo viaja el identificador opaco del cliente, nunca un documento. Un proveedor real pediría el documento y una validación
+  biométrica por un canal propio (decisión W03-10); el contrato del stub es inventado.
+- Circuito `kyc` con su sonda (`GET /v1/estado`, que nunca verifica). Variables nuevas: `KYC_URL` (`http://localhost:8105`),
+  `PRESUPUESTO_MS_KYC` (700).

@@ -14,6 +14,7 @@ propuesta como dato asociado. La evidencia de firma (`evidencias_firma`) es appe
 guarda el documento firmado cifrado, con el id de la evidencia como dato asociado."""
 
 import json
+import uuid
 from typing import Any
 
 from psycopg.rows import dict_row
@@ -23,8 +24,12 @@ from app.application.cifrado import CifradorCampos
 
 _COLUMNAS = (
     "id, oferta_id, cliente_id, consentimiento_id, actor_usuario_id, estado, oferta_cifrada, "
-    "creado_en, actualizado_en"
+    "intentos_emision, motivo_estado, creado_en, actualizado_en"
 )
+# La póliza de la propuesta, si ya se emitió (una subconsulta: `polizas.propuesta_id` es UNIQUE).
+_POLIZA_ID = "(SELECT p.id FROM polizas p WHERE p.propuesta_id = propuestas.id) AS poliza_id"
+
+_COLUMNAS_POLIZA = "id, propuesta_id, numero, cliente_id, estado, vigencia_desde, vigencia_hasta"
 
 _COLUMNAS_EVIDENCIA = (
     "id, propuesta_id, documento_hash, version_documento, firmante_id, "
@@ -45,14 +50,15 @@ class RepositorioPropuestasPostgres:
     def obtener(self, propuesta_id: str) -> dict[str, Any] | None:
         with self._pool.connection() as conexion:
             fila = conexion.execute(
-                f"SELECT {_COLUMNAS} FROM propuestas WHERE id = %(id)s", {"id": propuesta_id}
+                f"SELECT {_COLUMNAS}, {_POLIZA_ID} FROM propuestas WHERE id = %(id)s",
+                {"id": propuesta_id},
             ).fetchone()
         return self._a_propuesta(fila) if fila else None
 
     def obtener_por_oferta(self, oferta_id: str) -> dict[str, Any] | None:
         with self._pool.connection() as conexion:
             fila = conexion.execute(
-                f"SELECT {_COLUMNAS} FROM propuestas WHERE oferta_id = %(oferta_id)s",
+                f"SELECT {_COLUMNAS}, {_POLIZA_ID} FROM propuestas WHERE oferta_id = %(oferta_id)s",
                 {"oferta_id": oferta_id},
             ).fetchone()
         return self._a_propuesta(fila) if fila else None
@@ -60,6 +66,8 @@ class RepositorioPropuestasPostgres:
     def crear_o_obtener(self, propuesta_id: str, datos: dict[str, Any]) -> tuple[dict, bool]:
         """Devuelve la propuesta y si se creó ahora (False = ya existía para esa oferta)."""
         oferta = {k: datos[k] for k in ("tipo", "prima", "cobertura", "plazo_meses")}
+        # El nivel de riesgo de la oferta lo necesita UNDER al decidir (puede faltar).
+        oferta["nivel_riesgo"] = datos.get("nivel_riesgo")
         cifrada = self._cifrador.cifrar(json.dumps(oferta), propuesta_id)
         with self._pool.connection() as conexion:
             fila = conexion.execute(
@@ -71,7 +79,7 @@ class RepositorioPropuestasPostgres:
                     (%(id)s, %(oferta_id)s, %(cliente_id)s, %(consentimiento_id)s,
                      %(actor_usuario_id)s, 'ACEPTADA', %(oferta_cifrada)s)
                 ON CONFLICT (oferta_id) DO NOTHING
-                RETURNING {_COLUMNAS}
+                RETURNING {_COLUMNAS}, NULL::text AS poliza_id
                 """,
                 {
                     "id": propuesta_id,
@@ -85,10 +93,88 @@ class RepositorioPropuestasPostgres:
             if fila is not None:
                 return self._a_propuesta(fila), True
             existente = conexion.execute(
-                f"SELECT {_COLUMNAS} FROM propuestas WHERE oferta_id = %(oferta_id)s",
+                f"SELECT {_COLUMNAS}, {_POLIZA_ID} FROM propuestas WHERE oferta_id = %(oferta_id)s",
                 {"oferta_id": datos["oferta_id"]},
             ).fetchone()
         return self._a_propuesta(existente), False
+
+    def registrar_intento(self, propuesta_id: str) -> int:
+        """Cuenta un intento de emisión y devuelve el total (acota los reintentos del cobro)."""
+        with self._pool.connection() as conexion:
+            fila = conexion.execute(
+                "UPDATE propuestas SET intentos_emision = intentos_emision + 1 "
+                "WHERE id = %(id)s RETURNING intentos_emision",
+                {"id": propuesta_id},
+            ).fetchone()
+        return fila["intentos_emision"]
+
+    def cambiar_estado(
+        self, propuesta_id: str, nuevo: str, desde: tuple[str, ...], motivo: str | None = None
+    ) -> bool:
+        """Cambia el estado solo si sigue en uno de `desde`: dos emisiones a la vez no se pisan.
+        Devuelve si cambió."""
+        with self._pool.connection() as conexion:
+            fila = conexion.execute(
+                "UPDATE propuestas SET estado = %(nuevo)s, motivo_estado = %(motivo)s, "
+                "actualizado_en = now() WHERE id = %(id)s AND estado = ANY(%(desde)s) RETURNING id",
+                {"id": propuesta_id, "nuevo": nuevo, "motivo": motivo, "desde": list(desde)},
+            ).fetchone()
+        return fila is not None
+
+    def emitir_poliza(
+        self, propuesta_id: str, cliente_id: str, vigencia_desde: Any, vigencia_hasta: Any
+    ) -> tuple[dict[str, Any], bool]:
+        """Pasa la propuesta a `EMITIDA` y crea su póliza, todo en una transacción. Devuelve la
+        póliza y si se creó ahora (False = ya existía: emitir dos veces no
+        duplica). Si la propuesta ya no está en un estado emisible (p. ej. otra emisión la movió),
+        devuelve la póliza existente o `None`."""
+        with self._pool.connection() as conexion, conexion.transaction():
+            fila = conexion.execute(
+                "UPDATE propuestas SET estado = 'EMITIDA', motivo_estado = NULL, "
+                "actualizado_en = now() WHERE id = %(id)s "
+                "AND estado IN ('EN_EMISION', 'PENDIENTE_PAGO') RETURNING id",
+                {"id": propuesta_id},
+            ).fetchone()
+            if fila is None:
+                existente = conexion.execute(
+                    f"SELECT {_COLUMNAS_POLIZA} FROM polizas WHERE propuesta_id = %(id)s",
+                    {"id": propuesta_id},
+                ).fetchone()
+                return existente, False
+            poliza = conexion.execute(
+                f"""
+                INSERT INTO polizas
+                    (id, propuesta_id, numero, cliente_id, vigencia_desde, vigencia_hasta)
+                VALUES
+                    (%(id)s, %(propuesta_id)s, nextval('polizas_numero_seq'), %(cliente_id)s,
+                     %(vigencia_desde)s, %(vigencia_hasta)s)
+                RETURNING {_COLUMNAS_POLIZA}
+                """,
+                {
+                    "id": str(uuid.uuid4()),
+                    "propuesta_id": propuesta_id,
+                    "cliente_id": cliente_id,
+                    "vigencia_desde": vigencia_desde,
+                    "vigencia_hasta": vigencia_hasta,
+                },
+            ).fetchone()
+        return poliza, True
+
+    def obtener_poliza(self, poliza_id: str) -> dict[str, Any] | None:
+        """La póliza con la prima, la cobertura y el dueño de su propuesta."""
+        with self._pool.connection() as conexion:
+            poliza = conexion.execute(
+                f"SELECT {_COLUMNAS_POLIZA} FROM polizas WHERE id = %(id)s", {"id": poliza_id}
+            ).fetchone()
+        if poliza is None:
+            return None
+        propuesta = self.obtener(poliza["propuesta_id"])
+        return {
+            **poliza,
+            "prima": propuesta["prima"],
+            "cobertura": propuesta["cobertura"],
+            "actor_usuario_id": propuesta["actor_usuario_id"],
+        }
 
     def obtener_evidencia(self, propuesta_id: str) -> dict[str, Any] | None:
         with self._pool.connection() as conexion:

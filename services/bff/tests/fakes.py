@@ -429,6 +429,7 @@ class PolicyFalso:
         self.llamadas: list[tuple[str, str | None]] = []
         self.firmas: dict[str, dict] = {}
         self.firmas_pedidas: list[tuple[str, bool, str, str]] = []
+        self.polizas: dict[str, dict] = {}
 
     async def crear_propuesta(self, oferta_id: str, actor_usuario_id: str | None) -> dict:
         self.llamadas.append((oferta_id, actor_usuario_id))
@@ -457,6 +458,11 @@ class PolicyFalso:
         if self.error is not None:
             raise self.error
         return next((p for p in self.propuestas.values() if p["id"] == propuesta_id), None)
+
+    async def obtener_poliza(self, poliza_id: str) -> dict | None:
+        if self.error is not None:
+            raise self.error
+        return self.polizas.get(poliza_id)
 
     async def documento_firma(self, propuesta_id: str) -> dict | None:
         if self.error is not None:
