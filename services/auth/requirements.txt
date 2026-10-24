@@ -418,9 +418,9 @@ cryptography==50.0.2 \
     # via
     #   -r requirements.in
     #   google-auth
-fastapi==0.157.0 \
-    --hash=sha256:45b5cbf098ce3f47e008ca67931ce333d028129c823e3b6766a3bd0d70b81f7f \
-    --hash=sha256:460d48b9fe6fabbb785630fc5b256710bc82723b597b4bfbd6e4470ae5bb20f4
+fastapi==0.158.0 \
+    --hash=sha256:890440689039bdadb06131bafae81eb63468a0dd9f6185fcec47afb69424ea6a \
+    --hash=sha256:c5127864026eca80a419047caba7760d561160904445fd825a60b6285b86ed0b
     # via -r requirements.in
 google-api-core[grpc]==2.42.0 \
     --hash=sha256:82cf5daa2ef1b456d4e29ff1de1a5c2995c7be3ccf4fc608184326e03390c1ee \
