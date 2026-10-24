@@ -25,3 +25,10 @@ revocado. Capturas reales, no inventadas.
 
 `release-burndown.png` — puntos que le faltan al release (96 pts, 3 sprints) al cierre de cada sprint: el Sprint 1 real y el plan
 de los otros dos; datos de Jira y del plan de trabajo, metodología en `release-burndown.md`.
+
+## HU-W03: suscripción, firma y póliza (bloque 6)
+
+`EC005-EC007-2026-10-24.md` — decisión y emisión de la póliza (de la firma a `EMITIDA`) con k6: p95 en carga normal y p99 en pico,
+carga supuesta y límites de una corrida local. `HU-W03-newman-EC009-EC010-2026-10-24.md` — recorrido de extremo a extremo por el gateway
+con Newman, autorización por rol y degradación de firma, KYC, pasarela y notificaciones, con los hallazgos. `resumen-k6-2026-10-24.md` —
+resumen que deja `scripts/correr_k6.sh`. Todas son corridas locales, no de staging.
