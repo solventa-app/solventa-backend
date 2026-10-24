@@ -367,9 +367,9 @@ dnspython==2.9.0 \
     --hash=sha256:9a4aedb833c3c1b49214d04d44d3032ab7a9135f7c1d29a549b4ff78fd82fda9 \
     --hash=sha256:b44dc6b18f07a8b1c56676a19fbfdb5209415b046a9cece286baafa87ff3f7f1
     # via pymongo
-fastapi==0.150.0 \
-    --hash=sha256:97583806e6de1b6fc299866bdb88730fa311ff640829af876c9e847f4c3a3b29 \
-    --hash=sha256:e566bc3f1347cfacf61f2f9ea1d7ab4576fbcff02eb9747c2807b8ced16d9e9a
+fastapi==0.158.2 \
+    --hash=sha256:b06b177c35b7739c3d9ca246ebc366026a830b6de81f7eac4645813fcf5a0894 \
+    --hash=sha256:d65d72a4a93858a6ff703360823bd0bf75e00773de32dcda166fd8131436e2c0
     # via -r requirements.in
 google-api-core[grpc]==2.42.0 \
     --hash=sha256:82cf5daa2ef1b456d4e29ff1de1a5c2995c7be3ccf4fc608184326e03390c1ee \

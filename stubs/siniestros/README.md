@@ -40,9 +40,9 @@ SDL en `contracts/graphql/siniestros.graphql` (la prueba `tests/test_esquema_con
 ## Correr
 
 ```bash
-docker compose --profile servicios up stub-siniestros --build --wait   # http://localhost:8105
+docker compose --profile servicios up stub-siniestros --build --wait   # http://localhost:8107
 cd stubs/siniestros && python -m pytest
 ```
 
 El front lo consume en `/graphql/siniestros` a través del proxy de Vite (`VITE_SINIESTROS_URL`, por defecto
-`http://localhost:8105`).
+`http://localhost:8107`).

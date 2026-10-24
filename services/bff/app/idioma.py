@@ -42,6 +42,9 @@ EN: dict[str, str] = {
     "No hay un consentimiento vigente para esta oferta.": (
         "There is no valid consent for this offer."
     ),
+    "No pudimos generar el documento. Intenta de nuevo.": (
+        "We couldn't generate the document. Please try again."
+    ),
     "Debes autorizar el cobro de la prima para firmar.": (
         "You must authorize the premium charge to sign."
     ),

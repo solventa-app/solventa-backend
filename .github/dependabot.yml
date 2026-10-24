@@ -7,12 +7,15 @@ updates:
   - { package-ecosystem: pip, directory: /services/rating, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /services/payments, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /services/policy, target-branch: develop, schedule: { interval: weekly } }
+  - { package-ecosystem: pip, directory: /services/under, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /services/acl-worker, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /services/consolidador-fuentes, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /stubs/open-finance, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /stubs/open-data, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /stubs/pasarela, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /stubs/firma, target-branch: develop, schedule: { interval: weekly } }
+  - { package-ecosystem: pip, directory: /stubs/kyc, target-branch: develop, schedule: { interval: weekly } }
+  - { package-ecosystem: pip, directory: /stubs/notificaciones, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /stubs/siniestros, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /, target-branch: develop, schedule: { interval: weekly } }  # requirements-dev.in / .txt
 
@@ -23,12 +26,15 @@ updates:
   - { package-ecosystem: docker, directory: /services/rating, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /services/payments, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /services/policy, target-branch: develop, schedule: { interval: weekly } }
+  - { package-ecosystem: docker, directory: /services/under, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /services/acl-worker, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /services/consolidador-fuentes, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /stubs/open-finance, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /stubs/open-data, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /stubs/pasarela, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /stubs/firma, target-branch: develop, schedule: { interval: weekly } }
+  - { package-ecosystem: docker, directory: /stubs/kyc, target-branch: develop, schedule: { interval: weekly } }
+  - { package-ecosystem: docker, directory: /stubs/notificaciones, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /stubs/siniestros, target-branch: develop, schedule: { interval: weekly } }
 
   # --- Infraestructura y automatización ---
