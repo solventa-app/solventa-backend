@@ -8,8 +8,9 @@ Operaciones sin backend todavía (alcance del Sprint 1, KAN-24):
 - `oferta(id)` devuelve `null`: RATING ya guarda la oferta para aceptarla (HU-W03), pero nada
   valida aún que quien la pide sea su titular, así que no se expone por esta consulta.
 - `contactarAsesor` es un MOCK que solo confirma.
-- HU-W03 (KAN-26): `aceptarOferta`, `propuesta`, `documentoFirma` y `firmarPropuesta` ya leen y
-  escriben en POLICY (bloques 1 y 2). Sigue sin backend `poliza` (bloque 4): devuelve `null`.
+- HU-W03 (KAN-26): `aceptarOferta`, `propuesta`, `documentoFirma`, `firmarPropuesta` y `poliza` ya
+  leen y escriben en POLICY (bloques 1, 2 y 4). `Poliza.documentoUrl` apunta a una ruta del BFF que
+  entrega el PDF y que llega con el bloque 5.
 `cobros` y `reintentarCobro` (KAN-28) leen y reintentan en PAYMENTS, que concilia
 con la pasarela antes de cobrar (ver `docs/cobros-conciliacion.md`).
 Ninguna produce un 5xx: los errores de GraphQL viajan con HTTP 200.
@@ -514,6 +515,20 @@ def _propuesta(datos: dict) -> Propuesta:
     )
 
 
+def _poliza(datos: dict) -> Poliza:
+    return Poliza(
+        id=datos["id"],
+        numero=datos["numero"],
+        estado=EstadoPoliza(datos["estado"]),
+        vigencia_desde=_fecha(datos["vigencia_desde"]),
+        vigencia_hasta=_fecha(datos["vigencia_hasta"]),
+        prima=Monto(valor=datos["prima"]["valor"], moneda=datos["prima"]["moneda"]),
+        cobertura=Monto(valor=datos["cobertura"]["valor"], moneda=datos["cobertura"]["moneda"]),
+        # El PDF lo entrega el BFF en esta ruta (bloque 5); hasta entonces responde 404.
+        documento_url=f"/polizas/{datos['id']}/documento",
+    )
+
+
 def _documento_firma(datos: dict) -> DocumentoFirma:
     return DocumentoFirma(
         propuesta_id=datos["propuesta_id"],
@@ -680,10 +695,15 @@ class Query:
         return _documento_firma(datos) if datos else None
 
     @strawberry.field
-    def poliza(self, info: Info, id: strawberry.ID) -> Poliza | None:
-        exigir_rol(info, *CLIENTE_O_ASESOR)
-        # HU-W03, bloque 4: la emisión la hace POLICY.
-        return None
+    async def poliza(self, info: Info, id: strawberry.ID) -> Poliza | None:
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
+        try:
+            datos = await ServicioSuscripcion(info.context["clientes"]).obtener_poliza(
+                str(id), usuario
+            )
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_SUSCRIPCION_NO_DISPONIBLE) from error
+        return _poliza(datos) if datos else None
 
     @strawberry.field
     async def cobros(

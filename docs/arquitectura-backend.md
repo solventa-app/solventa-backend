@@ -13,13 +13,14 @@ se actualiza este archivo en el mismo cambio.
 | `risk` | 8002 | Escribe el perfil de riesgo; devuelve `operationTime`; cifrado de campo | MongoDB primaria | 1 |
 | `rating` | 8003 | Calcula la oferta; lee de la secundaria; caché Redis | — (solo lee) | 1 |
 | `payments` | 8004 | Cobros con pasarela tokenizada, idempotencia, reintento con conciliación, búsqueda para el back-office | PostgreSQL `payments` | 1 |
-| `policy` | 8007 | Propuestas y pólizas (HU-W03): acepta la oferta COMPLETA con el precio de RATING, idempotente por oferta; cifrado de campo | PostgreSQL `policy` | 2 |
+| `policy` | 8007 | Propuestas y pólizas (HU-W03): acepta la oferta COMPLETA con el precio de RATING, firma con no repudio, emite la póliza tras UNDER y el primer cobro, genera su PDF y avisa al cliente; cifrado de campo | PostgreSQL `policy` | 2 |
 | `acl-worker` | 8005 | Único contacto con proveedores externos; hexagonal; Circuit Breaker (700 ms) | Redis (estado del circuito y caché) | 1 |
 | `stubs/open-finance` | 8101 | Proveedor simulado (2 fuentes) | — | 1 |
 | `stubs/open-data` | 8102 | Proveedor simulado (3 fuentes) | — | 1 |
 | `stubs/pasarela` | 8103 | Pasarela de pago simulada | — | 1 |
 | `under` | 8008 | Decisión de suscripción (HU-W03): KYC por el ACL y reglas simples; sin almacén | — | 2 |
 | `stubs/firma` | 8104 | Proveedor de firma electrónica simulado (idempotente por referencia; 2 APIs para EC031) | — | 2 |
+| `stubs/notificaciones` | 8106 | Proveedor de notificaciones simulado (idempotente por referencia; `GET /control/enviados`) | — | 2 |
 | `stubs/kyc` | 8105 | Proveedor de KYC simulado (idempotente por referencia; modo `rechaza`) | — | 2 |
 | `consolidador-fuentes` | 8006 | Reconciliación diferida de Open Finance/Open Data degradadas (`rq` sobre Redis) | Redis (cola, db 2) | 1 (ampliación de alcance) |
 | `claims`, `consolidador-kyc` | — | Siniestros y Consolidador de KYC (Truora) | — | 3 |
@@ -68,7 +69,7 @@ audience = nombre del servicio destino. Todos los que llaman a otro servicio lo 
 
 ## Puertos del ACL Worker
 
-Definidos en `services/acl-worker/app/domain/puertos.py` (propuesta del Sprint 1): `PuertoFuenteFinanciera`, `PuertoFuenteAbierta`, `PuertoPasarelaPagos`, `PuertoFirmaElectronica` (HU-W03, bloque 2) y `PuertoKyc` (bloque 3). Las notificaciones se agregan en el bloque 5.
+Definidos en `services/acl-worker/app/domain/puertos.py` (propuesta del Sprint 1): `PuertoFuenteFinanciera`, `PuertoFuenteAbierta`, `PuertoPasarelaPagos`, `PuertoFirmaElectronica` (HU-W03, bloque 2) y `PuertoKyc` (bloque 3) y `PuertoNotificaciones` (bloque 5).
 
 `PuertoFirmaElectronica` tiene `firmar(SolicitudFirma)`: recibe solo el **hash** del documento (nunca su contenido), la
 versión y el id opaco del firmante, y es idempotente por `id_firma` (= el id de la propuesta), así que reintentar tras un
@@ -81,6 +82,11 @@ del cliente, y es idempotente por `id_verificacion`. Mismo Circuit Breaker, pres
 `kyc`). `pendiente` significa "no se pudo verificar" (proveedor caído o circuito abierto), no "en revisión del proveedor": UNDER lo
 manda a revisión manual. Un `rechazada` del proveedor es un resultado de negocio y no abre el circuito. Un solo adaptador
 (`kyc`): no hay segundo adaptador porque EC031 ya se demuestra con la pasarela y la firma.
+
+`PuertoNotificaciones` tiene `enviar(SolicitudNotificacion)`: recibe una plantilla, el identificador opaco del usuario y los datos
+de la plantilla (número de póliza y ruta del documento), nunca un correo ni el contenido del documento; el proveedor resuelve el
+contacto. Idempotente por `id_notificacion` (`poliza-emitida-{id}`), con el mismo circuito, presupuesto de 700 ms y sonda que las
+demás (`pendiente` = no se pudo enviar y POLICY reintenta).
 
 `PuertoPasarelaPagos` tiene `cobrar` y `consultar` (KAN-28). `consultar` busca un cobro por la **referencia del
 comercio** (el `id_intento_cobro` que Solventa envía), como consultan las pasarelas reales; la usa PAYMENTS para

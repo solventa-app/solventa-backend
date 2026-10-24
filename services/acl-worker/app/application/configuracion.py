@@ -28,6 +28,8 @@ class Configuracion:
     proveedor_firma: str = "estandar"
     # KYC (HU-W03): dónde está el proveedor de verificación de identidad.
     kyc_url: str = "http://localhost:8105"
+    # Notificaciones al cliente (HU-W03, bloque 5).
+    notificaciones_url: str = "http://localhost:8106"
     # Quién dispara la sonda: "bucle" (local y CI) o "externo" (Cloud Scheduler, en Cloud Run).
     disparador: str = "bucle"
     # Solo con DISPARADOR=externo (los fija Terraform): la cola de reconciliación de Cloud Tasks y a
@@ -47,6 +49,7 @@ class Configuracion:
     presupuesto_ms_pasarela: int = 700
     presupuesto_ms_firma: int = 700
     presupuesto_ms_kyc: int = 700
+    presupuesto_ms_notificaciones: int = 700
     # Bloque 5: ruta opcional al catálogo de fuentes (contracts/fuentes.json).
     fuentes_config_path: str | None = None
 
@@ -59,6 +62,7 @@ class Configuracion:
             "pasarela": self.presupuesto_ms_pasarela,
             "firma": self.presupuesto_ms_firma,
             "kyc": self.presupuesto_ms_kyc,
+            "notificaciones": self.presupuesto_ms_notificaciones,
         }
         ms = mapa_ms.get(clave)
         if ms is None:
@@ -96,6 +100,7 @@ class Configuracion:
             pasarela_url=os.getenv("PASARELA_URL", "http://localhost:8103"),
             firma_url=os.getenv("FIRMA_URL", "http://localhost:8104"),
             kyc_url=os.getenv("KYC_URL", "http://localhost:8105"),
+            notificaciones_url=os.getenv("NOTIFICACIONES_URL", "http://localhost:8106"),
             timeout_s=int(timeout_ms_default) / 1000,
             breaker_umbral_fallos=int(os.getenv("BREAKER_UMBRAL_FALLOS", "3")),
             breaker_ttl_segundos=float(os.getenv("BREAKER_TTL_SEGUNDOS", "5")),
@@ -117,6 +122,9 @@ class Configuracion:
             presupuesto_ms_pasarela=int(os.getenv("PRESUPUESTO_MS_PASARELA", timeout_ms_default)),
             presupuesto_ms_firma=int(os.getenv("PRESUPUESTO_MS_FIRMA", timeout_ms_default)),
             presupuesto_ms_kyc=int(os.getenv("PRESUPUESTO_MS_KYC", timeout_ms_default)),
+            presupuesto_ms_notificaciones=int(
+                os.getenv("PRESUPUESTO_MS_NOTIFICACIONES", timeout_ms_default)
+            ),
             fuentes_config_path=os.getenv("FUENTES_CONFIG_PATH") or None,
             proveedor_pasarela=proveedor_pasarela,
             proveedor_firma=proveedor_firma,

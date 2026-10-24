@@ -87,3 +87,17 @@ def test_una_oferta_que_rating_no_tiene_no_se_acepta() -> None:
         servicio.aceptar("no-existe", None)
 
     assert error.value.motivo == OFERTA_NO_ENCONTRADA
+
+
+def test_la_propuesta_guarda_el_nivel_de_riesgo_de_la_oferta() -> None:
+    servicio, _ = _servicio()
+
+    assert servicio.aceptar("oferta-1", "usuario-1")["nivel_riesgo"] == "BAJO"
+
+
+def test_si_la_oferta_no_trae_perfil_de_riesgo_la_propuesta_lo_deja_vacio() -> None:
+    oferta = oferta_de_rating()
+    del oferta["perfilRiesgo"]
+    servicio, _ = _servicio(RatingFalso({"oferta-1": oferta}))
+
+    assert servicio.aceptar("oferta-1", "usuario-1")["nivel_riesgo"] is None

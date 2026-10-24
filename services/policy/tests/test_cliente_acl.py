@@ -4,7 +4,7 @@ import json
 
 import httpx
 
-from app.application.cliente_acl import ClienteAcl, SolicitudFirma
+from app.application.cliente_acl import ClienteAcl, SolicitudFirma, SolicitudNotificacion
 
 SOLICITUD = SolicitudFirma("p-1", "a" * 64, "v1", "usuario-1")
 
@@ -58,3 +58,37 @@ def test_una_respuesta_que_no_es_json_queda_pendiente_sin_lanzar() -> None:
     resultado = _cliente(lambda: httpx.Response(200, content=b"no json")).firmar(SOLICITUD)
 
     assert resultado.estado == "pendiente"
+
+
+AVISO = SolicitudNotificacion(
+    "poliza-emitida-pz-1", "poliza-emitida", "usuario-1", {"numero_poliza": "SOL-2026-000001"}
+)
+
+
+def test_notificar_manda_la_plantilla_el_id_opaco_y_los_datos() -> None:
+    vistas: list[dict] = []
+    cuerpo = {"estado": "enviada", "referencia": "nt-1", "motivo": None}
+
+    resultado = _cliente(lambda: httpx.Response(200, json=cuerpo), vistas).notificar(AVISO)
+
+    assert resultado.estado == "enviada"
+    assert vistas == [
+        {
+            "id_notificacion": "poliza-emitida-pz-1",
+            "plantilla": "poliza-emitida",
+            "destinatario_id": "usuario-1",
+            "datos": {"numero_poliza": "SOL-2026-000001"},
+        }
+    ]
+
+
+def test_notificar_con_el_acl_caido_queda_pendiente_sin_lanzar() -> None:
+    assert _cliente(lambda: httpx.Response(503)).notificar(AVISO).estado == "pendiente"
+    assert _cliente(lambda: httpx.Response(200, content=b"no json")).notificar(AVISO).estado == (
+        "pendiente"
+    )
+    for cuerpo in ({}, [], "texto"):
+        resultado = _cliente(lambda cuerpo=cuerpo: httpx.Response(200, json=cuerpo)).notificar(
+            AVISO
+        )
+        assert resultado.estado == "pendiente"

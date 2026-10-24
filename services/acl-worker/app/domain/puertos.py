@@ -154,6 +154,36 @@ class PuertoKyc(Protocol):
     def verificar(self, solicitud: SolicitudKyc) -> ResultadoKyc: ...
 
 
+EstadoNotificacion = Literal["enviada", "pendiente"]
+
+
+@dataclass
+class SolicitudNotificacion:
+    """Aviso al cliente de que su póliza fue emitida (HU-W03, CA-W03-08).
+
+    El proveedor recibe una plantilla, el identificador opaco del usuario y los datos de la
+    plantilla (el número de póliza y la ruta del documento): nunca el contenido del documento ni
+    un dato personal. El proveedor resuelve el contacto (correo o teléfono) con su propia base:
+    Solventa no lo guarda en POLICY."""
+
+    id_notificacion: str  # un mismo id recibido dos veces no envía dos avisos (idempotente)
+    plantilla: str
+    destinatario_id: str  # identificador opaco del usuario, nunca un correo ni un documento
+    datos: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class ResultadoNotificacion:
+    # `pendiente` = no se pudo enviar (proveedor caído o circuito abierto): quien llama reintenta.
+    estado: EstadoNotificacion
+    referencia: str | None = None
+    motivo: str | None = None
+
+
+class PuertoNotificaciones(Protocol):
+    def enviar(self, solicitud: SolicitudNotificacion) -> ResultadoNotificacion: ...
+
+
 @dataclass
 class TablaTasas:
     """Cuántos COP vale una unidad de cada moneda (KAN-209). Valores como texto decimal: nunca
