@@ -1,5 +1,5 @@
 """ACL Worker: capa anticorrupción hexagonal. Único punto de contacto con
-proveedores externos (Open Finance, Open Data, pasarela de pagos, firma electrónica) — ver
+proveedores externos (Open Finance, Open Data, pasarela de pagos, firma electrónica, KYC) — ver
 `app/domain/puertos.py` y el README de este servicio.
 """
 
@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from app.adapters.autenticacion_servicios import autenticacion_para
 from app.adapters.firma import AdaptadorFirma
 from app.adapters.firma_alterna import AdaptadorFirmaAlterna
+from app.adapters.kyc import AdaptadorKyc
 from app.adapters.open_data import AdaptadorOpenData
 from app.adapters.open_finance import AdaptadorOpenFinance
 from app.adapters.pasarela import AdaptadorPasarela
@@ -24,6 +25,7 @@ from app.adapters.tasas_cambio import AdaptadorTasasReferencia
 from app.application.cache import CacheFuentes
 from app.application.circuitos import (
     NOMBRE_CIRCUITO_FIRMA,
+    NOMBRE_CIRCUITO_KYC,
     NOMBRE_CIRCUITO_OPEN_DATA,
     NOMBRE_CIRCUITO_OPEN_FINANCE,
     NOMBRE_CIRCUITO_PASARELA,
@@ -43,9 +45,10 @@ from app.application.reconciliacion import (
 )
 from app.application.servicio_firma import ServicioFirma
 from app.application.servicio_fuentes import ServicioConsultaFuentes
+from app.application.servicio_kyc import ServicioKyc
 from app.application.servicio_pagos import ServicioCobro
 from app.application.sonda import SondaRecuperacion
-from app.domain.puertos import ConsultaFuente, OrdenCobro, SolicitudFirma
+from app.domain.puertos import ConsultaFuente, OrdenCobro, SolicitudFirma, SolicitudKyc
 from app.observabilidad import configurar_trazas
 
 # Backoff acotado de la reconciliación diferida (contrato punto 5): 5 intentos,
@@ -114,6 +117,18 @@ class ResultadoFirmaResponse(BaseModel):
     referencia: str | None
     firmada_en: str | None
     motivo: str | None
+
+
+class SolicitudKycRequest(BaseModel):
+    id_verificacion: str
+    cliente_id: str
+
+
+class ResultadoKycResponse(BaseModel):
+    estado: str
+    referencia: str | None
+    motivo: str | None
+    verificada_en: str | None
 
 
 class ConsultaCobroResponse(BaseModel):
@@ -252,6 +267,14 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             adaptador_firma, fabrica, NOMBRE_CIRCUITO_FIRMA, presupuesto_firma_s
         )
 
+        presupuesto_kyc_s = config.presupuesto_proveedor_s("kyc")
+        adaptador_kyc = AdaptadorKyc(
+            config.kyc_url,
+            presupuesto_kyc_s,
+            auth=autenticacion_para(config.autenticacion_servicios, "stub-kyc"),
+        )
+        servicio_kyc = ServicioKyc(adaptador_kyc, fabrica, NOMBRE_CIRCUITO_KYC, presupuesto_kyc_s)
+
         sonda = SondaRecuperacion(
             fabrica,
             sondeos={
@@ -259,6 +282,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 NOMBRE_CIRCUITO_OPEN_DATA: adaptador_open_data.sondear,
                 NOMBRE_CIRCUITO_PASARELA: adaptador_pasarela.sondear,
                 NOMBRE_CIRCUITO_FIRMA: adaptador_firma.sondear,
+                NOMBRE_CIRCUITO_KYC: adaptador_kyc.sondear,
             },
             intervalo_s=config.sonda_intervalo_segundos,
         )
@@ -272,6 +296,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         app.state.cache_fuentes = cache_fuentes
         app.state.servicio_cobro = servicio_cobro
         app.state.servicio_firma = servicio_firma
+        app.state.servicio_kyc = servicio_kyc
 
         try:
             yield
@@ -282,6 +307,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 adaptador_open_data.cerrar,
                 adaptador_pasarela.cerrar,
                 adaptador_firma.cerrar,
+                adaptador_kyc.cerrar,
             )
             for cerrar in cierres:
                 cerrar()
@@ -307,6 +333,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             NOMBRE_CIRCUITO_OPEN_DATA,
             NOMBRE_CIRCUITO_PASARELA,
             NOMBRE_CIRCUITO_FIRMA,
+            NOMBRE_CIRCUITO_KYC,
         )
         return {nombre: fabrica.get_breaker(nombre).context.state for nombre in nombres}
 
@@ -406,6 +433,21 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             referencia=resultado.referencia,
             firmada_en=resultado.firmada_en,
             motivo=resultado.motivo,
+        )
+
+    @app.post("/kyc/verificar", tags=["kyc"], response_model=ResultadoKycResponse)
+    def verificar_kyc(body: SolicitudKycRequest) -> ResultadoKycResponse:
+        """Verificación de identidad para decidir la suscripción (HU-W03). Siempre 200: si el
+        proveedor no responde o el circuito está abierto, `pendiente` con su motivo (regla #4) y
+        quien decide manda la propuesta a revisión manual. Idempotente por `id_verificacion`."""
+        resultado = app.state.servicio_kyc.verificar(
+            SolicitudKyc(id_verificacion=body.id_verificacion, cliente_id=body.cliente_id)
+        )
+        return ResultadoKycResponse(
+            estado=resultado.estado,
+            referencia=resultado.referencia,
+            motivo=resultado.motivo,
+            verificada_en=resultado.verificada_en,
         )
 
     @app.get("/tasas-cambio", tags=["tasas"], response_model=TasasCambioResponse)
