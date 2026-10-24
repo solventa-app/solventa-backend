@@ -45,6 +45,15 @@ def test_un_5xx_del_acl_queda_pendiente_sin_lanzar() -> None:
     assert resultado.motivo == "acl_no_disponible"
 
 
+def test_una_respuesta_sin_estado_queda_pendiente_sin_lanzar() -> None:
+    for cuerpo in ({}, [], "texto"):
+        resultado = _cliente(lambda cuerpo=cuerpo: httpx.Response(200, json=cuerpo)).firmar(
+            SOLICITUD
+        )
+
+        assert resultado.estado == "pendiente"
+
+
 def test_una_respuesta_que_no_es_json_queda_pendiente_sin_lanzar() -> None:
     resultado = _cliente(lambda: httpx.Response(200, content=b"no json")).firmar(SOLICITUD)
 
