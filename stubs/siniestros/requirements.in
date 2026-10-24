@@ -1,6 +1,6 @@
-fastapi==0.150.0
+fastapi==0.159.1
 uvicorn[standard]==0.54.0
-strawberry-graphql[fastapi]==0.336.0
+strawberry-graphql[fastapi]==0.336.2
 pydantic==2.14.1
 prometheus-fastapi-instrumentator==8.1.0
 opentelemetry-sdk==1.45.1
