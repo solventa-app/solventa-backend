@@ -203,6 +203,8 @@ enum EstadoPropuesta {
   EMITIDA # hay póliza (ver Propuesta.polizaId)
 }
 
+# OFERTA_PRELIMINAR (D-11): una oferta preliminar no se acepta, se recalcula. `ErrorAceptacion.puedeReintentar` es true
+# y "reintentar" es volver a cotizar (`solicitarOferta`), no repetir `aceptarOferta` con la misma oferta.
 enum MotivoErrorAceptacion {
   OFERTA_PRELIMINAR
   OFERTA_VENCIDA

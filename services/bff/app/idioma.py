@@ -37,7 +37,9 @@ EN: dict[str, str] = {
     "La oferta ya no está disponible. Vuelve a cotizar.": (
         "The offer is no longer available. Please get a new quote."
     ),
-    "Solo puedes aceptar una oferta completa.": "You can only accept a complete offer.",
+    "Esta oferta es preliminar y no se puede aceptar. Vuelve a calcularla.": (
+        "This offer is preliminary and cannot be accepted. Recalculate it."
+    ),
     "La oferta venció. Vuelve a cotizar.": "The offer has expired. Please get a new quote.",
     "No hay un consentimiento vigente para esta oferta.": (
         "There is no valid consent for this offer."

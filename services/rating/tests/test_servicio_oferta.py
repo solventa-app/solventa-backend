@@ -147,6 +147,30 @@ def test_oferta_completa_con_prima_puntual_cuando_todas_las_fuentes_estan_fresca
     assert origenes["antecedentes-judiciales"] == "OPEN_DATA"
 
 
+def test_la_oferta_lleva_la_version_de_reglas_con_la_que_se_calculo() -> None:
+    # CA-W03-01: al aceptarla, POLICY guarda esta versión junto con el precio.
+    lector = LectorPerfilesFalso(perfil=PERFIL_SANO)
+    servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
+
+    primera, _ = servicio.generar("cliente-1", "1700000001.1", "200000000")
+    desde_cache, score_de_cache = servicio.generar("cliente-1", "1700000001.1", "200000000")
+
+    assert score_de_cache is True
+    assert primera["versionReglas"] == modulo_oferta.VERSION_REGLAS
+    assert desde_cache["versionReglas"] == modulo_oferta.VERSION_REGLAS
+
+
+def test_la_version_de_reglas_sigue_a_la_constante_y_no_a_un_valor_fijo(monkeypatch) -> None:
+    # Cuando cambien los pesos o la fórmula se sube VERSION_REGLAS y las ofertas nuevas lo reflejan.
+    monkeypatch.setattr(modulo_oferta, "VERSION_REGLAS", "v2")
+    lector = LectorPerfilesFalso(perfil=PERFIL_SANO)
+    servicio = ServicioOferta(lector, CacheScore(AlmacenClaveValorFalso(), ttl_segundos=300))
+
+    oferta, _ = servicio.generar("cliente-1", "1700000001.1", "200000000")
+
+    assert oferta["versionReglas"] == "v2"
+
+
 def test_oferta_preliminar_con_rango_cuando_una_fuente_esta_degradada() -> None:
     degradada = [
         {**f, "datos": {}, "degradado": True} if f["fuente"] == "afiliacion-pila" else f

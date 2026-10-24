@@ -13,7 +13,7 @@ from app.identificadores import id_opaco
 logger = logging.getLogger("bff.suscripcion")
 
 MENSAJE_OFERTA_NO_DISPONIBLE = "La oferta ya no está disponible. Vuelve a cotizar."
-MENSAJE_OFERTA_PRELIMINAR = "Solo puedes aceptar una oferta completa."
+MENSAJE_OFERTA_PRELIMINAR = "Esta oferta es preliminar y no se puede aceptar. Vuelve a calcularla."
 MENSAJE_OFERTA_VENCIDA = "La oferta venció. Vuelve a cotizar."
 MENSAJE_ACEPTACION_SIN_CONSENTIMIENTO = "No hay un consentimiento vigente para esta oferta."
 MENSAJE_SUSCRIPCION_NO_DISPONIBLE = "No pudimos procesar tu suscripción. Intenta de nuevo."
@@ -24,12 +24,14 @@ MENSAJE_DOCUMENTO_DESACTUALIZADO = "El documento cambió. Revísalo de nuevo ant
 MENSAJE_PROPUESTA_NO_FIRMABLE = "Esta propuesta no se puede firmar."
 MENSAJE_FIRMA_NO_DISPONIBLE = "No pudimos registrar tu firma. Intenta de nuevo."
 
-# Motivos del contrato (`MotivoErrorAceptacion`) y su texto para el usuario.
-_MENSAJE_POR_MOTIVO = {
-    "OFERTA_NO_ENCONTRADA": MENSAJE_OFERTA_NO_DISPONIBLE,
-    "OFERTA_PRELIMINAR": MENSAJE_OFERTA_PRELIMINAR,
-    "OFERTA_VENCIDA": MENSAJE_OFERTA_VENCIDA,
-    "CONSENTIMIENTO_NO_VIGENTE": MENSAJE_ACEPTACION_SIN_CONSENTIMIENTO,
+# Motivos de `MotivoErrorAceptacion`: texto para el usuario y si hay algo que reintentar. Una oferta
+# `PRELIMINAR` se resuelve recalculándola, es decir, volviendo a cotizar (D-11, CA-W03-01);
+# repetir la misma aceptación no la cambia.
+_ACEPTACION_POR_MOTIVO = {
+    "OFERTA_NO_ENCONTRADA": (MENSAJE_OFERTA_NO_DISPONIBLE, False),
+    "OFERTA_PRELIMINAR": (MENSAJE_OFERTA_PRELIMINAR, True),
+    "OFERTA_VENCIDA": (MENSAJE_OFERTA_VENCIDA, False),
+    "CONSENTIMIENTO_NO_VIGENTE": (MENSAJE_ACEPTACION_SIN_CONSENTIMIENTO, False),
 }
 
 
@@ -61,8 +63,9 @@ class ErrorAceptacionDatos:
     motivo: str | None = None
 
 
-def _error(motivo: str, puede_reintentar: bool = False) -> ErrorAceptacionDatos:
-    return ErrorAceptacionDatos(_MENSAJE_POR_MOTIVO[motivo], puede_reintentar, motivo)
+def _error(motivo: str) -> ErrorAceptacionDatos:
+    mensaje, puede_reintentar = _ACEPTACION_POR_MOTIVO[motivo]
+    return ErrorAceptacionDatos(mensaje, puede_reintentar, motivo)
 
 
 class ServicioSuscripcion:
@@ -94,7 +97,7 @@ class ServicioSuscripcion:
                 oferta_id, usuario.id if usuario is not None else None
             )
         except PropuestaRechazada as rechazo:
-            if rechazo.motivo not in _MENSAJE_POR_MOTIVO:
+            if rechazo.motivo not in _ACEPTACION_POR_MOTIVO:
                 logger.warning("POLICY rechazó la oferta con un motivo desconocido")
                 return ErrorAceptacionDatos(
                     MENSAJE_SUSCRIPCION_NO_DISPONIBLE, puede_reintentar=True

@@ -1886,6 +1886,11 @@
                   "  pm.expect(cuerpo.errors).to.be.undefined;",
                   "  pm.expect(r.__typename).to.eql('ErrorAceptacion');",
                   "  pm.expect(r.motivo).to.eql('OFERTA_PRELIMINAR');",
+                  "});",
+                  "// D-11: la preliminar no se acepta, se ofrece recalcularla.",
+                  "pm.test('ofrece recalcular: puedeReintentar y el mensaje lo dice', () => {",
+                  "  pm.expect(r.puedeReintentar).to.be.true;",
+                  "  pm.expect(r.mensaje).to.include('Vuelve a calcularla');",
                   "});"
                 ]
               }

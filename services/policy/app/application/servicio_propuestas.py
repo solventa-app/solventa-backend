@@ -62,6 +62,9 @@ class ServicioPropuestas:
                 "oferta_id": oferta_id,
                 "cliente_id": oferta["clienteId"],
                 "consentimiento_id": oferta.get("consentimientoId"),
+                # Las reglas con las que RATING fijó el precio (CA-W03-01); una oferta guardada
+                # antes de que RATING la incluyera no la trae y queda en nulo.
+                "version_reglas": oferta.get("versionReglas"),
                 "actor_usuario_id": actor_usuario_id,
                 "tipo": oferta["tipo"],
                 "prima": oferta["prima"],

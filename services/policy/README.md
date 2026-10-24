@@ -81,6 +81,8 @@ EN_EMISION ──UNDER──► RECHAZADA        ─► NO_EMITIDA
 
 `propuestas` (migración `0001_propuestas.py`): `id`, `oferta_id` (UNIQUE), `cliente_id`, `consentimiento_id`,
 `actor_usuario_id`, `estado` (CHECK con los 7 estados del contrato), `oferta_cifrada`, `creado_en`, `actualizado_en`.
+`version_reglas` (migración `0005_version_reglas.py`, nula en las propuestas anteriores): la versión de las reglas de RATING con las que se fijó el precio
+(CA-W03-01). Va en una columna y no en `oferta_cifrada` porque no es un dato personal y sirve para saber con qué reglas se vendió cada póliza; la API no la expone.
 `evidencias_firma` (migración `0002_evidencias_firma.py`): `propuesta_id` (UNIQUE, FK), `documento_hash`,
 `version_documento`, `documento_cifrado` (el documento exacto que se hasheó, cifrado), `firmante_id` (id opaco),
 `referencia_proveedor`, `firmada_en`. **Append-only en la base**: triggers rechazan `UPDATE`, `DELETE` y `TRUNCATE`. Con

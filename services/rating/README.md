@@ -19,7 +19,7 @@ RATING calcula la oferta de vida hipotecario. **Nunca escribe en Riesgo.**
   `consentimiento_id`, la oferta generada se guarda en Redis (`oferta-aceptable:{id}`, TTL
   `OFERTA_VIGENCIA_SEGUNDOS`, 24 h por defecto) para poder aceptarla (HU-W03).
 - `GET /ofertas/{id}`: la oferta guardada, con el `clienteId` opaco, el `consentimientoId`, el
-  `plazoMeses` y `vigenteHasta`. La leen POLICY (el precio sale de aquí, nunca del cliente) y el BFF
+  `plazoMeses`, la `versionReglas` con la que se calculó (la guarda POLICY al aceptarla, CA-W03-01) y `vigenteHasta`. La leen POLICY (el precio sale de aquí, nunca del cliente) y el BFF
   (para validar el consentimiento). Vencida o desconocida: 404. Un fallo de Redis no rompe la oferta.
 
 ## Ampliación de alcance (pedida explícitamente por el usuario, sin ID de Jira)

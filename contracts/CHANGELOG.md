@@ -140,3 +140,13 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Evento nuevo `poliza.emitida` v1 (`polizaId`, `numeroPoliza`, `propuestaId`, `clienteId` opaco, `vigenciaDesde`,
   `vigenciaHasta`).
 - Afecta al frontend: sí (pantallas W03-01 a W03-05). Requiere el PR gemelo en `solventa-frontend-web`.
+
+## v0.13 — 2026-10-24
+
+- KAN-26 (HU-W03, CA-W03-01 y D-11): **sin cambios de campos ni de tipos**; se aclara una semántica. Una oferta
+  `PRELIMINAR` no se puede aceptar y ahora el BFF lo dice ofreciendo recalcularla: `ErrorAceptacion` con motivo
+  `OFERTA_PRELIMINAR` devuelve `puedeReintentar: true` (antes `false`) y el mensaje «Esta oferta es preliminar y no se
+  puede aceptar. Vuelve a calcularla.». Reintentar significa volver a cotizar (`solicitarOferta`), no repetir
+  `aceptarOferta` con la misma oferta: sería el mismo error. Los demás motivos no cambian.
+- Afecta al frontend: sí, solo en cómo trata ese error (mostrar «Recalcular» y llevar a una cotización nueva). Aún no
+  hay una pantalla W03 construida que lo use.
