@@ -1,0 +1,717 @@
+{
+  "uid": "solventa-hu-w03",
+  "title": "Staging — HU-W03 Suscripción, firma y póliza",
+  "tags": [
+    "solventa",
+    "gcp",
+    "cloud-run",
+    "hu-w03"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "1m",
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "proyecto",
+        "type": "constant",
+        "hide": 2,
+        "query": "solventa-511815",
+        "current": {
+          "text": "solventa-511815",
+          "value": "solventa-511815"
+        }
+      },
+      {
+        "name": "servicios_w03",
+        "type": "constant",
+        "hide": 2,
+        "query": "^(bff|policy|under|payments|acl-worker|auth|stub-firma|stub-kyc|stub-pasarela|stub-notificaciones)$",
+        "current": {
+          "text": "^(bff|policy|under|payments|acl-worker|auth|stub-firma|stub-kyc|stub-pasarela|stub-notificaciones)$",
+          "value": "^(bff|policy|under|payments|acl-worker|auth|stub-firma|stub-kyc|stub-pasarela|stub-notificaciones)$"
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "HU-W03 — Peticiones por segundo (BFF, POLICY, UNDER, PAYMENTS, ACL y stubs)",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "^(bff|policy|under|payments|acl-worker|auth|stub-firma|stub-kyc|stub-pasarela|stub-notificaciones)$"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 1
+    },
+    {
+      "type": "timeseries",
+      "title": "HU-W03 — Errores 5xx por segundo (meta 0 %: una falla de firma, KYC, pasarela o notificaciones degrada, no rompe)",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "metric.label.response_code_class",
+              "=",
+              "5xx",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "^(bff|policy|under|payments|acl-worker|auth|stub-firma|stub-kyc|stub-pasarela|stub-notificaciones)$"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Nunca debe haber 5xx hacia el usuario por una falla de un proveedor (regla 4): la firma, el KYC, la pasarela y las notificaciones degradan.",
+      "id": 2
+    },
+    {
+      "type": "timeseries",
+      "title": "HU-W03 — Latencia p95 por petición (EC005: de la firma a EMITIDA ≤ 1,5 s)",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_latencies",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "^(bff|policy|under|payments|acl-worker|auth|stub-firma|stub-kyc|stub-pasarela|stub-notificaciones)$"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1500
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 3,
+      "description": "Latencia de cada petición HTTP que mide Cloud Run, no el tiempo de la firma a EMITIDA: ese lo mide k6 (tests/k6/ec005-emision.js y ec007-emision-pico.js). Sirve para ver qué servicio se degrada durante la medición."
+    },
+    {
+      "type": "timeseries",
+      "title": "HU-W03 — Latencia p99 por petición (EC007: de la firma a EMITIDA ≤ 3 s en pico)",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_latencies",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "^(bff|policy|under|payments|acl-worker|auth|stub-firma|stub-kyc|stub-pasarela|stub-notificaciones)$"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_PERCENTILE_99",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 3000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 4,
+      "description": "Latencia de cada petición HTTP que mide Cloud Run, no el tiempo de la firma a EMITIDA: ese lo mide k6 (tests/k6/ec005-emision.js y ec007-emision-pico.js). Sirve para ver qué servicio se degrada durante la medición."
+    },
+    {
+      "type": "timeseries",
+      "title": "HU-W03 · Latencia p50",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_latencies",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "^(bff|policy|under|payments|acl-worker|auth|stub-firma|stub-kyc|stub-pasarela|stub-notificaciones)$"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_PERCENTILE_50",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 5
+    },
+    {
+      "type": "timeseries",
+      "title": "HU-W03 · Instancias activas",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "metric.label.state",
+              "=",
+              "active",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "^(bff|policy|under|payments|acl-worker|auth|stub-firma|stub-kyc|stub-pasarela|stub-notificaciones)$"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 6
+    },
+    {
+      "type": "timeseries",
+      "title": "HU-W03 · Arranque en frío p95",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/startup_latencies",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "^(bff|policy|under|payments|acl-worker|auth|stub-firma|stub-kyc|stub-pasarela|stub-notificaciones)$"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 7
+    },
+    {
+      "type": "timeseries",
+      "title": "HU-W03 · CPU p95",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 6,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/cpu/utilizations",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "^(bff|policy|under|payments|acl-worker|auth|stub-firma|stub-kyc|stub-pasarela|stub-notificaciones)$"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 8
+    },
+    {
+      "type": "timeseries",
+      "title": "HU-W03 · Memoria p95",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp_monitoring"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 24,
+        "w": 6,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp_monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "${proyecto}",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/memory/utilizations",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "^(bff|policy|under|payments|acl-worker|auth|stub-firma|stub-kyc|stub-pasarela|stub-notificaciones)$"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "view": "FULL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": true
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 9
+    }
+  ]
+}
