@@ -367,9 +367,9 @@ cryptography==50.0.2 \
     --hash=sha256:fa8f5efb344d6908a1ce62f4a24e2e5780f825d6f53f5f50ec5ffacac72936cb \
     --hash=sha256:fdd28f912fccfec1846a94e2e1e8f9b0012f557f0c46fe4f3eb0d7a87afcf90b
     # via google-auth
-fastapi==0.143.1 \
-    --hash=sha256:4cafaab64df8534758bf0fce61947f5e27e6cd512798ccbbaad5425086c3b664 \
-    --hash=sha256:687beb445804e4c4dbe2a76fd83c25e9b973ac48c267defb86f791e099baecc4
+fastapi==0.158.0 \
+    --hash=sha256:890440689039bdadb06131bafae81eb63468a0dd9f6185fcec47afb69424ea6a \
+    --hash=sha256:c5127864026eca80a419047caba7760d561160904445fd825a60b6285b86ed0b
     # via -r requirements.in
 google-auth==2.62.0 \
     --hash=sha256:0bef0ce54bdf9ce226c5d66e4264413bd918141c31bbe49fb52eac882f513d69 \
@@ -854,9 +854,9 @@ urllib3==2.8.0 \
     --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3 \
     --hash=sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63
     # via requests
-uvicorn==0.32.1 \
-    --hash=sha256:82ad92fd58da0d12af7482ecdb5f2470a04c9c9a53ced65b9bbb4a205377602e \
-    --hash=sha256:ee9519c246a72b1c084cea8d3b44ed6026e78a4a309cbedae9c37e4cb9fbb175
+uvicorn==0.54.0 \
+    --hash=sha256:505bdb0f318731d45f1f712071fc781a8981f6847a31c902c9f5e652d4f67faf \
+    --hash=sha256:a2e33cbfaa0306f8e6b0c13e0cb89d7d7a2da3e62b90c66e18c33d9807b28620
     # via -r requirements.in
 uvloop==0.23.0 \
     --hash=sha256:0305871ac712f54b62af73f943dbf21ae3ce80a44bc0f0151424484affa85645 \
