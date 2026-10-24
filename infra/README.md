@@ -320,7 +320,7 @@ openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n' | gcloud secrets versions ad
 ### API Gateway delante del BFF (`crear_gateway`, HA-LAT-004)
 
 Con `crear_gateway = true` (`gateway.tf`), Terraform crea en `us-central1` el API Gateway `solventa-gateway` configurado con
-`infra/gateway/openapi.yaml` (rutas `POST /graphql/web`, `POST /graphql/movil`, `POST /graphql/app` y `GET /health`, todas con
+`infra/gateway/openapi.yaml` (rutas `POST /graphql/web`, `POST /graphql/movil`, `POST /graphql/app`, `GET /health` y `GET /polizas/{poliza_id}/documento`, todas con
 `deadline: 0.7` = 700 ms). El BFF **deja de ser público** (sin `allUsers`): solo la cuenta `gateway-bff` tiene
 `roles/run.invoker` sobre `bff`. La URL pública sale en `terraform output -raw gateway_url` y en el informe de
 `deploy-staging.yml`.

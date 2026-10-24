@@ -123,6 +123,67 @@ class PuertoFirmaElectronica(Protocol):
     def firmar(self, solicitud: SolicitudFirma) -> ResultadoFirma: ...
 
 
+EstadoKyc = Literal["aprobada", "rechazada", "pendiente"]
+
+
+@dataclass
+class SolicitudKyc:
+    """Verificación de identidad del cliente (KYC) para decidir la suscripción (HU-W03).
+
+    Solo viaja el identificador opaco del cliente (el HMAC que calcula el BFF), nunca un documento
+    ni un dato personal. Un proveedor real pediría más (documento, validación biométrica): ese dato
+    llegaría por un canal propio, no por este puerto (ver `docs/plan-completar-hu-w03.md`, W03-10).
+    """
+
+    id_verificacion: str  # un mismo id recibido dos veces devuelve el mismo resultado (idempotente)
+    cliente_id: str
+
+
+@dataclass
+class ResultadoKyc:
+    # `pendiente` = no se pudo verificar (proveedor caído o circuito abierto), no que el proveedor
+    # esté revisando: quien decide la suscripción lo manda a revisión manual.
+    estado: EstadoKyc
+    referencia: str | None = None
+    motivo: str | None = None
+    verificada_en: str | None = None
+    detalle: dict[str, Any] = field(default_factory=dict)
+
+
+class PuertoKyc(Protocol):
+    def verificar(self, solicitud: SolicitudKyc) -> ResultadoKyc: ...
+
+
+EstadoNotificacion = Literal["enviada", "pendiente"]
+
+
+@dataclass
+class SolicitudNotificacion:
+    """Aviso al cliente de que su póliza fue emitida (HU-W03, CA-W03-08).
+
+    El proveedor recibe una plantilla, el identificador opaco del usuario y los datos de la
+    plantilla (el número de póliza y la ruta del documento): nunca el contenido del documento ni
+    un dato personal. El proveedor resuelve el contacto (correo o teléfono) con su propia base:
+    Solventa no lo guarda en POLICY."""
+
+    id_notificacion: str  # un mismo id recibido dos veces no envía dos avisos (idempotente)
+    plantilla: str
+    destinatario_id: str  # identificador opaco del usuario, nunca un correo ni un documento
+    datos: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class ResultadoNotificacion:
+    # `pendiente` = no se pudo enviar (proveedor caído o circuito abierto): quien llama reintenta.
+    estado: EstadoNotificacion
+    referencia: str | None = None
+    motivo: str | None = None
+
+
+class PuertoNotificaciones(Protocol):
+    def enviar(self, solicitud: SolicitudNotificacion) -> ResultadoNotificacion: ...
+
+
 @dataclass
 class TablaTasas:
     """Cuántos COP vale una unidad de cada moneda (KAN-209). Valores como texto decimal: nunca

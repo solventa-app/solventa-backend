@@ -69,6 +69,13 @@ Nunca se loguean (tampoco el documento).
 ## Operación
 
 - Puerto local: `8000`. GraphQL: `POST /graphql/web` y `/graphql/app` (GraphiQL en el navegador). Salud: `GET /health`. Métricas: `GET /metrics`.
+- **PDF de la póliza (HU-W03):** `GET /polizas/{id}/documento` (REST, no GraphQL, porque entrega un archivo). Es el `documentoUrl` de
+  `Poliza`. Es un documento con datos personales: exige sesión **siempre** (aunque la autenticación de GraphQL esté en `opcional`),
+  solo para CLIENTE y ASESOR, y un CLIENTE solo descarga la suya. `401` sin token o con uno inválido, `403` para otro rol, `404` si
+  no existe **o** es de otro (se ve igual), `503` con `Retry-After` si POLICY no responde. El nombre del asegurado lo pide a AUTH
+  (por el firmante) solo para el documento y no se loguea; si AUTH falla, el PDF sale con la referencia opaca del titular. Como
+  la descarga exige la cabecera `Authorization`, un enlace simple no sirve: el frontend la pide con `fetch` y muestra el
+  archivo. Pasa por el API Gateway (`infra/gateway/`).
 - Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta). Sin red: dobles en `tests/fakes.py`.
 - Humo de punta a punta (el mismo que corre el CI):
   ```bash

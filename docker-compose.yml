@@ -258,9 +258,18 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/policy
       RATING_URL: http://rating:8003
       ACL_URL: http://acl-worker:8005
+      UNDER_URL: http://under:8008
+      PAYMENTS_URL: http://payments:8004
     depends_on:
       postgres: { condition: service_healthy }
       migrar-policy: { condition: service_completed_successfully }
+
+  under:
+    <<: *servicio
+    build: ./services/under
+    ports: ["8008:8008"]
+    environment:
+      ACL_URL: http://acl-worker:8005
 
   acl-worker:
     <<: *servicio
@@ -272,6 +281,8 @@ services:
       OPEN_DATA_URL: http://stub-open-data:8102
       PASARELA_URL: http://stub-pasarela:8103
       FIRMA_URL: http://stub-firma:8104
+      KYC_URL: http://stub-kyc:8105
+      NOTIFICACIONES_URL: http://stub-notificaciones:8106
       TIMEOUT_MS: "700"        # umbral duro de EC009/EC010
       BREAKER_UMBRAL_FALLOS: "3"       # fallos consecutivos que abren el circuito
       BREAKER_TTL_SEGUNDOS: "5"        # tiempo abierto antes de permitir la próxima sonda
@@ -317,6 +328,16 @@ services:
     <<: *servicio
     build: ./stubs/firma
     ports: ["8104:8104"]
+
+  stub-kyc:
+    <<: *servicio
+    build: ./stubs/kyc
+    ports: ["8105:8105"]
+
+  stub-notificaciones:
+    <<: *servicio
+    build: ./stubs/notificaciones
+    ports: ["8106:8106"]
 
   # -------------------------------------------------------- observabilidad
   prometheus:

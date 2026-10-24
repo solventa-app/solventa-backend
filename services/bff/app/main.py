@@ -11,20 +11,24 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, Response
 from prometheus_fastapi_instrumentator import Instrumentator
 from strawberry.fastapi import GraphQLRouter
 
 from app.autenticacion_usuarios import (
+    MENSAJE_SIN_PERMISO,
+    MENSAJE_SIN_SESION,
     TokenInvalido,
     extraer_cabecera_autorizacion,
     leer_usuario,
 )
-from app.clientes import Clientes, construir_clientes
+from app.clientes import Clientes, ErrorServicio, construir_clientes
 from app.configuracion import Configuracion
 from app.esquema import schema
 from app.idioma import idioma_de
 from app.observabilidad import configurar_trazas
 from app.servicio_oferta import ServicioOferta
+from app.servicio_suscripcion import MENSAJE_DOCUMENTO_NO_DISPONIBLE, ServicioSuscripcion
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -87,6 +91,45 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
     for canal in CANALES:
         app.include_router(
             GraphQLRouter(schema, context_getter=contexto_para(canal)), prefix=f"/graphql/{canal}"
+        )
+
+    @app.get("/polizas/{poliza_id}/documento", tags=["polizas"], response_class=Response)
+    async def documento_poliza(poliza_id: str, request: Request) -> Response:
+        """El PDF de la póliza (HU-W03, CA-W03-08). Es una ruta REST y no GraphQL porque entrega un
+        archivo. Es un documento con datos personales: exige sesión SIEMPRE (aunque la autenticación
+        de GraphQL esté en `opcional`), solo para CLIENTE y ASESOR, y un CLIENTE solo descarga el
+        suyo. Una póliza que no existe o que es de otro responde igual (404): no se revela cuál."""
+        try:
+            usuario = leer_usuario(
+                extraer_cabecera_autorizacion(request.headers), config.jwt_secreto
+            )
+        except TokenInvalido as error:
+            return JSONResponse({"mensaje": str(error)}, status_code=401)
+        if usuario is None:
+            return JSONResponse({"mensaje": MENSAJE_SIN_SESION}, status_code=401)
+        if usuario.rol not in ("CLIENTE", "ASESOR"):
+            return JSONResponse({"mensaje": MENSAJE_SIN_PERMISO}, status_code=403)
+        try:
+            documento = await ServicioSuscripcion(app.state.clientes).documento_poliza(
+                poliza_id, usuario
+            )
+        except ErrorServicio:
+            return JSONResponse(
+                {"mensaje": MENSAJE_DOCUMENTO_NO_DISPONIBLE},
+                status_code=503,
+                headers={"Retry-After": "5"},
+            )
+        if documento is None:
+            return JSONResponse({"mensaje": "Póliza no encontrada."}, status_code=404)
+        numero, pdf = documento
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'inline; filename="poliza-{numero}.pdf"',
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)

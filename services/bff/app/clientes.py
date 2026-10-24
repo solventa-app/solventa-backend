@@ -116,6 +116,10 @@ class PuertoPolicy(Protocol):
 
     async def documento_firma(self, propuesta_id: str) -> dict | None: ...
 
+    async def obtener_poliza(self, poliza_id: str) -> dict | None: ...
+
+    async def generar_documento(self, poliza_id: str, asegurado: str | None) -> bytes | None: ...
+
     async def firmar_propuesta(
         self, propuesta_id: str, autoriza_cobro: bool, version_documento: str, firmante_id: str
     ) -> dict: ...
@@ -414,6 +418,21 @@ class ClientePolicyHttp:
 
     async def obtener_propuesta(self, propuesta_id: str) -> dict | None:
         return _json_o_none(await _pedir(self._cliente, "GET", f"/propuestas/{propuesta_id}"))
+
+    async def obtener_poliza(self, poliza_id: str) -> dict | None:
+        return _json_o_none(await _pedir(self._cliente, "GET", f"/polizas/{poliza_id}"))
+
+    async def generar_documento(self, poliza_id: str, asegurado: str | None) -> bytes | None:
+        """El PDF de la póliza, o `None` si no existe. El nombre del asegurado va en el CUERPO:
+        las URL quedan en los logs de acceso y un nombre es un dato personal (regla #6)."""
+        respuesta = await _pedir(
+            self._cliente, "POST", f"/polizas/{poliza_id}/documento", {"asegurado": asegurado}
+        )
+        if respuesta.status_code == 404:
+            return None
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.content
 
     async def documento_firma(self, propuesta_id: str) -> dict | None:
         """`None` si no existe o no se puede armar el documento (409)."""

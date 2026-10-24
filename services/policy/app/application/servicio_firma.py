@@ -21,6 +21,7 @@ from app.application.documento_firma import (
     serializar,
 )
 from app.application.identificadores import id_opaco
+from app.application.planificador import PuertoPlanificador
 
 logger = logging.getLogger("policy.firma")
 
@@ -53,9 +54,29 @@ class PuertoRepositorioFirmas(Protocol):
 
 
 class ServicioFirma:
-    def __init__(self, repositorio: PuertoRepositorioFirmas, acl: PuertoClienteAcl) -> None:
+    def __init__(
+        self,
+        repositorio: PuertoRepositorioFirmas,
+        acl: PuertoClienteAcl,
+        planificador: PuertoPlanificador | None = None,
+    ) -> None:
         self._repositorio = repositorio
         self._acl = acl
+        self._planificador = planificador
+
+    def _encolar_emision(self, propuesta_id: str) -> None:
+        """Pide que se emita. Nunca tumba una firma ya registrada: si falla, volver a firmar (que es
+        idempotente) la vuelve a encolar."""
+        if self._planificador is None:
+            return
+        try:
+            self._planificador.encolar(propuesta_id)
+        except Exception as error:
+            logger.warning(
+                "no se pudo encolar la emisión propuesta=%s error=%s",
+                id_opaco(propuesta_id),
+                type(error).__name__,
+            )
 
     def documento(self, propuesta_id: str) -> dict[str, Any]:
         """Lo que el cliente lee antes de firmar (W03-02a y W03-02b)."""
@@ -81,6 +102,8 @@ class ServicioFirma:
 
         existente = self._repositorio.obtener_evidencia(propuesta_id)
         if existente is not None:
+            if propuesta["estado"] == "EN_EMISION":
+                self._encolar_emision(propuesta_id)  # quedó sin avanzar: se vuelve a pedir
             return existente, propuesta["estado"]
 
         if propuesta["estado"] != "ACEPTADA":
@@ -127,6 +150,7 @@ class ServicioFirma:
             id_opaco(firmante_id),
         )
         if creada:
+            self._encolar_emision(propuesta_id)
             return evidencia, "EN_EMISION"
         # Otra petición firmó primero y ya cambió el estado: se vuelve a leer, no se supone.
         return evidencia, self._repositorio.obtener(propuesta_id)["estado"]
