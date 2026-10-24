@@ -1,4 +1,4 @@
-// EC005 (HU-W03, CA-W03-09): decisión + emisión de la póliza con p95 <= 1,5 s en carga normal, medido de la
+// EC005 (HU-W03, CA-W03-07): decisión + emisión de la póliza con p95 <= 1,5 s en carga normal, medido de la
 // firma (`firmarPropuesta`) a que `propuesta(id)` diga EMITIDA. Recorrido completo por el BFF en
 // `lib/emision.js`.
 //

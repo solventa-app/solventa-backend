@@ -37,8 +37,8 @@ firmar rompe el umbral.
 
 | Guion | Escenario | Umbral | Qué mide de verdad |
 |---|---|---|---|
-| `ec005-emision.js` | EC005 (CA-W03-09) | p95 ≤ 1,5 s; ≥ 99 % `EMITIDA`; 0 % 5xx | De `firmarPropuesta` a `EMITIDA` a `RITMO_EMISION` firmas por segundo (**supuesto: 1**) |
-| `ec007-emision-pico.js` | EC007 (CA-W03-09) | p99 ≤ 3 s; ≥ 99 % `EMITIDA`; 0 % 5xx | Lo mismo, subiendo a `FACTOR_PICO` × el ritmo normal (**supuesto: 3×**), sosteniéndolo `DURACION_PICO` y bajando |
+| `ec005-emision.js` | EC005 (CA-W03-07) | p95 ≤ 1,5 s; ≥ 99 % `EMITIDA`; 0 % 5xx | De `firmarPropuesta` a `EMITIDA` a `RITMO_EMISION` firmas por segundo (**supuesto: 1**) |
+| `ec007-emision-pico.js` | EC007 (CA-W03-07) | p99 ≤ 3 s; ≥ 99 % `EMITIDA`; 0 % 5xx | Lo mismo, subiendo a `FACTOR_PICO` × el ritmo normal (**supuesto: 3×**), sosteniéndolo `DURACION_PICO` y bajando |
 
 **La carga de EC005 y EC007 no sale de ningún documento del repo:** el ritmo y el factor son supuestos que cada informe debe
 declarar (`RITMO_EMISION`, `FACTOR_PICO`; también `CLIENTES_PRUEBA`, `SONDEO_MS` y `TIMEOUT_EMISION_MS`). Los guiones crean

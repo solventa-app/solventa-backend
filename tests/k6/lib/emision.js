@@ -4,7 +4,7 @@
 // documentoFirma -> firmarPropuesta -> espera a que la propuesta quede EMITIDA. Solo el CLIENTE titular firma
 // (decisión W03-8), por eso no se usa un ASESOR como en `preparar.js`.
 //
-// Lo que se mide (CA-W03-09): "de la firma a EMITIDA". El reloj arranca justo antes de `firmarPropuesta` y se
+// Lo que se mide (CA-W03-07): "de la firma a EMITIDA". El reloj arranca justo antes de `firmarPropuesta` y se
 // detiene en la primera consulta de `propuesta(id)` que ya dice EMITIDA. Esa consulta se repite cada
 // `SONDEO_MS`, así que la cifra tiene hasta esa resolución de más: no es un tiempo interno de POLICY.
 // Todo lo anterior (oferta, aceptación, documento) se mide aparte y NO cuenta para el umbral.

@@ -1,4 +1,4 @@
-// EC007 (HU-W03, CA-W03-09): decisión + emisión con p99 <= 3 s en pico, medido de la firma a EMITIDA.
+// EC007 (HU-W03, CA-W03-07): decisión + emisión con p99 <= 3 s en pico, medido de la firma a EMITIDA.
 // Mismo recorrido que EC005 (`lib/emision.js`); aquí el ritmo de firmas sube a 3x del normal, se sostiene y baja.
 //
 // Todo lo que reporta es MEDIDO por k6. Ni el ritmo normal (1 firma por segundo) ni el factor 3x vienen del

@@ -40,21 +40,25 @@ EC031 (reemplazo de adaptador).
 | W03-11 | Servicios | **Dos servicios nuevos**: `under` (sin almacén, decide) y `policy` (PostgreSQL, escritor único de pólizas) | **Cerrada** |
 | W03-12 | Proveedor de firma | Solventa **no** construye un servicio de firma electrónica: lo contrata a un tercero detrás del ACL. `stubs/firma` simula solo lo que es de Solventa (idempotencia por referencia, hash, modos de falla) y **no** la identidad del firmante, el certificado ni el sello de tiempo, que son del proveedor. Su contrato (`referencia_comercio`, `documento_hash`, `SIGNED`) es inventado, no el de un proveedor real. Con uno elegido, el puerto y `evidencias_firma` ganarán campos opcionales (referencia del certificado, sello de tiempo, enlace al documento firmado) en una migración aditiva. Qué tipo de firma hace exigible la póliza lo valida el equipo con legal | Propuesta |
 
-## Criterios de aceptación (propuestos)
+## Criterios de aceptación (oficiales)
 
-El detalle oficial de CA-W03-01 a CA-W03-10 («detalle de historias del Sprint 2») no está en el repo ni en Confluence. Estos
-criterios salen de Jira, de `docs/cobros-conciliacion.md` §10 y de los escenarios; hay que confirmarlos con el original.
+Salen del documento **«Solventa Detalle de Historias de Usuario del Sprint 2 (versión 1.0.0).docx»** (carpeta `MISO/`, fuera del repo), que este
+plan daba por no encontrado. Los criterios «propuestos» que había aquí **no coincidían** (en particular, 05, 06, 07 y 09).
 
-| CA | Criterio |
-|---|---|
-| CA-W03-01 | Solo se acepta una oferta `COMPLETA`, vigente y de un titular con consentimiento vigente; una `PRELIMINAR` devuelve `ErrorAceptacion{OFERTA_PRELIMINAR}`. Aceptar dos veces la misma oferta devuelve la misma propuesta |
-| CA-W03-02 | El documento a firmar muestra el monto mensual, el número de meses y la forma de cobro. Para firmar se exige `autorizaCobro: true` y la `versionDocumento` vigente |
-| CA-W03-03 | La evidencia de firma es append-only: hash SHA-256 del documento, versión, sello de tiempo, usuario, actor, referencia del proveedor y consentimiento. Los campos personales van cifrados. Firmar dos veces devuelve la misma evidencia |
-| CA-W03-04 a 06 | El cobro es idempotente (reintentar la tarea no cobra dos veces); si el proveedor tarda más de 700 ms pasa a `pendiente` sin 5xx (EC009/EC010); un cobro `pendiente` o `rechazado` nunca deja una póliza `EMITIDA` |
-| CA-W03-07 | Con el cobro `cobrado` la póliza queda `EMITIDA` con número y se publica `poliza.emitida` v1. El cliente ve el estado consultando `propuesta(id)` |
-| CA-W03-08 | El PDF lleva membrete, asegurado, crédito, cobertura, prima y sello de firma. Solo lo descarga el titular, su asesor o un BACKOFFICE. La notificación se envía una sola vez por póliza |
-| CA-W03-09 | Decisión + emisión con p95 ≤ 1,5 s en carga normal (EC005) y p99 ≤ 3 s en pico (EC007), de la firma a `EMITIDA` |
-| CA-W03-10 | Cambiar el proveedor de firma solo agrega un adaptador, sin tocar el Core (EC031) |
+| CA | Criterio (resumen del texto oficial) | Escenario o HA |
+|---|---|---|
+| CA-W03-01 | Oferta `COMPLETA` vigente aceptada: se guarda la oferta aceptada (**prima, cobertura, versión de reglas y consentimiento**) y se muestra su resumen. Una `PRELIMINAR` no se acepta: **se ofrece recalcularla** (D-11) | — |
+| CA-W03-02 | El cliente ve el documento a firmar en un resumen legible y la autorización de cobro recurrente; firmar sólo se habilita al aceptarla | — |
+| CA-W03-03 | Evidencia de no repudio append-only (hash del documento, titular, actor, sello de tiempo e identificador del proveedor); firma siempre el titular aunque lo acompañe un asesor | HA-MOD-001 |
+| CA-W03-04 | Primera prima cobrada una sola vez con `idIntentoCobro` idempotente | HA-MOD-001 |
+| CA-W03-05 | Si la firma, el KYC o la pasarela superan 700 ms o fallan: el circuito abre, **nunca llega un 5xx a la interfaz** y el cliente ve un estado claro (cobro pendiente con reintento automático, o **firma por reintentar**) | EC009, EC010, HA-LAT-002 |
+| CA-W03-06 | Con un cobro rechazado o pendiente, el cliente **sabe qué pasa con su póliza y qué hacer** (D-03) | D-03 |
+| CA-W03-07 | Póliza `Emitida` con número y evento `poliza.emitida`; decisión + emisión p95 ≤ 1,5 s en operación normal y p99 ≤ 3 s en pico | EC005, EC007 |
+| CA-W03-08 | El cliente abre y descarga el documento formal (membrete, asegurado, crédito, cobertura y firma) y **el documento se le envía por notificación** | — |
+| CA-W03-09 | Datos personales y del crédito cifrados en reposo (por campo) y en tránsito; ningún log ni traza con datos personales | EC022, HA-SEG-002 |
+| CA-W03-10 | Cambiar el proveedor de firma o de KYC no cambia ni redespliega ningún servicio del Core | EC031, HA-MOD-001 |
+
+La carga de EC005 y EC007 **tampoco la define** ese documento («k6 del flujo de aceptación», semana 2, staging).
 
 ## Flujo
 
@@ -101,7 +105,7 @@ poliza.emitida      ─► POLICY ─► ACL /notificaciones (stub) con el enlac
 | `services/policy` | `GET /propuestas/{id}/documento-firma` y `POST /propuestas/{id}/firma`: llama al ACL, guarda la evidencia y agenda `_emitir` |
 | `services/bff` | `documentoFirma` y `firmarPropuesta`, solo para el CLIENTE titular |
 
-### Bloque 3 · UNDER con KYC (KAN-213, CA-W03-09)
+### Bloque 3 · UNDER con KYC (KAN-213, CA-W03-07 y 09)
 
 | Dónde | Cambio |
 |---|---|
@@ -137,6 +141,29 @@ poliza.emitida      ─► POLICY ─► ACL /notificaciones (stub) con el enlac
 
 Más: pruebas unitarias por servicio, pruebas de contrato del esquema v0.12 y de `poliza.emitida`, y un tablero `hu-w03.json`.
 
+### Bloque 7 · Brechas contra los criterios oficiales (propuesto, sin empezar)
+
+Salió al cruzar lo construido con los criterios oficiales (2026-10-24). **Todo es back**; las pantallas son de Web (KAN-152 a 157, 172, 209, 210 y 214).
+Cada fila se verificó en el código o en las corridas de hoy. Orden sugerido: 1, luego 2 y 3 juntas, 4, 5, 6 y el resto.
+
+| # | CA | Brecha verificada | Qué hacer | Dónde |
+|---|---|---|---|---|
+| 1 | 05 | **Con la firma caída, `firmarPropuesta` por el gateway devuelve un 504** en los primeros intentos (el primer intento tarda ~780 ms y el gateway corta a 700 ms). El criterio dice «nunca un 5xx» y «firma por reintentar» | Que el camino síncrono de la firma conteste antes del corte: presupuesto propio de la firma en el ACL, menor que 700 ms menos lo que cuestan BFF y POLICY, y `ErrorFirma SERVICIO_FIRMA_NO_DISPONIBLE`; o firmar de forma asíncrona. **Decisión W03-13.** Newman 4.29 pasa a ir por el gateway | `acl-worker`, `policy`, `bff` |
+| 2 | 01 | **No se guarda la versión de reglas.** RATING la usa (`VERSION_REGLAS`) pero la propuesta sólo guarda el consentimiento y la oferta cifrada | RATING la incluye en la oferta que sirve; POLICY la guarda (migración aditiva con `downgrade`) | `rating`, `policy` |
+| 3 | 01 | **La `PRELIMINAR` no ofrece recalcular**: el mensaje es «Solo puedes aceptar una oferta completa.» y `puedeReintentar` es `false` | Mensaje que ofrece volver a cotizar y `puedeReintentar: true` (el contrato no cambia; también en el diccionario `EN`) | `bff` |
+| 4 | 06 | `Propuesta` sólo expone `estado`. El motivo del rechazo se guarda en POLICY pero **no se muestra**: el cliente no sabe qué hacer | Campo aditivo opcional con el motivo y la acción sugerida (contrato v0.13 y aviso al frontend). **Decisión W03-15**, junto con la pantalla «Resultado del pago» (por crear) | `contracts`, `policy`, `bff` |
+| 5 | 06 | **Un cobro rechazado que se reintenta, o un `PENDIENTE_PAGO` agotado, no reabre la póliza** (no hay código que vuelva de `PAGO_RECHAZADO`). El `reintentarCobro` de W05 es sólo de BACKOFFICE | Que POLICY se entere del resultado del reintento y emita (idempotente). **Decisión W03-14:** quién lo dispara (back-office o el cliente) | `policy`, quizá `bff` |
+| 6 | 09 | El cifrado existe (`oferta_cifrada`, `documento_cifrado`) pero **no hay evidencia de EC022 para POLICY** | Verificar en la base que no hay datos en claro y que los logs no llevan datos personales; informe `docs/evidencias/EC022-<fecha>.md` | `policy` |
+| 7 | 08 | El criterio dice que **el documento se envía por notificación**; hoy el aviso lleva la plantilla y el enlace, no el PDF | Confirmar con el equipo si el enlace basta o hay que adjuntarlo | `policy`, `acl-worker` |
+| 8 | 01 | `Query.oferta(id)` **devuelve siempre `null`** (su comentario dice que RATING no guarda ofertas; desde el bloque 1 sí). La pantalla KAN-152 muestra «ver fuentes» | Confirmar con Web si ya tiene la oferta en memoria; si no, leerla de RATING con la misma validación de dueño de `aceptarOferta`. Ojo: la colección de W01 afirma que da `null` | `bff` |
+| 9 | — | Sin verificar de los bloques anteriores: Cloud Tasks real y `terraform plan` de la cola `emision-polizas`; la sintaxis `path_translation` en GCP API Gateway; el fallo sin explicar de «UNDER caído»; EC005 y EC007 en staging | Verificar en staging; carga por definir | `infra`, `tests` |
+
+**Riesgo, sin criterio detrás:** ni el BFF ni el gateway tienen CORS (el gateway sólo acepta `GET` y `POST`, no `OPTIONS`). El frontend lo evita en desarrollo con el
+proxy de Vite; una web desplegada que llame al gateway desde otro origen lo necesitará.
+
+**Documentos:** `contracts/CHANGELOG.md` (filas 4 y, si aplica, 2), `docs/plan-completar-hu-w03.md`, `docs/evidencias/` (filas 1 y 6) y los README de `policy`, `bff` y `acl-worker`.
+Las claves de Jira de estas filas están por decidir: las tareas de back de W03 ya están cerradas o en revisión.
+
 ## Cambios en despliegue, infraestructura y pipelines
 
 | Dónde | Cambio | Bloque | Costo |
@@ -166,7 +193,8 @@ Terraform se aplica desde el pipeline al hacer merge a `main` (ADR-09); nadie lo
 | 3 · UNDER y KYC | **Hecho en código (2026-10-22), rama `feat/KAN-213-hu-w03-bloque-3-under`** | ACL (137 pruebas), `stubs/kyc` (12), UNDER (35) y POLICY (48) en verde. En vivo con el ACL y el stub reales: aprobada, riesgo alto/desconocido y cobertura sobre el tope van a revisión, KYC rechazado rechaza, KYC lento (corte a ~740 ms) y caído (circuito abre al 3.er intento, ~17 ms) van a revisión con 200, y la sonda lo cierra sola. **Sin verificar:** el compose completo, el PR y el CI. Los umbrales de las reglas son supuestos, no reglas validadas. **Para el bloque 4:** POLICY debe guardar el `nivelRiesgo` de la oferta en la propuesta (hoy solo guarda tipo, prima, cobertura y plazo) para pasárselo a UNDER; `policy` ya figura en `servicios.json` llamando a `under` |
 | 4 · Cobro y emisión | **Hecho en código (2026-10-22), rama `feat/KAN-212-hu-w03-bloque-4-emision`** | POLICY (109 pruebas), BFF (220), ACL (137), UNDER (35) y PAYMENTS (93) en verde. Migración `0003` y el recorrido completo probados en vivo con Postgres real y los servicios reales (POLICY, UNDER, PAYMENTS, ACL Worker y los tres stubs): firma a póliza en ~210-435 ms con los stubs sanos; idempotente (firmar de nuevo y 8 `_emitir` simultáneos dejan 1 póliza y 1 cobro); KYC rechazado → `NO_EMITIDA` sin cobro; riesgo alto → `EN_REVISION` sin cobro; pasarela que rechaza → `PAGO_RECHAZADO` sin póliza; pasarela lenta → `PENDIENTE_PAGO` y, al conciliarse el cobro, `EMITIDA` con un solo cobro; UNDER caído → la propuesta espera y se emite al volver. **Sin verificar:** el compose completo, Cloud Tasks real (probado con un doble de la sesión HTTP y con el planificador local), `terraform plan`, el PR y el CI. Un fallo del caso «UNDER caído» en la primera corrida no se pudo explicar y no se repitió en tres corridas más. Los reintentos de un cobro rechazado (W05) no reabren la póliza todavía |
 | 5 · PDF y notificación | **Hecho en código (2026-10-22), rama `feat/KAN-215-hu-w03-bloque-5-pdf-notificacion`** | POLICY (145 pruebas), BFF (232), ACL (143) y `stubs/notificaciones` (12) en verde. En vivo con **AUTH, BFF, POLICY, UNDER, PAYMENTS, ACL y los cuatro stubs reales** y Postgres real, 27 comprobaciones por el BFF: aceptar, firmar, esperar `EMITIDA` (~300 ms con los stubs sanos), `poliza(id)`, descarga del PDF (con el nombre real del asegurado tomado de AUTH), un solo aviso con la plantilla, el id opaco y el enlace; otro CLIENTE no ve ni descarga (404), sin token 401, BACKOFFICE 403, ASESOR 200; con las notificaciones caídas la póliza se emite igual, el PDF se descarga y el aviso sale solo al volver (~2 s) con un solo aviso por póliza; riesgo alto no emite ni avisa; ni el nombre, ni la clave, ni el cliente opaco, ni la prima en ningún log. **Sin verificar:** el compose completo y Envoy (Docker apagado; el CI levanta el gateway), la sintaxis `path_translation` de GCP API Gateway (no hay un gateway real), el PR y el CI |
-| 6 · Pruebas y evidencia | **Hecho en local (2026-10-24), rama `feat/KAN-216-hu-w03-bloque-6-pruebas-evidencia`; falta staging** | k6 `ec005-emision.js` y `ec007-emision-pico.js`, colección Newman `hu-w03.postman_collection.json` (78 peticiones por el gateway) y tablero `hu-w03.json`. **Medido en local con el compose** (informes en `docs/evidencias/`): EC005 p95 370 ms con 301 emisiones, todas `EMITIDA` (umbral 1,5 s); EC007 p99 1.042 ms con 479 emisiones, todas `EMITIDA`, máximo 2.558 ms sin causa identificada (umbral 3 s); 0 % de 5xx; Newman dos veces seguidas sin fallos (153 aserciones). **Supuestos:** la carga (1 firma por segundo, 3× en pico) no está definida en el repo; local emite en línea, sin Cloud Tasks ni arranques en frío, así que es un piso optimista. **Hallazgos:** con la firma caída el primer intento por el gateway da 504 (corte de 700 ms); el BACKOFFICE recibe 403 al pedir el PDF aunque el CA-W03-08 propuesto lo nombra. **Ya estaban** las pruebas de contrato de `poliza.emitida` y del esquema, y la de reemplazo de adaptador de firma (EC031). **Falta:** la corrida en staging, confirmar la carga oficial y decidir si `policy`, `under` y los stubs de firma, KYC y notificaciones pasan a `instancia_fija` (cobra por hora) |
+| 6 · Pruebas y evidencia | **Hecho en local (2026-10-24), rama `feat/KAN-216-hu-w03-bloque-6-pruebas-evidencia`; falta staging** | k6 `ec005-emision.js` y `ec007-emision-pico.js`, colección Newman `hu-w03.postman_collection.json` (78 peticiones por el gateway) y tablero `hu-w03.json`. **Medido en local con el compose** (informes en `docs/evidencias/`): EC005 p95 370 ms con 301 emisiones, todas `EMITIDA` (umbral 1,5 s); EC007 p99 1.042 ms con 479 emisiones, todas `EMITIDA`, máximo 2.558 ms sin causa identificada (umbral 3 s); 0 % de 5xx; Newman dos veces seguidas sin fallos (153 aserciones). **Supuestos:** la carga (1 firma por segundo, 3× en pico) no está definida en el repo; local emite en línea, sin Cloud Tasks ni arranques en frío, así que es un piso optimista. **Hallazgos:** con la firma caída el primer intento por el gateway da 504 (corte de 700 ms); el BACKOFFICE recibe 403 al pedir el PDF (decisión del bloque 5; el CA-W03-08 oficial sólo habla del cliente, sin conflicto). **Ya estaban** las pruebas de contrato de `poliza.emitida` y del esquema, y la de reemplazo de adaptador de firma (EC031). **Falta:** la corrida en staging, confirmar la carga oficial y decidir si `policy`, `under` y los stubs de firma, KYC y notificaciones pasan a `instancia_fija` (cobra por hora) |
+| 7 · Brechas contra los criterios oficiales | **Propuesto (2026-10-24), sin empezar** | 9 brechas verificadas; la primera (504 de la firma por el gateway) incumple el CA-W03-05. Ver el bloque 7 |
 
 ## Decisiones abiertas
 
