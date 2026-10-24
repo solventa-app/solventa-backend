@@ -432,6 +432,17 @@ class PolicyFalso:
         self.polizas: dict[str, dict] = {}
         self.documentos_pedidos: list[tuple[str, str | None]] = []
         self.error_documento: Exception | None = None
+        self.reconciliaciones: list[str] = []
+        self.error_reconciliar: Exception | None = None
+        self.propuestas_conocidas: set[str] | None = None  # None = conoce cualquier id
+
+    async def reconciliar_cobro(self, propuesta_id: str) -> str | None:
+        self.reconciliaciones.append(propuesta_id)
+        if self.error_reconciliar is not None:
+            raise self.error_reconciliar
+        if self.propuestas_conocidas is not None and propuesta_id not in self.propuestas_conocidas:
+            return None  # un cobro que no es de W03
+        return "EMITIDA"
 
     async def crear_propuesta(self, oferta_id: str, actor_usuario_id: str | None) -> dict:
         self.llamadas.append((oferta_id, actor_usuario_id))

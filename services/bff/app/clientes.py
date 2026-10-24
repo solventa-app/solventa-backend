@@ -120,6 +120,8 @@ class PuertoPolicy(Protocol):
 
     async def generar_documento(self, poliza_id: str, asegurado: str | None) -> bytes | None: ...
 
+    async def reconciliar_cobro(self, propuesta_id: str) -> str | None: ...
+
     async def firmar_propuesta(
         self, propuesta_id: str, autoriza_cobro: bool, version_documento: str, firmante_id: str
     ) -> dict: ...
@@ -433,6 +435,19 @@ class ClientePolicyHttp:
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.content
+
+    async def reconciliar_cobro(self, propuesta_id: str) -> str | None:
+        """Le pide a POLICY que revise el cobro de esa propuesta y, si ya se cobró, emita la póliza
+        (decisión W03-14). Devuelve el estado de la propuesta, o `None` si el id no es de una
+        propuesta (un cobro que no es de W03). Un 5xx o un 503 llega como `ErrorServicio`."""
+        respuesta = await _pedir(
+            self._cliente, "POST", f"/propuestas/{propuesta_id}/_reconciliar-cobro"
+        )
+        if respuesta.status_code == 404:
+            return None
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()["estado"]
 
     async def documento_firma(self, propuesta_id: str) -> dict | None:
         """`None` si no existe o no se puede armar el documento (409)."""

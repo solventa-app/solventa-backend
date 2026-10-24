@@ -7,6 +7,16 @@ from dataclasses import dataclass
 from app.application.autenticacion_servicios import modo_desde_entorno
 
 
+def _entero_positivo(nombre: str, por_defecto: str) -> int:
+    try:
+        valor = int(os.getenv(nombre, por_defecto))
+    except ValueError:
+        raise ValueError(f"{nombre} debe ser un entero") from None
+    if valor <= 0:
+        raise ValueError(f"{nombre} debe ser mayor que 0")
+    return valor
+
+
 @dataclass(frozen=True)
 class Configuracion:
     database_url: str
@@ -36,6 +46,10 @@ class Configuracion:
     # Cada cuánto se vuelve a consultar un primer cobro pendiente, y cuántas veces como máximo.
     cobro_pendiente_demora_segundos: float = 10.0
     emision_max_intentos: int = 12
+    # Barrido de reconciliación de cobros (decisión W03-14): cuántas propuestas revisa por pasada y
+    # hasta cuántos días atrás mira un pago rechazado o pendiente.
+    reconciliacion_lote_max: int = 100
+    reconciliacion_dias: int = 30
     # El PDF avisa que la firma y el cobro son simulados. Apagarlo solo con un proveedor real.
     documento_ambiente_pruebas: bool = True
 
@@ -80,6 +94,8 @@ class Configuracion:
                 os.getenv("COBRO_PENDIENTE_DEMORA_SEGUNDOS", "10")
             ),
             emision_max_intentos=int(os.getenv("EMISION_MAX_INTENTOS", "12")),
+            reconciliacion_lote_max=_entero_positivo("RECONCILIACION_LOTE_MAX", "100"),
+            reconciliacion_dias=_entero_positivo("RECONCILIACION_DIAS", "30"),
             documento_ambiente_pruebas=os.getenv("DOCUMENTO_AMBIENTE_PRUEBAS", "true").lower()
             in ("1", "true", "yes", "si"),
         )

@@ -157,3 +157,39 @@ def test_generar_documento_devuelve_none_si_no_existe_y_falla_si_policy_falla() 
         asyncio.run(correr(httpx.Response(500)))
     with pytest.raises(ErrorServicio):
         asyncio.run(correr(httpx.Response(422)))
+
+
+def _reconciliar(responder):
+    rutas: list[tuple[str, str]] = []
+
+    def manejar(peticion: httpx.Request) -> httpx.Response:
+        rutas.append((peticion.method, peticion.url.path))
+        return responder()
+
+    async def correr() -> str | None:
+        transporte = httpx.MockTransport(manejar)
+        async with httpx.AsyncClient(base_url="http://policy", transport=transporte) as cliente:
+            return await ClientePolicyHttp(cliente).reconciliar_cobro("p-1")
+
+    return asyncio.run(correr()), rutas
+
+
+def test_reconciliar_pide_la_ruta_privada_de_la_propuesta_y_devuelve_su_estado() -> None:
+    estado, rutas = _reconciliar(lambda: httpx.Response(200, json={"estado": "EMITIDA"}))
+
+    assert estado == "EMITIDA"
+    assert rutas == [("POST", "/propuestas/p-1/_reconciliar-cobro")]
+
+
+def test_reconciliar_algo_que_no_es_una_propuesta_devuelve_none() -> None:
+    estado, _ = _reconciliar(
+        lambda: httpx.Response(404, json={"detail": "propuesta no encontrada"})
+    )
+
+    assert estado is None
+
+
+@pytest.mark.parametrize("estado", [500, 503])
+def test_reconciliar_con_policy_caido_es_error_de_servicio(estado: int) -> None:
+    with pytest.raises(ErrorServicio):
+        _reconciliar(lambda: httpx.Response(estado, json={"detail": "EMISION_PENDIENTE"}))
