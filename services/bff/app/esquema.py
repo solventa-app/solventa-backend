@@ -5,12 +5,11 @@ esquema con el contrato en ambos sentidos: si difieren, se corrige el código,
 no el contrato.
 
 Operaciones sin backend todavía (alcance del Sprint 1, KAN-24):
-- `oferta(id)` devuelve `null`: RATING ya guarda la oferta para aceptarla (HU-W03), pero nada
-  valida aún que quien la pide sea su titular, así que no se expone por esta consulta.
 - `contactarAsesor` es un MOCK que solo confirma.
 - HU-W03 (KAN-26): `aceptarOferta`, `propuesta`, `documentoFirma`, `firmarPropuesta` y `poliza` ya
   leen y escriben en POLICY (bloques 1, 2 y 4). `Poliza.documentoUrl` apunta a una ruta del BFF que
-  entrega el PDF y que llega con el bloque 5.
+  entrega el PDF y que llega con el bloque 5. `oferta(id)` lee la oferta que RATING guardó, con la
+  misma validación de dueño que `aceptarOferta`.
 `cobros` y `reintentarCobro` (KAN-28) leen y reintentan en PAYMENTS, que concilia
 con la pasarela antes de cobrar (ver `docs/cobros-conciliacion.md`).
 Ninguna produce un 5xx: los errores de GraphQL viajan con HTTP 200.
@@ -45,6 +44,7 @@ from app.servicio_suscripcion import (
     ErrorAceptacionDatos,
     ErrorFirmaDatos,
     ServicioSuscripcion,
+    explicar_estado,
 )
 from app.trazas_graphql import TrazaGraphQL
 
@@ -313,6 +313,21 @@ class MotivoErrorFirma(Enum):
 
 
 @strawberry.enum
+class MotivoEstadoPropuesta(Enum):
+    PAGO_FONDOS_INSUFICIENTES = "PAGO_FONDOS_INSUFICIENTES"
+    PAGO_RECHAZADO = "PAGO_RECHAZADO"
+    PAGO_EN_PROCESO = "PAGO_EN_PROCESO"
+    REVISION_MANUAL = "REVISION_MANUAL"
+    NO_APROBADA = "NO_APROBADA"
+
+
+@strawberry.enum
+class AccionSugerida(Enum):
+    ESPERAR = "ESPERAR"
+    CONTACTAR_ASESOR = "CONTACTAR_ASESOR"
+
+
+@strawberry.enum
 class EstadoPoliza(Enum):
     EMITIDA = "EMITIDA"
 
@@ -327,6 +342,10 @@ class Propuesta:
     plazo_meses: int
     actualizado_en: datetime
     poliza_id: strawberry.ID | None = None  # presente cuando el estado es EMITIDA
+    # Presentes en EN_REVISION, PENDIENTE_PAGO, PAGO_RECHAZADO y NO_EMITIDA (CA-W03-06).
+    motivo_estado: MotivoEstadoPropuesta | None = None
+    mensaje_estado: str | None = None
+    accion_sugerida: AccionSugerida | None = None
 
 
 @strawberry.type
@@ -503,6 +522,7 @@ def _monto(datos: dict | None) -> Monto | None:
 
 
 def _propuesta(datos: dict) -> Propuesta:
+    explicacion = explicar_estado(datos)
     return Propuesta(
         id=datos["id"],
         oferta_id=datos["oferta_id"],
@@ -512,6 +532,9 @@ def _propuesta(datos: dict) -> Propuesta:
         plazo_meses=datos.get("plazo_meses") or 0,
         actualizado_en=_fecha(datos["actualizado_en"]),
         poliza_id=datos.get("poliza_id"),
+        motivo_estado=MotivoEstadoPropuesta(explicacion.motivo) if explicacion else None,
+        mensaje_estado=explicacion.mensaje if explicacion else None,
+        accion_sugerida=AccionSugerida(explicacion.accion) if explicacion else None,
     )
 
 
@@ -665,10 +688,17 @@ RESUMEN_CANAL = {
 @strawberry.type
 class Query:
     @strawberry.field
-    def oferta(self, info: Info, id: strawberry.ID) -> Oferta | None:
-        exigir_rol(info, *CLIENTE_O_ASESOR)
-        # RATING no persiste ofertas todavía: no hay de dónde leerla.
-        return None
+    async def oferta(self, info: Info, id: strawberry.ID) -> Oferta | None:
+        """La oferta que RATING guardó (CA-W03-01), p. ej. para «ver fuentes» al aceptarla. `null`
+        si venció o no existe, o si no es del cliente o ya no tiene consentimiento vigente."""
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
+        try:
+            datos = await ServicioSuscripcion(info.context["clientes"]).obtener_oferta(
+                str(id), usuario
+            )
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_SUSCRIPCION_NO_DISPONIBLE) from error
+        return _oferta(datos) if datos else None
 
     @strawberry.field
     async def propuesta(self, info: Info, id: strawberry.ID) -> Propuesta | None:

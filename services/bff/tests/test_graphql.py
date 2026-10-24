@@ -128,7 +128,8 @@ def test_cobros_sin_token_exige_sesion_aun_en_modo_opcional() -> None:
     assert cuerpo["errors"][0]["message"] == "Debes iniciar sesión."
 
 
-def test_oferta_por_id_devuelve_null() -> None:
+def test_oferta_por_id_desconocida_devuelve_null() -> None:
+    # Con una oferta guardada sí la devuelve: ver test_suscripcion.py.
     with _cliente() as client:
         cuerpo = _post(client, '{ oferta(id: "o-1") { id } }')
 

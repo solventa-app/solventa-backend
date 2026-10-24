@@ -45,8 +45,8 @@ Tabla `usuarios` en la base `auth`: `id`, `usuario` (alias único), `hash_clave`
 | Operación | CLIENTE | ASESOR | BACKOFFICE | Sin token (modo `opcional`) |
 |---|---|---|---|---|
 | `registrarConsentimiento`, `revocarConsentimiento` | ✅ | ✅ (en nombre del cliente) | ❌ | ✅ como antes |
-| `solicitarOferta`, `oferta`, `contactarAsesor` | ✅ | ✅ | ❌ | ✅ como antes |
-| `aceptarOferta`, `propuesta`, `documentoFirma`, `poliza` (HU-W03; un CLIENTE solo ve y acepta lo suyo) | ✅ | ✅ (en nombre del cliente) | ❌ | ✅ como antes |
+| `solicitarOferta`, `contactarAsesor` | ✅ | ✅ | ❌ | ✅ como antes |
+| `oferta`, `aceptarOferta`, `propuesta`, `documentoFirma`, `poliza` (HU-W03; un CLIENTE solo ve y acepta lo suyo) | ✅ | ✅ (en nombre del cliente) | ❌ | ✅ como antes |
 | `firmarPropuesta` (HU-W03, no repudio: solo el CLIENTE titular) | ✅ | ❌ | ❌ | ❌ siempre exige token |
 | `GET /polizas/{id}/documento` (PDF de la póliza; REST, no GraphQL; un CLIENTE solo descarga la suya, una ajena da 404) | ✅ | ✅ | ❌ (403) | ❌ siempre exige token (401) |
 | `cobros`, `crearCobro`, `reintentarCobro` (KAN-28, datos de pagos) | ❌ | ❌ | ✅ | ❌ siempre exige token |
