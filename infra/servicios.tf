@@ -28,7 +28,7 @@ locals {
   servicios  = { for s in local.manifiesto : s.nombre => s }
   # Los servicios `dummy` del manifiesto (sustitutos temporales para el front, p. ej. stub-siniestros) corren solo en
   # local por ahora: no se crean en Cloud Run.
-  activos    = { for n, s in local.servicios : n => s if var.crear_servicios && !try(s.dummy, false) }
+  activos = { for n, s in local.servicios : n => s if var.crear_servicios && !try(s.dummy, false) }
 
   con_migracion  = { for n, s in local.activos : n => s if try(s.migracion, null) != null }
   publicos       = { for n, s in local.activos : n => s if try(s.publico, false) }
