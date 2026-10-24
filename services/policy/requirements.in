@@ -1,4 +1,4 @@
-fastapi==0.158.0
+fastapi==0.158.2
 uvicorn[standard]==0.54.0
 httpx==0.28.1
 prometheus-fastapi-instrumentator==8.1.0
@@ -13,4 +13,4 @@ requests==2.34.2
 opentelemetry-instrumentation-httpx==0.66b1
 opentelemetry-instrumentation-psycopg==0.66b1
 cryptography==50.0.2
-fpdf2==2.8.3
+fpdf2==2.8.9
