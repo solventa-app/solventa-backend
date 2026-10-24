@@ -160,5 +160,12 @@
     "puerto": 8106,
     "url_env": "NOTIFICACIONES_URL",
     "entorno": { "TRAZAS_GCP": "true" }
+  },
+  {
+    "nombre": "stub-siniestros",
+    "ruta": "stubs/siniestros",
+    "puerto": 8107,
+    "dummy": true,
+    "entorno": { "TRAZAS_GCP": "true" }
   }
 ]

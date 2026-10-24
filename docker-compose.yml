@@ -339,6 +339,12 @@ services:
     build: ./stubs/notificaciones
     ports: ["8106:8106"]
 
+  # Dummy de siniestros para el front de HU-W04 (KAN-27): sin BD ni tokens; solo local por ahora.
+  stub-siniestros:
+    <<: *servicio
+    build: ./stubs/siniestros
+    ports: ["8107:8107"]
+
   # -------------------------------------------------------- observabilidad
   prometheus:
     image: prom/prometheus:v2.55.1

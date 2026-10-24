@@ -92,6 +92,7 @@ jobs:
             stubs/firma: ['stubs/firma/**']
             stubs/kyc: ['stubs/kyc/**']
             stubs/notificaciones: ['stubs/notificaciones/**']
+            stubs/siniestros: ['stubs/siniestros/**']
       - name: Matrices de servicios afectados
         id: matriz
         env:

@@ -141,6 +141,20 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `vigenciaHasta`).
 - Afecta al frontend: sí (pantallas W03-01 a W03-05). Requiere el PR gemelo en `solventa-frontend-web`.
 
+## v0.13 — 2026-10-23
+
+- KAN-27 (HU-W04, siniestros asistidos y peritaje): contrato nuevo `contracts/graphql/siniestros.graphql` del **dummy**
+  `stubs/siniestros`. Es un microservicio aparte (sin base de datos ni tokens) que expone su propio GraphQL en
+  `/graphql/siniestros`; **no** cambia `schema.graphql` ni el BFF.
+- Consultas `siniestros(estado)`, `siniestro(id)` y `peritos(siniestroId)`; mutaciones `aprobarSiniestro`,
+  `rechazarSiniestro(id, motivo, comentario)` y `derivarSiniestro(id, peritoId, instrucciones)`, que devuelven
+  `ResultadoResolucion = Siniestro | ErrorSiniestro`. `EstadoSiniestro`: `PENDIENTE`, `EN_REVISION`, `APROBADO`,
+  `RECHAZADO` (derivar a perito deja `EN_REVISION`).
+- `Poliza` del dummy copia la forma de la tabla `polizas` y del tipo `Poliza` de HU-W03 (ver
+  `stubs/siniestros/app/datos/contrato-poliza.json`); el número sigue el formato `SOL-<año>-<6 dígitos>`.
+- Temporal: se reemplaza por el contrato del servicio real de siniestros. Por ahora solo corre en local.
+- Afecta al frontend: sí (pantallas W04-01 a W04-03c). Requiere el PR gemelo en `solventa-frontend-web`.
+
 ## v0.13 — 2026-10-24
 
 - KAN-26 (HU-W03, CA-W03-01 y D-11): **sin cambios de campos ni de tipos**; se aclara una semántica. Una oferta
