@@ -243,3 +243,29 @@ def test_el_barrido_respeta_el_tamano_del_lote() -> None:
     resumen = servicio.reconciliar_pendientes()
 
     assert resumen["revisadas"] == 1
+
+
+# ---------------------------------------------------------------- CA-W03-09: sin datos en los logs
+
+
+def test_los_logs_de_la_emision_y_la_reconciliacion_no_llevan_datos_personales(caplog) -> None:
+    # CA-W03-09 / regla #6: ni el cliente, ni el firmante, ni el dinero, ni el medio de pago, ni el
+    # id de la propuesta en claro. Se recorre todo: rechazo, reapertura, emisión y barrido.
+    caplog.set_level("DEBUG")
+    payments = PaymentsFalso(["rechazado", "cobrado"])
+    servicio, _, _, _, _, propuesta_id = _armar(payments)
+    servicio.emitir(propuesta_id)
+    servicio.reconciliar_cobro(propuesta_id)
+    servicio.reconciliar_pendientes()
+
+    registro = caplog.text
+    assert "póliza emitida" in registro  # se está mirando algo: el flujo sí escribe sus logs
+    for secreto in (
+        "cliente-opaco",  # el cliente
+        "usuario-1",  # quien firmó
+        "185000",  # la prima
+        "200000000",  # la cobertura
+        "tok_recaudo",  # el medio de pago
+        propuesta_id,  # el id de la propuesta va opaco (id_opaco)
+    ):
+        assert secreto not in registro, secreto

@@ -32,3 +32,4 @@ de los otros dos; datos de Jira y del plan de trabajo, metodología en `release-
 carga supuesta y límites de una corrida local. `HU-W03-newman-EC009-EC010-2026-10-24.md` — recorrido de extremo a extremo por el gateway
 con Newman, autorización por rol y degradación de firma, KYC, pasarela y notificaciones, con los hallazgos. `resumen-k6-2026-10-24.md` —
 resumen que deja `scripts/correr_k6.sh`. Todas son corridas locales, no de staging.
+`CA-W03-05-firma`, `CA-W03-01-oferta-aceptada`, `CA-W03-06-reapertura` y `EC022-policy` (todas de 2026-10-24) — los informes de las brechas del bloque 7 contra los criterios oficiales: la firma sin 5xx por el gateway, la versión de reglas y la oferta preliminar, la reapertura de una póliza con el pago recuperado, y el cifrado de POLICY con sus logs. Corridas locales.
