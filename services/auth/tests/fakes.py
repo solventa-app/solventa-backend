@@ -28,6 +28,8 @@ class RepositorioUsuariosMemoria:
         hash_clave: str,
         rol: str,
         nombre_cifrado: str | None = None,
+        correo_cifrado: str | None = None,
+        telefono_cifrado: str | None = None,
     ) -> dict | None:
         if any(f["usuario"] == alias for f in self.filas.values()):
             return None
@@ -41,6 +43,8 @@ class RepositorioUsuariosMemoria:
             "bloqueado_hasta": None,
             "creado_en": datetime.now(UTC),
             "nombre_cifrado": nombre_cifrado,
+            "correo_cifrado": correo_cifrado,
+            "telefono_cifrado": telefono_cifrado,
             "idioma": "ES",
             "moneda": "COP",
         }
@@ -86,6 +90,21 @@ class RepositorioUsuariosMemoria:
             return None
         self.filas[usuario_id] |= {"idioma": idioma, "moneda": moneda}
         return dict(self.filas[usuario_id])
+
+    def actualizar_contacto(
+        self, usuario_id: str, correo_cifrado: str | None, telefono_cifrado: str | None
+    ) -> dict | None:
+        if usuario_id not in self.filas:
+            return None
+        fila = self.filas[usuario_id]
+        # Como el COALESCE de Postgres: lo que no llega se conserva.
+        fila["correo_cifrado"] = (
+            correo_cifrado if correo_cifrado is not None else fila["correo_cifrado"]
+        )
+        fila["telefono_cifrado"] = (
+            telefono_cifrado if telefono_cifrado is not None else fila["telefono_cifrado"]
+        )
+        return dict(fila)
 
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int:
         fila = self.filas[usuario_id]
