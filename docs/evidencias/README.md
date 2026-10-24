@@ -21,6 +21,8 @@ tiempo real de lo cerrado en la semana 1, vía API de Jira.
 contra el stack real en docker compose: oferta completa, degradada, timeout duro, consentimiento
 revocado. Capturas reales, no inventadas.
 
+`EC017-2026-10-18.md` — batch nocturno de RISK (HA-ESC-004): caudal de una tarea, reparto entre 4 tareas contra MongoDB real y efecto sobre el p95 de EC003, medidos en local a escala reducida el 2026-10-24, con la proyección, sus límites y el riesgo de Atlas M0 (100 operaciones por segundo, sin medir). No es evidencia de staging.
+
 ## Release burndown
 
 `release-burndown.png` — puntos que le faltan al release (96 pts, 3 sprints) al cierre de cada sprint: el Sprint 1 real y el plan
