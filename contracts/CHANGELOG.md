@@ -150,3 +150,13 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `aceptarOferta` con la misma oferta: sería el mismo error. Los demás motivos no cambian.
 - Afecta al frontend: sí, solo en cómo trata ese error (mostrar «Recalcular» y llevar a una cotización nueva). Aún no
   hay una pantalla W03 construida que lo use.
+
+## v0.14 — 2026-10-24
+
+- KAN-26 (HU-W03, CA-W03-06 y decisión W03-14): **sin cambios de campos ni de tipos**; se aclara una semántica.
+  `PAGO_RECHAZADO` deja de ser un estado final: si el primer cobro se recupera después (el back-office reintenta un cobro
+  rechazado, o la pasarela cobra uno pendiente tras agotar las consultas), POLICY reabre la propuesta y pasa a `EMITIDA`,
+  con su póliza y un solo aviso al cliente. Lo reabren el back-office y el proceso de reconciliación; **el cliente no**
+  puede, y no hay mutación nueva.
+- Afecta al frontend: sí, en cómo trata la consulta de `propuesta`. Un cliente que ve `PAGO_RECHAZADO` y vuelve a
+  consultar puede encontrar `EMITIDA`; no debe tratar el rechazo como definitivo. Aún no hay una pantalla W03 que lo use.

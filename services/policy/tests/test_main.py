@@ -309,3 +309,66 @@ def test_el_documento_solo_se_pide_por_post_para_que_el_nombre_no_viaje_en_la_ur
     }
 
     assert rutas["/polizas/{poliza_id}/documento"] == {"POST"}
+
+
+# ---------------------------------------------------------------- reconciliación de cobros (W03-14)
+
+
+def test_reconciliar_un_pago_rechazado_que_se_recupero_emite_la_poliza() -> None:
+    with _cliente(payments=PaymentsFalso(["rechazado", "cobrado"])) as client:
+        propuesta_id = _firmada(client)
+        assert client.post(f"/propuestas/{propuesta_id}/_emitir").json() == {
+            "estado": "PAGO_RECHAZADO"
+        }
+        r = client.post(f"/propuestas/{propuesta_id}/_reconciliar-cobro")
+        propuesta = client.get(f"/propuestas/{propuesta_id}").json()
+
+    assert r.status_code == 200
+    assert r.json() == {"estado": "EMITIDA"}
+    assert propuesta["poliza_id"] is not None
+
+
+def test_reconciliar_algo_que_no_es_una_propuesta_responde_404() -> None:
+    # El BFF avisa por cada cobro que el back-office reintenta, también los que no son de W03.
+    with _cliente() as client:
+        assert client.post("/propuestas/POL-001/_reconciliar-cobro").status_code == 404
+
+
+def test_reconciliar_con_payments_caido_responde_503() -> None:
+    with _cliente(payments=PaymentsFalso(["rechazado"])) as client:
+        propuesta_id = _firmada(client)
+        client.post(f"/propuestas/{propuesta_id}/_emitir")
+        client.app.state.servicio_emision._payments.cae = True
+        r = client.post(f"/propuestas/{propuesta_id}/_reconciliar-cobro")
+
+    assert r.status_code == 503
+    assert r.json()["detail"] == "EMISION_PENDIENTE"
+
+
+def test_el_barrido_responde_el_resumen() -> None:
+    with _cliente(payments=PaymentsFalso(["rechazado", "cobrado"])) as client:
+        propuesta_id = _firmada(client)
+        client.post(f"/propuestas/{propuesta_id}/_emitir")
+        r = client.post("/reconciliacion/cobros")
+
+    assert r.status_code == 200
+    assert r.json() == {
+        "revisadas": 1,
+        "emitidas": 1,
+        "rechazadas": 0,
+        "pendientes": 0,
+        "fallidas": 0,
+    }
+
+
+def test_el_barrido_sin_nada_que_revisar_responde_ceros() -> None:
+    with _cliente() as client:
+        r = client.post("/reconciliacion/cobros")
+
+    assert r.json() == {
+        "revisadas": 0,
+        "emitidas": 0,
+        "rechazadas": 0,
+        "pendientes": 0,
+        "fallidas": 0,
+    }

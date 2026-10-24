@@ -198,7 +198,8 @@ enum EstadoPropuesta {
   EN_EMISION # firmada; se está decidiendo, cobrando y emitiendo
   EN_REVISION # la suscripción pasó a revisión manual
   PENDIENTE_PAGO # el primer cobro quedó pendiente; se emite sola cuando se cobre
-  PAGO_RECHAZADO # el primer cobro fue rechazado; no hay póliza
+  PAGO_RECHAZADO # el primer cobro fue rechazado; no hay póliza. No es final: si el cobro se recupera,
+  # el back-office o la reconciliación la reabren y pasa a EMITIDA (el cliente no la reabre)
   NO_EMITIDA # la suscripción rechazó la propuesta
   EMITIDA # hay póliza (ver Propuesta.polizaId)
 }

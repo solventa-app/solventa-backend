@@ -27,6 +27,7 @@ cliente.
 ## Emisión de la póliza (bloque 4)
 
 `POST /propuestas/{id}/_emitir` (privado: lo invoca Cloud Tasks; en local, un hilo) avanza la propuesta. Idempotente.
+`POST /propuestas/{id}/_reconciliar-cobro` y `POST /reconciliacion/cobros` (privados) reabren una propuesta cuyo pago se recuperó (ver más abajo).
 
 ```
 EN_EMISION ──UNDER──► RECHAZADA        ─► NO_EMITIDA
@@ -41,6 +42,15 @@ EN_EMISION ──UNDER──► RECHAZADA        ─► NO_EMITIDA
 - **Idempotencia:** la orden de cobro lleva un `id_intento_cobro` derivado de la propuesta (`uuid5`), así que PAYMENTS
   devuelve el cobro que ya existe sin cobrar de nuevo; así se vuelve a consultar un cobro pendiente. La póliza es `UNIQUE`
   por propuesta y el cambio de estado es condicional. Verificado: 8 emisiones simultáneas dejan 1 póliza y 1 cobro.
+- **Reabrir un pago que se recuperó (CA-W03-06, W03-14):** `PAGO_RECHAZADO` no se emite por la emisión normal, pero tampoco es
+  final. Si el back-office reintenta el cobro (el BFF avisa a `_reconciliar-cobro`) o corre el barrido (`POST /reconciliacion/cobros`),
+  POLICY vuelve a enviar la misma orden de cobro —que PAYMENTS contesta con el cobro que ya existe, **sin cobrar de nuevo**— y,
+  si ya está `cobrado`, emite la póliza (idempotente, con un solo aviso). Si sigue rechazado no cambia nada; si el cobro se está
+  reintentando vuelve a `PENDIENTE_PAGO` con otra tanda de consultas. **Solo el back-office y la reconciliación lo disparan: el
+  cliente no.** El barrido revisa hasta `RECONCILIACION_LOTE_MAX` propuestas de los últimos `RECONCILIACION_DIAS` días y devuelve un
+  resumen (`revisadas`, `emitidas`, `rechazadas`, `pendientes`, `fallidas`); una que falle no detiene a las demás. En la nube lo
+  dispara Cloud Scheduler (`reconciliacion-cobros-policy`, `infra/tareas.tf`, cada `reconciliacion_cobros_cron`: 15 min por defecto; se crea al aplicar la
+  infraestructura desde `main`); en local se llama a mano.
 - **Fallas transitorias:** si UNDER o PAYMENTS no responden, `_emitir` contesta `503 EMISION_PENDIENTE`, la propuesta no
   cambia y Cloud Tasks reintenta (o el hilo local). Nunca se decide a ciegas ni se da el cobro por hecho.
 - **Quién dispara:** `DISPARADOR=bucle` (local y CI) usa un hilo; `externo` (Cloud Run) usa Cloud Tasks (cola
@@ -104,6 +114,7 @@ EN_EMISION ──UNDER──► RECHAZADA        ─► NO_EMITIDA
 | `DISPARADOR` | `bucle` | `externo` en Cloud Run (los fija Terraform): `GCP_PROYECTO`, `GCP_REGION`, `TAREAS_CUENTA`, `URL_PROPIA`, `TAREAS_COLA` |
 | `DOCUMENTO_AMBIENTE_PRUEBAS` | `true` | Pie del PDF que avisa que la firma y el cobro son simulados |
 | `COBRO_PENDIENTE_DEMORA_SEGUNDOS`, `EMISION_MAX_INTENTOS` | `10`, `12` | Cada cuánto se vuelve a consultar un cobro pendiente y cuántas veces |
+| `RECONCILIACION_LOTE_MAX`, `RECONCILIACION_DIAS` | `100`, `30` | Cuántas propuestas revisa el barrido por pasada y hasta cuántos días atrás mira un pago rechazado o pendiente |
 | `AUTENTICACION_SERVICIOS` | `ninguna` | `id_token` en Cloud Run (RATING, el ACL, UNDER y PAYMENTS son privados) |
 
 ## Migraciones y pruebas

@@ -179,6 +179,19 @@ class ServicioSuscripcion:
             logger.warning("POLICY no disponible al firmar error=%s", error)
             return _error_firma("SERVICIO_FIRMA_NO_DISPONIBLE")
 
+    async def reconciliar_cobro(self, poliza_id: str) -> None:
+        """El back-office acaba de reintentar el cobro de `poliza_id`: se lo avisa a POLICY para
+        que, si es el primer cobro de una propuesta y ya se cobró, emita la póliza (W03-14).
+        De mejor esfuerzo: si POLICY no responde, el reintento del back-office no falla; el barrido
+        de reconciliación la retoma. Para un cobro que no es de W03, POLICY no lo conoce y no pasa
+        nada."""
+        try:
+            await self._clientes.policy.reconciliar_cobro(poliza_id)
+        except ErrorServicio as error:
+            logger.warning(
+                "POLICY no pudo reconciliar el cobro poliza=%s error=%s", id_opaco(poliza_id), error
+            )
+
     async def obtener_poliza(self, poliza_id: str, usuario: UsuarioActual | None) -> dict | None:
         """La póliza, o `None` si no existe o, para un CLIENTE, si la aceptó otra persona. Si POLICY
         no responde lanza `ErrorServicio`: el llamador no debe confundirlo con "no existe"."""

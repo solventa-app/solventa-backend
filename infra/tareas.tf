@@ -230,3 +230,45 @@ resource "google_cloud_scheduler_job" "sonda_acl" {
     }
   }
 }
+
+# ------------------------------------------------------------------ reconciliación de cobros de las pólizas (Cloud Scheduler)
+# Decisión W03-14 (CA-W03-06): un pago rechazado o pendiente que se cobra después reabre la póliza. Lo disparan el
+# back-office (el BFF avisa a POLICY tras `reintentarCobro`) y este trabajo, que llama al barrido de POLICY cada
+# `reconciliacion_cobros_cron`. Reutiliza la cuenta `programador` (la de la sonda); solo necesita poder invocar a POLICY,
+# que es privado. El barrido es idempotente: una pasada que no termina la retoma la siguiente.
+resource "google_cloud_run_v2_service_iam_member" "programador_invoca_policy" {
+  count    = local.hay_tareas ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.servicio["policy"].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.programador[0].email}"
+}
+
+resource "google_cloud_scheduler_job" "reconciliacion_cobros_policy" {
+  count       = local.hay_tareas ? 1 : 0
+  depends_on  = [google_project_service.tareas_apis]
+  project     = var.project_id
+  region      = var.region
+  name        = "reconciliacion-cobros-policy"
+  description = "Una pasada de la reconciliación de cobros de POLICY: emite la póliza de las propuestas cuyo pago rechazado o pendiente ya se cobró"
+  schedule    = var.reconciliacion_cobros_cron
+  time_zone   = "America/Bogota"
+
+  # El barrido recorre un lote en serie y cada propuesta consulta a PAYMENTS: con margen sobre una pasada normal.
+  attempt_deadline = "300s"
+
+  retry_config {
+    retry_count = 0
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.url["policy"]}/reconciliacion/cobros"
+
+    oidc_token {
+      service_account_email = google_service_account.programador[0].email
+      audience              = local.url["policy"]
+    }
+  }
+}
