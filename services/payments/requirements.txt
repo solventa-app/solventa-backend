@@ -373,9 +373,9 @@ cryptography==50.0.2 \
     # via
     #   -r requirements.in
     #   google-auth
-fastapi==0.158.0 \
-    --hash=sha256:890440689039bdadb06131bafae81eb63468a0dd9f6185fcec47afb69424ea6a \
-    --hash=sha256:c5127864026eca80a419047caba7760d561160904445fd825a60b6285b86ed0b
+fastapi==0.158.2 \
+    --hash=sha256:b06b177c35b7739c3d9ca246ebc366026a830b6de81f7eac4645813fcf5a0894 \
+    --hash=sha256:d65d72a4a93858a6ff703360823bd0bf75e00773de32dcda166fd8131436e2c0
     # via -r requirements.in
 google-auth==2.62.0 \
     --hash=sha256:0bef0ce54bdf9ce226c5d66e4264413bd918141c31bbe49fb52eac882f513d69 \
