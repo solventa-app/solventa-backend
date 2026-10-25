@@ -13,7 +13,7 @@ se actualiza este archivo en el mismo cambio.
 | `risk` | 8002 | Escribe el perfil de riesgo; devuelve `operationTime`; cifrado de campo | MongoDB primaria | 1 |
 | `rating` | 8003 | Calcula la oferta; lee de la secundaria; caché Redis | — (solo lee) | 1 |
 | `payments` | 8004 | Cobros con pasarela tokenizada, idempotencia, reintento con conciliación, búsqueda para el back-office | PostgreSQL `payments` | 1 |
-| `policy` | 8007 | Propuestas y pólizas (HU-W03): acepta la oferta COMPLETA con el precio de RATING, firma con no repudio, emite la póliza tras UNDER y el primer cobro, genera su PDF y avisa al cliente; cifrado de campo | PostgreSQL `policy` | 2 |
+| `policy` | 8007 | Propuestas y pólizas (HU-W03): acepta la oferta COMPLETA con el precio de RATING, firma con no repudio, emite la póliza tras UNDER y el primer cobro, genera su PDF y avisa al cliente con el PDF adjunto (contacto y nombre desde AUTH, sin guardarlos); cifrado de campo | PostgreSQL `policy` | 2 |
 | `acl-worker` | 8005 | Único contacto con proveedores externos; hexagonal; Circuit Breaker (700 ms) | Redis (estado del circuito y caché) | 1 |
 | `stubs/open-finance` | 8101 | Proveedor simulado (2 fuentes) | — | 1 |
 | `stubs/open-data` | 8102 | Proveedor simulado (3 fuentes) | — | 1 |

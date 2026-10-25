@@ -30,7 +30,8 @@ _COLUMNAS = (
 _POLIZA_ID = "(SELECT p.id FROM polizas p WHERE p.propuesta_id = propuestas.id) AS poliza_id"
 
 _COLUMNAS_POLIZA = (
-    "id, propuesta_id, numero, cliente_id, estado, vigencia_desde, vigencia_hasta, notificada_en"
+    "id, propuesta_id, numero, cliente_id, estado, vigencia_desde, vigencia_hasta, notificada_en, "
+    "aviso_omitido_motivo"
 )
 
 _COLUMNAS_EVIDENCIA = (
@@ -221,6 +222,16 @@ class RepositorioPropuestasPostgres:
                 "UPDATE polizas SET notificada_en = now() "
                 "WHERE id = %(id)s AND notificada_en IS NULL",
                 {"id": poliza_id},
+            )
+
+    def marcar_aviso_omitido(self, poliza_id: str, motivo: str) -> None:
+        """Registra que al cliente **no se le va a avisar** y por qué (W03-18). Solo si todavía no
+        se avisó ni se omitió: no pisa un resultado anterior."""
+        with self._pool.connection() as conexion:
+            conexion.execute(
+                "UPDATE polizas SET aviso_omitido_motivo = %(motivo)s "
+                "WHERE id = %(id)s AND notificada_en IS NULL AND aviso_omitido_motivo IS NULL",
+                {"id": poliza_id, "motivo": motivo},
             )
 
     def obtener_evidencia(self, propuesta_id: str) -> dict[str, Any] | None:

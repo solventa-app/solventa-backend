@@ -83,7 +83,7 @@ comparten variables.
 
 | Carpeta | Qué verifica | Criterio / escenario |
 |---|---|---|
-| 0. Preparación | El BACKOFFICE crea un CLIENTE titular, otro CLIENTE ajeno y un ASESOR (alias únicos por corrida) | — |
+| 0. Preparación | El BACKOFFICE crea un CLIENTE titular **con correo** (sin contacto el aviso de la póliza se omite, W03-18), otro CLIENTE ajeno y un ASESOR (alias únicos por corrida) | — |
 | 1. Camino feliz | Solicitar → `aceptarOferta` (la prima es la de la oferta; aceptar dos veces da la misma propuesta) → `documentoFirma` → firma rechazada sin autorizar el cobro o con una versión vieja (la propuesta sigue `ACEPTADA`) → firma → firmar otra vez da la misma evidencia → espera a `EMITIDA` → `poliza(id)` → PDF por el gateway → el aviso salió una sola vez | CA-W03-01 a 03, 07, 08 |
 | 2. Autorización | Otro CLIENTE no ve ni acepta ni firma ni descarga lo ajeno; un ASESOR no firma pero sí descarga el PDF; BACKOFFICE 403 y sin token 401 en el PDF | W03-8 (decisión), CA-W03-03 |
 | 3. Errores controlados | Oferta, propuesta y póliza inexistentes: error tipado o `null`, nunca 5xx | regla 4 |

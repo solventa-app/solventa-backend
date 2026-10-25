@@ -22,6 +22,7 @@
                   "let sufijo = '';",
                   "for (let i = 0; i < 8; i++) sufijo += letras[Math.floor(Math.random() * letras.length)];",
                   "pm.collectionVariables.set('alias_titular', 'titular.newman.' + sufijo);",
+                  "pm.collectionVariables.set('correo_titular', 'titular.' + sufijo + '@ejemplo.co');",
                   "pm.collectionVariables.set('alias_ajeno', 'ajeno.newman.' + sufijo);",
                   "pm.collectionVariables.set('alias_asesor', 'asesor.newman.' + sufijo);",
                   "pm.collectionVariables.set('sondeo', 0);"
@@ -75,7 +76,7 @@
           }
         },
         {
-          "name": "0.2 crearUsuario CLIENTE (titular)",
+          "name": "0.2 crearUsuario CLIENTE (titular, con correo)",
           "event": [
             {
               "listen": "test",
@@ -91,6 +92,10 @@
                   "  pm.expect(r.__typename).to.eql('Usuario');",
                   "  pm.expect(r.rol).to.eql('CLIENTE');",
                   "  pm.expect(r.estado).to.eql('ACTIVO');",
+                  "});",
+                  "pm.test('queda con contacto y la respuesta no lo devuelve', () => {",
+                  "  pm.expect(r.tieneContacto).to.be.true;",
+                  "  pm.expect(JSON.stringify(cuerpo)).to.not.include(pm.collectionVariables.get('correo_titular'));",
                   "});"
                 ]
               }
@@ -116,7 +121,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_titular}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Titular\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_titular}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Titular\",\n      \"correo\": \"{{correo_titular}}\"\n    }\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -172,7 +177,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_ajeno}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Ajeno\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_ajeno}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Ajeno\"\n    }\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -228,7 +233,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\"\n    }\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -1188,6 +1193,19 @@
                   "  pm.test('usa la plantilla poliza-emitida y no lleva el nombre del cliente', () => {",
                   "    pm.expect(avisos[0].plantilla).to.eql('poliza-emitida');",
                   "    pm.expect(JSON.stringify(avisos[0])).to.not.include('Newman');",
+                  "  });",
+                  "  // Bloque 8 (W03-16): sale por correo, al correo que dejó el titular, con la póliza en PDF adjunta.",
+                  "  pm.test('sale por correo con el PDF de la póliza adjunto (CA-W03-08)', () => {",
+                  "    const huella = CryptoJS.SHA256(pm.collectionVariables.get('correo_titular')).toString().slice(0, 12);",
+                  "    pm.expect(avisos[0].canal).to.eql('correo');",
+                  "    pm.expect(avisos[0].destino_huella).to.eql(huella);",
+                  "    pm.expect(avisos[0].adjuntos).to.have.lengthOf(1);",
+                  "    pm.expect(avisos[0].adjuntos[0].tipo).to.eql('application/pdf');",
+                  "    pm.expect(avisos[0].adjuntos[0].es_pdf).to.be.true;",
+                  "    pm.expect(avisos[0].adjuntos[0].bytes).to.be.above(1000);",
+                  "  });",
+                  "  pm.test('el stub no guardó ni el correo ni el contenido del PDF', () => {",
+                  "    pm.expect(JSON.stringify(avisos[0])).to.not.include('@ejemplo.co');",
                   "  });",
                   "}"
                 ]
@@ -4371,6 +4389,19 @@
                   "    pm.expect(avisos[0].plantilla).to.eql('poliza-emitida');",
                   "    pm.expect(JSON.stringify(avisos[0])).to.not.include('Newman');",
                   "  });",
+                  "  // Bloque 8 (W03-16): sale por correo, al correo que dejó el titular, con la póliza en PDF adjunta.",
+                  "  pm.test('sale por correo con el PDF de la póliza adjunto (CA-W03-08)', () => {",
+                  "    const huella = CryptoJS.SHA256(pm.collectionVariables.get('correo_titular')).toString().slice(0, 12);",
+                  "    pm.expect(avisos[0].canal).to.eql('correo');",
+                  "    pm.expect(avisos[0].destino_huella).to.eql(huella);",
+                  "    pm.expect(avisos[0].adjuntos).to.have.lengthOf(1);",
+                  "    pm.expect(avisos[0].adjuntos[0].tipo).to.eql('application/pdf');",
+                  "    pm.expect(avisos[0].adjuntos[0].es_pdf).to.be.true;",
+                  "    pm.expect(avisos[0].adjuntos[0].bytes).to.be.above(1000);",
+                  "  });",
+                  "  pm.test('el stub no guardó ni el correo ni el contenido del PDF', () => {",
+                  "    pm.expect(JSON.stringify(avisos[0])).to.not.include('@ejemplo.co');",
+                  "  });",
                   "}"
                 ]
               }
@@ -5764,6 +5795,19 @@
                   "    pm.expect(avisos[0].plantilla).to.eql('poliza-emitida');",
                   "    pm.expect(JSON.stringify(avisos[0])).to.not.include('Newman');",
                   "  });",
+                  "  // Bloque 8 (W03-16): sale por correo, al correo que dejó el titular, con la póliza en PDF adjunta.",
+                  "  pm.test('sale por correo con el PDF de la póliza adjunto (CA-W03-08)', () => {",
+                  "    const huella = CryptoJS.SHA256(pm.collectionVariables.get('correo_titular')).toString().slice(0, 12);",
+                  "    pm.expect(avisos[0].canal).to.eql('correo');",
+                  "    pm.expect(avisos[0].destino_huella).to.eql(huella);",
+                  "    pm.expect(avisos[0].adjuntos).to.have.lengthOf(1);",
+                  "    pm.expect(avisos[0].adjuntos[0].tipo).to.eql('application/pdf');",
+                  "    pm.expect(avisos[0].adjuntos[0].es_pdf).to.be.true;",
+                  "    pm.expect(avisos[0].adjuntos[0].bytes).to.be.above(1000);",
+                  "  });",
+                  "  pm.test('el stub no guardó ni el correo ni el contenido del PDF', () => {",
+                  "    pm.expect(JSON.stringify(avisos[0])).to.not.include('@ejemplo.co');",
+                  "  });",
                   "}"
                 ]
               }
@@ -5870,6 +5914,19 @@
                   "  pm.test('usa la plantilla poliza-emitida y no lleva el nombre del cliente', () => {",
                   "    pm.expect(avisos[0].plantilla).to.eql('poliza-emitida');",
                   "    pm.expect(JSON.stringify(avisos[0])).to.not.include('Newman');",
+                  "  });",
+                  "  // Bloque 8 (W03-16): sale por correo, al correo que dejó el titular, con la póliza en PDF adjunta.",
+                  "  pm.test('sale por correo con el PDF de la póliza adjunto (CA-W03-08)', () => {",
+                  "    const huella = CryptoJS.SHA256(pm.collectionVariables.get('correo_titular')).toString().slice(0, 12);",
+                  "    pm.expect(avisos[0].canal).to.eql('correo');",
+                  "    pm.expect(avisos[0].destino_huella).to.eql(huella);",
+                  "    pm.expect(avisos[0].adjuntos).to.have.lengthOf(1);",
+                  "    pm.expect(avisos[0].adjuntos[0].tipo).to.eql('application/pdf');",
+                  "    pm.expect(avisos[0].adjuntos[0].es_pdf).to.be.true;",
+                  "    pm.expect(avisos[0].adjuntos[0].bytes).to.be.above(1000);",
+                  "  });",
+                  "  pm.test('el stub no guardó ni el correo ni el contenido del PDF', () => {",
+                  "    pm.expect(JSON.stringify(avisos[0])).to.not.include('@ejemplo.co');",
                   "  });",
                   "}"
                 ]
