@@ -43,8 +43,8 @@ EC031 (reemplazo de adaptador).
 | W03-14 | Quién reabre una póliza con cobro rechazado o pendiente agotado (CA-W03-06) | **Solo el back-office y los procesos de reconciliación**, no el cliente. La reapertura es idempotente. Hecho en código y en Terraform el 2026-10-24 (`docs/evidencias/CA-W03-06-reapertura-2026-10-24.md`) | **Cerrada** |
 | W03-15 | Textos de «qué hacer» y del aviso (CA-W03-06 y 08) | Revisado en Figma `Solventa-web-Final` el 2026-10-24: la pantalla «Resultado del pago» **no existe** (hay que crearla, D-03) y W03-04 dice que el documento «llega por correo o notificación». Los textos que ya sirve el BFF (`mensajeEstado`, tabla en `servicio_suscripcion.py`) son una **propuesta** para ajustar con UX; cambiarlos es editar una tabla y su traducción | Propuesta |
 | W03-16 | Adjuntar el PDF al aviso de póliza emitida (CA-W03-08) | **Decidido (2026-10-24): el aviso llevará el PDF, en un bloque nuevo (8).** La recomendación del análisis era dejar solo el enlace, pero se eligió adjuntarlo, con tres decisiones de diseño: **AUTH guarda el correo y el teléfono**, **el proveedor sí puede recibir el PDF** (se cambia la regla del puerto) y **POLICY pide el nombre a AUTH al emitir**. Mientras no se construya, el aviso sigue llevando el enlace | **Cerrada; bloque 8 planeado** |
-| W03-17 | Quién captura el correo y el teléfono del cliente (bloque 8) | Propuesta: `crearUsuario` (BACKOFFICE) y una mutación del propio usuario; exige una pantalla en Web. Falta decidir correo, teléfono o ambos | Propuesta |
-| W03-18 | Cliente sin contacto (bloque 8) | Propuesta: la póliza se emite y el aviso se omite con el motivo `SIN_CONTACTO`, sin reintentar para siempre | Propuesta |
+| W03-17 | Quién captura el correo y el teléfono del cliente (bloque 8) | **Confirmado (2026-10-24):** `crearUsuario` (lo usa el BACKOFFICE) y una mutación para que el propio usuario los actualice, junto a idioma y moneda. Exige una pantalla en Web, que hoy no existe. **Detalle abierto, no bloquea:** AUTH guarda ambos datos (opcionales) y el adjunto viaja por correo; un cliente que solo tenga teléfono recibe el aviso sin PDF | **Cerrada** |
+| W03-18 | Cliente sin contacto (bloque 8) | **Confirmado (2026-10-24):** la póliza se emite igual y el aviso se omite con el motivo `SIN_CONTACTO`, sin reintentar para siempre; el cliente la descarga desde la web | **Cerrada** |
 
 ## Criterios de aceptación (oficiales)
 
@@ -166,8 +166,7 @@ Cada fila se verificó en el código o en las corridas de hoy. Orden sugerido: 1
 
 ### Bloque 8 · Adjuntar el PDF al aviso de póliza emitida (planeado, sin empezar)
 
-Decidido el 2026-10-24 (W03-16, CA-W03-08: «el documento se le envía por notificación»). **Planeado, sin empezar.** Las tres decisiones de diseño están tomadas; quedan dos más
-(W03-17 y W03-18) que se proponen abajo y conviene confirmar antes de construir.
+Decidido el 2026-10-24 (W03-16, CA-W03-08: «el documento se le envía por notificación»). **Planeado, sin empezar.** Las cinco decisiones están tomadas (W03-16 a W03-18, esta última confirmación el 2026-10-24); queda un detalle por confirmar que no bloquea (correo, teléfono o ambos, ver W03-17).
 
 **Decisiones tomadas (2026-10-24):**
 
@@ -192,12 +191,12 @@ Decidido el 2026-10-24 (W03-16, CA-W03-08: «el documento se le envía por notif
 
 Orden sugerido: 1 y 2 (contrato y AUTH), 4 y 5 (ACL y stub), 6 y 7 (POLICY e infra), 3 y, al final, 8.
 
-**Decisiones nuevas, por confirmar antes de empezar:**
+**Decisiones nuevas (confirmadas el 2026-10-24):**
 
-| # | Tema | Propuesta |
+| # | Tema | Decisión |
 |---|---|---|
-| W03-17 | Quién captura el correo y el teléfono, y dónde | `crearUsuario` (lo usa el BACKOFFICE) y una mutación para que el propio usuario los actualice, junto a idioma y moneda. Exige una pantalla en Web, que hoy no existe. Falta decidir si basta el correo, el teléfono o ambos |
-| W03-18 | Cliente sin contacto (hoy son todos) | La póliza se emite igual y el aviso se marca omitido con el motivo `SIN_CONTACTO`, sin reintentar para siempre; el cliente la descarga desde la web. La alternativa es reintentar hasta que tenga contacto |
+| W03-17 | Quién captura el correo y el teléfono, y dónde | `crearUsuario` (lo usa el BACKOFFICE) y una mutación para que el propio usuario los actualice, junto a idioma y moneda. Exige una pantalla en Web, que hoy no existe. Detalle abierto que no bloquea: AUTH guarda ambos (opcionales) y el adjunto viaja por correo; con solo teléfono el aviso sale sin PDF |
+| W03-18 | Cliente sin contacto (hoy son todos) | La póliza se emite igual y el aviso se marca omitido con el motivo `SIN_CONTACTO`, sin reintentar para siempre; el cliente la descarga desde la web |
 
 **Riesgos:**
 
