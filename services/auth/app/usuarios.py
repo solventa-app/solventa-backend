@@ -7,12 +7,20 @@ Capa simple, sin puertos y adaptadores formales (regla #3): el `Protocol` existe
 para probar con dobles sin levantar PostgreSQL.
 
 Datos personales: el alias de acceso **no puede ser un correo ni un documento**
-(`validar_alias`). El único dato personal que guarda la tabla es el **nombre** (KAN-28), de
-cualquier rol, **cifrado por campo** (`app/cifrado.py`, SEG-002): nunca en claro en la base ni
-en los logs. Solo sale por dos caminos: `nombre_de` (el propio usuario, al iniciar sesión o
-consultar `yo`) y `nombres` (los CLIENTE de una lista, para el BACKOFFICE). La clave se guarda
-solo como hash argon2id y nunca sale de este servicio."""
+(`validar_alias`). Los datos personales que guarda la tabla van **cifrados por campo**
+(`app/cifrado.py`, SEG-002): nunca en claro en la base ni en los logs.
 
+- El **nombre** (KAN-28), de cualquier rol. Solo sale por dos caminos: `nombre_de` (el propio
+  usuario, al iniciar sesión o consultar `yo`) y `nombres` (los CLIENTE de una lista, para el
+  BACKOFFICE).
+- El **correo y el teléfono** (HU-W03, bloque 8), solo de los CLIENTE y opcionales. Solo salen por
+  `contacto_de`, que lo llama POLICY (servicio a servicio) para enviar el PDF de la póliza; nunca
+  vuelven al cliente por GraphQL. Cada campo se cifra con su propio contexto, así que un cifrado
+  movido de una columna a otra no se descifra.
+
+La clave se guarda solo como hash argon2id y nunca sale de este servicio."""
+
+import logging
 import re
 import unicodedata
 import uuid
@@ -24,6 +32,9 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from app.cifrado import CifradorCampos, ErrorDeCifrado
+from app.identificadores import id_opaco
+
+logger = logging.getLogger("auth.usuarios")
 
 Rol = Literal["CLIENTE", "ASESOR", "BACKOFFICE"]
 ROLES: tuple[str, ...] = ("CLIENTE", "ASESOR", "BACKOFFICE")
@@ -36,13 +47,22 @@ CLAVE_LONGITUD_MAXIMA = 128
 NOMBRE_LONGITUD_MINIMA = 2
 NOMBRE_LONGITUD_MAXIMA = 100
 MAXIMO_IDS_POR_CONSULTA = 200
+# Contacto del cliente (bloque 8 de HU-W03): correo con forma básica (no se verifica que exista) y
+# teléfono con 7 a 15 dígitos (el máximo de E.164) y un "+" opcional al inicio.
+CORREO_LONGITUD_MAXIMA = 254
+CORREO_VALIDO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+TELEFONO_VALIDO = re.compile(r"^\+?\d{7,15}$")
+SEPARADORES_DE_TELEFONO = " -().\t"
 # Preferencias de la interfaz (KAN-209): las mismas que ofrecen los selectores del header de la web.
 IDIOMAS: tuple[str, ...] = ("ES", "EN")
 MONEDAS: tuple[str, ...] = ("COP", "MXN", "BRL", "CLP", "PEN", "USD", "EUR")
 
 # Columnas que pueden salir del servicio: nunca el hash ni el estado del bloqueo.
 _PUBLICAS = "id, usuario, rol, estado, creado_en, idioma, moneda"
-_TODAS = f"{_PUBLICAS}, hash_clave, intentos_fallidos, bloqueado_hasta, nombre_cifrado"
+_TODAS = (
+    f"{_PUBLICAS}, hash_clave, intentos_fallidos, bloqueado_hasta, nombre_cifrado, "
+    "correo_cifrado, telefono_cifrado"
+)
 
 
 class DatoInvalido(Exception):
@@ -91,6 +111,37 @@ def normalizar_nombre(nombre: str) -> str:
     return limpio
 
 
+def normalizar_correo(correo: str) -> str:
+    """El correo sin espacios y en minúsculas. Solo revisa la forma: no verifica que exista."""
+    limpio = correo.strip().lower()
+    if (
+        len(limpio) > CORREO_LONGITUD_MAXIMA
+        or not CORREO_VALIDO.match(limpio)
+        or any(unicodedata.category(c).startswith("C") for c in limpio)
+    ):
+        raise DatoInvalido("El correo no es válido.")
+    return limpio
+
+
+def normalizar_telefono(telefono: str) -> str:
+    """El teléfono solo con dígitos y un "+" opcional al inicio (sin espacios, guiones ni
+    paréntesis)."""
+    limpio = "".join(c for c in telefono.strip() if c not in SEPARADORES_DE_TELEFONO)
+    if not TELEFONO_VALIDO.match(limpio):
+        raise DatoInvalido(
+            "El teléfono no es válido: usa entre 7 y 15 dígitos, con un + opcional al inicio."
+        )
+    return limpio
+
+
+def contexto_correo(usuario_id: str) -> str:
+    return f"correo:{usuario_id}"
+
+
+def contexto_telefono(usuario_id: str) -> str:
+    return f"telefono:{usuario_id}"
+
+
 def validar_preferencias(idioma: str, moneda: str) -> None:
     if idioma not in IDIOMAS:
         raise DatoInvalido(f"Idioma no válido. Usa uno de: {', '.join(IDIOMAS)}.")
@@ -101,7 +152,10 @@ def validar_preferencias(idioma: str, moneda: str) -> None:
 def publico(fila: dict[str, Any]) -> dict[str, Any]:
     """Lo único que se devuelve hacia afuera de un usuario (sin hash ni intentos)."""
     campos = ("id", "usuario", "rol", "estado", "creado_en", "idioma", "moneda")
-    return {campo: fila[campo] for campo in campos}
+    datos = {campo: fila[campo] for campo in campos}
+    # Solo dice si hay contacto (para que la web sepa cuándo pedirlo), nunca cuál es.
+    datos["tiene_contacto"] = bool(fila.get("correo_cifrado") or fila.get("telefono_cifrado"))
+    return datos
 
 
 class RepositorioUsuarios(Protocol):
@@ -112,6 +166,8 @@ class RepositorioUsuarios(Protocol):
         hash_clave: str,
         rol: str,
         nombre_cifrado: str | None = None,
+        correo_cifrado: str | None = None,
+        telefono_cifrado: str | None = None,
     ) -> dict | None: ...
 
     def nombres_cifrados(self, ids: list[str]) -> dict[str, str]: ...
@@ -127,6 +183,10 @@ class RepositorioUsuarios(Protocol):
     def suspender(self, usuario_id: str) -> dict | None: ...
 
     def actualizar_preferencias(self, usuario_id: str, idioma: str, moneda: str) -> dict | None: ...
+
+    def actualizar_contacto(
+        self, usuario_id: str, correo_cifrado: str | None, telefono_cifrado: str | None
+    ) -> dict | None: ...
 
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int: ...
 
@@ -151,12 +211,16 @@ class RepositorioUsuariosPostgres:
         hash_clave: str,
         rol: str,
         nombre_cifrado: str | None = None,
+        correo_cifrado: str | None = None,
+        telefono_cifrado: str | None = None,
     ) -> dict | None:
         """`None` si el alias ya existe (índice único: correcto también bajo concurrencia)."""
         return self._una(
             f"""
-            INSERT INTO usuarios (id, usuario, hash_clave, rol, nombre_cifrado)
-            VALUES (%(id)s, %(usuario)s, %(hash_clave)s, %(rol)s, %(nombre_cifrado)s)
+            INSERT INTO usuarios (id, usuario, hash_clave, rol, nombre_cifrado,
+                                  correo_cifrado, telefono_cifrado)
+            VALUES (%(id)s, %(usuario)s, %(hash_clave)s, %(rol)s, %(nombre_cifrado)s,
+                    %(correo_cifrado)s, %(telefono_cifrado)s)
             ON CONFLICT (usuario) DO NOTHING
             RETURNING {_TODAS}
             """,
@@ -166,6 +230,8 @@ class RepositorioUsuariosPostgres:
                 "hash_clave": hash_clave,
                 "rol": rol,
                 "nombre_cifrado": nombre_cifrado,
+                "correo_cifrado": correo_cifrado,
+                "telefono_cifrado": telefono_cifrado,
             },
         )
 
@@ -228,6 +294,21 @@ class RepositorioUsuariosPostgres:
             {"id": usuario_id, "idioma": idioma, "moneda": moneda},
         )
 
+    def actualizar_contacto(
+        self, usuario_id: str, correo_cifrado: str | None, telefono_cifrado: str | None
+    ) -> dict | None:
+        """Solo cambia lo que llega: un campo en `None` conserva el valor que ya tenía."""
+        return self._una(
+            f"""
+            UPDATE usuarios SET
+                correo_cifrado = COALESCE(%(correo)s, correo_cifrado),
+                telefono_cifrado = COALESCE(%(telefono)s, telefono_cifrado),
+                actualizado_en = now()
+            WHERE id = %(id)s RETURNING {_TODAS}
+            """,
+            {"id": usuario_id, "correo": correo_cifrado, "telefono": telefono_cifrado},
+        )
+
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int:
         """Suma un intento fallido y, si `bloquear_hasta` llega, bloquea y reinicia el contador."""
         fila = self._una(
@@ -281,7 +362,15 @@ class ServicioUsuarios:
         self._hasher = hasher
         self._cifrador = cifrador
 
-    def crear(self, alias: str, clave: str, rol: str, nombre: str | None = None) -> dict:
+    def crear(
+        self,
+        alias: str,
+        clave: str,
+        rol: str,
+        nombre: str | None = None,
+        correo: str | None = None,
+        telefono: str | None = None,
+    ) -> dict:
         validar_alias(alias)
         validar_clave(clave)
         validar_rol(rol)
@@ -292,8 +381,15 @@ class ServicioUsuarios:
             if self._cifrador is None:
                 raise DatoInvalido("Este servicio no está configurado para guardar nombres.")
             nombre_cifrado = self._cifrador.cifrar(limpio, usuario_id)
+        correo_cifrado, telefono_cifrado = self._cifrar_contacto(usuario_id, rol, correo, telefono)
         creado = self._repositorio.crear(
-            usuario_id, alias, self._hasher.hash(clave), rol, nombre_cifrado
+            usuario_id,
+            alias,
+            self._hasher.hash(clave),
+            rol,
+            nombre_cifrado,
+            correo_cifrado,
+            telefono_cifrado,
         )
         if creado is None:
             raise UsuarioDuplicado("Ya existe un usuario con ese alias.")
@@ -329,6 +425,72 @@ class ServicioUsuarios:
             except ErrorDeCifrado:
                 continue
         return resultado
+
+    def _cifrar_contacto(
+        self, usuario_id: str, rol: str, correo: str | None, telefono: str | None
+    ) -> tuple[str | None, str | None]:
+        """Valida y cifra lo que llegue; `(None, None)` si no llegó nada. Solo los CLIENTE tienen
+        contacto: es a quienes se les envía el PDF, y así no se guardan datos de más."""
+        if correo is None and telefono is None:
+            return None, None
+        if rol != "CLIENTE":
+            raise DatoInvalido("El contacto solo se guarda para clientes.")
+        correo_limpio = normalizar_correo(correo) if correo is not None else None
+        telefono_limpio = normalizar_telefono(telefono) if telefono is not None else None
+        if self._cifrador is None:
+            raise DatoInvalido("Este servicio no está configurado para guardar el contacto.")
+        correo_cifrado = (
+            self._cifrador.cifrar(correo_limpio, contexto_correo(usuario_id))
+            if correo_limpio is not None
+            else None
+        )
+        telefono_cifrado = (
+            self._cifrador.cifrar(telefono_limpio, contexto_telefono(usuario_id))
+            if telefono_limpio is not None
+            else None
+        )
+        return correo_cifrado, telefono_cifrado
+
+    def actualizar_contacto(
+        self, usuario_id: str, correo: str | None, telefono: str | None
+    ) -> dict | None:
+        """Correo y teléfono del propio cliente (el BFF solo lo llama con el id del token). Lo
+        que no llega se conserva. `None` si el usuario no existe."""
+        if correo is None and telefono is None:
+            raise DatoInvalido("Indica un correo o un teléfono.")
+        fila = self._repositorio.obtener(usuario_id)
+        if fila is None:
+            return None
+        correo_cifrado, telefono_cifrado = self._cifrar_contacto(
+            usuario_id, fila["rol"], correo, telefono
+        )
+        actualizado = self._repositorio.actualizar_contacto(
+            usuario_id, correo_cifrado, telefono_cifrado
+        )
+        return publico(actualizado) if actualizado else None
+
+    def contacto_de(self, usuario_id: str) -> dict[str, str | None] | None:
+        """El correo y el teléfono en claro de un CLIENTE, o `None` si no existe o no es CLIENTE.
+        Dato personal: solo lo pide POLICY para enviarle al cliente el PDF de su póliza, y nunca se
+        loguea. Un campo que no se pueda descifrar sale como `None` en vez de fallar todo."""
+        fila = self._repositorio.obtener(usuario_id)
+        if fila is None or fila["rol"] != "CLIENTE":
+            return None
+        return {
+            "correo": self._descifrar_contacto(fila, "correo_cifrado", contexto_correo(usuario_id)),
+            "telefono": self._descifrar_contacto(
+                fila, "telefono_cifrado", contexto_telefono(usuario_id)
+            ),
+        }
+
+    def _descifrar_contacto(self, fila: dict, campo: str, contexto: str) -> str | None:
+        if self._cifrador is None or not fila.get(campo):
+            return None
+        try:
+            return self._cifrador.descifrar(fila[campo], contexto)
+        except ErrorDeCifrado:
+            logger.warning("contacto no descifrable id=%s campo=%s", id_opaco(fila["id"]), campo)
+            return None
 
     def listar(self, rol: str | None) -> list[dict]:
         if rol is not None:
