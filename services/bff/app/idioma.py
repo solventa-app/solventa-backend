@@ -137,6 +137,13 @@ EN: dict[str, str] = {
     "Moneda no válida. Usa una de: COP, MXN, BRL, CLP, PEN, USD, EUR.": (
         "Invalid currency. Use one of: COP, MXN, BRL, CLP, PEN, USD, EUR."
     ),
+    # Contacto del cliente (AUTH, app/usuarios.py; HU-W03, bloque 8)
+    "El correo no es válido.": "The email address is not valid.",
+    "El teléfono no es válido: usa entre 7 y 15 dígitos, con un + opcional al inicio.": (
+        "The phone number is not valid: use 7 to 15 digits, with an optional + at the start."
+    ),
+    "Indica un correo o un teléfono.": "Provide an email address or a phone number.",
+    "El contacto solo se guarda para clientes.": "Contact details are only stored for clients.",
     # Detalles que PAYMENTS y AUTH devuelven tal cual (app/clientes.py)
     "Solicitud inválida.": "Invalid request.",
     "No se puede reintentar.": "This payment can't be retried.",

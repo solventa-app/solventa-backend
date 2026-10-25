@@ -436,6 +436,9 @@ class Usuario:
     # Preferencias de la interfaz (KAN-209): la web las aplica al iniciar sesión.
     idioma: str = "ES"
     moneda: str = "COP"
+    # Solo dice si ya dejó un contacto (correo o teléfono) para el aviso de su póliza (HU-W03,
+    # bloque 8); nunca cuál es: el contacto se escribe y no vuelve por GraphQL.
+    tiene_contacto: bool = False
 
 
 @strawberry.type
@@ -473,12 +476,23 @@ class CrearUsuarioInput:
     clave: str
     rol: RolUsuario
     nombre: str | None = None  # solo CLIENTE; AUTH lo guarda cifrado y no lo devuelve
+    # Solo CLIENTE (HU-W03, bloque 8); AUTH los guarda cifrados y no los devuelve.
+    correo: str | None = None
+    telefono: str | None = None
 
 
 @strawberry.input
 class PreferenciasInput:
     idioma: str  # ES | EN
     moneda: str  # COP | USD | EUR | MXN | BRL | CLP | PEN
+
+
+@strawberry.input
+class ContactoInput:
+    """Al menos uno de los dos; lo que no llega se conserva."""
+
+    correo: str | None = None
+    telefono: str | None = None
 
 
 # ---------- Traducción desde los servicios ----------
@@ -637,6 +651,7 @@ def _usuario(datos: dict) -> Usuario:
         nombre=datos.get("nombre"),
         idioma=datos.get("idioma", "ES"),
         moneda=datos.get("moneda", "COP"),
+        tiene_contacto=bool(datos.get("tiene_contacto", False)),
     )
 
 
@@ -645,6 +660,7 @@ def _usuario(datos: dict) -> Usuario:
 
 CLIENTE_O_ASESOR = ("CLIENTE", "ASESOR")
 SOLO_BACKOFFICE = ("BACKOFFICE",)
+SOLO_CLIENTE = ("CLIENTE",)
 MENSAJE_AUTH_NO_DISPONIBLE = "No pudimos procesar la solicitud. Intenta de nuevo."
 MENSAJE_USUARIO_NO_ENCONTRADO = "Usuario no encontrado."
 MENSAJE_COBROS_NO_DISPONIBLES = "No pudimos consultar los cobros. Intenta de nuevo."
@@ -979,7 +995,12 @@ class Mutation:
         exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
         try:
             datos = await _auth(info).crear_usuario(
-                entrada.usuario, entrada.clave, entrada.rol.value, entrada.nombre
+                entrada.usuario,
+                entrada.clave,
+                entrada.rol.value,
+                entrada.nombre,
+                entrada.correo,
+                entrada.telefono,
             )
         except SolicitudInvalida as error:
             return ErrorUsuario(mensaje=str(error))
@@ -1011,6 +1032,23 @@ class Mutation:
         try:
             datos = await _auth(info).actualizar_preferencias(
                 usuario.id, entrada.idioma, entrada.moneda
+            )
+        except SolicitudInvalida as error:
+            return ErrorUsuario(mensaje=str(error))
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_AUTH_NO_DISPONIBLE) from error
+        if datos is None:
+            return ErrorUsuario(mensaje=MENSAJE_USUARIO_NO_ENCONTRADO)
+        return _usuario(datos)
+
+    @strawberry.mutation
+    async def actualizar_contacto(self, info: Info, entrada: ContactoInput) -> ResultadoUsuario:
+        """HU-W03, bloque 8: correo y teléfono del propio CLIENTE (el id sale del token). AUTH los
+        guarda cifrados y la respuesta solo dice `tieneContacto`; el BFF no los registra."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        try:
+            datos = await _auth(info).actualizar_contacto(
+                usuario.id, entrada.correo, entrada.telefono
             )
         except SolicitudInvalida as error:
             return ErrorUsuario(mensaje=str(error))
