@@ -1,303 +1,404 @@
-# Plan para completar HU-W07 · Backend y frontend
+# Plan para completar HU-W07 · Backend y frontend (v2: socios revenden pólizas)
 
-> **Estado: borrador (2026-10-22), sin aprobar ni empezar.** Se guardó para retomarlo más tarde. Ningún bloque tiene
-> código todavía. Al retomarlo: revisar que `develop` no haya cambiado lo que dice «Lo que hay hoy» y cerrar los puntos
-> de «Pendiente al retomar».
->
-> Jira: **KAN-30** (13 pts, Sprint 2). Rama: `feat/KAN-30-socios-api` desde `develop` en los dos repos. El plan del
-> frontend vivirá en `solventa-frontend-web/docs/plan-completar-hu-w07.md`.
+> **Estado: borrador v2 (2026-10-24), sin aprobar.** Reemplaza la v1 del 2026-10-22, que suponía que el socio
+> revendía las 5 fuentes de consulta. Jira: **KAN-30** (13 pts, Sprint 2). Rama: `feat/KAN-30-socios-api` (local, ya
+> al día con `develop`). Plan gemelo del frontend: `solventa-frontend-web/docs/plan-completar-hu-w07.md`.
 
-**HU-W07 Alta de socios de distribución e integración (API-First — Journey 1).** Como socio de distribución, quiero
-consumir las APIs de cotización/emisión con credenciales y cuotas aisladas, para vender seguros embebidos directamente
-en la aplicación de mi negocio.
+**HU-W07 Alta de socios de distribución e integración (API-First — Journey 1).** El socio de distribución vende la
+póliza de Vida Hipotecario de Solventa embebida en su app, con credenciales y cuotas aisladas, y Solventa le paga una
+comisión. El API Gateway autentica sus llamadas con tokens de acceso; la solicitud la resuelve el Core (cotización de
+W01 y emisión de W03) y la respuesta vuelve al ecosistema del socio.
 
-El API Gateway autentica las llamadas de los socios con tokens de acceso y valida sus cuotas. Procesa la solicitud
-delegando la validación al Core y devuelve la respuesta al ecosistema del socio.
+**Flujo (Jira):**
+1. Se entra por el enlace del login al portal de socios.
+2. El dashboard tiene cuatro partes:
+   - **Credenciales:** 4 claves, 2 de producción y 2 de pruebas; cada par corresponde a los dos tokens del gateway.
+   - **Estado:** la salud de cada API, que promedia la de los microservicios con la de sus APIs externas, en colores.
+   - **Consumo:** estadísticas por API.
+   - **Swagger exclusivo:** embebido para documentarse y probar.
+3. Un sandbox de pruebas con mocks.
 
-**Flujo (texto de Jira):**
-1. El usuario entra por el registro de socios (el enlace está en el login principal).
-2. El usuario llega al dashboard de socios con estos cambios:
-   - Las credenciales muestran 4 claves, 2 productivas y 2 de pruebas. El par de claves responde a los tokens que
-     pide el gateway.
-   - El estado promedia la salud de los microservicios con la salud de cada API externa, y muestra el color de salud
-     de cada API.
-   - El consumo muestra estadísticas por cada API.
-3. Implementar el sandbox de prueba para las APIs, con mocks.
-4. Crear o limitar el Swagger para los socios de distribución (investigar).
+## Decisiones
 
-## Contexto
+| # | Tema | Decisión | Fecha |
+|---|---|---|---|
+| W07-1 | Qué se revende | **La póliza**: cotización (micros de W01) y emisión (micros de W03). No los datos de las fuentes. | 2026-10-23 |
+| W07-2 | Alta | Solo BACKOFFICE, por **CLI** (`crear-socio`): socio, 4 claves, tasa de comisión y presupuesto. Endpoint y pantalla de BACKOFFICE, después. | 2026-10-22 |
+| W07-3 | Portal | Se entra con la clave de producción del socio (no hay usuario de persona). El enlace del login lleva a `/socios/ingreso`, sin formulario de registro. | 2026-10-22 |
+| W07-4 | Credenciales | Por entorno (PRODUCCIÓN y PRUEBAS) hay un par: una clave larga y un token corto (JWT ES256 de 15 min). | 2026-10-22 |
+| W07-5 | Firma | **Enlace de firma.** La API devuelve un enlace del proveedor; el socio lo abre en su app y **firma el titular**, con lo que se mantiene el no repudio de W03-8. En el prototipo, `stubs/firma` simula esa página. | 2026-10-23 |
+| W07-6 | Cobro de la prima | **Lo hace Solventa, igual que hoy**: convenio de recaudo del crédito (W03-5) y PAYMENTS. El socio no cobra. | 2026-10-23 |
+| W07-7 | Comisión | **Un porcentaje de la prima, que se causa al cobrar.** Cada prima `cobrado` de una póliza vendida por un socio genera comisión = prima × tasa. La tasa queda congelada al aceptar la oferta. El pago al socio queda fuera. | 2026-10-23 |
+| W07-8 | Aviso al socio | **Consulta periódica** de `GET /v1/propuestas/{id}` hasta un estado final. Sin webhooks. | 2026-10-23 |
+| W07-9 | Presupuesto | **Solo en cotizaciones**, porque cada una consulta 5 fuentes externas. Aceptar, firmar y emitir no se limitan. Es durable (Postgres) y se descuenta como tokens. | 2026-10-23 |
+| W07-10 | Modo prueba | Un **dummy interno** del BFF simula el flujo completo, emisión incluida. Los stubs representan a los proveedores reales y solo los usa producción. | 2026-10-22 |
+| W07-12 | Salud general | Porcentaje ponderado por micro. Salud del micro = 0 si `/health` no responde; si responde, 70 % disponibilidad + 30 % puntaje de latencia. Pesos y objetivos en `salud.json` versionado (bloque 3b). | 2026-10-24 |
+| W07-13 | Disponibilidad y latencia | Por micro, de las métricas nativas de Cloud Run (staging) o de Prometheus (local). El consolidado sale del gateway. Ventana configurable (15 min, 1 h, 24 h, 7 d). | 2026-10-24 |
+| W07-14 | Visibilidad | El socio ve la salud general, el consolidado y las APIs. El detalle por micro solo lo ven BACKOFFICE y Grafana. | 2026-10-24 |
+| W07-11 | Swagger | API exclusiva `/v1` con su OpenAPI, embebida en el portal en dos pestañas: producción y modo prueba. | 2026-10-22 |
 
-Solventa revende a los socios de distribución el acceso que ya tiene a las **5 fuentes de consulta** de
-`contracts/fuentes.json`: `cuentas-bancarias`, `historial-crediticio`, `afiliacion-pila`, `camara-comercio` y
-`antecedentes-judiciales`. Hoy son mocks detrás del ACL Worker.
+## Lo que hay hoy (en `develop`, 2026-10-23)
 
-**Alcance real (aclarado con Felipe el 2026-10-22):** los socios **no** cotizan ni emiten pólizas. Es un prototipo
-en el que hay cosas que pertenecen a Solventa y cosas que Solventa solo usa.
+**Cotización (W01): completa.**
+- Cadena: BFF `solicitarOferta` (`services/bff/app/servicio_oferta.py`) → AUTH (consentimiento) → ACL (5 fuentes) →
+  RISK (perfil) → RATING `POST /ofertas` (`services/rating/app/main.py:174`).
+- Hallazgos abiertos en local: EC004 ❌ y EC008 ❌.
 
-**Decisiones tomadas con Felipe:**
+**Emisión (W03): a medias.** Está en `services/policy` (puerto 8007):
 
-| # | Tema | Decisión |
+| Bloque de W03 | Estado |
+|---|---|
+| 1 · Propuesta (`POST /propuestas`) | Integrado (PR #213) |
+| 2 · Firma (`/propuestas/{id}/documento-firma` y `/firma`, `stubs/firma`) | Integrado (PR #214) |
+| 3 · UNDER y KYC | Pendiente |
+| 4 · Cobro y emisión (`poliza.emitida`, POLICY suscrito a `cobro.estado-cambiado`) | Pendiente |
+| 5 · PDF | Pendiente |
+
+`docs/plan-completar-hu-w03.md` todavía dice «en rama» para los bloques 1 y 2.
+
+**De socios no hay nada:** ni rol, ni tablas, ni `/v1`, ni JWKS.
+- El gateway solo reenvía 4 rutas GraphQL con un corte de 0,7 s.
+- AUTH firma en HS256.
+- La firma de W03 es síncrona y solo para el CLIENTE titular con sesión.
+- El BFF traduce según `Accept-Language` (`services/bff/app/idioma.py`).
+
+## Fases (por la dependencia con W03)
+
+| Fase | Qué entrega | Depende de |
 |---|---|---|
-| W07-1 | Alta | La hace solo BACKOFFICE. Por ahora es una CLI o semilla sobre las tablas; el endpoint de alta queda para después. Crea el socio, sus claves y un **presupuesto de peticiones por API** que se va consumiendo, como tokens. El consumo es durable y trazable. |
-| W07-2 | Portal | Se entra con la clave del socio, no con un usuario de persona. |
-| W07-3 | Credenciales | 4 claves, un par por entorno (PRODUCCIÓN y PRUEBAS). Cada par tiene una clave de larga duración y un token de acceso corto. |
-| W07-4 | Consumo | Se persiste en Postgres, porque Redis se destruye cada noche con el apagado de costos. |
-| W07-5 | Modo prueba | Lo responde un dummy interno de Solventa. Los stubs representan a los proveedores reales. |
-| W07-6 | Swagger | Hay un Swagger exclusivo para socios, embebido en su portal para documentarse y probar. |
-| W07-7 | Alcance | El plan cubre backend y frontend. |
+| **A** | Contrato, AUTH de socios, `/v1` de consentimiento, **cotización**, aceptar y consultar la propuesta; gateway; portal; modo prueba **completo** (con emisión simulada); salud; consumo | Nada pendiente |
+| **B** | Firma por enlace (ACL, `stubs/firma` y POLICY) | W03 bloque 2, ya integrado |
+| **C** | Emisión real, PDF de la póliza y comisiones al cobrar | W03 bloques 3, 4 y 5 |
 
-**Lo que hay hoy (revisado en `develop` el 2026-10-22):**
-- Nada de socios: no hay rol, ni tablas, ni rutas REST, ni JWKS.
-- El gateway (Envoy local / GCP API Gateway) solo reenvía 4 rutas GraphQL al BFF, con corte de 0,7 s.
-- AUTH firma JWT HS256 con un secreto compartido.
-- El ACL expone `POST /fuentes/consultar` y `GET /circuitos`.
-- En el frontend, el enlace al portal de socios está deshabilitado (`IngresoConRol.vue:114-120`).
+Si W03 no llega a tiempo, W07 se puede demostrar entero en modo prueba, y en producción hasta «firmada, en emisión».
 
-## Análisis: ¿limitar APIs o Swagger exclusivo? → API exclusiva para socios
+## Análisis: API exclusiva para socios (sin cambios desde la v1)
 
-1. **Superficie propia `/v1`.** Es una sub-app FastAPI montada en el BFF (`app_socios`), el canal B2B que ya anunciaba
-   `services/bff/README.md:11`. Tiene su propio `openapi_url=/v1/openapi.json` y `docs_url=/v1/docs`. El socio nunca
-   ve GraphQL ni las rutas internas.
-2. **Contrato primero.** `contracts/openapi/socios-v1.yaml` es la fuente de verdad. El CI compara lo que genera la
-   sub-app contra ese archivo y falla si hay deriva.
-3. **Gateway propio.** Una segunda API en GCP API Gateway (`solventa-socios-api`, con su gateway) con
-   `infra/gateway/openapi-socios.yaml`, que solo publica `/v1/...`. Cada API de GCP admite una sola configuración, y
-   separarlas evita mezclar seguridad y plazos con el canal de usuarios. Las primeras 2 M llamadas al mes no se
-   cobran.
+- **Sub-app `/v1` montada en el BFF.** Tiene su propio `/v1/openapi.json` y `/v1/docs`. El socio nunca ve GraphQL.
+- **Contrato primero:** `contracts/openapi/socios-v1.yaml`, con un CI que compara contra lo que genera la sub-app.
+- **Gateway propio en GCP:** `solventa-socios-api`, con `infra/gateway/openapi-socios.yaml`.
+- **Tokens:** `POST /v1/token` da un JWT ES256 que el gateway valida con el JWKS. Solo los de socio usan ES256.
+- **La cuota no va en el borde.** GCP API Gateway cuenta las cuotas por proyecto consumidor, no por socio, así que
+  el presupuesto se descuenta de forma atómica en AUTH y, si se agota, responde 429. Con Apigee viviría en el borde.
 
-**Tokens en el borde:**
-- `POST /v1/token` cambia el `client_id` y la clave larga por un JWT **ES256 de 15 min**.
-- El gateway lo valida con `x-google-issuer` / `x-google-jwks_uri`. En local, Envoy usa `jwt_authn`.
-- Solo los tokens de socio pasan a ES256. Los de usuario siguen en HS256, para no tocar W01.
+## Bloque 1 · Contrato `contracts/openapi/socios-v1.yaml` (contract-keeper, fase A)
 
-**Cuotas:** GCP API Gateway cuenta las cuotas por proyecto consumidor de la API key, no por socio, así que no puede
-aislarlas en un solo proyecto. Además, Felipe pide un presupuesto durable, no un límite por minuto. Por eso:
-- El gateway autentica.
-- El presupuesto se valida y descuenta de forma atómica en el Postgres de AUTH, el escritor único de la identidad de
-  los socios.
-- Si el presupuesto se agota, se responde **429**.
-- Queda documentado que con Apigee la cuota sí viviría en el borde.
+| Grupo | Endpoints | Qué reutiliza |
+|---|---|---|
+| Acceso (públicos) | `POST /v1/token`, `GET /v1/.well-known/jwks.json`, `GET /v1/docs`, `GET /v1/openapi.json` | — |
+| Consentimiento | `POST /v1/consentimientos` (`documentoIdentidad`, `finalidad`, `versionTexto`), `POST /v1/consentimientos/{id}/revocar` | `ConsentimientoInput` (regla 7) |
+| Cotización | `POST /v1/cotizaciones` (`consentimientoId`, `documentoIdentidad`, `valorCredito`, `plazoMeses`, `direccionInmueble`) → la oferta COMPLETA o PRELIMINAR, más `restantes` del presupuesto | `SolicitudOfertaInput` y `Oferta` |
+| Propuesta | `POST /v1/propuestas` (`ofertaId`), `GET /v1/propuestas/{id}`, `GET /v1/propuestas/{id}/documento-firma` | `Propuesta`, `EstadoPropuesta`, `DocumentoFirma` y `ErrorAceptacion` |
+| Firma (fase B) | `POST /v1/propuestas/{id}/solicitud-firma` (`autorizaCobro`, `versionDocumento`) → `{urlFirma, expiraEn}` | `FirmarPropuestaInput` |
+| Póliza (fase C) | `GET /v1/polizas/{id}`, `GET /v1/polizas/{id}/documento` (PDF) | `Poliza` |
+| Cuenta | `GET /v1/estado`, `GET /v1/consumo`, `GET /v1/ventas` (pólizas, primas cobradas y comisiones por mes), `GET /v1/credenciales`, `POST /v1/credenciales/{entorno}/rotar` | — |
 
-## Bloque 1 · Contrato (contract-keeper)
+**Reglas comunes:**
+- Los montos van como texto decimal, como en todo el contrato.
+- Los errores siguen la forma de `ErrorPublico`, en español o inglés según `Accept-Language`.
+- **Nunca un 5xx crudo** (regla 4): si las fuentes fallan, la oferta es PRELIMINAR.
+- 429 `PRESUPUESTO_AGOTADO` con `Retry-After`, solo en cotizaciones.
+- Un socio solo ve propuestas y pólizas que vendió él: 404 si no son suyas.
 
-**`contracts/openapi/socios-v1.yaml`** (OpenAPI 3.1), endpoints:
-- Públicos, sin token: `POST /v1/token`, `GET /v1/.well-known/jwks.json`, `GET /v1/docs` y `GET /v1/openapi.json`.
-- Con token:
-  - `POST /v1/consentimientos` y `POST /v1/consentimientos/{id}/revocar`. Se mantiene la regla 7: el socio registra el
-    consentimiento de su cliente antes de consultar.
-  - `POST /v1/fuentes/{fuente}/consultas`, con `consentimiento_id` y `documento`. Devuelve `datos`, `capturado_en`,
-    `degradado` y `restantes`.
-  - `GET /v1/estado`: salud por API.
-  - `GET /v1/consumo?desde=&hasta=`: por API, asignadas, consumidas, restantes y serie diaria.
-  - `GET /v1/credenciales` (las 4 claves, enmascaradas y con opción de mostrar) y
-    `POST /v1/credenciales/{entorno}/rotar`.
+**También en el contrato:**
+- `GET /v1/estado?ventana=` devuelve `general {porcentaje, color, disponibilidad, latenciaMediaMs, ventana}` y
+  `apis[]`.
+- En GraphQL, la consulta `estadoSistema(ventana)`, solo para BACKOFFICE, con el detalle por micro (bloque 3b).
+- `contracts/salud.json`, con su validación.
 
-**Errores:** con el formato de `ErrorPublico`. Nunca un 5xx crudo (regla 4): si el proveedor falla, la respuesta lleva
-`degradado: true`. El 429 lleva `Retry-After` y el código `PRESUPUESTO_AGOTADO`.
+En `contracts/CHANGELOG.md` va la siguiente versión aditiva libre (v0.13 si nadie la toma antes), y la sección
+OpenAPI en `contracts/README.md` y `scripts/validar_contratos.py`.
 
-**Bitácora y validación:**
-- `contracts/CHANGELOG.md`, versión aditiva siguiente a la vigente (v0.11 si nada cambió antes).
-- La sección OpenAPI en `contracts/README.md`.
-- Extender `scripts/validar_contratos.py`.
+## Bloque 2 · AUTH: socios, claves, presupuesto y tokens (backend-builder, fase A)
 
-## Bloque 2 · AUTH: socios, claves, presupuesto y tokens (backend-builder)
-
-**Migración `0006_socios.py`**, solo expandir, con `downgrade` probado:
-- `socios`: `id`, `nombre`, `estado` ACTIVO|SUSPENDIDO y fechas.
-- `credenciales_socio`:
-  - columnas `socio_id`, `entorno` PRODUCCION|PRUEBAS, `client_id` único y `clave_cifrada`;
-  - `clave_cifrada` usa `CifradorCampos` de `services/auth/app/cifrado.py` con AAD `socio_id`, para que el portal
-    pueda mostrarla; la verificación compara en tiempo constante;
-  - `creada_en` y `revocada_en`.
-- `presupuestos_socio`: PK (`socio_id`, `entorno`, `fuente`), con `asignadas` y `consumidas`.
-- `consumos_socio`: append-only, con el trigger de 0004/0005. Guarda `socio_id`, `entorno`, `fuente`, `resultado`
-  (RESERVADA|EXITOSA|DEGRADADA|LIBERADA|RECHAZADA), `latencia_ms` y `ocurrido_en`. **Sin documento ni datos
-  personales.**
-- Se agrega `SOCIO` a `ck_consentimientos_actor_rol`.
+**Migración `0007_socios.py`** (la 0006 es `preferencias`), solo expandir, con `downgrade` probado:
+- `socios`: `id`, `nombre`, `estado` ACTIVO|SUSPENDIDO, `tasa_comision` (`numeric(5,4)`, por ejemplo `0.1000` = 10 %)
+  y fechas.
+- `credenciales_socio`: `socio_id`, `entorno` PRODUCCION|PRUEBAS, `client_id` único y `clave_cifrada`. La clave se
+  cifra con `CifradorCampos` de `services/auth/app/cifrado.py`, con AAD = `socio_id`, para que el portal pueda
+  mostrarla; se compara en tiempo constante. Más `creada_en` y `revocada_en`.
+- `presupuestos_socio`: PK (`socio_id`, `entorno`, `api`), con `api` CHECK `cotizaciones` (W07-9), `asignadas` y
+  `consumidas`.
+- `consumos_socio`: append-only (trigger de 0004/0005). Columnas `socio_id`, `entorno`, `api` (cotizaciones,
+  propuestas, firma, polizas…), `resultado`, `latencia_ms` y `ocurrido_en`. Registra **todas** las llamadas, para
+  las estadísticas, aunque solo cotizaciones descuenta. Sin documento ni datos personales.
+- `SOCIO` se agrega a `ck_consentimientos_actor_rol`.
 
 **`app/socios.py`:**
 - Alta y rotación de claves.
-- `reservar(socio, entorno, fuente)`: `UPDATE … SET consumidas = consumidas + 1 WHERE consumidas < asignadas
-  RETURNING` más la fila RESERVADA.
-- `cerrar(reserva, resultado, latencia)`: si es LIBERADA, devuelve la unidad. Se cobra la respuesta exitosa o
-  degradada, y se devuelve la que falla por un error nuestro.
-- `consumo(socio, rango)`: agregado por día y fuente.
+- `reservar` es atómico: `UPDATE … WHERE consumidas < asignadas RETURNING`.
+- `cerrar` devuelve la unidad si falla por un error nuestro.
+- `registrar_consumo`.
+- `consumo(rango)`.
 
-**Tokens:**
-- `app/tokens_socio.py` firma en ES256 con la clave privada de `SOCIOS_CLAVE_FIRMA`. En local va en PEM por variable
-  de entorno; en la nube, en Secret Manager `clave-firma-socios`.
-- Claims: `sub=socio_id`, `rol=SOCIO`, `entorno`, `scope=fuentes:consultar`, `iss`, `aud`, `exp` (15 min) y `jti`.
-- El JWKS sale de la misma clave.
+**`app/tokens_socio.py`:**
+- Firma en ES256 con `SOCIOS_CLAVE_FIRMA`: PEM en local, Secret Manager `clave-firma-socios` en la nube.
+- Claims: `sub=socio_id`, `rol=SOCIO`, `entorno`, `scope`, `iss`, `aud`, `exp` (15 min) y `jti`.
+- Publica el JWKS.
 
-**Endpoints internos nuevos en `app/main.py`:**
-- `POST /socios/tokens` (401 genérico; reutiliza el bloqueo por intentos de `sesiones.py`)
+**Endpoints internos:**
+- `POST /socios/tokens` (401 genérico y bloqueo por intentos de `sesiones.py`)
 - `GET /.well-known/jwks.json`
-- `GET /socios/{id}/credenciales`
-- `POST /socios/{id}/credenciales/{entorno}/rotar`
-- `POST /socios/{id}/consumos/reservar`
-- `POST /socios/consumos/{id}/cerrar`
+- `GET /socios/{id}` (incluye `tasa_comision`)
+- Credenciales: listar y rotar
+- Presupuesto: reservar y cerrar
+- `POST /socios/{id}/consumos`
 - `GET /socios/{id}/consumo`
-- `POST /consentimientos` acepta `actor.rol=SOCIO`.
 
-**CLI `app/crear_socio.py`** (sigue el patrón de `app/crear_usuario.py`, tarea `crear-socio` en compose):
-- Es idempotente.
-- Crea el socio y sus 4 claves, y las imprime una sola vez.
-- Asigna el presupuesto por fuente y entorno, con `--presupuesto 1000 --presupuesto-pruebas 500` por defecto. También
-  sirve para recargar un presupuesto.
+**CLI `app/crear_socio.py`** (patrón de `app/crear_usuario.py`, tarea `crear-socio` en compose):
+- Idempotente.
+- Crea el socio con `--tasa-comision` e imprime las 4 claves una vez.
+- Asigna `--presupuesto-cotizaciones` (producción) y `--presupuesto-cotizaciones-pruebas`.
+- También recarga el presupuesto.
 
-## Bloque 3 · BFF: la API `/v1` y el modo prueba (backend-builder)
+## Bloque 3 · BFF: la API `/v1` (backend-builder, fases A–C)
 
-**Nuevo paquete `services/bff/app/socios/`**, montado en `main.py`:
+**Paquete `services/bff/app/socios/`:**
 
 | Archivo | Qué hace |
 |---|---|
-| `api.py` | La sub-app FastAPI con sus rutas. |
-| `autenticacion.py` | Verifica el JWT ES256 con el JWKS de AUTH (caché de 10 min). Es defensa en profundidad, porque el gateway ya validó. Lee el token de `X-Forwarded-Authorization` o de `Authorization`, igual que `extraer_cabecera_autorizacion`. |
-| `consultas.py` | El flujo de producción, descrito abajo. |
-| `sandbox.py` | El entorno PRUEBAS, con el dummy interno. |
-| `salud.py` | La salud por API, descrita abajo. |
+| `api.py` | La sub-app y sus rutas. Registra cada llamada en `consumos_socio`. |
+| `autenticacion.py` | Verifica el JWT ES256 con el JWKS de AUTH (caché de 10 min) como defensa en profundidad. Lo lee de `X-Forwarded-Authorization` o `Authorization`. |
+| `cotizacion.py` | Reserva el presupuesto → **reutiliza `ServicioOferta.solicitar`** (consentimiento, titular, ACL, RISK y RATING) → cierra la reserva. |
+| `emision.py` | Aceptar (POLICY `POST /propuestas`, con `canal=SOCIO`, `socio_id` y la `tasa_comision` leída de AUTH), consultar la propuesta, documento de firma, solicitud de firma (fase B), póliza y PDF (fase C). Comprueba que la propuesta sea de ese socio. |
+| `salud.py` | Salud del sistema, por micro y por API: ver el bloque 3b. |
+| `sandbox.py` + `dummy/` | El modo prueba, descrito abajo. |
 
-**Flujo de producción (`consultas.py`):**
-1. Valida el consentimiento y el titular. Reutiliza la lógica de `servicio_oferta.py`: `obtener_consentimiento` y el
-   HMAC del documento.
-2. Reserva el presupuesto en AUTH. Si no queda, responde 429.
-3. Llama al ACL `POST /fuentes/consultar` con `PuertoAcl` de `app/clientes.py`.
-4. Cierra la reserva con el resultado y la latencia.
 
-**Modo prueba: un dummy interno, distinto de los stubs (`sandbox.py`)**
+**Modo prueba (`sandbox.py`).** Con un token de PRUEBAS, el BFF responde con el dummy y no llama a ningún micro ni
+stub:
 
-| | Producción (token PRODUCCIÓN) | Modo prueba (token PRUEBAS) |
+| Paso | Cómo responde el dummy |
+|---|---|
+| Cotización | Mapeos JSON por documento de prueba (estilo WireMock): COMPLETA, PRELIMINAR, presupuesto agotado y consentimiento vencido |
+| Propuesta y firma | Guarda el estado en Redis con TTL (el sandbox tolera perderlo en el apagado nocturno). El enlace de firma apunta a una página del dummy que firma al abrirla |
+| Emisión | Progresa sola en segundos según el documento de prueba: EMITIDA, PENDIENTE_PAGO → EMITIDA, NO_EMITIDA, PAGO_RECHAZADO |
+| Póliza | Un PDF de muestra marcado «MODO PRUEBA» |
+| Ventas | Comisiones ficticias, para que el panel tenga datos |
+
+## Bloque 3b · Salud del sistema: porcentaje ponderado, disponibilidad y latencia (backend-builder e infra-engineer, fase A)
+
+### De dónde salen los números (sin instrumentar nada nuevo)
+
+| Qué | Staging: Cloud Monitoring (gratis, ya en los tableros `observabilidad/gcp/dashboards/servicios.json` y `hu-w01.json`) | Local: Prometheus (perfil `observabilidad`) |
 |---|---|---|
-| Camino | BFF → AUTH → ACL → stubs `open-finance` / `open-data` | BFF → **dummy interno** (no sale de Solventa) |
-| Qué representa | La realidad: los stubs son los proveedores externos, por eso son microservicios aparte | Un componente de Solventa, al estilo Mockito/WireMock, para que el socio integre sin riesgo |
-| Presupuesto | El de producción | El de PRUEBAS |
+| Disponibilidad de un micro | `run.googleapis.com/request_count` por `service_name`: peticiones sin `response_code_class="5xx"` / total | `http_requests_total` (`prometheus-fastapi-instrumentator`): `status!="5xx"` / total |
+| Latencia media de un micro | `run.googleapis.com/request_latencies` (distribución): media = suma / conteo, con `ALIGN_DELTA` en la ventana; p95 como referencia | `rate(http_request_duration_seconds_sum[v]) / rate(..._count[v])`; p95 con `histogram_quantile` |
+| Consolidado del sistema (lo que vive el usuario) | Las métricas del API Gateway: `serviceruntime.googleapis.com/api/request_count` y `request_latencies`, sumando los dos gateways (usuarios y socios) | Las métricas de Envoy (`/stats/prometheus` del admin, que se agrega a `observabilidad/prometheus.yml`) |
+| ¿Responde ahora? | `/health` de cada micro (ya en el plan) | Igual |
+| APIs externas | `/circuitos` del ACL (ya en el plan) | Igual |
 
-- **Qué es el dummy:** un módulo dentro del BFF, no un servicio más. No añade imagen, ni Cloud Run, ni costo. Tampoco
-  choca con la regla 2, porque no habla con ningún proveedor.
-- **Mapeos declarativos.** Las respuestas viven en `services/bff/app/socios/dummy/<fuente>.json`, con el formato
-  `documento de prueba → respuesta`, como los mappings de WireMock. Las pruebas las validan contra los esquemas de
-  `socios-v1.yaml`.
-- **Casos:** cada documento de prueba documentado simula uno: sano, degradado, sin datos, consentimiento revocado y
-  presupuesto agotado.
-- **Consentimiento:** se simula en memoria y nunca se escribe en AUTH.
-- **Alternativa descartada:** Prism, un mock generado desde el OpenAPI. Sería otro contenedor y otro servicio en Cloud
-  Run para algo que el BFF resuelve con un JSON.
+**Elección de la fuente:** `METRICAS_FUENTE` = `monitoring` (staging), `prometheus` (local) o `ninguna` (CI y
+pruebas). Con `ninguna`, la salud sale solo de `/health`. Son dos clientes pequeños en `salud.py`, sin puertos y
+adaptadores (regla 3). La librería `google-cloud-monitoring` se importa solo con `monitoring`.
 
-**Salud por API (`salud.py`):**
-- Para cada una de las 5 APIs calcula `promedio(salud de microservicios, salud de la API externa)`.
-- La salud de los microservicios sale del BFF, de `/health` de AUTH y de `/health` del ACL: 100 si responde y 0 si no.
-- La salud de la API externa sale del circuito de su proveedor, en `GET /circuitos` del ACL. La relación fuente →
-  proveedor ya existe en `fuentes.json`. Valores: closed 100, half-opened 50 y opened 0.
-- Colores: verde ≥ 80, amarillo ≥ 50 y rojo < 50.
-- Salvedad documentada: el estado del circuito es por instancia del ACL.
+**Caché:** el resultado se guarda 60 s por ventana en memoria, para no consultar Monitoring en cada petición. Las
+lecturas de la API de Monitoring entran en su capa gratuita con ese volumen.
 
-**Logs:** `socio_id` opaco y `fuente` en los logs estructurados, nunca el documento (regla 6).
+**Permisos:** la cuenta de runtime del BFF necesita `roles/monitoring.viewer` (`infra/servicios.tf`).
 
-**Configuración:** las URLs y la audiencia van en `app/configuracion.py`. Los timeouts del ACL no cambian.
+### Fórmulas
 
-## Bloque 4 · Gateway e infraestructura (infra-engineer)
+1. **Disponibilidad del micro** (ventana `v`) = peticiones sin 5xx / peticiones. Los 4xx cuentan como disponibles,
+   porque son errores del que llama. Si no hubo tráfico (escala a cero), se muestra «sin tráfico», no 100 %.
+2. **Puntaje de latencia** = 100 si la media ≤ el objetivo del micro, 0 si llega al doble del objetivo, y lineal entre
+   los dos.
+3. **Salud del micro** (0–100):
+   - Si `/health` no responde: **0**.
+   - Si responde: **70 % × disponibilidad + 30 % × puntaje de latencia**.
+   - Sin tráfico: 100 si `/health` responde.
+   - Los 70/30 son configurables.
+4. **Salud general del sistema** = Σ(peso × salud del micro) / Σ(peso de los micros presentes). Un micro que aún no
+   existe (por ejemplo UNDER antes de la fase C) aparece como «no disponible» y su peso se reparte entre los demás.
+5. **Disponibilidad y latencia media consolidadas** = las del gateway en la ventana (el borde), no un promedio de los
+   micros. Una petición del usuario pasa por varios micros, y promediarlos no daría lo que el usuario vive.
+6. **Salud de cada API** (Cotización y Emisión) = promedio de dos partes: la salud media de sus micros (con la fórmula
+   del punto 3) y la de sus APIs externas (circuito closed 100, half 50, opened 0):
 
-**Envoy local (`infra/gateway/envoy.yaml`):**
-- Rutas por prefijo `/v1`, con plazo de **1,5 s**. El corte de 0,7 s de HA-LAT-004 es del canal de usuarios, y aquí
-  hay llamadas a AUTH más el ACL (700 ms).
-- Filtro `jwt_authn` con `remote_jwks` hacia `auth:8000/.well-known/jwks.json`. Quedan exentos el token, el JWKS, los
-  docs y el openapi.
-- Filtro `cors` para el origen de la web, porque el Swagger embebido llama a `/v1` (ver bloque 5).
+   | API | Micros | APIs externas |
+   |---|---|---|
+   | Cotización | BFF, AUTH, ACL, RISK y RATING | open-finance y open-data |
+   | Emisión | BFF, AUTH, POLICY, UNDER y PAYMENTS | firma, KYC y pasarela |
+
+7. **Colores**, iguales para todo: verde ≥ 90, amarillo ≥ 70 y rojo < 70.
+
+Salvedad documentada: el estado del circuito es por instancia del ACL.
+
+### `services/bff/app/salud.json` (versionado; fuente en `contracts/salud.json`, copiado a la imagen como `fuentes.json`)
+
+**Pesos propuestos** (suman 100), según lo crítico que es cada micro para vender una póliza:
+
+| Micro | Peso | Por qué | Objetivo de latencia media |
+|---|---|---|---|
+| `bff` | **20** | Única puerta de entrada (usuarios y socios): si cae, cae todo. | 500 ms (EC010: la oferta ≤ 500 ms) |
+| `auth` | **15** | Consentimiento obligatorio antes de consultar (regla 7), sesiones, tokens y presupuesto de socios: sin él no se cotiza ni se emite. | 120 ms (EC008, por dependencia) |
+| `acl-worker` | **15** | Único contacto con los proveedores (regla 2): fuentes, firma, KYC y pasarela. | 300 ms (bajo el corte duro de 700 ms) |
+| `rating` | **12** | Genera la oferta: sin él no hay cotización. | 120 ms (EC008) |
+| `policy` | **12** | Propuesta, firma y emisión: sin él no hay venta. | 300 ms |
+| `risk` | **10** | Perfil y score en el camino de la cotización. Pesa algo menos porque RATING tiene el score en caché (bloque 2 de W01). | 120 ms (EC008) |
+| `under` | **6** | Decide la emisión, pero en segundo plano (Cloud Tasks), fuera del camino síncrono. | 300 ms |
+| `payments` | **6** | Cobra en segundo plano. Un cobro pendiente no tumba la venta (W03-3). | 400 ms (incluye la pasarela por el ACL) |
+| `consolidador-fuentes` | **4** | Concilia fuentes degradadas en segundo plano. Si cae, se pierde frescura, no ventas. | 1000 ms |
+
+**Criterio de los pesos:**
+- Camino síncrono del usuario (bff, auth, acl, rating, risk) más el núcleo de la venta (policy): 84 %.
+- Lo asíncrono (under, payments, consolidador): 16 %.
+- Los stubs no entran como micros: son las «APIs externas» y cuentan por sus circuitos en la salud de cada API.
+
+**Objetivos de latencia:** son de **media** y salen de los umbrales p95 de los escenarios. Se ajustan con las
+mediciones de staging.
+
+**Configuración en el mismo archivo:**
+- Ventanas permitidas: `["15m", "1h", "24h", "7d"]`, con `"1h"` por defecto.
+- Los 70/30 de la fórmula.
+- Los umbrales de color.
+- Las APIs con sus micros y sus APIs externas.
+- Una prueba en el CI verifica que los pesos suman 100 y que cada micro existe en `.github/servicios.json`.
+
+### Quién ve qué
+
+| Vista | Qué muestra | Dónde |
+|---|---|---|
+| **Socio** (`GET /v1/estado?ventana=`) | Barra de **salud general** (%), **disponibilidad y latencia media consolidadas**, y Cotización y Emisión con su color. **Sin nombres de micros internos.** | Pestaña «Estado» del portal |
+| **BACKOFFICE** (GraphQL `estadoSistema(ventana)`, contrato aditivo) | Todo lo del socio, más una tabla por micro: peso, salud, disponibilidad, latencia media, p95, `/health` y «sin tráfico», más el estado de cada API externa | Pantalla «Estado del sistema» en la web (inicio del operador) y el panel nuevo «Salud del sistema» en el Grafana del equipo (`servicios.json`, mismas consultas de Monitoring) |
+
+## Bloque 4 · Firma por enlace (fase B; ACL, `stubs/firma`, POLICY)
+
+Es aditivo: la firma síncrona del CLIENTE de W03 queda igual.
+- **ACL:** `PuertoFirmaElectronica` suma `solicitar_firma(hash, referencia) → url_firma`. Recibe el aviso del
+  proveedor en `POST /firma/eventos` y lo reenvía a POLICY. Mantiene el circuito y los 700 ms. Con un segundo
+  adaptador se cumple EC031.
+- **`stubs/firma`:** `POST /v1/solicitudes` devuelve `url_firma`. `GET /firmar/{referencia}` es una página mínima con
+  «Firmar», que al confirmar avisa al ACL. Conserva sus modos de falla.
+- **POLICY:**
+  - `POST /propuestas/{id}/solicitud-firma` guarda la solicitud.
+  - `POST /eventos/firma-completada` registra la evidencia append-only con `actor=TITULAR` y `canal=SOCIO`, y agenda
+    la emisión igual que la firma de W03.
+  - Migración aditiva, en el siguiente número libre de POLICY.
+
+## Bloque 5 · Comisiones (fase C, POLICY)
+
+- **Migración aditiva en POLICY:**
+  - En `propuestas`: `canal` (DIRECTO|SOCIO, con DIRECTO por defecto), `socio_id` y `tasa_comision`, congelada al
+    aceptar.
+  - `comisiones`: append-only, con `id`, `socio_id`, `poliza_id`, `cobro_id` **único** (idempotencia), `prima`,
+    `tasa`, `comision`, `moneda` y `causada_en`.
+- **Cuándo se causa:** al recibir `cobro.estado-cambiado` = cobrado (suscripción W03-7 del bloque 4 de W03) para una
+  póliza con `canal=SOCIO`, se inserta `comision = prima × tasa` redondeada según la moneda (utilidades de dinero de
+  rating/risk). Un rechazo no causa nada.
+- **`GET /socios/{id}/ventas?desde=&hasta=`:** propuestas por estado, pólizas emitidas, primas cobradas y comisiones
+  por mes. Lo consume `GET /v1/ventas`.
+- POLICY sigue siendo el escritor único. El pago al socio queda fuera.
+
+## Bloque 6 · Gateway e infraestructura (infra-engineer, fase A)
+
+**Envoy (`infra/gateway/envoy.yaml`):**
+- Prefijo `/v1` con plazo de 1,5 s, porque la cotización suma una reserva en AUTH a la cadena de W01.
+- `jwt_authn` con `remote_jwks` de AUTH, que exime token, jwks, docs, openapi y la página de firma del dummy.
+- Filtro `cors`.
 - Ajustar `scripts/validar_gateway.py`.
 
 **GCP:**
-- `infra/gateway/openapi-socios.yaml` (Swagger 2.0, que es lo que pide API Gateway), con `securityDefinitions` JWT y
-  `x-google-endpoints`/`allowCors`.
-- El JWKS sale por la misma ruta pública del gateway hacia el BFF, y de ahí a AUTH.
-- En `infra/gateway.tf`: la API, la configuración y el gateway de socios, detrás de `var.crear_gateway_socios`, más
-  la salida `gateway_socios_url`.
-- En `.github/servicios.json`: el secreto `clave-firma-socios` (AUTH), la URL del JWKS y la audiencia (BFF).
-- `infra/README.md` con las variables nuevas.
+- `openapi-socios.yaml` (Swagger 2.0) con JWT, `allowCors` y plazos.
+- API, config y gateway de socios detrás de `var.crear_gateway_socios`.
+- Secreto `clave-firma-socios`.
+- La URL del JWKS y la audiencia en `.github/servicios.json`.
+- `roles/monitoring.viewer` para la cuenta del BFF y `METRICAS_FUENTE=monitoring` en su entorno.
+- Panel «Salud del sistema» en `observabilidad/gcp/dashboards/servicios.json`.
+- En local: `observabilidad/prometheus.yml` recoge también las métricas del admin de Envoy, y el BFF lleva
+  `METRICAS_FUENTE=prometheus` en compose.
+- `infra/README.md`.
 
-**Despliegue:** se aplica solo por el pipeline al llegar a `main` (ADR-09). Nada de `terraform apply` a mano. El
-guardia de `revisar_plan.py` no debería ver destrucciones.
+**Despliegue:** solo por el pipeline al llegar a `main` (ADR-09). Nada de `apply` a mano.
 
-## Bloque 5 · Frontend: el portal de socios (solventa-frontend-web)
+## Bloque 7 · Frontend: portal de socios (solventa-frontend-web)
 
-Antes de construirlo, revisar en Figma `Solventa-web-Final` si existen pantallas W07 y usar sus ids.
+**Pantallas** con los ids de Figma que pasará Felipe, en `pantallas.ts`, `historia: 'HU-W07'`, protegidas por la
+sesión de socio:
+- `/socios/ingreso` (`IngresoSocio.vue`).
+- `/socios/panel` (`PanelSocio.vue`), con seis pestañas:
 
-**Pantallas** en `apps/web/src/router/pantallas.ts`, con `historia: 'HU-W07'` y `sprint: 2`. Las protege la sesión
-del socio, no un `Rol` de usuario:
-- `/socios/ingreso`: `IngresoSocio.vue`, con el `client_id` y la clave de producción.
-- `/socios/panel`: `PanelSocio.vue`, con cinco pestañas:
-  - **Credenciales:** las 4 claves de PRODUCCIÓN y PRUEBAS, cada una con su clave larga y su token corto. Se pueden
-    mostrar, copiar, generar el token y rotar.
-  - **Estado:** las 5 APIs con su color.
-  - **Consumo:** por API, asignadas, consumidas y restantes, con barra y serie diaria (siguiendo la skill de dataviz).
-  - **Documentación y pruebas (producción):** el Swagger exclusivo de socios embebido en la pantalla.
-  - **APIs en modo prueba:** el mismo Swagger embebido, preautorizado con el token de PRUEBAS; responde el dummy.
-    Incluye la tabla de documentos de prueba con su caso.
+| Pestaña | Contenido |
+|---|---|
+| Credenciales | Las 4 claves (clave larga y token corto por entorno): mostrar, copiar, generar token y rotar. |
+| Estado | **Barra de porcentaje de la salud general** (con su color), **disponibilidad y latencia media consolidadas**, selector de ventana (15 min, 1 h, 24 h, 7 d), y Cotización y Emisión con su color. Sin nombres de micros internos. |
+| Consumo | Cotizaciones contra el presupuesto (asignadas, consumidas y restantes), llamadas por API y serie diaria. |
+| Ventas y comisiones | Propuestas por estado, pólizas emitidas, conversión de cotización a póliza, primas cobradas y comisión causada por mes. |
+| Documentación y pruebas | Swagger embebido con el token de producción, con aviso de que cotizar descuenta presupuesto. |
+| Modo prueba | Swagger embebido con el token de PRUEBAS, el distintivo «respuestas simuladas» y la tabla de documentos de prueba. |
 
-**Swagger embebido:**
-- Componente `SwaggerSocios.vue` con `swagger-ui-dist`, en versión fija y empaquetado sin CDN.
-- Carga `/v1/openapi.json` desde el gateway.
-- Inyecta el token corto del entorno de la pestaña con `requestInterceptor`. Así «Try it out» funciona sin pegar
-  claves, y el socio prueba y se documenta en el mismo lugar.
-- En producción, un aviso antes de ejecutar: cada «Try it out» descuenta del presupuesto real.
-- En modo prueba, un distintivo visible: «Modo prueba · respuestas simuladas».
-- **Requisito:** CORS en `/v1` para el origen de la web. Va en el filtro `cors` de Envoy, en `allowCors` del gateway de
-  GCP y en `CORSMiddleware` de la sub-app, con los orígenes por configuración.
+**Pantalla de BACKOFFICE «Estado del sistema»:**
+- Va en el inicio del operador (`HomeOperador.vue`) o como pantalla propia.
+- Muestra la misma barra general, más la tabla por micro (peso, salud, disponibilidad, latencia media y p95) y las
+  APIs externas.
+- Lee `estadoSistema(ventana)` por GraphQL.
 
-**Cliente y sesión:**
-- `composables/useSesionSocio.ts` guarda el token en memoria y lo renueva con `/v1/token`.
-- El cliente REST `api/socios.ts` usa la copia versionada de `socios-v1.yaml`, igual que con el contrato GraphQL.
-
-**Otros cambios:**
-- Habilitar el enlace de `IngresoConRol.vue:114-120` hacia `/socios/ingreso`.
-- Mocks de desarrollo en `src/mocks`.
-- Actualizar `docs/plan-frontend.md` y crear `docs/plan-completar-hu-w07.md`, gemelo de este.
+**Detalles:**
+- `SwaggerSocios.vue` usa `swagger-ui-dist` en versión fija, sin CDN, e inyecta el token con `requestInterceptor`.
+- `useSesionSocio.ts` guarda el token en memoria.
+- El cliente REST usa la copia versionada de `socios-v1.yaml`.
+- El enlace de `IngresoConRol.vue:114-120` se habilita.
+- Los gráficos siguen la skill de dataviz.
 
 ## Documentos que actualiza cada bloque
 
 | Bloque | Documentos |
 |---|---|
 | 1 | `contracts/CHANGELOG.md`, `contracts/README.md` |
-| 2 | `services/auth/README.md`, `docs/autenticacion-usuarios.md` (§1 y §8: el gateway valida el JWT de socios) |
+| 2 | `services/auth/README.md`, `docs/autenticacion-usuarios.md` (§1 y §8) |
 | 3 | `services/bff/README.md` |
-| 4 | `infra/README.md`, `README.md` raíz |
-| 5 | `solventa-frontend-web/docs/plan-frontend.md` y su `plan-completar-hu-w07.md` |
-| Cierre | Este plan (estado), `CLAUDE.md` (estado), `docs/evidencias/HU-W07-<fecha>.md` |
+| 4 y 5 | `services/policy/README.md`, `services/acl-worker/README.md`, `docs/plan-completar-hu-w03.md` (W03-8 y W03-9 con el canal socio; corregir el estado de los bloques 1 y 2) |
+| 6 | `infra/README.md`, `README.md` raíz |
+| 7 | `solventa-frontend-web/docs/plan-frontend.md` y su `plan-completar-hu-w07.md` |
+| Cierre | Este plan, `CLAUDE.md` y `docs/evidencias/HU-W07-<fecha>.md` |
 
 ## Lo que hace Felipe a mano
 
-- Crear el secreto `clave-firma-socios` en Secret Manager de staging.
-- Dar de alta el socio demo con la CLI `crear-socio`, mientras no exista el endpoint de alta.
+- Pasar los ids de las pantallas W07 de Figma.
+- Crear `clave-firma-socios` en Secret Manager de staging.
+- Dar de alta el socio demo con `crear-socio`.
 
 ## Verificación
 
-1. **Pruebas:**
-   - `pytest` en `services/auth`: la reserva es atómica (la concurrencia no supera `asignadas`), liberar devuelve la
-     unidad, el ES256 se valida con el JWKS y la rotación invalida la clave anterior.
-   - `pytest` en `services/bff`: 429 con el presupuesto agotado, el sandbox es determinista, los colores de salud
-     salen bien con circuitos falsos, y sin consentimiento responde 403 sin llamar al ACL.
-2. **Migración:** `bash scripts/verificar-migraciones.sh auth`, con `downgrade`.
-3. **En vivo:**
-   - `docker compose --profile servicios up -d --build --wait` y `docker compose run --rm crear-socio`.
-   - Contra Envoy `:8080`: token → consentimiento → consulta de las 5 fuentes, en producción y en pruebas.
-   - Bajar un stub a `caido` y ver `degradado: true` y el color en `/v1/estado`.
-   - Agotar el presupuesto y obtener 429.
-   - Llamar sin token y obtener 401 del gateway.
-   - Reiniciar Redis y comprobar que el consumo no cambia.
-4. **Newman:** la colección `tests/newman/socios-w07.json` con ese flujo, que entra al CI como humo.
-5. **Validadores:** `scripts/validar_gateway.py`, `validar_contratos.py` (deriva del OpenAPI) y `validar_servicios.py`.
-6. **Frontend:**
-   - Vitest de las vistas.
-   - Cypress E2E de ingreso → panel → generar token → «Try it out» en modo prueba (responde el dummy y no se toca
-     ningún stub) → ver subir el consumo de PRUEBAS.
-   - Comprobar en los logs de los stubs que una llamada en modo prueba no les llega.
-7. **Evidencia:** `docs/evidencias/HU-W07-<fecha>.md` con números reales locales, aclarando que no son de staging.
+1. **`pytest`:**
+   - AUTH: reserva atómica con concurrencia, ES256 contra JWKS, rotación y el consumo de todas las APIs registrado.
+   - BFF: 429 solo en cotizaciones; aceptar sin límite; un socio no ve propuestas ajenas (404); sin consentimiento
+     no hay cotización; salud con micros ausentes; dummy determinista.
+   - Salud (con series falsas de Monitoring y Prometheus):
+     - disponibilidad sin 5xx, con los 4xx contando como disponibles;
+     - «sin tráfico»;
+     - puntaje de latencia en el objetivo, entre el objetivo y el doble, y por encima del doble;
+     - micro caído = 0;
+     - suma ponderada con un micro ausente y su peso repartido;
+     - colores;
+     - `salud.json`: los pesos suman 100 y los micros existen;
+     - el socio no recibe nombres de micros;
+     - `estadoSistema` solo para BACKOFFICE.
+   - POLICY: comisión idempotente por `cobro_id`, sin comisión en rechazados ni en `canal=DIRECTO`, y tasa
+     congelada aunque cambie en AUTH.
+   - ACL: firma por enlace y caso EC031.
+2. **Migraciones:** `verificar-migraciones.sh auth` y `policy`, con `downgrade`.
+3. **En vivo** (`docker compose --profile servicios up -d --build --wait`, más `crear-socio`), contra Envoy `:8080`:
+   - **Fase A:** token → consentimiento → cotización COMPLETA → aceptar → propuesta ACEPTADA. Con un stub de fuentes
+     `caido`, la oferta sale PRELIMINAR y aceptarla da error. Agotar el presupuesto da 429. Sin token, 401 del gateway.
+   - **Salud** (con `--profile observabilidad`):
+     - generar tráfico con k6;
+     - comprobar que la latencia media y la disponibilidad de `/v1/estado` coinciden con las de Prometheus;
+     - bajar `rating` y ver caer la barra en su peso (12 %) y Cotización en rojo;
+     - poner el stub de open-data en `lento` y ver bajar el puntaje de latencia del ACL.
+   - **Modo prueba:** el flujo completo hasta EMITIDA, sin que ningún stub reciba llamadas (se ve en sus logs).
+   - **Fase B:** solicitud de firma → abrir `urlFirma` → la propuesta pasa a EN_EMISION.
+   - **Fase C:** EMITIDA con su PDF. Un cobro `cobrado` crea una comisión y repetir el evento no la duplica.
+4. **Newman:** `tests/newman/socios-w07.json`, como humo en el CI.
+5. **Validadores:** `validar_gateway.py`, `validar_contratos.py` (deriva del OpenAPI) y `validar_servicios.py`.
+6. **Frontend:** Vitest y Cypress (ingreso → token → «Try it out» en modo prueba → ventas y consumo).
+7. **Evidencia:** `docs/evidencias/HU-W07-<fecha>.md` con números locales, aclarando que no son de staging.
 
-## Pendiente al retomar
+## Pendiente
 
-- Confirmar con Felipe el plan completo. Se guardó antes de aprobarlo.
-- Confirmar qué significa «el usuario ingresa por el registro de socios» si el alta solo la hace BACKOFFICE. Supuesto
-  de este plan: el enlace del login lleva al ingreso del portal (W07-1 y W07-2).
-- El texto de Jira dice «cotización/emisión», pero el alcance acordado son las 5 fuentes. Conviene ajustar la
-  historia en KAN-30.
-- Revisar en Figma si hay pantallas W07.
-- Dejar definido el endpoint de alta de socios desde BACKOFFICE (W07-1 lo deja para después).
+- Los ids de Figma.
+- Coordinar con quien lleve W03 los bloques 4 y 5 de este plan, que tocan POLICY y el ACL, y el orden de las
+  migraciones de POLICY.
+- La versión del contrato: W07 y el plan de almacenamiento piden la siguiente libre.
+- `docs/plan-almacenamiento-archivos.md` usa el puerto 8008, que W03 reserva para `under`. Corregirlo al retomarlo
+  (por ejemplo, 8009).
