@@ -94,6 +94,7 @@ def _usuario_publico(usuario_id: str, alias: str, rol: str, estado: str = "ACTIV
         "creado_en": "2026-10-14T12:00:00+00:00",
         "idioma": "ES",
         "moneda": "COP",
+        "tiene_contacto": False,
     }
 
 
@@ -113,6 +114,8 @@ class AuthFalso:
         # Nombres de CLIENTE por id y las consultas hechas (para probar el lote).
         self.nombres: dict[str, str] = {}
         self.consultas_de_nombres: list[list[str]] = []
+        # Contacto (correo, teléfono) que AUTH recibió por usuario, para comprobar qué le llegó.
+        self.contactos: dict[str, dict] = {}
         # Usuarios conocidos por id; `claves` guarda alias -> clave (solo en el doble).
         self.usuarios: dict[str, dict] = {
             "u-1": _usuario_publico("u-1", "asesor.uno", "ASESOR"),
@@ -193,18 +196,58 @@ class AuthFalso:
         return {i: self.nombres[i] for i in ids if i in self.nombres}
 
     async def crear_usuario(
-        self, usuario: str, clave: str, rol: str, nombre: str | None = None
+        self,
+        usuario: str,
+        clave: str,
+        rol: str,
+        nombre: str | None = None,
+        correo: str | None = None,
+        telefono: str | None = None,
     ) -> dict:
         if "@" in usuario:
             raise SolicitudInvalida("El usuario no puede ser un correo ni un número de documento.")
         if any(u["usuario"] == usuario for u in self.usuarios.values()):
             raise SolicitudInvalida("Ya existe un usuario con ese alias.")
+        self._validar_contacto(rol, correo, telefono)
         nuevo = _usuario_publico(str(uuid.uuid4()), usuario, rol)
+        if correo is not None or telefono is not None:
+            self.contactos[nuevo["id"]] = {"correo": correo, "telefono": telefono}
+            nuevo["tiene_contacto"] = True
         self.usuarios[nuevo["id"]] = nuevo
         self.claves[usuario] = clave
         if nombre is not None:
             self.nombres[nuevo["id"]] = nombre
         return nuevo
+
+    @staticmethod
+    def _validar_contacto(rol: str, correo: str | None, telefono: str | None) -> None:
+        """Las mismas reglas visibles de AUTH (mensajes incluidos)."""
+        if (correo is not None or telefono is not None) and rol != "CLIENTE":
+            raise SolicitudInvalida("El contacto solo se guarda para clientes.")
+        if correo is not None and "@" not in correo:
+            raise SolicitudInvalida("El correo no es válido.")
+        if telefono is not None and not telefono.lstrip("+").isdigit():
+            raise SolicitudInvalida(
+                "El teléfono no es válido: usa entre 7 y 15 dígitos, con un + opcional al inicio."
+            )
+
+    async def actualizar_contacto(
+        self, usuario_id: str, correo: str | None, telefono: str | None
+    ) -> dict | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        if correo is None and telefono is None:
+            raise SolicitudInvalida("Indica un correo o un teléfono.")
+        if usuario_id not in self.usuarios:
+            return None
+        self._validar_contacto(self.usuarios[usuario_id]["rol"], correo, telefono)
+        actual = self.contactos.get(usuario_id, {"correo": None, "telefono": None})
+        self.contactos[usuario_id] = {
+            "correo": correo if correo is not None else actual["correo"],
+            "telefono": telefono if telefono is not None else actual["telefono"],
+        }
+        self.usuarios[usuario_id] = {**self.usuarios[usuario_id], "tiene_contacto": True}
+        return self.usuarios[usuario_id]
 
     async def cambiar_rol_usuario(self, usuario_id: str, rol: str) -> dict | None:
         if usuario_id not in self.usuarios:

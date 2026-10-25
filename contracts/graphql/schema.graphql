@@ -331,6 +331,9 @@ type Usuario {
   # Preferencias de la interfaz (KAN-209): idioma (ES | EN) y moneda por defecto. No son datos personales.
   idioma: String!
   moneda: String!
+  # Solo dice si el usuario ya dejó un contacto (correo o teléfono) para el aviso de su póliza (HU-W03, bloque 8);
+  # nunca cuál es: el contacto se escribe con `crearUsuario` o `actualizarContacto` y no vuelve por GraphQL.
+  tieneContacto: Boolean!
 }
 
 type Sesion {
@@ -361,11 +364,20 @@ input CrearUsuarioInput {
   clave: String!
   rol: RolUsuario!
   nombre: String = null # cualquier rol (2 a 100 caracteres); se guarda cifrado y `crearUsuario` no lo devuelve
+  # Solo CLIENTE (HU-W03, bloque 8); se guardan cifrados y `crearUsuario` no los devuelve.
+  correo: String = null # con forma de correo; se guarda en minúsculas
+  telefono: String = null # 7 a 15 dígitos, con un + opcional al inicio
 }
 
 input PreferenciasInput {
   idioma: String! # ES | EN
   moneda: String! # COP | USD | EUR | MXN | BRL | CLP | PEN
+}
+
+# Al menos uno de los dos; lo que no llega se conserva (HU-W03, bloque 8).
+input ContactoInput {
+  correo: String = null
+  telefono: String = null
 }
 
 # ---------- Operaciones ----------
@@ -397,6 +409,9 @@ type Mutation {
   suspenderUsuario(id: ID!): ResultadoUsuario!
   # Idioma y moneda por defecto del propio usuario (el id sale del token).
   actualizarPreferencias(entrada: PreferenciasInput!): ResultadoUsuario!
+  # Correo y teléfono del propio CLIENTE (el id sale del token): a ese contacto se le envía el PDF de su póliza.
+  # Se guardan cifrados y no se devuelven; el usuario responde `tieneContacto`.
+  actualizarContacto(entrada: ContactoInput!): ResultadoUsuario!
   # Solo una oferta COMPLETA y vigente. Aceptar dos veces la misma oferta devuelve la misma propuesta.
   aceptarOferta(ofertaId: ID!): ResultadoAceptacion!
   # Solo el CLIENTE titular firma (no repudio). Firmar dos veces devuelve la misma evidencia.

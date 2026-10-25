@@ -191,3 +191,19 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Afecta al frontend: sí. La pantalla «Resultado del pago» (por crear en Figma) puede mostrar `mensajeEstado` y decidir el
   botón con `accionSugerida` (`CONTACTAR_ASESOR` lleva a `contactarAsesor`); `oferta(id)` sirve para «ver fuentes» sin
   guardar la oferta en memoria. Los campos son opcionales: no rompen el codegen. Aún no hay una pantalla W03 que los use.
+
+## v0.16 — 2026-10-24
+
+- KAN-26 (HU-W03, bloque 8, W03-16 y W03-17): el correo y el teléfono del cliente, para enviarle el PDF de su póliza.
+  **Solo cambios aditivos.**
+  - `CrearUsuarioInput` suma `correo` y `telefono`, opcionales (`null` por omisión). Solo para un CLIENTE: con otro rol
+    `crearUsuario` responde `ErrorUsuario` («El contacto solo se guarda para clientes.»).
+  - Mutación nueva `actualizarContacto(entrada: ContactoInput!): ResultadoUsuario!` con el input nuevo `ContactoInput`
+    (`correo`, `telefono`): la usa el propio CLIENTE (el id sale del token; siempre exige token) y lo que no llega se
+    conserva. Un dato inválido o sin ningún campo devuelve `ErrorUsuario` con un mensaje en el idioma de `Accept-Language`.
+  - `Usuario` suma `tieneContacto: Boolean!`: dice si ya hay contacto (para que la web sepa cuándo pedirlo), **nunca cuál**.
+    El correo y el teléfono se guardan cifrados en AUTH y **no se pueden leer por GraphQL** en ningún camino.
+  - El correo se guarda en minúsculas (solo se revisa su forma) y el teléfono con dígitos y un `+` opcional (7 a 15).
+- Afecta al frontend: sí. Web debe construir la pantalla donde el cliente deja su correo y su teléfono (hoy no existe en
+  Figma) y llamar a `actualizarContacto`; puede usar `tieneContacto` de `yo` o `iniciarSesion` para pedirlo. Hasta que un
+  cliente tenga contacto, el aviso de su póliza sigue llevando solo el enlace. Los campos son opcionales: no rompen el codegen.
