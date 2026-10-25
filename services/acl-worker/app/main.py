@@ -3,6 +3,8 @@ proveedores externos (Open Finance, Open Data, pasarela de pagos, firma electró
 notificaciones) — ver `app/domain/puertos.py` y el README de este servicio.
 """
 
+import base64
+import binascii
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -52,6 +54,7 @@ from app.application.servicio_notificaciones import ServicioNotificaciones
 from app.application.servicio_pagos import ServicioCobro
 from app.application.sonda import SondaRecuperacion
 from app.domain.puertos import (
+    Adjunto,
     ConsultaFuente,
     OrdenCobro,
     SolicitudFirma,
@@ -140,11 +143,28 @@ class ResultadoKycResponse(BaseModel):
     verificada_en: str | None
 
 
+# Tipos de medio que pueden viajar como adjunto de un aviso, y cuántos.
+TIPOS_DE_ADJUNTO = ("application/pdf",)
+MAXIMO_ADJUNTOS = 3
+
+
+class AdjuntoRequest(BaseModel):
+    nombre: str
+    tipo: str
+    contenido_base64: str
+
+
 class SolicitudNotificacionRequest(BaseModel):
     id_notificacion: str
     plantilla: str
     destinatario_id: str
     datos: dict[str, str] = {}
+    # Datos personales y financieros (bloque 8, W03-16): solo viajan al proveedor. Sus reglas se
+    # validan en la ruta y no con validadores de pydantic: un error de pydantic devuelve el cuerpo
+    # de entrada, y ahí irían el correo y el PDF.
+    correo: str | None = None
+    telefono: str | None = None
+    adjuntos: list[AdjuntoRequest] = []
 
 
 class ResultadoNotificacionResponse(BaseModel):
@@ -221,6 +241,32 @@ def _construir_servicios_fuentes(
     servicios_por_fuente.update({fuente: servicio_open_data for fuente in fuentes_od})
 
     return servicios_por_fuente, adaptador_open_finance, adaptador_open_data
+
+
+def _validar_adjuntos(body: SolicitudNotificacionRequest, maximo_bytes: int) -> list[Adjunto]:
+    """Los adjuntos ya validados, o un 422 cuyo mensaje nunca repite el contenido ni el correo."""
+    if not body.adjuntos:
+        return []
+    if not body.correo:
+        raise HTTPException(status_code=422, detail="Un adjunto solo se envía por correo.")
+    if len(body.adjuntos) > MAXIMO_ADJUNTOS:
+        raise HTTPException(status_code=422, detail=f"Máximo {MAXIMO_ADJUNTOS} adjuntos por aviso.")
+    validados: list[Adjunto] = []
+    for adjunto in body.adjuntos:
+        if adjunto.tipo not in TIPOS_DE_ADJUNTO:
+            raise HTTPException(status_code=422, detail="Tipo de adjunto no permitido.")
+        try:
+            contenido = base64.b64decode(adjunto.contenido_base64, validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise HTTPException(
+                status_code=422, detail="El contenido del adjunto no es base64 válido."
+            ) from error
+        if not contenido:
+            raise HTTPException(status_code=422, detail="El adjunto está vacío.")
+        if len(contenido) > maximo_bytes:
+            raise HTTPException(status_code=422, detail="El adjunto supera el tamaño permitido.")
+        validados.append(Adjunto(adjunto.nombre, adjunto.tipo, adjunto.contenido_base64))
+    return validados
 
 
 def create_app(config: Configuracion | None = None) -> FastAPI:
@@ -495,15 +541,21 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         response_model=ResultadoNotificacionResponse,
     )
     def enviar_notificacion(body: SolicitudNotificacionRequest) -> ResultadoNotificacionResponse:
-        """Aviso al cliente (HU-W03). Siempre 200: si el proveedor no responde o el circuito está
-        abierto, `pendiente` con su motivo (regla #4) y POLICY lo reintenta. Idempotente por
-        `id_notificacion`: repetirlo no manda dos avisos."""
+        """Aviso al cliente (HU-W03). Con el proveedor caído o el circuito abierto responde 200
+        `pendiente` con su motivo (regla #4) y POLICY lo reintenta. Idempotente por
+        `id_notificacion`: repetirlo no manda dos avisos. Una solicitud mal armada (adjunto sin
+        correo, de un tipo no permitido, que no es base64 o que pasa el tope) es un 422 con un
+        mensaje que no repite el contenido: es un error de quien llama, no del proveedor."""
+        adjuntos = _validar_adjuntos(body, config.adjunto_maximo_bytes)
         resultado = app.state.servicio_notificaciones.enviar(
             SolicitudNotificacion(
                 id_notificacion=body.id_notificacion,
                 plantilla=body.plantilla,
                 destinatario_id=body.destinatario_id,
                 datos=body.datos,
+                correo=body.correo or None,
+                telefono=body.telefono or None,
+                adjuntos=adjuntos,
             )
         )
         return ResultadoNotificacionResponse(

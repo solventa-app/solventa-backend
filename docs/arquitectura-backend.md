@@ -84,8 +84,9 @@ manda a revisión manual. Un `rechazada` del proveedor es un resultado de negoci
 (`kyc`): no hay segundo adaptador porque EC031 ya se demuestra con la pasarela y la firma.
 
 `PuertoNotificaciones` tiene `enviar(SolicitudNotificacion)`: recibe una plantilla, el identificador opaco del usuario y los datos
-de la plantilla (número de póliza y ruta del documento), nunca un correo ni el contenido del documento; el proveedor resuelve el
-contacto. Idempotente por `id_notificacion` (`poliza-emitida-{id}`), con el mismo circuito, presupuesto de 700 ms y sonda que las
+de la plantilla (número de póliza y ruta del documento) y, **desde el bloque 8 (W03-16)**, el contacto del cliente (`correo` o
+`telefono`) y el PDF de la póliza como adjunto, que solo viaja por correo. Son datos personales y financieros que no se guardan ni se
+loguean (la regla anterior era que el proveedor nunca los recibía). Idempotente por `id_notificacion` (`poliza-emitida-{id}`), con el mismo circuito, presupuesto de 700 ms y sonda que las
 demás (`pendiente` = no se pudo enviar y POLICY reintenta).
 
 `PuertoPasarelaPagos` tiene `cobrar` y `consultar` (KAN-28). `consultar` busca un cobro por la **referencia del

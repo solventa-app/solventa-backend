@@ -39,18 +39,20 @@ los llama el BFF, que ya validó el token y el rol.
 | Método | Ruta | Respuesta |
 |---|---|---|
 | `POST` | `/sesiones` `{usuario, clave}` | `{token, expira_en, usuario}` (con el `nombre` propio, o `null`; el JWT no lo lleva), o `401` con mensaje genérico |
-| `POST` | `/usuarios` `{usuario, clave, rol, nombre?}` | el usuario (sin hash ni nombre); `400` alias, clave o nombre inválidos (el nombre se admite en cualquier rol); `409` alias repetido |
+| `POST` | `/usuarios` `{usuario, clave, rol, nombre?, correo?, telefono?}` | el usuario (sin hash, nombre ni contacto; con `tiene_contacto`); `400` alias, clave, nombre o contacto inválidos (el nombre se admite en cualquier rol; el contacto solo en CLIENTE); `409` alias repetido |
 | `POST` | `/usuarios/nombres` `{ids}` | `{id: nombre}` de los CLIENTE pedidos (hasta 200; ids en el cuerpo). Dato personal: solo lo llama el BFF para un BACKOFFICE |
 | `GET` | `/usuarios?rol=` | lista de usuarios (el `nombre` siempre en `null`) |
 | `GET` | `/usuarios/{id}` | el usuario con su `nombre` (el BFF solo lo llama con el id del propio usuario, para `yo`), o `404` |
 | `POST` | `/usuarios/{id}/rol` `{rol}` | el usuario con el rol nuevo, o `404` |
 | `POST` | `/usuarios/{id}/suspender` | baja lógica (`estado = SUSPENDIDO`), o `404` |
+| `POST` | `/usuarios/{id}/contacto` `{correo?, telefono?}` | el usuario con `tiene_contacto` (nunca el contacto). Lo que no llega se conserva; `400` si no llega ninguno, es inválido o el usuario no es CLIENTE; `404` |
+| `GET` | `/usuarios/{id}/contacto` | `{correo, telefono}` **en claro** de un CLIENTE (`null` en lo que no tiene), o `404` si no existe o no es CLIENTE. Dato personal: solo lo llama POLICY, para enviarle el PDF de su póliza; nunca se loguea |
 
 - Clave: hash **argon2id** (`argon2-cffi`), verificación en tiempo constante; bloqueo de 15 min tras 5 fallos.
 - JWT **HS256** (`pyjwt`), 60 min, con `sub`, `rol`, `scopes`, `iat`, `exp` y `jti`. Secreto `JWT_SECRETO`
   (`clave-jwt` en Secret Manager, el mismo que lee el BFF). En Cloud Run no arranca con el valor local, el marcador de
   Terraform ni uno de menos de 32 bytes.
-- El alias no puede ser un correo ni un documento. El único dato personal es el **nombre** de cualquier rol (KAN-28): va cifrado por campo (AES-256-GCM con el id del usuario como dato asociado, `app/cifrado.py`).
+- El alias no puede ser un correo ni un documento. Los datos personales son el **nombre** de cualquier rol (KAN-28) y el **correo y teléfono** de los CLIENTE (HU-W03, bloque 8; migración `0007`, opcionales): van cifrados por campo (AES-256-GCM con un dato asociado, `app/cifrado.py`). El nombre usa el id del usuario; el correo y el teléfono usan `correo:<id>` y `telefono:<id>`, así que un cifrado movido de una columna a otra no se descifra. El correo se guarda en minúsculas (solo se revisa su forma, no que exista) y el teléfono solo con dígitos y un `+` opcional (7 a 15 dígitos). Solo los CLIENTE tienen contacto y solo POLICY puede leerlo.
   - **Cifrado por sobre (envelope encryption) con KMS (HA-SEG-002, EC022):** si se configuran `KMS_KEY_NAME` y `CIFRADO_CLAVE_ENVUELTA` (DEK envuelta en base64 desde Secret Manager), AUTH desenvuelve la DEK al iniciar mediante Cloud KMS (`DesenvolvedorGoogleKms`). Si la versión de llave en KMS está deshabilitada o inaccesible, falla de inmediato con `ErrorDeCifrado` sin degradar a texto plano ni clave local.
   - **Fallback local:** sin configuración KMS, usa `CIFRADO_CLAVE` (local no secreta; en Cloud Run exige sobre KMS válido o `CIFRADO_CLAVE` de producción). Rotarla sin re-cifrar deja los nombres ilegibles.
 - Primer BACKOFFICE: `CLAVE_INICIAL=... python -m app.crear_usuario --usuario <alias> --rol BACKOFFICE` (idempotente).

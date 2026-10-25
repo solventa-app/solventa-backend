@@ -158,18 +158,35 @@ EstadoNotificacion = Literal["enviada", "pendiente"]
 
 
 @dataclass
+class Adjunto:
+    """Un archivo que viaja con el aviso (el PDF de la póliza). El contenido va en base64."""
+
+    nombre: str
+    tipo: str  # tipo de medio; hoy solo `application/pdf`
+    contenido_base64: str
+
+
+@dataclass
 class SolicitudNotificacion:
     """Aviso al cliente de que su póliza fue emitida (HU-W03, CA-W03-08).
 
-    El proveedor recibe una plantilla, el identificador opaco del usuario y los datos de la
-    plantilla (el número de póliza y la ruta del documento): nunca el contenido del documento ni
-    un dato personal. El proveedor resuelve el contacto (correo o teléfono) con su propia base:
-    Solventa no lo guarda en POLICY."""
+    **Regla cambiada en el bloque 8 (decisión W03-16, 2026-10-24).** Antes el proveedor solo recibía
+    la plantilla, el identificador opaco del usuario y los datos de la plantilla, y resolvía el
+    contacto con su propia base. Ahora AUTH guarda el correo y el teléfono del cliente y el aviso
+    lleva el PDF de la póliza, así que el proveedor recibe **datos personales y financieros**: el
+    contacto (`correo` o `telefono`) y el adjunto (prima, cobertura, vigencia y nombre del
+    asegurado).
+    Solo se puede enviar por HTTPS al proveedor y no se guarda en el ACL ni se escribe en logs ni
+    en etiquetas de métricas (regla #6). Solo el correo lleva adjuntos: un cliente que solo tenga
+    teléfono recibe el aviso sin PDF (W03-17)."""
 
     id_notificacion: str  # un mismo id recibido dos veces no envía dos avisos (idempotente)
     plantilla: str
-    destinatario_id: str  # identificador opaco del usuario, nunca un correo ni un documento
+    destinatario_id: str  # identificador opaco del usuario
     datos: dict[str, str] = field(default_factory=dict)
+    correo: str | None = None
+    telefono: str | None = None
+    adjuntos: list[Adjunto] = field(default_factory=list)
 
 
 @dataclass

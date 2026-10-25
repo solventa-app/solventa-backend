@@ -55,6 +55,9 @@ class Configuracion:
     kyc_url: str = "http://localhost:8105"
     # Notificaciones al cliente (HU-W03, bloque 5).
     notificaciones_url: str = "http://localhost:8106"
+    # Tope del contenido de un archivo adjunto a un aviso (bytes ya decodificados). El PDF de una
+    # póliza pesa pocos KB; el tope evita que por aquí viaje cualquier cosa.
+    adjunto_maximo_bytes: int = 5_000_000
     # Quién dispara la sonda: "bucle" (local y CI) o "externo" (Cloud Scheduler, en Cloud Run).
     disparador: str = "bucle"
     # Solo con DISPARADOR=externo (los fija Terraform): la cola de reconciliación de Cloud Tasks y a
@@ -132,6 +135,7 @@ class Configuracion:
             firma_url=os.getenv("FIRMA_URL", "http://localhost:8104"),
             kyc_url=os.getenv("KYC_URL", "http://localhost:8105"),
             notificaciones_url=os.getenv("NOTIFICACIONES_URL", "http://localhost:8106"),
+            adjunto_maximo_bytes=int(os.getenv("ADJUNTO_MAXIMO_BYTES", "5000000")),
             timeout_s=int(timeout_ms_default) / 1000,
             breaker_umbral_fallos=int(os.getenv("BREAKER_UMBRAL_FALLOS", "3")),
             breaker_ttl_segundos=float(os.getenv("BREAKER_TTL_SEGUNDOS", "5")),

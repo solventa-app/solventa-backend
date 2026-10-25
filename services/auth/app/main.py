@@ -85,6 +85,23 @@ class SolicitudUsuario(BaseModel):
     clave: str
     rol: str
     nombre: str | None = None  # cualquier rol; se guarda cifrado y no se devuelve al crear
+    # Solo CLIENTE (HU-W03, bloque 8); se guardan cifrados y no se devuelven al crear.
+    correo: str | None = None
+    telefono: str | None = None
+
+
+class SolicitudContacto(BaseModel):
+    """Lo que no llega se conserva; al menos uno es obligatorio."""
+
+    correo: str | None = None
+    telefono: str | None = None
+
+
+class ContactoResponse(BaseModel):
+    """Dato personal en claro: solo lo pide POLICY (servicio a servicio) y nunca se loguea."""
+
+    correo: str | None
+    telefono: str | None
 
 
 class SolicitudNombres(BaseModel):
@@ -109,6 +126,8 @@ class UsuarioResponse(BaseModel):
     # Preferencias de la interfaz (KAN-209); la web las aplica al iniciar sesión.
     idioma: str = "ES"
     moneda: str = "COP"
+    # Solo dice si tiene contacto (para que la web sepa cuándo pedirlo), nunca cuál es.
+    tiene_contacto: bool = False
 
 
 class SolicitudPreferencias(BaseModel):
@@ -229,7 +248,9 @@ def create_app(
     @app.post("/usuarios", tags=["usuarios"], response_model=UsuarioResponse)
     def crear_usuario(body: SolicitudUsuario) -> UsuarioResponse:
         try:
-            usuario = app.state.usuarios.crear(body.usuario, body.clave, body.rol, body.nombre)
+            usuario = app.state.usuarios.crear(
+                body.usuario, body.clave, body.rol, body.nombre, body.correo, body.telefono
+            )
         except DatoInvalido as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         except UsuarioDuplicado as error:
@@ -300,6 +321,29 @@ def create_app(
             raise HTTPException(status_code=404, detail="usuario no encontrado")
         logger_usuarios.info("preferencias actualizadas id=%s", id_opaco(usuario_id))
         return UsuarioResponse(**usuario)
+
+    @app.post("/usuarios/{usuario_id}/contacto", tags=["usuarios"], response_model=UsuarioResponse)
+    def actualizar_contacto(usuario_id: str, body: SolicitudContacto) -> UsuarioResponse:
+        """Correo y teléfono del cliente. El BFF solo lo llama con el id del propio usuario.
+        Se guardan cifrados y la respuesta solo dice que ya hay contacto, no cuál."""
+        try:
+            usuario = app.state.usuarios.actualizar_contacto(usuario_id, body.correo, body.telefono)
+        except DatoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        if usuario is None:
+            raise HTTPException(status_code=404, detail="usuario no encontrado")
+        logger_usuarios.info("contacto actualizado id=%s", id_opaco(usuario_id))
+        return UsuarioResponse(**usuario)
+
+    @app.get("/usuarios/{usuario_id}/contacto", tags=["usuarios"], response_model=ContactoResponse)
+    def obtener_contacto(usuario_id: str) -> ContactoResponse:
+        """El correo y el teléfono en claro de un CLIENTE. Es dato personal: AUTH es privado y
+        solo lo llama POLICY, para enviarle al cliente el PDF de su póliza. 404 si el usuario no
+        existe o no es CLIENTE. Nunca se loguea."""
+        contacto = app.state.usuarios.contacto_de(usuario_id)
+        if contacto is None:
+            raise HTTPException(status_code=404, detail="usuario no encontrado")
+        return ContactoResponse(**contacto)
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app
