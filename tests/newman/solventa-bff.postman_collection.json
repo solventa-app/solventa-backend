@@ -924,7 +924,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 240,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
             },
             "description": "Flujo insignia: consentimiento en AUTH, 5 fuentes por el ACL Worker, perfil en RISK y oferta en RATING. Con proveedores sanos debe ser COMPLETA."
           }
@@ -969,13 +969,13 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 240,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
             },
             "description": "Mismo esquema servido en `/graphql/app` (móvil): debe dar el mismo resultado."
           }
         },
         {
-          "name": "oferta(id) devuelve null",
+          "name": "oferta(id) devuelve la oferta guardada",
           "event": [
             {
               "listen": "test",
@@ -985,9 +985,12 @@
                   "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const cuerpo = pm.response.json();",
-                  "pm.test('null sin errores', () => {",
+                  "pm.test('es la oferta que RATING guardó, con sus 5 fuentes', () => {",
                   "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(cuerpo.data.oferta).to.be.null;",
+                  "  pm.expect(cuerpo.data.oferta).to.not.be.null;",
+                  "  pm.expect(cuerpo.data.oferta.id).to.eql(pm.collectionVariables.get('oferta_id'));",
+                  "  pm.expect(cuerpo.data.oferta.tipo).to.eql('COMPLETA');",
+                  "  pm.expect(cuerpo.data.oferta.fuentes).to.have.lengthOf(5);",
                   "});"
                 ]
               }
@@ -1013,9 +1016,9 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  oferta(id: $id) {\\n    id tipo\\n  }\\n}\",\n  \"variables\": {\n    \"id\": \"{{oferta_id}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  oferta(id: $id) {\\n    id tipo\\n    fuentes { id estado }\\n  }\\n}\",\n  \"variables\": {\n    \"id\": \"{{oferta_id}}\"\n  }\n}"
             },
-            "description": "RATING todavía no persiste ofertas, así que la consulta por id devuelve null (documentado en el README del BFF)."
+            "description": "RATING guarda la oferta al calcularla (HU-W03): la consulta por id la devuelve, con la misma validación de dueño que aceptarOferta."
           }
         }
       ]
@@ -1131,7 +1134,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 240,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
             },
             "description": "El ACL Worker corta a 700 ms y degrada al último valor en caché; la oferta debe ser PRELIMINAR con rango de prima y las fuentes de Open Finance en CACHE (CA-W01-04). Requiere que la carpeta 2 haya corrido antes para que exista caché."
           }
@@ -1188,7 +1191,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_sin_cache}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 240,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_sin_cache}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
             },
             "description": "Con Open Finance lento y un documento sin caché, el historial crediticio no llega: ErrorOferta con reintento (CA-W01-05)."
           }
@@ -1336,7 +1339,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"no-existe\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 240,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"no-existe\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
             },
             "description": "Sin consentimiento vigente no se consulta ninguna fuente (regla #7, CA-W01-01)."
           }
@@ -1382,7 +1385,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"no-es-un-numero\",\n      \"plazoMeses\": 240,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"no-es-un-numero\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
             },
             "description": "RATING rechaza el valor (400) y el BFF lo traduce a ErrorOferta sin reintento."
           }
@@ -1399,7 +1402,7 @@
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const cuerpo = pm.response.json();",
                   "const r = cuerpo.data.solicitarOferta;",
-                  "pm.test('ErrorOferta sin reintento por plazo fuera de 1-360 meses', () => {",
+                  "pm.test('ErrorOferta sin reintento por plazo fuera de 1-60 meses', () => {",
                   "  pm.expect(cuerpo.errors).to.be.undefined;",
                   "  pm.expect(r.__typename).to.eql('ErrorOferta');",
                   "  pm.expect(r.puedeReintentar).to.be.false;",
@@ -1430,7 +1433,7 @@
               "mode": "raw",
               "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 0,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
             },
-            "description": "El BFF valida el plazo (1 a 360 meses) y responde ErrorOferta sin reintento, sin consultar fuentes."
+            "description": "El BFF valida el plazo (1 a 60 meses) y responde ErrorOferta sin reintento, sin consultar fuentes."
           }
         },
         {
@@ -1615,7 +1618,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 240,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n      __typename\\n      ... on Oferta {\\n        id tipo\\n        prima { valor moneda }\\n        rangoPrima { minima { valor moneda } maxima { valor moneda } }\\n        cobertura { valor moneda }\\n        desgloseScore { nombre peso }\\n        fuentes { id nombre origen estado capturadoEn }\\n      }\\n      ... on ErrorOferta { mensaje puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
             },
             "description": "Con el consentimiento revocado se rechaza nueva consulta, sin tocar ninguna fuente."
           }
@@ -1870,7 +1873,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) { __typename }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 240,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) { __typename }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{consentimiento_id}}\",\n      \"documentoIdentidad\": \"{{documento_identidad}}\",\n      \"valorCredito\": \"{{valor_credito}}\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Direccion de prueba\"\n    }\n  }\n}"
             },
             "description": "Cotizar es de CLIENTE y ASESOR; el BACKOFFICE no cotiza.",
             "auth": {

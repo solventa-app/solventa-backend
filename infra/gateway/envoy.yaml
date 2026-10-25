@@ -56,6 +56,17 @@ static_resources:
                           route:
                             cluster: bff_cluster
                             timeout: 0.7s
+                        # PDF de la póliza (HU-W03): una ruta con parámetro, igual que en OpenAPI.
+                        - match:
+                            safe_regex:
+                              regex: "/polizas/[^/]+/documento"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
                 http_filters:
                   - name: envoy.filters.http.router
                     typed_config:

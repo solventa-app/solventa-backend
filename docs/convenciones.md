@@ -47,7 +47,7 @@ feature (feat|fix|chore/KAN-N-…) ──squash──► develop ──► relea
 ## Commits y PR
 
 - **Conventional Commits** con alcance = servicio o carpeta y la clave de Jira: `feat(auth): KAN-24 registra consentimiento append-only`.
-  Tipos: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `infra`. Alcances: `bff`, `auth`, `risk`, `rating`, `payments`, `acl`, `stubs`, `contracts`, `infra`, `tests`.
+  Tipos: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `infra`. Alcances: `bff`, `auth`, `risk`, `rating`, `payments`, `policy`, `under`, `acl`, `stubs`, `contracts`, `infra`, `tests`.
 - El título del PR sigue el mismo formato y **lo valida el CI** (`Título del PR`; Dependabot queda exento). El PR usa la plantilla de `.github/pull_request_template.md`.
 - Las ramas de trabajo se integran con **squash** en `develop`: el título del PR es el commit en `develop`. Los PRs de release, hotfix y reintegración usan merge commit; el de release o hotfix a `main` es el que despliega a staging, comparado contra su primer padre (todo lo liberado); su título sigue el mismo formato (p. ej. `chore(infra): KAN-175 release sprint-1`).
 - Un PR cuenta una sola historia o habilitadora. Si cruza servicios de backend, sigue siendo un solo PR atómico.
@@ -109,6 +109,10 @@ Además de `gitleaks`, `Dependabot` y `actionlint` (obligatorios), `.github/work
 
 - Unitarias: dominio y reglas (RATING con `pytest`, sin red).
 - Contrato: la **misma suite** corre contra el stub y contra el sandbox real del proveedor (EC031).
+- Servicios **dummy** (`"dummy": true` en `.github/servicios.json`, p. ej. `stubs/siniestros` para HU-W04): sustitutos
+  temporales de un servicio que aún no existe, para que el front avance. Son autónomos (sin base, sin tokens, sin
+  llamar a nadie), publican su contrato en `contracts/graphql/<nombre>.graphql` y por ahora corren **solo en local**: no
+  se despliegan ni se crean en Terraform. Se reemplazan por el servicio real sin que el front cambie más que la URL.
 - Carga y escenarios: k6 en `tests/k6/`. Los guiones de los experimentos pasan a ser pruebas de regresión en cada sprint.
 - Fixtures sin datos personales reales.
 

@@ -24,6 +24,8 @@ class Configuracion:
     rating_url: str
     # Cobros del back-office (KAN-28): `cobros` y `reintentarCobro`.
     payments_url: str
+    # Propuestas y pólizas (HU-W03): `aceptarOferta`, `propuesta`.
+    policy_url: str
     acl_timeout_segundos: float
     servicios_timeout_segundos: float
     cliente_id_clave: str
@@ -61,6 +63,7 @@ class Configuracion:
             risk_url=os.getenv("RISK_URL", "http://localhost:8002"),
             rating_url=os.getenv("RATING_URL", "http://localhost:8003"),
             payments_url=os.getenv("PAYMENTS_URL", "http://localhost:8004"),
+            policy_url=os.getenv("POLICY_URL", "http://localhost:8007"),
             # El ACL Worker corta a los 700 ms (EC009/EC010) y degrada; el margen
             # cubre la red y su propia respuesta degradada.
             acl_timeout_segundos=float(os.getenv("ACL_TIMEOUT_SEGUNDOS", "1.0")),

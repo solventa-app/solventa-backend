@@ -44,7 +44,7 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
   personales. `tests/k6/gateway-presupuesto.js` mide el presupuesto de ≤ 120 ms contra este servicio.
 - **T-W01-10 (Circuit Breaker, Retry, degradación y EC010 ≤ 500 ms):** un breaker por proveedor
   (`ServicioConsultaFuentes`/`ServicioCobro`), retry acotado al presupuesto por proveedor
-  (`PRESUPUESTO_MS_*` acotado por `TIMEOUT_MS`, p. ej. 120 ms para EC008 o 700 ms por defecto),
+  (`PRESUPUESTO_MS_<PROVEEDOR>` acotado por `TIMEOUT_MS`, p. ej. 120 ms para EC008 o 700 ms por defecto),
   degradación cache-aside en Redis (`app/application/cache.py`, TTL 5 min). Cuando ya existe un
   valor en caché, compite caché contra proveedor usando `presupuesto_con_cache_s`
   (`PRESUPUESTO_CON_CACHE_MS`, 300 ms por defecto) para cumplir **EC010 ≤ 500 ms**, o sirve
@@ -87,6 +87,11 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
 - **Clave de caché sin `cliente_id` en crudo:** la clave en Redis guarda el hash SHA-256 del
   cliente, no el id en crudo (defensa en profundidad, además de que ni logs ni etiquetas de
   métricas usan el id sin hashear — `app/application/identificadores.py`).
+- **Tasas de cambio (KAN-209):** `GET /tasas-cambio` devuelve cuántos COP vale una unidad de cada moneda del
+  selector de la web (texto decimal). Hoy sale de una tabla de referencia fija versionada
+  (`app/tasas_cambio.json`, `AdaptadorTasasReferencia`) que hace de stub del proveedor; el BFF la usa para
+  `convertirMontos`. Un proveedor real es otro adaptador de `PuertoTasasCambio` (con circuito y caché como Open
+  Finance), sin tocar el BFF.
 
 ## Pendiente, fuera de alcance de esta tarea
 
@@ -107,8 +112,9 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
 - **Cambiar de pasarela (EC031, CA-W05-06):** `PROVEEDOR_PASARELA=estandar|alterna` elige el adaptador. Para sumar un proveedor: una clase en `app/adapters/` que cumpla `PuertoPasarelaPagos` (`cobrar`, `consultar`, `sondear`, `cerrar`), una línea en la elección de `app/main.py` y su prueba de contrato en `tests/test_ec031_pasarela.py`. `AdaptadorPasarelaAlterna` es el ejemplo (otra API, otros campos y estados). PAYMENTS y el BFF no cambian.
 - Con `DISPARADOR=externo` la reconciliación diferida va por Cloud Tasks (`app/application/cola_tareas.py`) hacia `POST /reconciliar` del consolidador, y exige `GCP_PROYECTO`, `GCP_REGION`, `TAREAS_CUENTA` y `CONSOLIDADOR_URL` (los pone Terraform; opcional `TAREAS_COLA_RECONCILIACION`).
 - Variables de entorno: `DISPARADOR` (`bucle`; `externo` desactiva el bucle de la sonda y cambia `rq` por Cloud Tasks), `PROVEEDOR_PASARELA` (`estandar`), `REDIS_URL`, `OPEN_FINANCE_URL`, `OPEN_DATA_URL`, `PASARELA_URL`,
-  `TIMEOUT_MS` (700), `PRESUPUESTO_MS_OPEN_FINANCE` (`TIMEOUT_MS`, p. ej. 120 para EC008),
-  `PRESUPUESTO_MS_OPEN_DATA` (`TIMEOUT_MS`), `PRESUPUESTO_MS_PASARELA` (`TIMEOUT_MS`),
+  `TIMEOUT_MS` (700), `PRESUPUESTO_MS_<PROVEEDOR>` (cualquier proveedor: `OPEN_FINANCE`, `OPEN_DATA`, `PASARELA`,
+  `FIRMA`, `KYC`, `NOTIFICACIONES`… ; sin variable vale `TIMEOUT_MS`; p. ej. 120 para EC008 en Open Finance),
+  `PLAZO_RUTA_SINCRONA_MS` (700), `RESERVA_SALTOS_MS` (250) y `PROVEEDORES_RUTA_SINCRONA` (`firma`; ver abajo),
   `PRESUPUESTO_CON_CACHE_MS` (300, EC010 ≤ 500 ms), `CACHE_SERVIR_EN_TTL` (`false`; `true` en Cloud Run),
   `FUENTES_CONFIG_PATH` (`contracts/fuentes.json`), `BREAKER_UMBRAL_FALLOS` (3),
   `BREAKER_TTL_SEGUNDOS` (5), `SONDA_INTERVALO_SEGUNDOS` (2), `CACHE_TTL_SEGUNDOS` (300),
@@ -120,7 +126,7 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
 ### Verificación en vivo (Circuit Breaker + sonda)
 
 ```bash
-docker compose --profile servicios up -d --build redis acl-worker stub-open-finance stub-open-data stub-pasarela
+docker compose --profile servicios up -d --build redis acl-worker stub-open-finance stub-open-data stub-pasarela stub-firma stub-kyc stub-notificaciones
 
 # (a) camino sano
 curl -s -X POST localhost:8005/fuentes/consultar \
@@ -142,3 +148,48 @@ sleep 6
 curl -s localhost:8005/circuitos   # -> open-finance: "closed"
 ```
 
+
+## Firma electrónica (HU-W03, bloque 2)
+
+- `POST /firma/firmar` `{id_firma, documento_hash, version_documento, firmante_id}` → `{estado: firmada | pendiente,
+  referencia, firmada_en, motivo}`. Siempre 200: con el proveedor caído, lento o el circuito abierto responde `pendiente`
+  (`firma_no_disponible` / `circuito_abierto`) y POLICY ofrece reintentar. El proveedor es idempotente por `id_firma`, así
+  que reintentar tras un corte a los 700 ms devuelve la misma evidencia en vez de firmar dos veces.
+- Solo viaja el **hash** del documento: el contenido (con la prima) vive cifrado en POLICY junto a la evidencia.
+- Circuito `firma`, con su sonda de recuperación (`GET /v1/estado`, que nunca firma), igual que la pasarela.
+- EC031 / CA-W03-10: dos adaptadores (`app/adapters/firma.py` y `firma_alterna.py`), elegidos con `PROVEEDOR_FIRMA`
+  (`estandar` | `alterna`). Variables nuevas: `FIRMA_URL` (`http://localhost:8104`), `PRESUPUESTO_MS_FIRMA`.
+
+**Ruta síncrona del usuario (CA-W03-05).** La firma es lo único de W03 que el usuario espera: si el proveedor tarda, el corte de 700 ms
+del gateway (HA-LAT-004) llegaba antes que el del ACL y el cliente veía un 504. Los proveedores de `PROVEEDORES_RUTA_SINCRONA` quedan
+acotados a `PLAZO_RUTA_SINCRONA_MS − RESERVA_SALTOS_MS` (700 − 250 = **450 ms** por defecto) aunque su `PRESUPUESTO_MS_*` sea mayor; así
+la respuesta es un `ErrorFirma` con reintento y no un 5xx. El cobro, el KYC y el aviso corren en segundo plano y conservan su presupuesto.
+La reserva es lo que cuestan los saltos BFF → POLICY → ACL (~80 ms medidos en local); súbela si la nube mide más. `PLAZO_RUTA_SINCRONA_MS`
+debe coincidir con el `timeout` del gateway en `infra/gateway/*`: hoy no hay una verificación automática entre los dos.
+Agregar un proveedor nuevo no toca el código: su variable `PRESUPUESTO_MS_<PROVEEDOR>` y, si lo espera el usuario, su nombre en `PROVEEDORES_RUTA_SINCRONA`.
+
+## KYC (HU-W03, bloque 3)
+
+- `POST /kyc/verificar` `{id_verificacion, cliente_id}` → `{estado: aprobada | rechazada | pendiente, referencia, motivo,
+  verificada_en}`. Siempre 200: con el proveedor caído, lento o el circuito abierto responde `pendiente`
+  (`kyc_no_disponible` / `circuito_abierto`) y UNDER manda la propuesta a revisión manual. Idempotente por `id_verificacion`.
+- Solo viaja el identificador opaco del cliente, nunca un documento. Un proveedor real pediría el documento y una validación
+  biométrica por un canal propio (decisión W03-10); el contrato del stub es inventado.
+- Circuito `kyc` con su sonda (`GET /v1/estado`, que nunca verifica). Variables nuevas: `KYC_URL` (`http://localhost:8105`),
+  `PRESUPUESTO_MS_KYC` (700).
+
+## Notificaciones (HU-W03, bloque 5)
+
+- `POST /notificaciones/enviar` `{id_notificacion, plantilla, destinatario_id, datos, correo?, telefono?, adjuntos?}` → `{estado: enviada | pendiente, referencia,
+  motivo}`. Siempre 200: con el proveedor caído, lento o el circuito abierto responde `pendiente`
+  (`notificaciones_no_disponibles` / `circuito_abierto`) y POLICY reintenta. Idempotente por `id_notificacion`: repetirlo no
+  manda dos avisos.
+- **Regla cambiada en el bloque 8 (W03-16, 2026-10-24).** Antes solo viajaban la plantilla, el id opaco y los datos de la plantilla, y el
+  proveedor resolvía el contacto. Ahora el aviso lleva el contacto del cliente (`correo` o `telefono`, que guarda AUTH) y el PDF de la
+  póliza como adjunto (`{nombre, tipo, contenido_base64}`): **datos personales y financieros** que viajan solo en el cuerpo de la
+  petición al proveedor y nunca se guardan ni se escriben en logs ni en etiquetas. El contrato del stub es inventado.
+- Reglas del adjunto, validadas en la ruta con un `422` cuyo mensaje no repite el contenido: solo con `correo` (un SMS no lleva
+  archivos), tipo `application/pdf`, base64 válido y no vacío, hasta 3 por aviso y hasta `ADJUNTO_MAXIMO_BYTES` (5.000.000 por omisión) ya
+  decodificado. Un `422` es un error de quien llama, no del proveedor: no se reintenta.
+- Circuito `notificaciones` con su sonda (`GET /v1/estado`, que nunca envía). Variables nuevas: `NOTIFICACIONES_URL`
+  (`http://localhost:8106`), `PRESUPUESTO_MS_NOTIFICACIONES` (700), `ADJUNTO_MAXIMO_BYTES` (5000000).

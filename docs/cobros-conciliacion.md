@@ -381,10 +381,9 @@ Lo que ya existe y sirve tal cual: `crearCobro` (recibe un `tokenMedioPago` opac
 idempotencia por `idIntentoCobro`, estados `cobrando/cobrado/rechazado/pendiente`, reintento automático de pendientes y
 reintento manual de rechazados (hasta 3) desde W05-01.
 
-**Decisiones para el Planning del Sprint 2:**
+**Decisiones para el Planning del Sprint 2** (la propuesta de respuesta está en `docs/plan-completar-hu-w03.md`):
 
-1. **D-03:** ¿la primera prima se cobra **al firmar, antes de emitir** (recomendación del plan) o la póliza se emite y el
-   cobro va por su lado?
+1. **D-03 — cerrada el 2026-10-22:** la primera prima se cobra **al firmar, antes de emitir**; UNDER decide antes del cobro.
 2. Si el primer cobro queda **rechazado** o **pendiente**: ¿se emite la póliza igual, queda en espera o se cancela?
 3. Qué ve el cliente después de firmar: diseñar en Figma la pantalla de resultado del pago (cobrado, en proceso o
    rechazado con qué hacer). El plan del frontend ya lo marca como faltante (`solventa-frontend-web/docs/plan-frontend.md`).

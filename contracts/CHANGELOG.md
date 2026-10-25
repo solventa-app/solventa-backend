@@ -114,3 +114,96 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Afecta al frontend: sí (`useCotizacion` envía los campos de titular/canal en `registrarConsentimiento` y reacciona a
   `motivo = CONSENTIMIENTO_NO_VIGENTE`). Requiere el PR gemelo en `solventa-frontend-web`.
 
+
+## v0.11 — 2026-10-21
+
+- KAN-209 (idioma y moneda): `Usuario` suma `idioma: String!` y `moneda: String!` (por defecto `ES` y `COP`), que
+  `iniciarSesion` y `yo` devuelven para que la web aplique las preferencias al entrar. Mutación nueva
+  `actualizarPreferencias(entrada: PreferenciasInput!): ResultadoUsuario!` (el propio usuario, con token) y consulta
+  nueva `convertirMontos(montos: [MontoInput!]!, moneda: String!): [Monto!]!`, que convierte montos para mostrarlos con
+  las tasas del ACL Worker (`GET /tasas-cambio`). Solo cambios aditivos.
+- Sin cambio de esquema: el BFF devuelve sus mensajes en inglés si la petición trae `Accept-Language: en`.
+- Afecta al frontend: sí (selectores de idioma y moneda del header y preferencias en Mi perfil). Requiere el PR gemelo
+  en `solventa-frontend-web`.
+
+## v0.12 — 2026-10-22
+
+- KAN-26 (HU-W03, bloque 0): suscripción, firma y emisión de la póliza. Solo cambios aditivos.
+- Mutaciones nuevas `aceptarOferta(ofertaId: ID!): ResultadoAceptacion!` y `firmarPropuesta(entrada: FirmarPropuestaInput!):
+  ResultadoFirma!`; consultas nuevas `propuesta(id)`, `documentoFirma(propuestaId)` y `poliza(id)`.
+- Tipos nuevos: `Propuesta`, `EstadoPropuesta` (`ACEPTADA`, `EN_EMISION`, `EN_REVISION`, `PENDIENTE_PAGO`,
+  `PAGO_RECHAZADO`, `NO_EMITIDA`, `EMITIDA`), `DocumentoFirma`, `FirmaRegistrada`, `Poliza`, `EstadoPoliza`, los errores
+  `ErrorAceptacion` y `ErrorFirma` con sus motivos (`MotivoErrorAceptacion`, `MotivoErrorFirma`) y las uniones
+  `ResultadoAceptacion` y `ResultadoFirma`.
+- La emisión corre en segundo plano después de firmar: el cliente consulta `propuesta` hasta ver `EMITIDA`. El precio
+  nunca lo manda el cliente. Solo el CLIENTE titular firma.
+- Evento nuevo `poliza.emitida` v1 (`polizaId`, `numeroPoliza`, `propuestaId`, `clienteId` opaco, `vigenciaDesde`,
+  `vigenciaHasta`).
+- Afecta al frontend: sí (pantallas W03-01 a W03-05). Requiere el PR gemelo en `solventa-frontend-web`.
+
+## v0.13 — 2026-10-23
+
+- KAN-27 (HU-W04, siniestros asistidos y peritaje): contrato nuevo `contracts/graphql/siniestros.graphql` del **dummy**
+  `stubs/siniestros`. Es un microservicio aparte (sin base de datos ni tokens) que expone su propio GraphQL en
+  `/graphql/siniestros`; **no** cambia `schema.graphql` ni el BFF.
+- Consultas `siniestros(estado)`, `siniestro(id)` y `peritos(siniestroId)`; mutaciones `aprobarSiniestro`,
+  `rechazarSiniestro(id, motivo, comentario)` y `derivarSiniestro(id, peritoId, instrucciones)`, que devuelven
+  `ResultadoResolucion = Siniestro | ErrorSiniestro`. `EstadoSiniestro`: `PENDIENTE`, `EN_REVISION`, `APROBADO`,
+  `RECHAZADO` (derivar a perito deja `EN_REVISION`).
+- `Poliza` del dummy copia la forma de la tabla `polizas` y del tipo `Poliza` de HU-W03 (ver
+  `stubs/siniestros/app/datos/contrato-poliza.json`); el número sigue el formato `SOL-<año>-<6 dígitos>`.
+- Temporal: se reemplaza por el contrato del servicio real de siniestros. Por ahora solo corre en local.
+- Afecta al frontend: sí (pantallas W04-01 a W04-03c). Requiere el PR gemelo en `solventa-frontend-web`.
+
+## v0.13 — 2026-10-24
+
+- KAN-26 (HU-W03, CA-W03-01 y D-11): **sin cambios de campos ni de tipos**; se aclara una semántica. Una oferta
+  `PRELIMINAR` no se puede aceptar y ahora el BFF lo dice ofreciendo recalcularla: `ErrorAceptacion` con motivo
+  `OFERTA_PRELIMINAR` devuelve `puedeReintentar: true` (antes `false`) y el mensaje «Esta oferta es preliminar y no se
+  puede aceptar. Vuelve a calcularla.». Reintentar significa volver a cotizar (`solicitarOferta`), no repetir
+  `aceptarOferta` con la misma oferta: sería el mismo error. Los demás motivos no cambian.
+- Afecta al frontend: sí, solo en cómo trata ese error (mostrar «Recalcular» y llevar a una cotización nueva). Aún no
+  hay una pantalla W03 construida que lo use.
+
+## v0.14 — 2026-10-24
+
+- KAN-26 (HU-W03, CA-W03-06 y decisión W03-14): **sin cambios de campos ni de tipos**; se aclara una semántica.
+  `PAGO_RECHAZADO` deja de ser un estado final: si el primer cobro se recupera después (el back-office reintenta un cobro
+  rechazado, o la pasarela cobra uno pendiente tras agotar las consultas), POLICY reabre la propuesta y pasa a `EMITIDA`,
+  con su póliza y un solo aviso al cliente. Lo reabren el back-office y el proceso de reconciliación; **el cliente no**
+  puede, y no hay mutación nueva.
+- Afecta al frontend: sí, en cómo trata la consulta de `propuesta`. Un cliente que ve `PAGO_RECHAZADO` y vuelve a
+  consultar puede encontrar `EMITIDA`; no debe tratar el rechazo como definitivo. Aún no hay una pantalla W03 que lo use.
+
+## v0.15 — 2026-10-24
+
+- KAN-26 (HU-W03, CA-W03-06 y CA-W03-01): **solo cambios aditivos**.
+  - `Propuesta` suma tres campos opcionales: `motivoEstado: MotivoEstadoPropuesta`, `mensajeEstado: String` y
+    `accionSugerida: AccionSugerida`. Vienen cuando la propuesta no avanza (`EN_REVISION`, `PENDIENTE_PAGO`,
+    `PAGO_RECHAZADO` y `NO_EMITIDA`) y son `null` en los demás estados. Enums nuevos: `MotivoEstadoPropuesta`
+    (`PAGO_FONDOS_INSUFICIENTES`, `PAGO_RECHAZADO`, `PAGO_EN_PROCESO`, `REVISION_MANUAL`, `NO_APROBADA`) y
+    `AccionSugerida` (`ESPERAR`, `CONTACTAR_ASESOR`). El motivo es una categoría para el cliente: el código interno de la
+    decisión de suscripción (p. ej. riesgo alto o KYC rechazado) y el de la pasarela **no salen del BFF**. Los textos de
+    `mensajeEstado` son una propuesta (decisión W03-15) y siguen el idioma de `Accept-Language`.
+  - `oferta(id)` ya no devuelve siempre `null`: entrega la oferta que RATING guardó al calcularla, con la misma validación
+    de dueño que `aceptarOferta` (un CLIENTE solo ve la que consintió él; un ASESOR, la de su cliente). Es `null` si venció,
+    no existe o no es suya, y un error con reintento si RATING o AUTH no responden. Sin cambio de esquema.
+- Afecta al frontend: sí. La pantalla «Resultado del pago» (por crear en Figma) puede mostrar `mensajeEstado` y decidir el
+  botón con `accionSugerida` (`CONTACTAR_ASESOR` lleva a `contactarAsesor`); `oferta(id)` sirve para «ver fuentes» sin
+  guardar la oferta en memoria. Los campos son opcionales: no rompen el codegen. Aún no hay una pantalla W03 que los use.
+
+## v0.16 — 2026-10-24
+
+- KAN-26 (HU-W03, bloque 8, W03-16 y W03-17): el correo y el teléfono del cliente, para enviarle el PDF de su póliza.
+  **Solo cambios aditivos.**
+  - `CrearUsuarioInput` suma `correo` y `telefono`, opcionales (`null` por omisión). Solo para un CLIENTE: con otro rol
+    `crearUsuario` responde `ErrorUsuario` («El contacto solo se guarda para clientes.»).
+  - Mutación nueva `actualizarContacto(entrada: ContactoInput!): ResultadoUsuario!` con el input nuevo `ContactoInput`
+    (`correo`, `telefono`): la usa el propio CLIENTE (el id sale del token; siempre exige token) y lo que no llega se
+    conserva. Un dato inválido o sin ningún campo devuelve `ErrorUsuario` con un mensaje en el idioma de `Accept-Language`.
+  - `Usuario` suma `tieneContacto: Boolean!`: dice si ya hay contacto (para que la web sepa cuándo pedirlo), **nunca cuál**.
+    El correo y el teléfono se guardan cifrados en AUTH y **no se pueden leer por GraphQL** en ningún camino.
+  - El correo se guarda en minúsculas (solo se revisa su forma) y el teléfono con dígitos y un `+` opcional (7 a 15).
+- Afecta al frontend: sí. Web debe construir la pantalla donde el cliente deja su correo y su teléfono (hoy no existe en
+  Figma) y llamar a `actualizarContacto`; puede usar `tieneContacto` de `yo` o `iniciarSesion` para pedirlo. Hasta que un
+  cliente tenga contacto, el aviso de su póliza sigue llevando solo el enlace. Los campos son opcionales: no rompen el codegen.

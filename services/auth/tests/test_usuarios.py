@@ -16,8 +16,18 @@ def test_crear_devuelve_solo_datos_publicos() -> None:
 
     usuario = servicio.crear("asesor.017", "clave-segura-1", "ASESOR")
 
-    assert set(usuario) == {"id", "usuario", "rol", "estado", "creado_en"}
+    assert set(usuario) == {
+        "id",
+        "usuario",
+        "rol",
+        "estado",
+        "creado_en",
+        "idioma",
+        "moneda",
+        "tiene_contacto",  # solo dice si hay contacto, nunca cuál es
+    }
     assert usuario["estado"] == "ACTIVO"
+    assert usuario["tiene_contacto"] is False
 
 
 def test_la_clave_se_guarda_como_hash_argon2() -> None:

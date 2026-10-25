@@ -46,7 +46,8 @@ def test_el_endpoint_ejecuta_una_pasada_y_devuelve_los_estados() -> None:
 
     assert r.status_code == 200
     assert set(r.json().values()) == {"closed"}
-    assert len(r.json()) == 3  # Open Finance, Open Data y la pasarela
+    # Open Finance, Open Data, la pasarela, la firma, el KYC y las notificaciones
+    assert len(r.json()) == 6
 
 
 def test_con_disparador_externo_no_se_arranca_el_bucle(monkeypatch) -> None:

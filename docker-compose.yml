@@ -36,7 +36,7 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - ./dev/postgres:/docker-entrypoint-initdb.d:ro   # crea una base por servicio (auth, payments)
+      - ./dev/postgres:/docker-entrypoint-initdb.d:ro   # crea una base por servicio (auth, payments, policy)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -123,6 +123,7 @@ services:
       RISK_URL: http://risk:8002
       RATING_URL: http://rating:8003
       PAYMENTS_URL: http://payments:8004
+      POLICY_URL: http://policy:8007
       # Solo local: el repo es público. En Cloud Run llega de Secret Manager (clave-cliente-id).
       CLIENTE_ID_CLAVE: solo-local-no-secreta
       # Mismo valor que AUTH (firma HS256). Solo local; en Cloud Run llega de Secret Manager (clave-jwt).
@@ -238,6 +239,41 @@ services:
       postgres: { condition: service_healthy }
       migrar-payments: { condition: service_completed_successfully }
 
+  migrar-policy:
+    <<: *tarea
+    image: solventa/policy:local
+    build: ./services/policy
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/policy
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  policy:
+    <<: *servicio
+    image: solventa/policy:local
+    build: ./services/policy
+    ports: ["8007:8007"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/policy
+      RATING_URL: http://rating:8003
+      ACL_URL: http://acl-worker:8005
+      UNDER_URL: http://under:8008
+      PAYMENTS_URL: http://payments:8004
+      # El contacto y el nombre del cliente para el aviso con PDF (bloque 8, W03-16).
+      AUTH_URL: http://auth:8001
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrar-policy: { condition: service_completed_successfully }
+      auth: { condition: service_healthy }
+
+  under:
+    <<: *servicio
+    build: ./services/under
+    ports: ["8008:8008"]
+    environment:
+      ACL_URL: http://acl-worker:8005
+
   acl-worker:
     <<: *servicio
     build: ./services/acl-worker
@@ -247,6 +283,9 @@ services:
       OPEN_FINANCE_URL: http://stub-open-finance:8101
       OPEN_DATA_URL: http://stub-open-data:8102
       PASARELA_URL: http://stub-pasarela:8103
+      FIRMA_URL: http://stub-firma:8104
+      KYC_URL: http://stub-kyc:8105
+      NOTIFICACIONES_URL: http://stub-notificaciones:8106
       TIMEOUT_MS: "700"        # umbral duro de EC009/EC010
       BREAKER_UMBRAL_FALLOS: "3"       # fallos consecutivos que abren el circuito
       BREAKER_TTL_SEGUNDOS: "5"        # tiempo abierto antes de permitir la próxima sonda
@@ -287,6 +326,27 @@ services:
     <<: *servicio
     build: ./stubs/pasarela
     ports: ["8103:8103"]
+
+  stub-firma:
+    <<: *servicio
+    build: ./stubs/firma
+    ports: ["8104:8104"]
+
+  stub-kyc:
+    <<: *servicio
+    build: ./stubs/kyc
+    ports: ["8105:8105"]
+
+  stub-notificaciones:
+    <<: *servicio
+    build: ./stubs/notificaciones
+    ports: ["8106:8106"]
+
+  # Dummy de siniestros para el front de HU-W04 (KAN-27): sin BD ni tokens; solo local por ahora.
+  stub-siniestros:
+    <<: *servicio
+    build: ./stubs/siniestros
+    ports: ["8107:8107"]
 
   # -------------------------------------------------------- observabilidad
   prometheus:

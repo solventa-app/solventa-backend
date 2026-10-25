@@ -53,3 +53,21 @@ paths:
       responses:
         "200":
           description: Respuesta GraphQL
+  /polizas/{poliza_id}/documento:
+    get:
+      summary: PDF de la póliza emitida (CLIENTE y ASESOR; el BFF exige token siempre)
+      operationId: documentoPoliza
+      produces:
+        - application/pdf
+      parameters:
+        - name: poliza_id
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: El documento en PDF

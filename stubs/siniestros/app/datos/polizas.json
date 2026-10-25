@@ -1,0 +1,202 @@
+[
+  {
+    "id": "pol-01",
+    "propuesta_id": "prop-01",
+    "numero": 48217,
+    "cliente_id": "cli-01",
+    "estado": "EMITIDA",
+    "vigencia_desde": "2026-02-10T00:00:00-05:00",
+    "vigencia_hasta": "2027-02-10T00:00:00-05:00",
+    "creado_en": "2026-02-09T16:20:00-05:00",
+    "notificada_en": "2026-02-10T08:00:00-05:00",
+    "prima": {
+      "valor": "1560000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "52000000",
+      "moneda": "COP"
+    },
+    "ramo": "Vida grupo deudor con amparo de daños al bien financiado"
+  },
+  {
+    "id": "pol-02",
+    "propuesta_id": "prop-02",
+    "numero": 48302,
+    "cliente_id": "cli-02",
+    "estado": "EMITIDA",
+    "vigencia_desde": "2026-01-15T00:00:00-05:00",
+    "vigencia_hasta": "2027-01-15T00:00:00-05:00",
+    "creado_en": "2026-01-14T11:05:00-05:00",
+    "notificada_en": "2026-01-15T08:00:00-05:00",
+    "prima": {
+      "valor": "1904000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "68000000",
+      "moneda": "COP"
+    },
+    "ramo": "Vida grupo deudor con amparo de daños al bien financiado"
+  },
+  {
+    "id": "pol-03",
+    "propuesta_id": "prop-03",
+    "numero": 48455,
+    "cliente_id": "cli-03",
+    "estado": "EMITIDA",
+    "vigencia_desde": "2026-04-02T00:00:00-05:00",
+    "vigencia_hasta": "2027-04-02T00:00:00-05:00",
+    "creado_en": "2026-04-01T09:30:00-05:00",
+    "notificada_en": "2026-04-02T08:00:00-05:00",
+    "prima": {
+      "valor": "3072000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "96000000",
+      "moneda": "COP"
+    },
+    "ramo": "Vida grupo deudor con amparo de daños al bien financiado"
+  },
+  {
+    "id": "pol-04",
+    "propuesta_id": "prop-04",
+    "numero": 48519,
+    "cliente_id": "cli-04",
+    "estado": "EMITIDA",
+    "vigencia_desde": "2026-05-20T00:00:00-05:00",
+    "vigencia_hasta": "2027-05-20T00:00:00-05:00",
+    "creado_en": "2026-05-19T15:45:00-05:00",
+    "notificada_en": "2026-05-20T08:00:00-05:00",
+    "prima": {
+      "valor": "3780000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "135000000",
+      "moneda": "COP"
+    },
+    "ramo": "Vida grupo deudor con amparo de daños al bien financiado"
+  },
+  {
+    "id": "pol-05",
+    "propuesta_id": "prop-05",
+    "numero": 48640,
+    "cliente_id": "cli-05",
+    "estado": "EMITIDA",
+    "vigencia_desde": "2026-03-08T00:00:00-05:00",
+    "vigencia_hasta": "2027-03-08T00:00:00-05:00",
+    "creado_en": "2026-03-07T10:10:00-05:00",
+    "notificada_en": "2026-03-08T08:00:00-05:00",
+    "prima": {
+      "valor": "4144000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "148000000",
+      "moneda": "COP"
+    },
+    "ramo": "Vida grupo deudor con amparo de daños al bien financiado"
+  },
+  {
+    "id": "pol-06",
+    "propuesta_id": "prop-06",
+    "numero": 48733,
+    "cliente_id": "cli-06",
+    "estado": "EMITIDA",
+    "vigencia_desde": "2026-06-12T00:00:00-05:00",
+    "vigencia_hasta": "2027-06-12T00:00:00-05:00",
+    "creado_en": "2026-06-11T14:00:00-05:00",
+    "notificada_en": "2026-06-12T08:00:00-05:00",
+    "prima": {
+      "valor": "1316000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "47000000",
+      "moneda": "COP"
+    },
+    "ramo": "Vida grupo deudor con amparo de daños al bien financiado"
+  },
+  {
+    "id": "pol-07",
+    "propuesta_id": "prop-07",
+    "numero": 48801,
+    "cliente_id": "cli-07",
+    "estado": "EMITIDA",
+    "vigencia_desde": "2026-07-01T00:00:00-05:00",
+    "vigencia_hasta": "2027-07-01T00:00:00-05:00",
+    "creado_en": "2026-06-30T17:25:00-05:00",
+    "notificada_en": "2026-07-01T08:00:00-05:00",
+    "prima": {
+      "valor": "3080000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "110000000",
+      "moneda": "COP"
+    },
+    "ramo": "Vida grupo deudor con amparo de daños al bien financiado"
+  },
+  {
+    "id": "pol-08",
+    "propuesta_id": "prop-08",
+    "numero": 48876,
+    "cliente_id": "cli-08",
+    "estado": "EMITIDA",
+    "vigencia_desde": "2026-02-25T00:00:00-05:00",
+    "vigencia_hasta": "2027-02-25T00:00:00-05:00",
+    "creado_en": "2026-02-24T12:40:00-05:00",
+    "notificada_en": "2026-02-25T08:00:00-05:00",
+    "prima": {
+      "valor": "4480000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "160000000",
+      "moneda": "COP"
+    },
+    "ramo": "Vida grupo deudor con amparo de daños al bien financiado"
+  },
+  {
+    "id": "pol-09",
+    "propuesta_id": "prop-09",
+    "numero": 47990,
+    "cliente_id": "cli-09",
+    "estado": "EMITIDA",
+    "vigencia_desde": "2025-09-28T00:00:00-05:00",
+    "vigencia_hasta": "2026-09-28T00:00:00-05:00",
+    "creado_en": "2025-09-27T09:15:00-05:00",
+    "notificada_en": "2025-09-28T08:00:00-05:00",
+    "prima": {
+      "valor": "1260000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "45000000",
+      "moneda": "COP"
+    },
+    "ramo": "Vida grupo deudor con amparo de daños al bien financiado"
+  },
+  {
+    "id": "pol-10",
+    "propuesta_id": "prop-10",
+    "numero": 48952,
+    "cliente_id": "cli-10",
+    "estado": "EMITIDA",
+    "vigencia_desde": "2026-08-05T00:00:00-05:00",
+    "vigencia_hasta": "2027-08-05T00:00:00-05:00",
+    "creado_en": "2026-08-04T16:50:00-05:00",
+    "notificada_en": "2026-08-05T08:00:00-05:00",
+    "prima": {
+      "valor": "2464000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "88000000",
+      "moneda": "COP"
+    },
+    "ramo": "Vida grupo deudor con amparo de daños al bien financiado"
+  }
+]

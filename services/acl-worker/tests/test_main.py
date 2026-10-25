@@ -13,6 +13,11 @@ CONFIG_SIN_PROVEEDORES = Configuracion(
     open_finance_url="http://127.0.0.1:1",
     open_data_url="http://127.0.0.1:1",
     pasarela_url="http://127.0.0.1:1",
+    # Sin esto usarían los puertos por defecto (8104 a 8106) y la prueba dependería de si el
+    # stack local está encendido.
+    firma_url="http://127.0.0.1:1",
+    kyc_url="http://127.0.0.1:1",
+    notificaciones_url="http://127.0.0.1:1",
     timeout_s=0.2,
     breaker_umbral_fallos=3,
     breaker_ttl_segundos=5,
@@ -110,3 +115,51 @@ def test_presupuesto_por_proveedor_ec008_se_acota_por_timeout_s(monkeypatch) -> 
     assert cfg.presupuesto_proveedor_s("open-data") == 0.12
     assert cfg.presupuesto_proveedor_s("pasarela") == 0.12
     assert cfg.cache_servir_en_ttl is True
+
+
+def test_firmar_con_el_proveedor_caido_responde_200_pendiente_sin_5xx() -> None:
+    # FIRMA_URL apunta a un puerto sin servicio: el ACL degrada, no propaga el fallo.
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post(
+            "/firma/firmar",
+            json={
+                "id_firma": "p-1",
+                "documento_hash": "a" * 64,
+                "version_documento": "v1",
+                "firmante_id": "u-1",
+            },
+        )
+
+    assert r.status_code == 200
+    assert r.json()["estado"] == "pendiente"
+    assert r.json()["motivo"] == "firma_no_disponible"
+
+
+def test_verificar_kyc_con_el_proveedor_caido_responde_200_pendiente_sin_5xx() -> None:
+    # KYC_URL apunta a un puerto sin servicio: el ACL degrada, no propaga el fallo.
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post(
+            "/kyc/verificar", json={"id_verificacion": "p-1", "cliente_id": "cliente-opaco"}
+        )
+
+    assert r.status_code == 200
+    assert r.json()["estado"] == "pendiente"
+    assert r.json()["motivo"] == "kyc_no_disponible"
+
+
+def test_enviar_notificacion_con_el_proveedor_caido_responde_200_pendiente_sin_5xx() -> None:
+    # NOTIFICACIONES_URL apunta a un puerto sin servicio: el ACL degrada, no propaga el fallo.
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post(
+            "/notificaciones/enviar",
+            json={
+                "id_notificacion": "n-1",
+                "plantilla": "poliza-emitida",
+                "destinatario_id": "u-1",
+                "datos": {"numero_poliza": "SOL-2026-000001"},
+            },
+        )
+
+    assert r.status_code == 200
+    assert r.json()["estado"] == "pendiente"
+    assert r.json()["motivo"] == "notificaciones_no_disponibles"

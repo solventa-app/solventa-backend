@@ -2,18 +2,18 @@
 # Verifica las migraciones de un servicio contra el almacén REAL de docker compose, usando la imagen del
 # servicio (la misma que se despliega). Es lo que corre el CI; también sirve en local:
 #
-#   scripts/verificar-migraciones.sh auth|payments|risk
+#   scripts/verificar-migraciones.sh auth|payments|policy|risk
 #
 # Postgres (Alembic): una sola cabeza, subir, bajar a base y volver a subir (reversibilidad).
 # MongoDB (runner propio): aplicar dos veces (idempotencia) y comprobar el registro.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-servicio="${1:?uso: $0 auth|payments|risk}"
+servicio="${1:?uso: $0 auth|payments|policy|risk}"
 correr() { docker compose --profile servicios run --rm -T "migrar-$servicio" "$@"; }
 
 case "$servicio" in
-  auth | payments)
+  auth | payments | policy)
     salida="$(correr alembic heads)" # sin `|| true`: un fallo de Docker o de Alembic debe verse como tal
     cabezas="$(printf '%s\n' "$salida" | grep -c '(head)' || true)"
     if [ "$cabezas" != "1" ]; then
@@ -37,7 +37,7 @@ case "$servicio" in
     echo "OK: $registradas migraciones registradas en MongoDB."
     ;;
   *)
-    echo "Servicio sin migraciones: $servicio (usa auth, payments o risk)" >&2
+    echo "Servicio sin migraciones: $servicio (usa auth, payments, policy o risk)" >&2
     exit 2
     ;;
 esac

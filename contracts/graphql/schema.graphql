@@ -189,6 +189,122 @@ type ErrorCobro {
 
 union ResultadoCobro = Cobro | ErrorCobro
 
+# ---------- Suscripción, firma y póliza (HU-W03) ----------
+# Flujo: aceptarOferta -> documentoFirma -> firmarPropuesta -> (en segundo plano: decisión, cobro y emisión).
+# El cliente consulta `propuesta` hasta ver EMITIDA. El precio nunca lo manda el cliente: POLICY lo lee de la oferta.
+
+enum EstadoPropuesta {
+  ACEPTADA # oferta aceptada, falta firmar
+  EN_EMISION # firmada; se está decidiendo, cobrando y emitiendo
+  EN_REVISION # la suscripción pasó a revisión manual
+  PENDIENTE_PAGO # el primer cobro quedó pendiente; se emite sola cuando se cobre
+  PAGO_RECHAZADO # el primer cobro fue rechazado; no hay póliza. No es final: si el cobro se recupera,
+  # el back-office o la reconciliación la reabren y pasa a EMITIDA (el cliente no la reabre)
+  NO_EMITIDA # la suscripción rechazó la propuesta
+  EMITIDA # hay póliza (ver Propuesta.polizaId)
+}
+
+# OFERTA_PRELIMINAR (D-11): una oferta preliminar no se acepta, se recalcula. `ErrorAceptacion.puedeReintentar` es true
+# y "reintentar" es volver a cotizar (`solicitarOferta`), no repetir `aceptarOferta` con la misma oferta.
+enum MotivoErrorAceptacion {
+  OFERTA_PRELIMINAR
+  OFERTA_VENCIDA
+  OFERTA_NO_ENCONTRADA
+  CONSENTIMIENTO_NO_VIGENTE
+}
+
+enum MotivoErrorFirma {
+  COBRO_NO_AUTORIZADO
+  VERSION_DOCUMENTO_DESACTUALIZADA
+  PROPUESTA_NO_FIRMABLE
+  SERVICIO_FIRMA_NO_DISPONIBLE
+}
+
+# Por qué una propuesta no avanza (CA-W03-06). Son categorías para el cliente: nunca el código interno de la
+# decisión de suscripción ni el de la pasarela.
+enum MotivoEstadoPropuesta {
+  PAGO_FONDOS_INSUFICIENTES # PAGO_RECHAZADO: la pasarela rechazó el cobro por fondos insuficientes
+  PAGO_RECHAZADO # PAGO_RECHAZADO: cualquier otro rechazo de la pasarela
+  PAGO_EN_PROCESO # PENDIENTE_PAGO: el cobro aún no se confirma
+  REVISION_MANUAL # EN_REVISION: un asesor revisa la solicitud
+  NO_APROBADA # NO_EMITIDA: la suscripción no aprobó la solicitud
+}
+
+# Qué debe hacer el cliente. Para CONTACTAR_ASESOR, la mutación `contactarAsesor`.
+enum AccionSugerida {
+  ESPERAR # nada: la propuesta sigue su curso y se le avisa
+  CONTACTAR_ASESOR
+}
+
+type Propuesta {
+  id: ID!
+  ofertaId: ID!
+  estado: EstadoPropuesta!
+  prima: Monto!
+  cobertura: Monto!
+  plazoMeses: Int!
+  polizaId: ID # presente cuando el estado es EMITIDA
+  actualizadoEn: DateTime!
+  # Presentes en EN_REVISION, PENDIENTE_PAGO, PAGO_RECHAZADO y NO_EMITIDA; nulos en los demás estados.
+  motivoEstado: MotivoEstadoPropuesta
+  mensajeEstado: String # qué pasa y qué hacer, en el idioma del usuario
+  accionSugerida: AccionSugerida
+}
+
+type ErrorAceptacion {
+  mensaje: String!
+  puedeReintentar: Boolean!
+  motivo: MotivoErrorAceptacion
+}
+
+union ResultadoAceptacion = Propuesta | ErrorAceptacion
+
+# Lo que el cliente lee antes de firmar (W03-02a y W03-02b): el monto sale de la cláusula de cobro.
+type DocumentoFirma {
+  propuestaId: ID!
+  version: String! # se reenvía en FirmarPropuestaInput.versionDocumento
+  resumen: String!
+  montoMensual: Monto!
+  meses: Int!
+  formaCobro: String! # p. ej. "con la cuota de tu crédito"
+}
+
+input FirmarPropuestaInput {
+  propuestaId: ID!
+  autorizaCobro: Boolean! # debe ser true: la firma autoriza el cobro recurrente
+  versionDocumento: String!
+}
+
+type FirmaRegistrada {
+  propuestaId: ID!
+  firmadaEn: DateTime!
+  referencia: String! # referencia de la evidencia de no repudio
+  estado: EstadoPropuesta!
+}
+
+type ErrorFirma {
+  mensaje: String!
+  puedeReintentar: Boolean!
+  motivo: MotivoErrorFirma
+}
+
+union ResultadoFirma = FirmaRegistrada | ErrorFirma
+
+enum EstadoPoliza {
+  EMITIDA
+}
+
+type Poliza {
+  id: ID!
+  numero: String!
+  estado: EstadoPoliza!
+  vigenciaDesde: DateTime!
+  vigenciaHasta: DateTime!
+  prima: Monto!
+  cobertura: Monto!
+  documentoUrl: String! # ruta del BFF que entrega el PDF; solo el titular, su asesor o un BACKOFFICE
+}
+
 # ---------- Usuarios y sesión (HU-M02, CA-W01-11) ----------
 # El token de `Sesion` viaja en la cabecera `Authorization: Bearer <token>` de las demás operaciones.
 
@@ -212,6 +328,12 @@ type Usuario {
   # Dato personal. Solo viene en `iniciarSesion` y `yo` (cada usuario ve el suyo); en `usuarios`,
   # `crearUsuario` y los demás cambios va en null. Nunca viaja dentro del JWT.
   nombre: String
+  # Preferencias de la interfaz (KAN-209): idioma (ES | EN) y moneda por defecto. No son datos personales.
+  idioma: String!
+  moneda: String!
+  # Solo dice si el usuario ya dejó un contacto (correo o teléfono) para el aviso de su póliza (HU-W03, bloque 8);
+  # nunca cuál es: el contacto se escribe con `crearUsuario` o `actualizarContacto` y no vuelve por GraphQL.
+  tieneContacto: Boolean!
 }
 
 type Sesion {
@@ -242,6 +364,20 @@ input CrearUsuarioInput {
   clave: String!
   rol: RolUsuario!
   nombre: String = null # cualquier rol (2 a 100 caracteres); se guarda cifrado y `crearUsuario` no lo devuelve
+  # Solo CLIENTE (HU-W03, bloque 8); se guardan cifrados y `crearUsuario` no los devuelve.
+  correo: String = null # con forma de correo; se guarda en minúsculas
+  telefono: String = null # 7 a 15 dígitos, con un + opcional al inicio
+}
+
+input PreferenciasInput {
+  idioma: String! # ES | EN
+  moneda: String! # COP | USD | EUR | MXN | BRL | CLP | PEN
+}
+
+# Al menos uno de los dos; lo que no llega se conserva (HU-W03, bloque 8).
+input ContactoInput {
+  correo: String = null
+  telefono: String = null
 }
 
 # ---------- Operaciones ----------
@@ -251,6 +387,11 @@ type Query {
   cobros(polizaId: ID, estado: EstadoCobro, pagina: Int = 1, tamano: Int = 10): [Cobro!]!
   yo: Usuario
   usuarios(rol: RolUsuario): [Usuario!]!
+  # Solo para mostrar: los montos en otra moneda con las tasas del ACL Worker (hasta 50 por llamada).
+  convertirMontos(montos: [MontoInput!]!, moneda: String!): [Monto!]!
+  propuesta(id: ID!): Propuesta
+  documentoFirma(propuestaId: ID!): DocumentoFirma
+  poliza(id: ID!): Poliza
 }
 
 type Mutation {
@@ -266,4 +407,13 @@ type Mutation {
   crearUsuario(entrada: CrearUsuarioInput!): ResultadoUsuario!
   cambiarRolUsuario(id: ID!, rol: RolUsuario!): ResultadoUsuario!
   suspenderUsuario(id: ID!): ResultadoUsuario!
+  # Idioma y moneda por defecto del propio usuario (el id sale del token).
+  actualizarPreferencias(entrada: PreferenciasInput!): ResultadoUsuario!
+  # Correo y teléfono del propio CLIENTE (el id sale del token): a ese contacto se le envía el PDF de su póliza.
+  # Se guardan cifrados y no se devuelven; el usuario responde `tieneContacto`.
+  actualizarContacto(entrada: ContactoInput!): ResultadoUsuario!
+  # Solo una oferta COMPLETA y vigente. Aceptar dos veces la misma oferta devuelve la misma propuesta.
+  aceptarOferta(ofertaId: ID!): ResultadoAceptacion!
+  # Solo el CLIENTE titular firma (no repudio). Firmar dos veces devuelve la misma evidencia.
+  firmarPropuesta(entrada: FirmarPropuestaInput!): ResultadoFirma!
 }

@@ -4,7 +4,7 @@
     "ruta": "services/bff",
     "instancia_fija": true,
     "puerto": 8000,
-    "llama": ["auth", "acl-worker", "risk", "rating", "payments"],
+    "llama": ["auth", "acl-worker", "risk", "rating", "payments", "policy"],
     "entorno": {
       "AUTENTICACION_SERVICIOS": "id_token",
       "TRAZAS_GCP": "true",
@@ -70,12 +70,35 @@
     "secretos": { "DATABASE_URL": "database-url-payments", "CIFRADO_CLAVE": "clave-cifrado" }
   },
   {
+    "nombre": "policy",
+    "ruta": "services/policy",
+    "puerto": 8007,
+    "url_env": "POLICY_URL",
+    "migracion": ["alembic", "upgrade", "head"],
+    "llama": ["rating", "acl-worker", "under", "payments", "auth"],
+    "disparador_externo": true,
+    "entorno": {
+      "AUTENTICACION_SERVICIOS": "id_token",
+      "TRAZAS_GCP": "true",
+      "TOKEN_RECAUDO_CREDITO": "tok_recaudo_staging"
+    },
+    "secretos": { "DATABASE_URL": "database-url-policy", "CIFRADO_CLAVE": "clave-cifrado" }
+  },
+  {
+    "nombre": "under",
+    "ruta": "services/under",
+    "puerto": 8008,
+    "url_env": "UNDER_URL",
+    "llama": ["acl-worker"],
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" }
+  },
+  {
     "nombre": "acl-worker",
     "ruta": "services/acl-worker",
     "instancia_fija": true,
     "puerto": 8005,
     "url_env": "ACL_URL",
-    "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela", "consolidador-fuentes"],
+    "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela", "stub-firma", "stub-kyc", "stub-notificaciones", "consolidador-fuentes"],
     "disparador_externo": true,
     "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": {
@@ -115,6 +138,34 @@
     "instancia_fija": true,
     "puerto": 8103,
     "url_env": "PASARELA_URL",
+    "entorno": { "TRAZAS_GCP": "true" }
+  },
+  {
+    "nombre": "stub-firma",
+    "ruta": "stubs/firma",
+    "puerto": 8104,
+    "url_env": "FIRMA_URL",
+    "entorno": { "TRAZAS_GCP": "true" }
+  },
+  {
+    "nombre": "stub-kyc",
+    "ruta": "stubs/kyc",
+    "puerto": 8105,
+    "url_env": "KYC_URL",
+    "entorno": { "TRAZAS_GCP": "true" }
+  },
+  {
+    "nombre": "stub-notificaciones",
+    "ruta": "stubs/notificaciones",
+    "puerto": 8106,
+    "url_env": "NOTIFICACIONES_URL",
+    "entorno": { "TRAZAS_GCP": "true" }
+  },
+  {
+    "nombre": "stub-siniestros",
+    "ruta": "stubs/siniestros",
+    "puerto": 8107,
+    "dummy": true,
     "entorno": { "TRAZAS_GCP": "true" }
   }
 ]

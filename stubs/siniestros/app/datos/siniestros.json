@@ -1,0 +1,799 @@
+[
+  {
+    "id": "sin-01",
+    "radicado": "SIN-2026-0141",
+    "estado": "PENDIENTE",
+    "asegurado": {
+      "nombre": "Camilo Andrés Rojas Benavides",
+      "documento": "C.C. 79.845.210"
+    },
+    "poliza_id": "pol-01",
+    "cobertura_aplicada": "Vida grupo deudor · Amparo de daños materiales al bien financiado",
+    "entidad_acreedora": "Banco Aliado S.A.",
+    "ocurrido_en": "2026-10-19T08:40:00-05:00",
+    "notificado_en": "2026-10-19T11:15:00-05:00",
+    "ubicacion": {
+      "descripcion": "Salida por la Calle 80, puente de Guadua",
+      "ciudad": "Bogotá",
+      "latitud": 4.7236,
+      "longitud": -74.1215
+    },
+    "descripcion": "El asegurado perdió el control del hatchback al salir por la Calle 80 y golpeó de frente el separador junto al puente de Guadua; el vehículo quedó detenido sobre el andén. Hay daño en parachoques, capó, faro y radiador; sin heridos.",
+    "suma_reclamada": {
+      "valor": "8650000",
+      "moneda": "COP"
+    },
+    "vence_dictamen_horas": 10,
+    "evidencias": [
+      {
+        "id": "ev-01-1",
+        "tipo": "FOTO",
+        "titulo": "Foto: daño frontal del vehículo",
+        "archivo": "sin-01-foto-1.jpg",
+        "registrada_en": "2026-10-19T09:05:00-05:00",
+        "geoetiquetada": true,
+        "nota": "4.7236, -74.1215 · tomada en sitio"
+      },
+      {
+        "id": "ev-01-2",
+        "tipo": "FOTO",
+        "titulo": "Foto: vehículo detenido sobre el andén",
+        "archivo": "sin-01-foto-2.jpg",
+        "registrada_en": "2026-10-19T09:07:00-05:00",
+        "geoetiquetada": true,
+        "nota": "4.7236, -74.1215 · tomada en sitio"
+      },
+      {
+        "id": "ev-01-3",
+        "tipo": "FOTO",
+        "titulo": "Foto: entorno del puente de Guadua",
+        "archivo": "sin-01-foto-3.jpg",
+        "registrada_en": "2026-10-19T09:10:00-05:00",
+        "geoetiquetada": true,
+        "nota": "4.7237, -74.1214 · placa coincide con RUNT"
+      },
+      {
+        "id": "ev-01-4",
+        "tipo": "DOCUMENTO",
+        "titulo": "Factura de reparación del taller",
+        "archivo": "sin-01-factura.png",
+        "registrada_en": "2026-10-19T15:30:00-05:00",
+        "geoetiquetada": false,
+        "nota": "PDF verificado · Taller Mecánico Los Cedros S.A.S."
+      },
+      {
+        "id": "ev-01-5",
+        "tipo": "DOCUMENTO",
+        "titulo": "Croquis del accidente (IPAT)",
+        "archivo": "sin-01-croquis.png",
+        "registrada_en": "2026-10-19T11:40:00-05:00",
+        "geoetiquetada": false,
+        "nota": "Croquis IPAT · accidente de un solo vehículo"
+      }
+    ],
+    "verificaciones": [
+      {
+        "descripcion": "Identidad validada vía biometría Open Finance",
+        "cumple": true
+      },
+      {
+        "descripcion": "Georreferenciación cotejada en rango de ocurrencia",
+        "cumple": true
+      },
+      {
+        "descripcion": "Vigencia de amparo confirmada sin mora previa",
+        "cumple": true
+      }
+    ],
+    "resolucion": null
+  },
+  {
+    "id": "sin-02",
+    "radicado": "SIN-2026-0128",
+    "estado": "EN_REVISION",
+    "asegurado": {
+      "nombre": "Luz Marina Ospina Cardona",
+      "documento": "C.C. 51.372.904"
+    },
+    "poliza_id": "pol-02",
+    "cobertura_aplicada": "Vida grupo deudor · Amparo de daños materiales al bien financiado",
+    "entidad_acreedora": "Banco Meridiano S.A.",
+    "ocurrido_en": "2026-10-16T17:25:00-05:00",
+    "notificado_en": "2026-10-16T19:02:00-05:00",
+    "ubicacion": {
+      "descripcion": "Autopista Norte con Calle 134, sentido sur",
+      "ciudad": "Bogotá",
+      "latitud": 4.72,
+      "longitud": -74.048
+    },
+    "descripcion": "Choque por alcance: un taxi amarillo golpeó por detrás al sedán blanco en el trancón de la tarde. Atendió un agente de tránsito y llegó una patrulla; daño en cajuela, bumper trasero y luces; sin heridos.",
+    "suma_reclamada": {
+      "valor": "5800000",
+      "moneda": "COP"
+    },
+    "vence_dictamen_horas": 28,
+    "evidencias": [
+      {
+        "id": "ev-02-1",
+        "tipo": "FOTO",
+        "titulo": "Foto: daño trasero del sedán",
+        "archivo": "sin-02-foto-1.jpg",
+        "registrada_en": "2026-10-16T17:50:00-05:00",
+        "geoetiquetada": true,
+        "nota": "4.7200, -74.0480 · tomada en sitio"
+      },
+      {
+        "id": "ev-02-2",
+        "tipo": "FOTO",
+        "titulo": "Foto: taxi que causó el choque y agente de tránsito",
+        "archivo": "sin-02-foto-2.jpg",
+        "registrada_en": "2026-10-16T17:54:00-05:00",
+        "geoetiquetada": true,
+        "nota": "4.7200, -74.0481 · tomada en sitio"
+      },
+      {
+        "id": "ev-02-3",
+        "tipo": "FOTO",
+        "titulo": "Foto: patrulla de tránsito en la escena",
+        "archivo": "sin-02-foto-3.jpg",
+        "registrada_en": "2026-10-16T18:10:00-05:00",
+        "geoetiquetada": true,
+        "nota": "4.7201, -74.0480 · tomada en sitio"
+      },
+      {
+        "id": "ev-02-4",
+        "tipo": "DOCUMENTO",
+        "titulo": "Croquis del accidente (IPAT)",
+        "archivo": "sin-02-croquis.png",
+        "registrada_en": "2026-10-16T20:15:00-05:00",
+        "geoetiquetada": false,
+        "nota": "IPAT diligenciado por la autoridad · Coincide con RUNT"
+      },
+      {
+        "id": "ev-02-5",
+        "tipo": "DOCUMENTO",
+        "titulo": "Factura de reparación del taller",
+        "archivo": "sin-02-factura.png",
+        "registrada_en": "2026-10-17T10:20:00-05:00",
+        "geoetiquetada": false,
+        "nota": "PDF verificado · Latonería y Pintura El Roble S.A.S."
+      }
+    ],
+    "verificaciones": [
+      {
+        "descripcion": "Identidad validada vía biometría Open Finance",
+        "cumple": true
+      },
+      {
+        "descripcion": "Georreferenciación cotejada en rango de ocurrencia",
+        "cumple": true
+      },
+      {
+        "descripcion": "Vigencia de amparo confirmada sin mora previa",
+        "cumple": true
+      }
+    ],
+    "resolucion": null
+  },
+  {
+    "id": "sin-03",
+    "radicado": "SIN-2026-0152",
+    "estado": "PENDIENTE",
+    "asegurado": {
+      "nombre": "Transportes Valle Rápido S.A.S. · Rep. legal Hernán Darío Quintero Mejía",
+      "documento": "C.C. 16.784.331"
+    },
+    "poliza_id": "pol-03",
+    "cobertura_aplicada": "Vida grupo deudor · Amparo de daños materiales al bien financiado",
+    "entidad_acreedora": "Financiera Cumbre S.A.",
+    "ocurrido_en": "2026-10-20T06:50:00-05:00",
+    "notificado_en": "2026-10-20T09:30:00-05:00",
+    "ubicacion": {
+      "descripcion": "Intersección de la Calle 5 con Carrera 39",
+      "ciudad": "Cali",
+      "latitud": 3.429,
+      "longitud": -76.535
+    },
+    "descripcion": "El camión liviano tipo furgón chocó en la intersección con otro vehículo al cruzar con el semáforo cambiando. Quedó dañado el frente, el bumper y la rueda delantera con su suspensión.",
+    "suma_reclamada": {
+      "valor": "14200000",
+      "moneda": "COP"
+    },
+    "vence_dictamen_horas": 60,
+    "evidencias": [
+      {
+        "id": "ev-03-1",
+        "tipo": "FOTO",
+        "titulo": "Foto: frente y rueda delantera dañados",
+        "archivo": "sin-03-foto-1.jpg",
+        "registrada_en": "2026-10-20T07:10:00-05:00",
+        "geoetiquetada": true,
+        "nota": "3.4290, -76.5350 · tomada en sitio"
+      },
+      {
+        "id": "ev-03-2",
+        "tipo": "FOTO",
+        "titulo": "Foto: camión en la intersección",
+        "archivo": "sin-03-foto-2.jpg",
+        "registrada_en": "2026-10-20T07:13:00-05:00",
+        "geoetiquetada": true,
+        "nota": "3.4291, -76.5350 · tomada en sitio"
+      },
+      {
+        "id": "ev-03-3",
+        "tipo": "FOTO",
+        "titulo": "Foto: vista lateral del furgón",
+        "archivo": "sin-03-foto-3.jpg",
+        "registrada_en": "2026-10-20T07:16:00-05:00",
+        "geoetiquetada": true,
+        "nota": "3.4290, -76.5351 · placa coincide con RUNT"
+      },
+      {
+        "id": "ev-03-4",
+        "tipo": "DOCUMENTO",
+        "titulo": "Croquis del accidente (IPAT)",
+        "archivo": "sin-03-croquis.png",
+        "registrada_en": "2026-10-20T10:00:00-05:00",
+        "geoetiquetada": false,
+        "nota": "Croquis IPAT · colisión en intersección semaforizada"
+      },
+      {
+        "id": "ev-03-5",
+        "tipo": "DOCUMENTO",
+        "titulo": "Cotización de reparación del taller",
+        "archivo": "sin-03-factura.png",
+        "registrada_en": "2026-10-20T15:00:00-05:00",
+        "geoetiquetada": false,
+        "nota": "PDF verificado · Servicio Pesado del Valle Ltda."
+      }
+    ],
+    "verificaciones": [
+      {
+        "descripcion": "Identidad validada vía biometría Open Finance",
+        "cumple": true
+      },
+      {
+        "descripcion": "Georreferenciación cotejada en rango de ocurrencia",
+        "cumple": true
+      },
+      {
+        "descripcion": "Vigencia de amparo confirmada sin mora previa",
+        "cumple": true
+      }
+    ],
+    "resolucion": null
+  },
+  {
+    "id": "sin-04",
+    "radicado": "SIN-2026-0119",
+    "estado": "EN_REVISION",
+    "asegurado": {
+      "nombre": "Juan Sebastián Muñoz Arango",
+      "documento": "C.C. 98.654.127"
+    },
+    "poliza_id": "pol-04",
+    "cobertura_aplicada": "Vida grupo deudor · Amparo de daños materiales al bien financiado",
+    "entidad_acreedora": "Banco Ribera S.A.",
+    "ocurrido_en": "2026-10-14T07:35:00-05:00",
+    "notificado_en": "2026-10-14T09:10:00-05:00",
+    "ubicacion": {
+      "descripcion": "Avenida Las Palmas con Transversal Superior, El Poblado",
+      "ciudad": "Medellín",
+      "latitud": 6.2,
+      "longitud": -75.553
+    },
+    "descripcion": "Choque en cadena en hora pico: la camioneta negra frenó tarde y quedó montada sobre un furgón de reparto. Daños en capó, parabrisas, bumper y estructura frontal; sin heridos. Por la magnitud se derivó a peritaje.",
+    "suma_reclamada": {
+      "valor": "21500000",
+      "moneda": "COP"
+    },
+    "vence_dictamen_horas": 20,
+    "evidencias": [
+      {
+        "id": "ev-04-1",
+        "tipo": "FOTO",
+        "titulo": "Foto: camioneta montada sobre el furgón",
+        "archivo": "sin-04-foto-1.jpg",
+        "registrada_en": "2026-10-14T07:55:00-05:00",
+        "geoetiquetada": true,
+        "nota": "6.2000, -75.5530 · tomada en sitio"
+      },
+      {
+        "id": "ev-04-2",
+        "tipo": "FOTO",
+        "titulo": "Foto: daño frontal de la camioneta",
+        "archivo": "sin-04-foto-2.jpg",
+        "registrada_en": "2026-10-14T07:58:00-05:00",
+        "geoetiquetada": true,
+        "nota": "6.2000, -75.5531 · tomada en sitio"
+      },
+      {
+        "id": "ev-04-3",
+        "tipo": "FOTO",
+        "titulo": "Foto: furgón de reparto afectado",
+        "archivo": "sin-04-foto-3.jpg",
+        "registrada_en": "2026-10-14T08:02:00-05:00",
+        "geoetiquetada": true,
+        "nota": "6.2001, -75.5530 · tomada en sitio"
+      },
+      {
+        "id": "ev-04-4",
+        "tipo": "FOTO",
+        "titulo": "Foto: vista de la avenida y los vehículos",
+        "archivo": "sin-04-foto-4.jpg",
+        "registrada_en": "2026-10-14T08:05:00-05:00",
+        "geoetiquetada": true,
+        "nota": "6.2000, -75.5529 · placa coincide con RUNT"
+      },
+      {
+        "id": "ev-04-5",
+        "tipo": "DOCUMENTO",
+        "titulo": "Croquis del accidente (IPAT)",
+        "archivo": "sin-04-croquis.png",
+        "registrada_en": "2026-10-14T10:30:00-05:00",
+        "geoetiquetada": false,
+        "nota": "IPAT · choque en cadena sin heridos"
+      },
+      {
+        "id": "ev-04-6",
+        "tipo": "DOCUMENTO",
+        "titulo": "Cotización de reparación del taller",
+        "archivo": "sin-04-factura.png",
+        "registrada_en": "2026-10-15T09:00:00-05:00",
+        "geoetiquetada": false,
+        "nota": "PDF verificado · Taller Automotriz Antioquia Norte S.A.S."
+      }
+    ],
+    "verificaciones": [
+      {
+        "descripcion": "Identidad validada vía biometría Open Finance",
+        "cumple": true
+      },
+      {
+        "descripcion": "Georreferenciación cotejada en rango de ocurrencia",
+        "cumple": true
+      },
+      {
+        "descripcion": "Vigencia de amparo confirmada sin mora previa",
+        "cumple": true
+      }
+    ],
+    "resolucion": {
+      "tipo": "DERIVACION",
+      "resuelta_en": "2026-10-21T10:20:00-05:00",
+      "notificacion": "Se informó al asegurado por correo y app móvil que su reclamación fue derivada a peritaje externo.",
+      "perito_id": "per-04",
+      "instrucciones": "Valorar el daño estructural frontal y confirmar si el costo de reparación supera el 50% del valor comercial; contrastar el relato con el croquis IPAT y las cuatro fotos.",
+      "vencimiento_informe": "2026-10-28T17:00:00-05:00"
+    }
+  },
+  {
+    "id": "sin-05",
+    "radicado": "SIN-2026-0098",
+    "estado": "APROBADO",
+    "asegurado": {
+      "nombre": "Valentina Echeverri Pombo",
+      "documento": "C.C. 1.047.382.516"
+    },
+    "poliza_id": "pol-05",
+    "cobertura_aplicada": "Vida grupo deudor · Amparo de daños materiales al bien financiado",
+    "entidad_acreedora": "Banco Aliado S.A.",
+    "ocurrido_en": "2026-10-08T15:20:00-05:00",
+    "notificado_en": "2026-10-08T18:00:00-05:00",
+    "ubicacion": {
+      "descripcion": "Avenida San Martín, Bocagrande",
+      "ciudad": "Cartagena",
+      "latitud": 10.401,
+      "longitud": -75.553
+    },
+    "descripcion": "La SUV eléctrica golpeó una columna al maniobrar en Bocagrande y perdió el bumper delantero. El vehículo se llevó a un taller, donde se tomaron las fotos del daño.",
+    "suma_reclamada": {
+      "valor": "9300000",
+      "moneda": "COP"
+    },
+    "vence_dictamen_horas": 8,
+    "evidencias": [
+      {
+        "id": "ev-05-1",
+        "tipo": "FOTO",
+        "titulo": "Foto: frente sin bumper delantero",
+        "archivo": "sin-05-foto-1.jpg",
+        "registrada_en": "2026-10-08T17:10:00-05:00",
+        "geoetiquetada": false,
+        "nota": "Tomada en el taller · Coincide con RUNT"
+      },
+      {
+        "id": "ev-05-2",
+        "tipo": "FOTO",
+        "titulo": "Foto: vehículo en el patio del taller",
+        "archivo": "sin-05-foto-2.jpg",
+        "registrada_en": "2026-10-08T17:14:00-05:00",
+        "geoetiquetada": false,
+        "nota": "Tomada en el taller"
+      },
+      {
+        "id": "ev-05-3",
+        "tipo": "DOCUMENTO",
+        "titulo": "Factura de reparación del taller",
+        "archivo": "sin-05-factura.png",
+        "registrada_en": "2026-10-09T11:00:00-05:00",
+        "geoetiquetada": false,
+        "nota": "PDF verificado · Electro Taller Bahía S.A.S."
+      }
+    ],
+    "verificaciones": [
+      {
+        "descripcion": "Identidad validada vía biometría Open Finance",
+        "cumple": true
+      },
+      {
+        "descripcion": "Georreferenciación cotejada en rango de ocurrencia",
+        "cumple": true
+      },
+      {
+        "descripcion": "Vigencia de amparo confirmada sin mora previa",
+        "cumple": true
+      }
+    ],
+    "resolucion": {
+      "tipo": "APROBACION",
+      "resuelta_en": "2026-10-15T14:00:00-05:00",
+      "notificacion": "Se notificó la aprobación al asegurado por correo y app móvil, con copia al banco acreedor.",
+      "indemnizacion": {
+        "valor": "8370000",
+        "moneda": "COP"
+      },
+      "metodo_transferencia": "ACH Colombia Interbancario",
+      "plazo_dispersion": "1 a 3 días hábiles"
+    }
+  },
+  {
+    "id": "sin-06",
+    "radicado": "SIN-2026-0147",
+    "estado": "PENDIENTE",
+    "asegurado": {
+      "nombre": "Andrés Felipe Cuello Barrios",
+      "documento": "C.C. 72.289.645"
+    },
+    "poliza_id": "pol-06",
+    "cobertura_aplicada": "Vida grupo deudor · Amparo de daños materiales al bien financiado",
+    "entidad_acreedora": "Cooperativa Financiera Horizonte",
+    "ocurrido_en": "2026-10-18T21:10:00-05:00",
+    "notificado_en": "2026-10-19T08:20:00-05:00",
+    "ubicacion": {
+      "descripcion": "Calle 84 con Carrera 51B, barrio El Prado",
+      "ciudad": "Barranquilla",
+      "latitud": 11.003,
+      "longitud": -74.8
+    },
+    "descripcion": "El hatchback azul estaba estacionado en la calle y otro vehículo lo golpeó y se fue. Hay guardabarros delantero derecho hundido y bumper desprendido.",
+    "suma_reclamada": {
+      "valor": "4350000",
+      "moneda": "COP"
+    },
+    "vence_dictamen_horas": 45,
+    "evidencias": [
+      {
+        "id": "ev-06-1",
+        "tipo": "FOTO",
+        "titulo": "Foto: guardabarros delantero derecho hundido",
+        "archivo": "sin-06-foto-1.jpg",
+        "registrada_en": "2026-10-19T07:50:00-05:00",
+        "geoetiquetada": true,
+        "nota": "11.0030, -74.8000 · tomada en sitio"
+      },
+      {
+        "id": "ev-06-2",
+        "tipo": "FOTO",
+        "titulo": "Foto: bumper desprendido, vehículo estacionado",
+        "archivo": "sin-06-foto-2.jpg",
+        "registrada_en": "2026-10-19T07:53:00-05:00",
+        "geoetiquetada": true,
+        "nota": "11.0030, -74.8001 · Coincide con RUNT"
+      },
+      {
+        "id": "ev-06-3",
+        "tipo": "DOCUMENTO",
+        "titulo": "Factura de reparación del taller",
+        "archivo": "sin-06-factura.png",
+        "registrada_en": "2026-10-19T14:10:00-05:00",
+        "geoetiquetada": false,
+        "nota": "PDF verificado · Latonería Caribe Norte S.A.S."
+      }
+    ],
+    "verificaciones": [
+      {
+        "descripcion": "Identidad validada vía biometría Open Finance",
+        "cumple": true
+      },
+      {
+        "descripcion": "Georreferenciación cotejada en rango de ocurrencia",
+        "cumple": true
+      },
+      {
+        "descripcion": "Vigencia de amparo confirmada sin mora previa",
+        "cumple": true
+      }
+    ],
+    "resolucion": null
+  },
+  {
+    "id": "sin-07",
+    "radicado": "SIN-2026-0112",
+    "estado": "EN_REVISION",
+    "asegurado": {
+      "nombre": "Martha Lucía Gaitán Vargas",
+      "documento": "C.C. 39.552.718"
+    },
+    "poliza_id": "pol-07",
+    "cobertura_aplicada": "Vida grupo deudor · Amparo de daños materiales al bien financiado",
+    "entidad_acreedora": "Banco Sabana S.A.",
+    "ocurrido_en": "2026-10-12T13:05:00-05:00",
+    "notificado_en": "2026-10-12T16:40:00-05:00",
+    "ubicacion": {
+      "descripcion": "Vía Silvania, km 13",
+      "ciudad": "Silvania",
+      "latitud": 4.47,
+      "longitud": -74.325
+    },
+    "descripcion": "La SUV plateada fue golpeada en la parte trasera por otro vehículo al frenar en la vía. Las fotos fueron tomadas desde otro carro en la carretera; hay daño en portón, bumper trasero y luces.",
+    "suma_reclamada": {
+      "valor": "7400000",
+      "moneda": "COP"
+    },
+    "vence_dictamen_horas": 6,
+    "evidencias": [
+      {
+        "id": "ev-07-1",
+        "tipo": "FOTO",
+        "titulo": "Foto: daño trasero de la SUV",
+        "archivo": "sin-07-foto-1.jpg",
+        "registrada_en": "2026-10-12T13:25:00-05:00",
+        "geoetiquetada": true,
+        "nota": "4.4700, -74.3250 · tomada en vía"
+      },
+      {
+        "id": "ev-07-2",
+        "tipo": "FOTO",
+        "titulo": "Foto: SUV vista desde otro vehículo",
+        "archivo": "sin-07-foto-2.jpg",
+        "registrada_en": "2026-10-12T13:28:00-05:00",
+        "geoetiquetada": true,
+        "nota": "4.4701, -74.3249 · Coincide con RUNT"
+      },
+      {
+        "id": "ev-07-3",
+        "tipo": "DOCUMENTO",
+        "titulo": "Croquis del accidente (IPAT)",
+        "archivo": "sin-07-croquis.png",
+        "registrada_en": "2026-10-12T18:00:00-05:00",
+        "geoetiquetada": false,
+        "nota": "IPAT · vía nacional, accidente por alcance"
+      },
+      {
+        "id": "ev-07-4",
+        "tipo": "DOCUMENTO",
+        "titulo": "Factura de reparación del taller",
+        "archivo": "sin-07-factura.png",
+        "registrada_en": "2026-10-13T10:15:00-05:00",
+        "geoetiquetada": false,
+        "nota": "PDF verificado · Taller Automotriz Sabana Sur S.A.S."
+      }
+    ],
+    "verificaciones": [
+      {
+        "descripcion": "Identidad validada vía biometría Open Finance",
+        "cumple": true
+      },
+      {
+        "descripcion": "Georreferenciación cotejada en rango de ocurrencia",
+        "cumple": true
+      },
+      {
+        "descripcion": "Vigencia de amparo confirmada sin mora previa",
+        "cumple": true
+      }
+    ],
+    "resolucion": null
+  },
+  {
+    "id": "sin-08",
+    "radicado": "SIN-2026-0087",
+    "estado": "APROBADO",
+    "asegurado": {
+      "nombre": "Ricardo Alonso Pertuz Navarro",
+      "documento": "C.C. 8.742.093"
+    },
+    "poliza_id": "pol-08",
+    "cobertura_aplicada": "Vida grupo deudor · Amparo de daños materiales al bien financiado",
+    "entidad_acreedora": "Banco Meridiano S.A.",
+    "ocurrido_en": "2026-10-03T10:30:00-05:00",
+    "notificado_en": "2026-10-03T12:45:00-05:00",
+    "ubicacion": {
+      "descripcion": "Vía al Mar (Vía 40 hacia Puerto Colombia)",
+      "ciudad": "Barranquilla",
+      "latitud": 11.01,
+      "longitud": -74.87
+    },
+    "descripcion": "La SUV eléctrica fue chocada por detrás en la vía al Mar y perdió el bumper trasero. En el taller se cubrió con plástico mientras llegaban los repuestos.",
+    "suma_reclamada": {
+      "valor": "6200000",
+      "moneda": "COP"
+    },
+    "vence_dictamen_horas": 12,
+    "evidencias": [
+      {
+        "id": "ev-08-1",
+        "tipo": "FOTO",
+        "titulo": "Foto: parte trasera sin bumper, cubierta con plástico",
+        "archivo": "sin-08-foto-1.jpg",
+        "registrada_en": "2026-10-03T16:20:00-05:00",
+        "geoetiquetada": false,
+        "nota": "Tomada en el taller · Coincide con RUNT"
+      },
+      {
+        "id": "ev-08-2",
+        "tipo": "DOCUMENTO",
+        "titulo": "Factura de reparación del taller",
+        "archivo": "sin-08-factura.png",
+        "registrada_en": "2026-10-04T09:40:00-05:00",
+        "geoetiquetada": false,
+        "nota": "PDF verificado · Electromotriz del Atlántico S.A.S."
+      }
+    ],
+    "verificaciones": [
+      {
+        "descripcion": "Identidad validada vía biometría Open Finance",
+        "cumple": true
+      },
+      {
+        "descripcion": "Georreferenciación cotejada en rango de ocurrencia",
+        "cumple": true
+      },
+      {
+        "descripcion": "Vigencia de amparo confirmada sin mora previa",
+        "cumple": true
+      }
+    ],
+    "resolucion": {
+      "tipo": "APROBACION",
+      "resuelta_en": "2026-10-10T11:30:00-05:00",
+      "notificacion": "Se notificó la aprobación al asegurado por correo y app móvil, con copia al banco acreedor.",
+      "indemnizacion": {
+        "valor": "5580000",
+        "moneda": "COP"
+      },
+      "metodo_transferencia": "ACH Colombia Interbancario",
+      "plazo_dispersion": "1 a 3 días hábiles"
+    }
+  },
+  {
+    "id": "sin-09",
+    "radicado": "SIN-2026-0076",
+    "estado": "RECHAZADO",
+    "asegurado": {
+      "nombre": "Paola Andrea Mantilla Rueda",
+      "documento": "C.C. 63.491.857"
+    },
+    "poliza_id": "pol-09",
+    "cobertura_aplicada": "Vida grupo deudor · Amparo de daños materiales al bien financiado",
+    "entidad_acreedora": "Compañía de Financiamiento Altamar",
+    "ocurrido_en": "2026-10-05T18:15:00-05:00",
+    "notificado_en": "2026-10-06T09:00:00-05:00",
+    "ubicacion": {
+      "descripcion": "Autopista Floridablanca, a la altura de Cañaveral",
+      "ciudad": "Bucaramanga",
+      "latitud": 7.085,
+      "longitud": -73.105
+    },
+    "descripcion": "El espejo retrovisor lateral quedó roto y colgando de los cables tras rozar otro vehículo en la autopista. El daño se limita al espejo.",
+    "suma_reclamada": {
+      "valor": "680000",
+      "moneda": "COP"
+    },
+    "vence_dictamen_horas": 4,
+    "evidencias": [
+      {
+        "id": "ev-09-1",
+        "tipo": "FOTO",
+        "titulo": "Foto: espejo retrovisor roto y colgando",
+        "archivo": "sin-09-foto-1.jpg",
+        "registrada_en": "2026-10-06T08:40:00-05:00",
+        "geoetiquetada": true,
+        "nota": "7.0850, -73.1050 · Coincide con RUNT"
+      },
+      {
+        "id": "ev-09-2",
+        "tipo": "DOCUMENTO",
+        "titulo": "Factura de reparación del taller",
+        "archivo": "sin-09-factura.png",
+        "registrada_en": "2026-10-06T15:00:00-05:00",
+        "geoetiquetada": false,
+        "nota": "PDF verificado · Autopartes Santander S.A.S."
+      }
+    ],
+    "verificaciones": [
+      {
+        "descripcion": "Identidad validada vía biometría Open Finance",
+        "cumple": true
+      },
+      {
+        "descripcion": "Georreferenciación cotejada en rango de ocurrencia",
+        "cumple": true
+      },
+      {
+        "descripcion": "Vigencia de amparo: la póliza venció el 2026-09-28 y no se renovó",
+        "cumple": false
+      }
+    ],
+    "resolucion": {
+      "tipo": "RECHAZO",
+      "resuelta_en": "2026-10-12T16:00:00-05:00",
+      "notificacion": "Se notificó el rechazo al asegurado por correo y app móvil, con copia al banco acreedor.",
+      "motivo": "POLIZA_NO_VIGENTE",
+      "comentario": "La póliza terminó su vigencia el 28 de septiembre de 2026 y el siniestro ocurrió el 5 de octubre de 2026, por lo que el hecho queda fuera del periodo de amparo.",
+      "via_recurso": "El asegurado puede presentar reclamación ante el defensor del consumidor financiero o aportar prueba de renovación dentro de 15 días hábiles."
+    }
+  },
+  {
+    "id": "sin-10",
+    "radicado": "SIN-2026-0158",
+    "estado": "PENDIENTE",
+    "asegurado": {
+      "nombre": "Sergio Iván Palacios Londoño",
+      "documento": "C.C. 80.213.466"
+    },
+    "poliza_id": "pol-10",
+    "cobertura_aplicada": "Vida grupo deudor · Amparo de daños materiales al bien financiado",
+    "entidad_acreedora": "Banco Ribera S.A.",
+    "ocurrido_en": "2026-10-17T19:30:00-05:00",
+    "notificado_en": "2026-10-18T10:05:00-05:00",
+    "ubicacion": {
+      "descripcion": "Parqueadero público de la Calle 93 con Carrera 11A, Chicó",
+      "ciudad": "Bogotá",
+      "latitud": 4.678,
+      "longitud": -74.048
+    },
+    "descripcion": "Al regresar al parqueadero, el asegurado encontró el sedán negro con la puerta trasera izquierda abollada por un golpe lateral de un vehículo no identificado. Hay abolladura y pintura rayada, sin otros daños.",
+    "suma_reclamada": {
+      "valor": "2850000",
+      "moneda": "COP"
+    },
+    "vence_dictamen_horas": 70,
+    "evidencias": [
+      {
+        "id": "ev-10-1",
+        "tipo": "FOTO",
+        "titulo": "Foto: puerta trasera izquierda abollada",
+        "archivo": "sin-10-foto-1.jpg",
+        "registrada_en": "2026-10-18T09:40:00-05:00",
+        "geoetiquetada": true,
+        "nota": "4.6780, -74.0480 · Coincide con RUNT"
+      },
+      {
+        "id": "ev-10-2",
+        "tipo": "DOCUMENTO",
+        "titulo": "Factura de reparación del taller",
+        "archivo": "sin-10-factura.png",
+        "registrada_en": "2026-10-18T16:25:00-05:00",
+        "geoetiquetada": false,
+        "nota": "PDF verificado · Taller Latonería Chicó S.A.S."
+      }
+    ],
+    "verificaciones": [
+      {
+        "descripcion": "Identidad validada vía biometría Open Finance",
+        "cumple": true
+      },
+      {
+        "descripcion": "Georreferenciación cotejada en rango de ocurrencia",
+        "cumple": true
+      },
+      {
+        "descripcion": "Vigencia de amparo confirmada sin mora previa",
+        "cumple": true
+      }
+    ],
+    "resolucion": null
+  }
+]

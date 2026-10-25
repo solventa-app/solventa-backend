@@ -21,9 +21,9 @@ agrega nada hasta que alguien las enciende.
 | CMEK en Cloud SQL y Memorystore Redis | `usar_cmek_sql` / `usar_cmek_redis` | $0 adicional (usa la misma llave de KMS) | Cloud SQL exige recrear/migrar la instancia (`export/import` en ventana acordada); Redis se aplica en el próximo encendido |
 | Workload Identity Federation (GitHub) + service account de despliegue + sus permisos | `crear_pipeline` | $0 | `cicd.tf`; sin llaves; limitada a este repo y al entorno `staging` |
 | Un servicio de Cloud Run por entrada de `.github/servicios.json`, sus jobs de migración, una service account por servicio y los secretos | `crear_servicios` | ~$0 en reposo | `servicios.tf`; máx. `max_instancias` por servicio (`calentar_camino_critico = true` sube `min_instance_count = 1` solo durante sesiones de medición) |
-| Cola de Cloud Tasks `reintento-cobros` + trabajo de Cloud Scheduler `sonda-acl` y `DISPARADOR=externo` en PAYMENTS y el ACL Worker | `crear_tareas` | $0 (capa gratuita: 1 M de operaciones de Cloud Tasks; 3 trabajos de Scheduler por cuenta) | `tareas.tf`. En Cloud Run los bucles de fondo no corren de forma confiable (`cpu_idle = true`, mínimo 0). Ver «Disparadores externos» |
+| Cola de Cloud Tasks `reintento-cobros` + trabajos de Cloud Scheduler `sonda-acl` y `reconciliacion-cobros-policy` y `DISPARADOR=externo` en PAYMENTS y el ACL Worker | `crear_tareas` | $0 (capa gratuita: 1 M de operaciones de Cloud Tasks; 3 trabajos de Scheduler por cuenta) | `tareas.tf`. En Cloud Run los bucles de fondo no corren de forma confiable (`cpu_idle = true`, mínimo 0). Ver «Disparadores externos» |
 | Memorystore Redis (BASIC, 1GB) + conector VPC | `crear_redis` | **~USD 0,12/h juntos** (estimación estándar de GCP; no se verificó empíricamente en ningún experimento de `solventa-arquitectura` — ese repo no tiene Redis en Terraform, solo en docker-compose local) | **no escala a cero**: crear y destruir por sesión (`redis_encendida`) |
-| Cloud SQL PostgreSQL (`db-f1-micro`, 1 instancia, bases `auth` + `payments`) | `crear_cloud_sql` | ~USD 9-12/mes (instancia shared-core + 10GB disco; sin respaldos automáticos para no sumarles costo) | **no escala a cero**: cobra por hora aunque no haya tráfico (`cloud_sql_encendida`) |
+| Cloud SQL PostgreSQL (`db-f1-micro`, 1 instancia, bases `auth`, `payments` + `policy`) | `crear_cloud_sql` | ~USD 9-12/mes (instancia shared-core + 10GB disco; sin respaldos automáticos para no sumarles costo) | **no escala a cero**: cobra por hora aunque no haya tráfico (`cloud_sql_encendida`) |
 | MongoDB Atlas M0 (RISK y RATING) | `crear_mongo_atlas` | $0 (nivel gratuito) | sin CMEK en M0 (CMEK exige M10 ~USD 57/mes): cubierto por el cifrado de campo AES-GCM con llave de KMS |
 | Pub/Sub (`perfil-actualizado` + suscripción de `rating`) | `crear_pubsub` | $0 (capa gratuita hasta 10 GB/mes) | `pubsub.tf`; `risk` publica y `rating` invalida la caché del score |
 | Batch nocturno (`risk-reproceso` Cloud Run Job + Cloud Scheduler `30 23 * * *`) | `crear_batch` | $0 Scheduler (capa gratuita) + minutos de Job | `batch.tf`; corre a las 23:30 America/Bogota, antes del apagado automático de las 2:00 a.m. |
@@ -104,8 +104,8 @@ del equipo (regla de costos de `CLAUDE.md`).
   `cloud-sql.tf` y `mongo-atlas.tf` solo le agregan la versión con el valor real (si `crear_servicios` está activo).
   Así `crear_cloud_sql`/`crear_mongo_atlas` se pueden activar antes o después de `crear_servicios` sin que dos
   recursos intenten crear el mismo `secret_id`.
-- **Postgres desde Cloud Run.** Con `crear_cloud_sql`, los servicios con un secreto `database-url-*` (hoy `auth` y
-  `payments`) y sus jobs de migración montan el socket de Cloud SQL en `/cloudsql`, y solo sus cuentas
+- **Postgres desde Cloud Run.** Con `crear_cloud_sql`, los servicios con un secreto `database-url-*` (hoy `auth`,
+  `payments` y `policy`) y sus jobs de migración montan el socket de Cloud SQL en `/cloudsql`, y solo sus cuentas
   `rt-<servicio>` reciben `roles/cloudsql.client`. Sin ese montaje la URL `...@/auth?host=/cloudsql/...` no
   conecta y la migración falla antes de aplicar nada.
 
@@ -120,7 +120,10 @@ servicios siguen con su bucle (`DISPARADOR=bucle`), que en Cloud Run no es fiabl
 |---|---|---|
 | Reintento de cobros `pendiente` y recuperación de los atascados en `cobrando` | PAYMENTS programa una tarea de Cloud Tasks cuando un cobro queda `pendiente`; cada pasada programa la siguiente si aún queda alguno | `POST /cobros/_reintentar` de PAYMENTS (token OIDC de su propia cuenta de runtime) |
 | Sonda de recuperación del circuito (regla #5) | Cloud Scheduler, cada minuto | `POST /sonda/ejecutar` del ACL Worker |
+| Reapertura de pólizas con el pago rechazado o pendiente que se recuperó (W03-14, CA-W03-06) | Cloud Scheduler `reconciliacion-cobros-policy`, cada `reconciliacion_cobros_cron` (15 min por defecto); además el BFF avisa a POLICY tras cada `reintentarCobro` del back-office | `POST /reconciliacion/cobros` de POLICY |
 | Reconciliación de fuentes degradadas (W01) | El ACL Worker encola una tarea en la cola `reconciliacion-fuentes` en vez del job de `rq`; la cola reintenta (5 intentos, 10 a 300 s) mientras el consolidador responda 503 | `POST /reconciliar` del consolidador (token OIDC de la cuenta del ACL Worker) |
+
+Con `crear_tareas = true` hay **tres** trabajos de Scheduler en la cuenta (`sonda-acl`, `risk-reproceso-nocturno` del batch y `reconciliacion-cobros-policy`), que es justo el tope de la capa gratuita que documenta `crear_tareas` (3 por cuenta de facturación; no se verificó contra la factura). Si esa cuenta tiene trabajos de otros proyectos, el cuarto ya cobra centavos al mes.
 
 Límites que conviene saber: el estado de los circuitos vive en la memoria de cada instancia, así que la sonda revisa los de
 la instancia que recibe la llamada; y una tarea de reconciliación que agota sus 5 intentos se descarta (no hay un registro de
@@ -221,7 +224,7 @@ el merge. Localmente: `export TF_VAR_project_id=... TF_VAR_billing_account_id=..
 
 `terraform output secretos_a_cargar` lista **todos** los secretos del manifiesto. Terraform crea cada contenedor con un
 valor marcador (`pendiente-de-cargar`). Con `crear_cloud_sql` (y `crear_servicios`) Terraform ya escribe solo
-`database-url-auth` y `database-url-payments`; con `crear_redis`, `redis-url-*`; y con `crear_mongo_atlas`,
+`database-url-auth`, `database-url-payments` y `database-url-policy`; con `crear_redis`, `redis-url-*`; y con `crear_mongo_atlas`,
 `mongo-uri-risk` y `mongo-uri-rating`: esos no hay que cargarlos. Lo que se agrega aparte es `clave-jwt`,
 `clave-cliente-id` y `clave-cifrado`, y ese valor nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
 
@@ -305,7 +308,7 @@ openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n' | gcloud secrets versions ad
 - **Cloud SQL (`usar_cmek_sql`):** PostgreSQL en Cloud SQL solo acepta `encryption_key_name` **al crear la instancia**.
   Activar `usar_cmek_sql = true` sobre una instancia existente fuerza su reemplazo (que el guardia `scripts/revisar_plan.py`
   bloquea por seguridad). Por eso la migración a CMEK se hace en un PR propio con ventana acordada con el equipo:
-  1. Exportar las bases `auth` y `payments` con `gcloud sql export sql`.
+  1. Exportar las bases `auth`, `payments` y `policy` con `gcloud sql export sql`.
   2. Mergear `usar_cmek_sql = true` y correr *Deploy staging* con `permitir_destruir = true` para recrear la instancia con CMEK.
   3. Importar los volcados o correr las migraciones y `scripts/crear_usuarios.py`.
 - **Memorystore Redis (`usar_cmek_redis`):** como Redis es caché efímera y el botón *Costos staging → apagar* la destruye
@@ -320,7 +323,7 @@ openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n' | gcloud secrets versions ad
 ### API Gateway delante del BFF (`crear_gateway`, HA-LAT-004)
 
 Con `crear_gateway = true` (`gateway.tf`), Terraform crea en `us-central1` el API Gateway `solventa-gateway` configurado con
-`infra/gateway/openapi.yaml` (rutas `POST /graphql/web`, `POST /graphql/movil`, `POST /graphql/app` y `GET /health`, todas con
+`infra/gateway/openapi.yaml` (rutas `POST /graphql/web`, `POST /graphql/movil`, `POST /graphql/app`, `GET /health` y `GET /polizas/{poliza_id}/documento`, todas con
 `deadline: 0.7` = 700 ms). El BFF **deja de ser público** (sin `allUsers`): solo la cuenta `gateway-bff` tiene
 `roles/run.invoker` sobre `bff`. La URL pública sale en `terraform output -raw gateway_url` y en el informe de
 `deploy-staging.yml`.
@@ -338,7 +341,7 @@ se vuelve a poner en `false`.
   únicamente a `rt-rating` para invalidar el score cacheado cuando cambia el perfil.
 - **`crear_batch = true` (`batch.tf`, HA-ESC-004 / EC017):** crea el Cloud Run Job `risk-reproceso` (`python -m app.batch_reproceso`,
   con la imagen y cuenta de `risk`) y la tarea de Cloud Scheduler `risk-reproceso-nocturno` programada a las `30 23 * * *`
-  (`America/Bogota`), para que termine antes del apagado automático de costos de las 2:00 a.m. `batch_tareas` (default `1`) fija `task_count`: cada tarea procesa una partición de los perfiles, así que para 10 M de perfiles en < 2 h se escala subiendo `batch_tareas` (la cifra sale de la medición de `docs/evidencias/EC017-2026-10-18.md`).
+  (`America/Bogota`), para que termine antes del apagado automático de costos de las 2:00 a.m. `batch_tareas` (default `1`) fija `task_count`: cada tarea procesa una partición de los perfiles, así que para 10 M de perfiles en < 2 h se escala subiendo `batch_tareas` (la cifra sale de la medición de `docs/evidencias/EC017-2026-10-18.md`). **Ojo con Atlas M0:** según su documentación admite como máximo 100 operaciones por segundo para todo el clúster, así que el batch no llegaría a EC017 y competiría con el tráfico en línea de RISK y RATING; para medir EC017 en staging hace falta un nivel de pago (sin medir; ver la sección 5 del informe).
 
 ### Secretos de SonarCloud en GitHub Actions (Bloque 6)
 
@@ -386,7 +389,7 @@ el tiempo. Cualquiera del equipo puede apagarlo y volver a subirlo con un botón
 
 | Recurso | Cobra por hora | Al apagar | Al encender |
 |---|---|---|---|
-| **Cloud SQL** (`auth`, `payments`) | Sí (~USD 9-12/mes con `db-f1-micro`, según este README) | Se **detiene**: conserva las bases, los usuarios y las migraciones; solo se paga el disco | Arranca (1-3 min); no hay que volver a migrar |
+| **Cloud SQL** (`auth`, `payments`, `policy`) | Sí (~USD 9-12/mes con `db-f1-micro`, según este README) | Se **detiene**: conserva las bases, los usuarios y las migraciones; solo se paga el disco | Arranca (1-3 min); no hay que volver a migrar |
 | **Redis + conector VPC** (`rating`, `acl-worker`, `consolidador-fuentes`) | Sí (~USD 0,12/h juntos, según este README) | Se **borran** la instancia y el conector (es una caché) | Se vuelven a crear (10-15 min) |
 | **Instancias fijas** de Cloud Run (`bff`, `auth`, `risk`, `rating`, `payments`, `acl-worker` y los 3 stubs) | Sí (estimado, sin verificar: ~USD 10 al mes cada una; ~USD 3 al día las 9 juntas) | Vuelven a **mínimo 0** instancias y CPU solo en las peticiones | Mínimo 1 otra vez |
 | Red, subred y APIs de Redis | No | Se quedan (ver abajo) | No se tocan |
@@ -431,7 +434,7 @@ tienen cambios que aplicar. Para quitarlo, borra el bloque `schedule` de `.githu
 - Si alguien está trabajando pasadas las 2:00 a.m., se le apagará: basta con volver a ejecutar `encender`.
 - Mientras `main` no traiga este cambio, la ejecución programada se omite con un aviso (no falla cada noche).
 
-**Desplegar con los costos apagados:** un despliegue que tenga que migrar `auth` o `payments` mientras Cloud SQL está
+**Desplegar con los costos apagados:** un despliegue que tenga que migrar `auth`, `payments` o `policy` mientras Cloud SQL está
 detenida **falla de inmediato con un mensaje claro** (*Cloud SQL está detenida… ejecuta Costos staging → encender*) en
 vez de un error de conexión. Enciende primero y vuelve a lanzar el despliegue. Un release no vuelve a encender lo apagado.
 

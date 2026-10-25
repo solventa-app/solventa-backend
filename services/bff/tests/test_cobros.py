@@ -4,10 +4,17 @@ import asyncio
 import logging
 
 import httpx
-from fakes import AuthFalso, PaymentsFalso, clientes_falsos, cobro_de_payments, token_de_prueba
+from fakes import (
+    AuthFalso,
+    PaymentsFalso,
+    PolicyFalso,
+    clientes_falsos,
+    cobro_de_payments,
+    token_de_prueba,
+)
 from fastapi.testclient import TestClient
 
-from app.clientes import ClientePaymentsHttp, SolicitudInvalida
+from app.clientes import ClientePaymentsHttp, ErrorServicio, SolicitudInvalida
 from app.configuracion import Configuracion
 from app.main import create_app
 
@@ -90,6 +97,67 @@ def test_reintentar_un_pendiente_lo_deja_cobrado() -> None:
         cobro = _post(client, REINTENTAR, {"id": "c-1"})["data"]["reintentarCobro"]
 
     assert cobro["estado"] == "COBRADO"
+
+
+def _cliente_con_policy(payments: PaymentsFalso, policy: PolicyFalso) -> TestClient:
+    return TestClient(
+        create_app(
+            config=Configuracion.desde_entorno(),
+            clientes=clientes_falsos(payments=payments, policy=policy),
+        )
+    )
+
+
+def test_reintentar_un_cobro_le_avisa_a_policy_para_que_emita_la_poliza() -> None:
+    # Decisión W03-14: lo reabren el back-office y la reconciliación. El id de la póliza de un
+    # primer cobro de W03 es el de la propuesta.
+    payments = PaymentsFalso([cobro_de_payments("c-1", "propuesta-1", "rechazado")])
+    policy = PolicyFalso()
+    with _cliente_con_policy(payments, policy) as client:
+        cobro = _post(client, REINTENTAR, {"id": "c-1"})["data"]["reintentarCobro"]
+
+    assert cobro["estado"] == "COBRADO"
+    assert policy.reconciliaciones == ["propuesta-1"]
+
+
+def test_si_policy_no_responde_el_reintento_del_back_office_no_falla(caplog) -> None:
+    payments = PaymentsFalso([cobro_de_payments("c-1", "propuesta-1", "rechazado")])
+    policy = PolicyFalso()
+    policy.error_reconciliar = ErrorServicio("caído")
+    with caplog.at_level(logging.WARNING), _cliente_con_policy(payments, policy) as client:
+        respuesta = _post(client, REINTENTAR, {"id": "c-1"})
+
+    assert respuesta["data"]["reintentarCobro"]["estado"] == "COBRADO"  # el cobro se hizo
+    assert "errors" not in respuesta
+    assert "POLICY no pudo reconciliar" in caplog.text
+    assert "propuesta-1" not in caplog.text  # el id va opaco en los logs
+
+
+def test_un_cobro_que_no_es_de_w03_no_cambia_nada() -> None:
+    payments = PaymentsFalso([cobro_de_payments("c-1", "POL-LEGADA", "pendiente")])
+    policy = PolicyFalso()
+    policy.propuestas_conocidas = set()
+    with _cliente_con_policy(payments, policy) as client:
+        cobro = _post(client, REINTENTAR, {"id": "c-1"})["data"]["reintentarCobro"]
+
+    assert cobro["estado"] == "COBRADO"
+    assert policy.reconciliaciones == ["POL-LEGADA"]  # se avisó; POLICY no la conoce y la ignora
+
+
+def test_solo_el_back_office_puede_reintentar_y_nadie_mas_dispara_la_reconciliacion() -> None:
+    payments = PaymentsFalso([cobro_de_payments("c-1", "propuesta-1", "rechazado")])
+    policy = PolicyFalso()
+    with _cliente_con_policy(payments, policy) as client:
+        for rol in ("CLIENTE", "ASESOR"):
+            r = client.post(
+                "/graphql/web",
+                json={"query": REINTENTAR, "variables": {"id": "c-1"}},
+                headers={"Authorization": f"Bearer {token_de_prueba(rol)}"},
+            )
+            assert r.status_code == 200
+            assert r.json()["errors"], rol  # rechazado por rol
+
+    assert policy.reconciliaciones == []
 
 
 def test_reintentar_un_rechazado_lo_cobra_y_descuenta_un_reintento() -> None:

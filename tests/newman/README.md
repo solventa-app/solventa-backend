@@ -16,7 +16,7 @@ stack real de `docker compose`, sin escribir código.
 | 0. Salud | `/health` y `/metrics` del BFF | — |
 | 1. Autenticación y usuarios | Login del BACKOFFICE, `yo`, alta de ASESOR y de CLIENTE con nombre (alias únicos por corrida; cualquier rol puede tener nombre; cada usuario ve el suyo al iniciar sesión y la lista de usuarios no expone nombres), alias repetido o con forma de correo, clave errónea y login de cada rol; guarda los tokens | HU-M02 |
 | 2. Consentimiento | `registrarConsentimiento` como ASESOR, y en AUTH que el actor es ese ASESOR | CA-W01-02, CA-W01-11 |
-| 3. Oferta con proveedores sanos | Oferta COMPLETA en los canales web y móvil, 5 fuentes, prima puntual, dinero como texto; `oferta(id)` devuelve `null` | CA-W01-03, CA-W01-06 |
+| 3. Oferta con proveedores sanos | Oferta COMPLETA en los canales web y móvil, 5 fuentes, prima puntual, dinero como texto; `oferta(id)` devuelve la oferta guardada | CA-W01-03, CA-W01-06 |
 | 4. Degradación | Con Open Finance lento: oferta PRELIMINAR, rango de prima, fuentes en CACHE, sin error; con un documento sin caché, el historial crediticio no llega y sale `ErrorOferta` con reintento; luego restaura el stub y espera a que cierren los circuitos | CA-W01-04, CA-W01-05, EC009 / EC010 |
 | 5. Errores controlados | Consentimiento inexistente, valor inválido, plazo inválido y consulta inválida: siempre HTTP 200 o 4xx, nunca 5xx | CA-W01-01, CA-W01-05 |
 | 6. Contacto y revocación | `contactarAsesor`, `revocarConsentimiento`, y que la oferta se rechace después de revocar | CA-W01-07, CA-W01-08 |
@@ -73,3 +73,33 @@ npx --yes newman@6.2.2 run tests/newman/solventa-bff.postman_collection.json \
 Recorrido mínimo del caso insignia (oferta completa, degradada, timeout duro y consentimiento revocado), el mismo
 de `docs/evidencias/flujo-prueba-local-hu-w01.md` y `scripts/humo_bff.py`. Útil para abrirlo en la app de Postman;
 para la verificación completa usa `solventa-bff.postman_collection.json`.
+
+## Colección de HU-W03 (`hu-w03.postman_collection.json`)
+
+Suscripción, firma y póliza (KAN-26, plan de HU-W03 bloque 6). A diferencia de la colección del BFF, **todo entra por el
+API Gateway** (`gateway_url`, `:8080`), como el front; los stubs y el ACL se tocan directo solo para fijar modos de falla.
+Requiere el stack completo (`docker compose --profile servicios up -d --build --wait`) y corre **en orden**: las carpetas
+comparten variables.
+
+| Carpeta | Qué verifica | Criterio / escenario |
+|---|---|---|
+| 0. Preparación | El BACKOFFICE crea un CLIENTE titular **con correo** (sin contacto el aviso de la póliza se omite, W03-18), otro CLIENTE ajeno y un ASESOR (alias únicos por corrida) | — |
+| 1. Camino feliz | Solicitar → `aceptarOferta` (la prima es la de la oferta; aceptar dos veces da la misma propuesta) → `documentoFirma` → firma rechazada sin autorizar el cobro o con una versión vieja (la propuesta sigue `ACEPTADA`) → firma → firmar otra vez da la misma evidencia → espera a `EMITIDA` → `poliza(id)` → PDF por el gateway → el aviso salió una sola vez | CA-W03-01 a 03, 07, 08 |
+| 2. Autorización | Otro CLIENTE no ve ni acepta ni firma ni descarga lo ajeno; un ASESOR no firma pero sí descarga el PDF; BACKOFFICE 403 y sin token 401 en el PDF | W03-8 (decisión), CA-W03-03 |
+| 3. Errores controlados | Oferta, propuesta y póliza inexistentes: error tipado o `null`, nunca 5xx | regla 4 |
+| 4. Degradación | Open Finance lento (la `PRELIMINAR` no se acepta); KYC caído (`EN_REVISION`, sin póliza); pasarela que rechaza (`PAGO_RECHAZADO`, sin póliza); pago rechazado que se recupera (lo reabre el back-office: el cliente no puede y la póliza se emite con un solo aviso); firma caída y firma lenta, **por el gateway** (`ErrorFirma` reintentable con HTTP 200, nunca un 5xx, y al volver el reintento emite); notificaciones caídas (la póliza se emite y el PDF se descarga, el aviso sale solo al volver). Cada escenario restaura el stub y espera a que cierren los circuitos | CA-W03-05 y 06, EC009 / EC010 |
+| 5. Contacto del cliente y aviso con PDF | Bloque 8 (W03-16 a W03-18): un CLIENTE solo con teléfono y otro sin contacto; `tieneContacto` en `yo`; el titular (con correo) recibe el aviso **por correo con el PDF**, el de solo teléfono **por SMS sin PDF** y el sin contacto **tiene póliza y el stub no recibe nada**; `actualizarContacto` (correo inválido, sin datos, ASESOR, BACKOFFICE, sin token) y que el contacto no se puede leer por GraphQL | CA-W03-08, CA-W03-09 |
+
+```bash
+npx --yes newman@6.2.2 run tests/newman/hu-w03.postman_collection.json \
+  -e tests/newman/solventa-local.postman_environment.json
+```
+
+- Las esperas a la emisión son un sondeo (`postman.setNextRequest`, hasta 40 consultas cada 500 ms) porque la emisión corre en
+  segundo plano; el número de consultas queda en el nombre de la prueba.
+- **Solo contra local** la carpeta 4 (los stubs y el ACL son privados en staging). Las carpetas 0 a 3 sirven contra staging
+  cambiando `gateway_url` y las credenciales del BACKOFFICE en el entorno (nunca las subas al repo).
+- Datos ficticios: los documentos `CC-NEWMAN-W03-*` y los nombres `Cliente Newman *` no son personas reales.
+- **Estado:** corrida contra el stack local el 2026-10-24 sin fallos (111 peticiones ejecutadas y 204 aserciones; las 105 definidas más los
+  sondeos); resultados y hallazgos en `docs/evidencias/HU-W03-newman-EC009-EC010-2026-10-24.md`, `CA-W03-05-firma-2026-10-24.md` y `CA-W03-06-reapertura-2026-10-24.md`.
+  Si el `:8080` o el `:5432` están ocupados, ver «Cómo correrlas».

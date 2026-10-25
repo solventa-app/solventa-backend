@@ -5,6 +5,7 @@ levantar los servicios. Las fallas de red, timeouts y 5xx se convierten en
 `ErrorServicio`; quien orquesta decide cómo degradar (regla #4: nunca un 5xx
 crudo al cliente). Ningún cuerpo de petición ni de respuesta se loguea."""
 
+import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -16,6 +17,22 @@ from app.configuracion import Configuracion
 
 class ErrorServicio(Exception):
     """El servicio interno no respondió a tiempo o respondió con error."""
+
+
+class PropuestaRechazada(Exception):
+    """POLICY no aceptó la oferta. `motivo` es un `MotivoErrorAceptacion` del contrato."""
+
+    def __init__(self, motivo: str) -> None:
+        super().__init__(motivo)
+        self.motivo = motivo
+
+
+class FirmaRechazada(Exception):
+    """POLICY no aceptó la firma. `motivo` es un `MotivoErrorFirma` del contrato."""
+
+    def __init__(self, motivo: str) -> None:
+        super().__init__(motivo)
+        self.motivo = motivo
 
 
 class SolicitudInvalida(Exception):
@@ -50,7 +67,13 @@ class PuertoAuth(Protocol):
     async def listar_usuarios(self, rol: str | None) -> list[dict]: ...
 
     async def crear_usuario(
-        self, usuario: str, clave: str, rol: str, nombre: str | None = None
+        self,
+        usuario: str,
+        clave: str,
+        rol: str,
+        nombre: str | None = None,
+        correo: str | None = None,
+        telefono: str | None = None,
     ) -> dict: ...
 
     async def nombres_de_clientes(self, ids: list[str]) -> dict[str, str]: ...
@@ -59,6 +82,14 @@ class PuertoAuth(Protocol):
 
     async def suspender_usuario(self, usuario_id: str) -> dict | None: ...
 
+    async def actualizar_preferencias(
+        self, usuario_id: str, idioma: str, moneda: str
+    ) -> dict | None: ...
+
+    async def actualizar_contacto(
+        self, usuario_id: str, correo: str | None, telefono: str | None
+    ) -> dict | None: ...
+
 
 class PuertoAcl(Protocol):
     async def consultar_fuente(
@@ -66,6 +97,8 @@ class PuertoAcl(Protocol):
     ) -> dict: ...
 
     async def invalidar_cache_cliente(self, cliente_id: str) -> None: ...
+
+    async def tasas_cambio(self) -> dict[str, str]: ...
 
 
 class PuertoRisk(Protocol):
@@ -80,6 +113,27 @@ class PuertoRating(Protocol):
         cobertura: str,
         plazo_meses: int,
         direccion_inmueble: str,
+        consentimiento_id: str | None = None,
+    ) -> dict: ...
+
+    async def obtener_oferta(self, oferta_id: str) -> dict | None: ...
+
+
+class PuertoPolicy(Protocol):
+    async def crear_propuesta(self, oferta_id: str, actor_usuario_id: str | None) -> dict: ...
+
+    async def obtener_propuesta(self, propuesta_id: str) -> dict | None: ...
+
+    async def documento_firma(self, propuesta_id: str) -> dict | None: ...
+
+    async def obtener_poliza(self, poliza_id: str) -> dict | None: ...
+
+    async def generar_documento(self, poliza_id: str, asegurado: str | None) -> bytes | None: ...
+
+    async def reconciliar_cobro(self, propuesta_id: str) -> str | None: ...
+
+    async def firmar_propuesta(
+        self, propuesta_id: str, autoriza_cobro: bool, version_documento: str, firmante_id: str
     ) -> dict: ...
 
 
@@ -104,6 +158,7 @@ class Clientes:
     risk: PuertoRisk
     rating: PuertoRating
     payments: PuertoPayments
+    policy: PuertoPolicy
 
 
 async def _pedir(
@@ -196,10 +251,24 @@ class ClienteAuthHttp:
         return _json_o_error(await _pedir(self._cliente, "GET", ruta))
 
     async def crear_usuario(
-        self, usuario: str, clave: str, rol: str, nombre: str | None = None
+        self,
+        usuario: str,
+        clave: str,
+        rol: str,
+        nombre: str | None = None,
+        correo: str | None = None,
+        telefono: str | None = None,
     ) -> dict:
-        # El nombre (dato personal) y la clave viajan solo en el cuerpo, nunca en la URL.
-        cuerpo = {"usuario": usuario, "clave": clave, "rol": rol, "nombre": nombre}
+        # El nombre, el contacto (datos personales) y la clave viajan solo en el cuerpo, nunca en la
+        # URL, y no se registran.
+        cuerpo = {
+            "usuario": usuario,
+            "clave": clave,
+            "rol": rol,
+            "nombre": nombre,
+            "correo": correo,
+            "telefono": telefono,
+        }
         return _json_o_error(await _pedir(self._cliente, "POST", "/usuarios", cuerpo))
 
     async def nombres_de_clientes(self, ids: list[str]) -> dict[str, str]:
@@ -219,6 +288,34 @@ class ClienteAuthHttp:
             await _pedir(self._cliente, "POST", f"/usuarios/{usuario_id}/suspender")
         )
 
+    async def actualizar_preferencias(
+        self, usuario_id: str, idioma: str, moneda: str
+    ) -> dict | None:
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            f"/usuarios/{usuario_id}/preferencias",
+            {"idioma": idioma, "moneda": moneda},
+        )
+        if respuesta.status_code == 404:
+            return None
+        return _json_o_error(respuesta)
+
+    async def actualizar_contacto(
+        self, usuario_id: str, correo: str | None, telefono: str | None
+    ) -> dict | None:
+        """Correo y teléfono del propio cliente (dato personal: solo en el cuerpo, nunca se loguea).
+        AUTH responde el usuario con `tiene_contacto`, no el contacto."""
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            f"/usuarios/{usuario_id}/contacto",
+            {"correo": correo, "telefono": telefono},
+        )
+        if respuesta.status_code == 404:
+            return None
+        return _json_o_error(respuesta)
+
 
 def _json_o_error(respuesta: httpx.Response) -> Any:
     """400/409 de AUTH traen un mensaje pensado para el usuario: viaja en `SolicitudInvalida`."""
@@ -229,9 +326,27 @@ def _json_o_error(respuesta: httpx.Response) -> Any:
     return respuesta.json()
 
 
+# Las tasas de referencia cambian poco: se guardan 10 minutos por instancia del BFF.
+TTL_TASAS_SEGUNDOS = 600
+
+
 class ClienteAclHttp:
     def __init__(self, cliente: httpx.AsyncClient) -> None:
         self._cliente = cliente
+        self._tasas: dict[str, str] | None = None
+        self._tasas_vencen = 0.0
+
+    async def tasas_cambio(self) -> dict[str, str]:
+        """Cuántos COP vale una unidad de cada moneda (KAN-209), como texto decimal."""
+        ahora = time.monotonic()
+        if self._tasas is not None and ahora < self._tasas_vencen:
+            return self._tasas
+        respuesta = await _pedir(self._cliente, "GET", "/tasas-cambio")
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        self._tasas = dict(respuesta.json()["cop_por_unidad"])
+        self._tasas_vencen = ahora + TTL_TASAS_SEGUNDOS
+        return self._tasas
 
     async def consultar_fuente(self, cliente_id: str, consentimiento_id: str, fuente: str) -> dict:
         respuesta = await _pedir(
@@ -290,6 +405,7 @@ class ClienteRatingHttp:
         cobertura: str,
         plazo_meses: int,
         direccion_inmueble: str,
+        consentimiento_id: str | None = None,
     ) -> dict:
         respuesta = await _pedir(
             self._cliente,
@@ -301,6 +417,8 @@ class ClienteRatingHttp:
                 "cobertura": cobertura,
                 "plazo_meses": plazo_meses,
                 "direccion_inmueble": direccion_inmueble,
+                # Para poder aceptarla después (HU-W03): a qué consentimiento pertenece.
+                "consentimiento_id": consentimiento_id,
             },
         )
         if respuesta.status_code == 422 and _detalle(respuesta) == DETALLE_DATOS_INSUFICIENTES:
@@ -310,6 +428,96 @@ class ClienteRatingHttp:
         if respuesta.is_error:
             # 404 incluido: RISK acaba de escribir el perfil, así que no encontrarlo
             # es un problema de lectura (réplica), no del usuario.
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def obtener_oferta(self, oferta_id: str) -> dict | None:
+        """La oferta guardada para aceptarla; `None` si venció o no existe."""
+        return _json_o_none(await _pedir(self._cliente, "GET", f"/ofertas/{oferta_id}"))
+
+
+class ClientePolicyHttp:
+    """Propuestas y pólizas (HU-W03)."""
+
+    def __init__(self, cliente: httpx.AsyncClient) -> None:
+        self._cliente = cliente
+
+    async def crear_propuesta(self, oferta_id: str, actor_usuario_id: str | None) -> dict:
+        """404 y 422 son rechazos de negocio (`PropuestaRechazada` con el motivo del contrato);
+        un 5xx o un 503 (RATING caído) llega como `ErrorServicio`, que se ofrece reintentar."""
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            "/propuestas",
+            {"oferta_id": oferta_id, "actor_usuario_id": actor_usuario_id},
+        )
+        if respuesta.status_code in (404, 422):
+            raise PropuestaRechazada(_detalle(respuesta))
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def obtener_propuesta(self, propuesta_id: str) -> dict | None:
+        return _json_o_none(await _pedir(self._cliente, "GET", f"/propuestas/{propuesta_id}"))
+
+    async def obtener_poliza(self, poliza_id: str) -> dict | None:
+        return _json_o_none(await _pedir(self._cliente, "GET", f"/polizas/{poliza_id}"))
+
+    async def generar_documento(self, poliza_id: str, asegurado: str | None) -> bytes | None:
+        """El PDF de la póliza, o `None` si no existe. El nombre del asegurado va en el CUERPO:
+        las URL quedan en los logs de acceso y un nombre es un dato personal (regla #6)."""
+        respuesta = await _pedir(
+            self._cliente, "POST", f"/polizas/{poliza_id}/documento", {"asegurado": asegurado}
+        )
+        if respuesta.status_code == 404:
+            return None
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.content
+
+    async def reconciliar_cobro(self, propuesta_id: str) -> str | None:
+        """Le pide a POLICY que revise el cobro de esa propuesta y, si ya se cobró, emita la póliza
+        (decisión W03-14). Devuelve el estado de la propuesta, o `None` si el id no es de una
+        propuesta (un cobro que no es de W03). Un 5xx o un 503 llega como `ErrorServicio`."""
+        respuesta = await _pedir(
+            self._cliente, "POST", f"/propuestas/{propuesta_id}/_reconciliar-cobro"
+        )
+        if respuesta.status_code == 404:
+            return None
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()["estado"]
+
+    async def documento_firma(self, propuesta_id: str) -> dict | None:
+        """`None` si no existe o no se puede armar el documento (409)."""
+        respuesta = await _pedir(
+            self._cliente, "GET", f"/propuestas/{propuesta_id}/documento-firma"
+        )
+        if respuesta.status_code == 409:
+            return None
+        return _json_o_none(respuesta)
+
+    async def firmar_propuesta(
+        self, propuesta_id: str, autoriza_cobro: bool, version_documento: str, firmante_id: str
+    ) -> dict:
+        """404, 409 y 422 son rechazos de negocio (`FirmaRechazada` con el motivo del contrato); un
+        5xx o un 503 (el proveedor no responde) llega como `ErrorServicio`, que se ofrece
+        reintentar."""
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            f"/propuestas/{propuesta_id}/firma",
+            {
+                "autoriza_cobro": autoriza_cobro,
+                "version_documento": version_documento,
+                "firmante_id": firmante_id,
+            },
+        )
+        if respuesta.status_code == 404:
+            raise FirmaRechazada("PROPUESTA_NO_FIRMABLE")
+        if respuesta.status_code in (409, 422):
+            raise FirmaRechazada(str(_detalle(respuesta)))
+        if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
 
@@ -382,11 +590,13 @@ def construir_clientes(config: Configuracion) -> tuple[Clientes, list[httpx.Asyn
     risk = http(config.risk_url, "risk", config.servicios_timeout_segundos)
     rating = http(config.rating_url, "rating", config.servicios_timeout_segundos)
     payments = http(config.payments_url, "payments", config.servicios_timeout_segundos)
+    policy = http(config.policy_url, "policy", config.servicios_timeout_segundos)
     clientes = Clientes(
         auth=ClienteAuthHttp(auth),
         acl=ClienteAclHttp(acl),
         risk=ClienteRiskHttp(risk),
         rating=ClienteRatingHttp(rating),
         payments=ClientePaymentsHttp(payments),
+        policy=ClientePolicyHttp(policy),
     )
-    return clientes, [auth, acl, risk, rating, payments]
+    return clientes, [auth, acl, risk, rating, payments, policy]

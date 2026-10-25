@@ -103,13 +103,13 @@ export function setup() {
   cambiarModoStub("sano");
   const sesion = prepararSesion(GRAPHQL_URL, __ENV.DOCUMENTO_PRUEBA || "CC-K6-FALLA-100002");
   // Sembrar la caché en caliente con proveedores sanos antes de inyectar la falla.
-  pedirOferta(GRAPHQL_URL, sesion, { valorCredito: "180000000", plazoMeses: 180 });
+  pedirOferta(GRAPHQL_URL, sesion, { valorCredito: "180000000", plazoMeses: 60 });
   cambiarModoStub("lento");
   return sesion;
 }
 
 export function escenarioProveedorLento(sesion) {
-  const { res } = pedirOferta(GRAPHQL_URL, sesion, { valorCredito: "180000000", plazoMeses: 180 });
+  const { res } = pedirOferta(GRAPHQL_URL, sesion, { valorCredito: "180000000", plazoMeses: 60 });
   latenciaCorte.add(res.timings.duration);
   errores5xx.add(res.status >= 500);
   // El stub `lento` tarda 750–1100 ms: si la respuesta llega después de ~950 ms, nadie cortó.
@@ -128,12 +128,12 @@ export function transicion(sesion) {
     sleep(1);
   }
   sleep(5);
-  pedirOferta(GRAPHQL_URL, sesion, { valorCredito: "180000000", plazoMeses: 180 });
+  pedirOferta(GRAPHQL_URL, sesion, { valorCredito: "180000000", plazoMeses: 60 });
   cambiarModoStub("caido");
 }
 
 export function escenarioProveedorCaidoConCache(sesion) {
-  const { res, oferta } = pedirOferta(GRAPHQL_URL, sesion, { valorCredito: "180000000", plazoMeses: 180 });
+  const { res, oferta } = pedirOferta(GRAPHQL_URL, sesion, { valorCredito: "180000000", plazoMeses: 60 });
   latenciaDegradadoCache.add(res.timings.duration);
   errores5xx.add(res.status >= 500);
   const valida = res.status === 200 && esOferta(oferta);

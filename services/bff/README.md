@@ -11,6 +11,10 @@ ACL Worker, RISK y RATING y traduce al contrato de `contracts/graphql/schema.gra
 - Historias: HU-W01 (T-W01-7), HU-M02 (autenticación) y HU-W05 (KAN-28, cobros del back-office). La API REST B2B `/v1` llega con HU-W07 (Sprint 2).
 - Regla: nunca devuelve un 5xx crudo al cliente; traduce la degradación a oferta preliminar o error con reintento (CA-W01-04/05).
   Los errores internos se enmascaran ("Unexpected error."); solo `ErrorPublico` muestra su mensaje.
+- Idioma: con `Accept-Language: en` (lo manda la web según el selector del header) los mensajes para el usuario
+  (`mensaje`, `resumen`, factores del score y errores públicos) salen en inglés; sin cabecera, en español. Los
+  servicios siguen escribiendo en español y la traducción se hace en la frontera (`app/idioma.py`); un mensaje nuevo
+  se agrega a su catálogo `EN`.
 
 ## Contrato
 
@@ -21,10 +25,12 @@ ACL Worker, RISK y RATING y traduce al contrato de `contracts/graphql/schema.gra
 |---|---|
 | `registrarConsentimiento` / `revocarConsentimiento` | AUTH (tabla append-only en PostgreSQL con `titular_id`, `vence_en` a 30 días y `estado`; al revocar, si tiene `titular_id` invalida además las fuentes cacheadas en el ACL Worker en segundos — CA-W01-08) |
 | `solicitarOferta` | Completo (contrato v0.8): ver el flujo abajo |
-| `oferta(id)` | Devuelve `null`: guardar la oferta pasa al Sprint 2 con HU-W03 |
+| `oferta(id)` | La oferta que RATING guardó al calcularla (HU-W03, CA-W03-01), p. ej. para «ver fuentes». Misma validación de dueño que `aceptarOferta` (un CLIENTE solo ve la que consintió él; un ASESOR, la de su cliente). `null` si venció, no existe o no es suya; si RATING o AUTH no responden, error con reintento (no `null`) |
+| `propuesta(id)` | Estado de la propuesta en POLICY. Si no avanza (`EN_REVISION`, `PENDIENTE_PAGO`, `PAGO_RECHAZADO` o `NO_EMITIDA`) trae `motivoEstado`, `mensajeEstado` y `accionSugerida` (CA-W03-06): categorías y textos para el cliente que arma `explicar_estado` en `servicio_suscripcion.py`. El código interno de UNDER o de la pasarela **nunca** sale del BFF. Los textos son una propuesta (W03-15) |
 | `contactarAsesor` | **MOCK**: solo confirma (no hay servicio de asesores) |
-| `cobros(polizaId, estado)` / `crearCobro` / `reintentarCobro` | Completas (KAN-28), sobre PAYMENTS: solo BACKOFFICE y **siempre con token**. `crearCobro` recibe `idIntentoCobro` del cliente (idempotencia) y devuelve `Cobro` o `ErrorCobro`. `Usuario.nombre` solo lo traen `iniciarSesion` y `yo` (el propio; nunca el JWT). Los cobros traen `idTransaccion` (referencia de la pasarela) y `cliente { id nombre }`: el BFF pide los nombres a AUTH en lotes de 200 y, si AUTH falla, los entrega sin nombre. El reintento concilia con la pasarela antes de cobrar (ver [`docs/cobros-conciliacion.md`](../../docs/cobros-conciliacion.md)) |
+| `cobros(polizaId, estado)` / `crearCobro` / `reintentarCobro` | Completas (KAN-28), sobre PAYMENTS: solo BACKOFFICE y **siempre con token**. `crearCobro` recibe `idIntentoCobro` del cliente (idempotencia) y devuelve `Cobro` o `ErrorCobro`. `Usuario.nombre` solo lo traen `iniciarSesion` y `yo` (el propio; nunca el JWT). Los cobros traen `idTransaccion` (referencia de la pasarela) y `cliente { id nombre }`: el BFF pide los nombres a AUTH en lotes de 200 y, si AUTH falla, los entrega sin nombre. Tras un reintento, el BFF le avisa a POLICY (`_reconciliar-cobro`, de mejor esfuerzo) por si es el primer cobro de una propuesta de W03: si ya se cobró, POLICY emite la póliza (W03-14); si POLICY no responde, el reintento no falla. El reintento concilia con la pasarela antes de cobrar (ver [`docs/cobros-conciliacion.md`](../../docs/cobros-conciliacion.md)) |
 | `iniciarSesion`, `yo`, `usuarios`, `crearUsuario`, `cambiarRolUsuario`, `suspenderUsuario` | Completas (HU-M02), sobre AUTH |
+| `actualizarContacto` / `crearUsuario` con `correo` y `telefono` | HU-W03, bloque 8 (contrato v0.16). El CLIENTE deja el correo y el teléfono a los que se le enviará el PDF de su póliza; solo él (`actualizarContacto`, siempre con token, el id sale del token) o un BACKOFFICE al crearlo. El BFF los reenvía a AUTH, que los guarda cifrados: no los guarda, no los registra y nunca los devuelve. `Usuario.tieneContacto` dice si hay, no cuál. Los errores de validación de AUTH salen como `ErrorUsuario`, en el idioma pedido |
 
 ## Autenticación y permisos (HU-M02 y API Gateway)
 
@@ -44,7 +50,7 @@ están en [`docs/autenticacion-usuarios.md`](../../docs/autenticacion-usuarios.m
    Sin historial crediticio (RATING responde 422 `datos_insuficientes`, CA-W01-05) → `ErrorOferta` con reintento y `motivo: DATOS_INSUFICIENTES`.
 
 Antes del paso 1 se valida la solicitud (mismos límites que el formulario W01-01): documento con al menos 6 dígitos
-y máximo 20 caracteres, `valorCredito` decimal mayor que 0, `plazoMeses` de 1 a 360 y `direccionInmueble` no vacía
+y máximo 20 caracteres, `valorCredito` decimal mayor que 0, `plazoMeses` de 1 a 60 y `direccionInmueble` no vacía
 (máximo 200 caracteres). Si algo falla → `ErrorOferta` sin reintento, sin tocar AUTH ni las fuentes.
 
 `plazoMeses` y `direccionInmueble` viajan a RATING, que los usa en la prima (ver `services/rating/README.md`).
@@ -54,7 +60,7 @@ Nunca se loguean (tampoco el documento).
 
 | Variable | Default local | Nota |
 |---|---|---|
-| `AUTH_URL`, `ACL_URL`, `RISK_URL`, `RATING_URL`, `PAYMENTS_URL` | `http://localhost:800x` | En Cloud Run las fija Terraform desde `llama` en `.github/servicios.json` |
+| `AUTH_URL`, `ACL_URL`, `RISK_URL`, `RATING_URL`, `PAYMENTS_URL`, `POLICY_URL` | `http://localhost:800x` | En Cloud Run las fija Terraform desde `llama` en `.github/servicios.json` |
 | `ACL_TIMEOUT_SEGUNDOS` | `1.0` | El ACL corta a los 700 ms; el margen cubre la red |
 | `SERVICIOS_TIMEOUT_SEGUNDOS` | `2.0` | AUTH, RISK y RATING |
 | `CLIENTE_ID_CLAVE` | `solo-local-no-secreta` | En la nube, secreto `clave-cliente-id`; el BFF no arranca con el valor local ni con el marcador de Terraform |
@@ -65,6 +71,13 @@ Nunca se loguean (tampoco el documento).
 ## Operación
 
 - Puerto local: `8000`. GraphQL: `POST /graphql/web` y `/graphql/app` (GraphiQL en el navegador). Salud: `GET /health`. Métricas: `GET /metrics`.
+- **PDF de la póliza (HU-W03):** `GET /polizas/{id}/documento` (REST, no GraphQL, porque entrega un archivo). Es el `documentoUrl` de
+  `Poliza`. Es un documento con datos personales: exige sesión **siempre** (aunque la autenticación de GraphQL esté en `opcional`),
+  solo para CLIENTE y ASESOR, y un CLIENTE solo descarga la suya. `401` sin token o con uno inválido, `403` para otro rol, `404` si
+  no existe **o** es de otro (se ve igual), `503` con `Retry-After` si POLICY no responde. El nombre del asegurado lo pide a AUTH
+  (por el firmante) solo para el documento y no se loguea; si AUTH falla, el PDF sale con la referencia opaca del titular. Como
+  la descarga exige la cabecera `Authorization`, un enlace simple no sirve: el frontend la pide con `fetch` y muestra el
+  archivo. Pasa por el API Gateway (`infra/gateway/`).
 - Pruebas: `pip install -r requirements.txt && pip install -r ../../requirements-dev.txt && python -m pytest` (desde esta carpeta). Sin red: dobles en `tests/fakes.py`.
 - Humo de punta a punta (el mismo que corre el CI):
   ```bash

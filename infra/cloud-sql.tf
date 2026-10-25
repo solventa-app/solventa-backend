@@ -34,7 +34,7 @@ resource "google_sql_database_instance" "principal" {
   deletion_protection = false
 
   # CMEK del disco (HA-SEG-002): solo se puede fijar al crear la instancia. En staging se activa con
-  # `usar_cmek_sql = true` en una ventana acordada (export/import de `auth` y `payments`).
+  # `usar_cmek_sql = true` en una ventana acordada (export/import de `auth`, `payments` y `policy`).
   encryption_key_name = (var.crear_kms && var.usar_cmek_sql) ? google_kms_crypto_key.campos_personales[0].id : null
 
   settings {
@@ -72,6 +72,13 @@ resource "google_sql_database" "payments" {
   instance = google_sql_database_instance.principal[0].name
 }
 
+resource "google_sql_database" "policy" {
+  count    = var.crear_cloud_sql ? 1 : 0
+  project  = var.project_id
+  name     = "policy"
+  instance = google_sql_database_instance.principal[0].name
+}
+
 resource "google_sql_user" "postgres" {
   count    = var.crear_cloud_sql ? 1 : 0
   project  = var.project_id
@@ -101,6 +108,14 @@ resource "google_secret_manager_secret_version" "database_url_payments" {
   depends_on = [google_secret_manager_secret_version.marcador]
 
   secret_data = "postgresql://postgres:${random_password.postgres[0].result}@/payments?host=/cloudsql/${google_sql_database_instance.principal[0].connection_name}"
+}
+
+resource "google_secret_manager_secret_version" "database_url_policy" {
+  count      = (var.crear_cloud_sql && var.crear_servicios) ? 1 : 0
+  secret     = google_secret_manager_secret.secreto["database-url-policy"].id
+  depends_on = [google_secret_manager_secret_version.marcador]
+
+  secret_data = "postgresql://postgres:${random_password.postgres[0].result}@/policy?host=/cloudsql/${google_sql_database_instance.principal[0].connection_name}"
 }
 
 # --- IAM: cada servicio con Postgres corre con su propia cuenta (rt-<servicio>, ver servicios.tf) y esa es la

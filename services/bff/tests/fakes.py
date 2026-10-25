@@ -5,7 +5,13 @@ import uuid
 
 import jwt
 
-from app.clientes import Clientes, ErrorServicio, SolicitudInvalida
+from app.clientes import (
+    Clientes,
+    ErrorServicio,
+    FirmaRechazada,
+    PropuestaRechazada,
+    SolicitudInvalida,
+)
 from app.configuracion import JWT_SECRETO_LOCAL
 
 CONSENTIMIENTO_VIGENTE = {
@@ -86,6 +92,9 @@ def _usuario_publico(usuario_id: str, alias: str, rol: str, estado: str = "ACTIV
         "rol": rol,
         "estado": estado,
         "creado_en": "2026-10-14T12:00:00+00:00",
+        "idioma": "ES",
+        "moneda": "COP",
+        "tiene_contacto": False,
     }
 
 
@@ -105,6 +114,8 @@ class AuthFalso:
         # Nombres de CLIENTE por id y las consultas hechas (para probar el lote).
         self.nombres: dict[str, str] = {}
         self.consultas_de_nombres: list[list[str]] = []
+        # Contacto (correo, teléfono) que AUTH recibió por usuario, para comprobar qué le llegó.
+        self.contactos: dict[str, dict] = {}
         # Usuarios conocidos por id; `claves` guarda alias -> clave (solo en el doble).
         self.usuarios: dict[str, dict] = {
             "u-1": _usuario_publico("u-1", "asesor.uno", "ASESOR"),
@@ -185,18 +196,58 @@ class AuthFalso:
         return {i: self.nombres[i] for i in ids if i in self.nombres}
 
     async def crear_usuario(
-        self, usuario: str, clave: str, rol: str, nombre: str | None = None
+        self,
+        usuario: str,
+        clave: str,
+        rol: str,
+        nombre: str | None = None,
+        correo: str | None = None,
+        telefono: str | None = None,
     ) -> dict:
         if "@" in usuario:
             raise SolicitudInvalida("El usuario no puede ser un correo ni un número de documento.")
         if any(u["usuario"] == usuario for u in self.usuarios.values()):
             raise SolicitudInvalida("Ya existe un usuario con ese alias.")
+        self._validar_contacto(rol, correo, telefono)
         nuevo = _usuario_publico(str(uuid.uuid4()), usuario, rol)
+        if correo is not None or telefono is not None:
+            self.contactos[nuevo["id"]] = {"correo": correo, "telefono": telefono}
+            nuevo["tiene_contacto"] = True
         self.usuarios[nuevo["id"]] = nuevo
         self.claves[usuario] = clave
         if nombre is not None:
             self.nombres[nuevo["id"]] = nombre
         return nuevo
+
+    @staticmethod
+    def _validar_contacto(rol: str, correo: str | None, telefono: str | None) -> None:
+        """Las mismas reglas visibles de AUTH (mensajes incluidos)."""
+        if (correo is not None or telefono is not None) and rol != "CLIENTE":
+            raise SolicitudInvalida("El contacto solo se guarda para clientes.")
+        if correo is not None and "@" not in correo:
+            raise SolicitudInvalida("El correo no es válido.")
+        if telefono is not None and not telefono.lstrip("+").isdigit():
+            raise SolicitudInvalida(
+                "El teléfono no es válido: usa entre 7 y 15 dígitos, con un + opcional al inicio."
+            )
+
+    async def actualizar_contacto(
+        self, usuario_id: str, correo: str | None, telefono: str | None
+    ) -> dict | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        if correo is None and telefono is None:
+            raise SolicitudInvalida("Indica un correo o un teléfono.")
+        if usuario_id not in self.usuarios:
+            return None
+        self._validar_contacto(self.usuarios[usuario_id]["rol"], correo, telefono)
+        actual = self.contactos.get(usuario_id, {"correo": None, "telefono": None})
+        self.contactos[usuario_id] = {
+            "correo": correo if correo is not None else actual["correo"],
+            "telefono": telefono if telefono is not None else actual["telefono"],
+        }
+        self.usuarios[usuario_id] = {**self.usuarios[usuario_id], "tiene_contacto": True}
+        return self.usuarios[usuario_id]
 
     async def cambiar_rol_usuario(self, usuario_id: str, rol: str) -> dict | None:
         if usuario_id not in self.usuarios:
@@ -208,6 +259,22 @@ class AuthFalso:
         if usuario_id not in self.usuarios:
             return None
         self.usuarios[usuario_id] = {**self.usuarios[usuario_id], "estado": "SUSPENDIDO"}
+        return self.usuarios[usuario_id]
+
+    async def actualizar_preferencias(
+        self, usuario_id: str, idioma: str, moneda: str
+    ) -> dict | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        if idioma not in ("ES", "EN"):
+            raise SolicitudInvalida("Idioma no válido. Usa uno de: ES, EN.")
+        if usuario_id not in self.usuarios:
+            return None
+        self.usuarios[usuario_id] = {
+            **self.usuarios[usuario_id],
+            "idioma": idioma,
+            "moneda": moneda,
+        }
         return self.usuarios[usuario_id]
 
 
@@ -232,6 +299,11 @@ class AclFalso:
     async def invalidar_cache_cliente(self, cliente_id: str) -> None:
         self.invalidaciones.append(cliente_id)
 
+    async def tasas_cambio(self) -> dict[str, str]:
+        if "tasas" in self.fallan:
+            raise ErrorServicio("timeout")
+        return {"COP": "1", "USD": "4000", "EUR": "4400", "CLP": "4"}
+
 
 class RiskFalso:
     def __init__(self, falla: bool = False) -> None:
@@ -246,10 +318,20 @@ class RiskFalso:
 
 
 class RatingFalso:
-    def __init__(self, oferta: dict | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        oferta: dict | None = None,
+        error: Exception | None = None,
+        guardadas: dict[str, dict] | None = None,
+        error_lectura: Exception | None = None,
+    ) -> None:
         self.oferta = oferta or OFERTA_COMPLETA
         self.error = error
         self.llamadas: list[tuple[str, str, str, int, str]] = []
+        self.consentimientos_enviados: list[str | None] = []
+        # Lo que RATING guardó para aceptar (`GET /ofertas/{id}`), por id de oferta.
+        self.guardadas = guardadas or {}
+        self.error_lectura = error_lectura
 
     async def generar_oferta(
         self,
@@ -258,13 +340,20 @@ class RatingFalso:
         cobertura: str,
         plazo_meses: int,
         direccion_inmueble: str,
+        consentimiento_id: str | None = None,
     ) -> dict:
         self.llamadas.append(
             (cliente_id, operation_time, cobertura, plazo_meses, direccion_inmueble)
         )
+        self.consentimientos_enviados.append(consentimiento_id)
         if self.error is not None:
             raise self.error
         return self.oferta
+
+    async def obtener_oferta(self, oferta_id: str) -> dict | None:
+        if self.error_lectura is not None:
+            raise self.error_lectura
+        return self.guardadas.get(oferta_id)
 
 
 def cobro_de_payments(cobro_id: str, poliza_id: str, estado: str, **extra) -> dict:
@@ -365,12 +454,118 @@ class PaymentsFalso:
         return cobro
 
 
+class PolicyFalso:
+    """Doble de POLICY: acepta con el precio que RATING guardó, como el real."""
+
+    def __init__(
+        self,
+        rechazo: str | None = None,
+        error: Exception | None = None,
+        rechazo_firma: str | None = None,
+        error_firma: Exception | None = None,
+    ) -> None:
+        self.rechazo = rechazo
+        self.error = error
+        self.rechazo_firma = rechazo_firma
+        self.error_firma = error_firma
+        self.propuestas: dict[str, dict] = {}
+        self.llamadas: list[tuple[str, str | None]] = []
+        self.firmas: dict[str, dict] = {}
+        self.firmas_pedidas: list[tuple[str, bool, str, str]] = []
+        self.polizas: dict[str, dict] = {}
+        self.documentos_pedidos: list[tuple[str, str | None]] = []
+        self.error_documento: Exception | None = None
+        self.reconciliaciones: list[str] = []
+        self.error_reconciliar: Exception | None = None
+        self.propuestas_conocidas: set[str] | None = None  # None = conoce cualquier id
+
+    async def reconciliar_cobro(self, propuesta_id: str) -> str | None:
+        self.reconciliaciones.append(propuesta_id)
+        if self.error_reconciliar is not None:
+            raise self.error_reconciliar
+        if self.propuestas_conocidas is not None and propuesta_id not in self.propuestas_conocidas:
+            return None  # un cobro que no es de W03
+        return "EMITIDA"
+
+    async def crear_propuesta(self, oferta_id: str, actor_usuario_id: str | None) -> dict:
+        self.llamadas.append((oferta_id, actor_usuario_id))
+        if self.error is not None:
+            raise self.error
+        if self.rechazo is not None:
+            raise PropuestaRechazada(self.rechazo)
+        propuesta = self.propuestas.setdefault(
+            oferta_id,
+            {
+                "id": f"propuesta-{oferta_id}",
+                "oferta_id": oferta_id,
+                "cliente_id": "cliente-opaco",
+                "actor_usuario_id": actor_usuario_id,
+                "estado": "ACEPTADA",
+                "prima": {"valor": "185000", "moneda": "COP"},
+                "cobertura": {"valor": "200000000", "moneda": "COP"},
+                "plazo_meses": 60,
+                "poliza_id": None,
+                "actualizado_en": "2026-10-22T12:00:00+00:00",
+            },
+        )
+        return propuesta
+
+    async def obtener_propuesta(self, propuesta_id: str) -> dict | None:
+        if self.error is not None:
+            raise self.error
+        return next((p for p in self.propuestas.values() if p["id"] == propuesta_id), None)
+
+    async def obtener_poliza(self, poliza_id: str) -> dict | None:
+        if self.error is not None:
+            raise self.error
+        return self.polizas.get(poliza_id)
+
+    async def generar_documento(self, poliza_id: str, asegurado: str | None) -> bytes | None:
+        self.documentos_pedidos.append((poliza_id, asegurado))
+        if self.error_documento is not None:
+            raise self.error_documento
+        return b"%PDF-1.3 documento falso" if poliza_id in self.polizas else None
+
+    async def documento_firma(self, propuesta_id: str) -> dict | None:
+        if self.error is not None:
+            raise self.error
+        if await self.obtener_propuesta(propuesta_id) is None:
+            return None
+        return {
+            "propuesta_id": propuesta_id,
+            "version": "v1",
+            "resumen": "Seguro de vida: prima de 185000 COP al mes durante 60 meses.",
+            "monto_mensual": {"valor": "185000", "moneda": "COP"},
+            "meses": 60,
+            "forma_cobro": "con la cuota de tu crédito",
+        }
+
+    async def firmar_propuesta(
+        self, propuesta_id: str, autoriza_cobro: bool, version_documento: str, firmante_id: str
+    ) -> dict:
+        self.firmas_pedidas.append((propuesta_id, autoriza_cobro, version_documento, firmante_id))
+        if self.error_firma is not None:
+            raise self.error_firma
+        if self.rechazo_firma is not None:
+            raise FirmaRechazada(self.rechazo_firma)
+        return self.firmas.setdefault(
+            propuesta_id,
+            {
+                "propuesta_id": propuesta_id,
+                "firmada_en": "2026-10-22T12:00:00+00:00",
+                "referencia": f"fe-{propuesta_id}",
+                "estado": "EN_EMISION",
+            },
+        )
+
+
 def clientes_falsos(
     auth: AuthFalso | None = None,
     acl: AclFalso | None = None,
     risk: RiskFalso | None = None,
     rating: RatingFalso | None = None,
     payments: PaymentsFalso | None = None,
+    policy: PolicyFalso | None = None,
 ) -> Clientes:
     return Clientes(
         auth=auth or AuthFalso(),
@@ -378,4 +573,5 @@ def clientes_falsos(
         risk=risk or RiskFalso(),
         rating=rating or RatingFalso(),
         payments=payments or PaymentsFalso(),
+        policy=policy or PolicyFalso(),
     )

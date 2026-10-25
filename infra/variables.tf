@@ -91,7 +91,7 @@ variable "vpc_connector_rango" {
 # --------------------------------------------------------------------------------------------------
 
 variable "crear_cloud_sql" {
-  description = "Crea una instancia de Cloud SQL PostgreSQL con las bases `auth` y `payments`. NO escala a cero: cobra por hora aunque esté sin tráfico. La contraseña se genera con `random_password` y se guarda solo en Secret Manager (nunca en el repo)."
+  description = "Crea una instancia de Cloud SQL PostgreSQL con las bases `auth`, `payments` y `policy`. NO escala a cero: cobra por hora aunque esté sin tráfico. La contraseña se genera con `random_password` y se guarda solo en Secret Manager (nunca en el repo)."
   type        = bool
   default     = false
 }
@@ -242,7 +242,13 @@ variable "calentar_camino_critico" {
 }
 
 variable "crear_tareas" {
-  description = "Crea la cola de Cloud Tasks del reintento de cobros (`reintento-cobros`) y el trabajo de Cloud Scheduler que dispara la sonda del circuito del ACL Worker, y pone `DISPARADOR=externo` en los servicios que lo declaran (`disparador_externo` en .github/servicios.json). En Cloud Run los bucles de fondo no corren de forma confiable (CPU limitada fuera de una petición, escala a cero). Capa gratuita: 1 millón de operaciones de Cloud Tasks al mes y 3 trabajos de Scheduler por cuenta de facturación."
+  description = "Crea las colas de Cloud Tasks del reintento de cobros (`reintento-cobros`) y de la emisión de pólizas (`emision-polizas`) los trabajos de Cloud Scheduler que disparan la sonda del circuito del ACL Worker (`sonda-acl`) y la reconciliación de cobros de POLICY (`reconciliacion-cobros-policy`), y pone `DISPARADOR=externo` en los servicios que lo declaran (`disparador_externo` en .github/servicios.json). En Cloud Run los bucles de fondo no corren de forma confiable (CPU limitada fuera de una petición, escala a cero). Capa gratuita: 1 millón de operaciones de Cloud Tasks al mes y 3 trabajos de Scheduler por cuenta de facturación."
   type        = bool
   default     = false
+}
+
+variable "reconciliacion_cobros_cron" {
+  description = "Cada cuánto el trabajo de Cloud Scheduler `reconciliacion-cobros-policy` llama a `POST /reconciliacion/cobros` de POLICY, que emite la póliza de las propuestas cuyo pago rechazado o pendiente ya se cobró (CA-W03-06, decisión W03-14). Formato cron, zona America/Bogota. Solo aplica con `crear_tareas = true`. Cuántas propuestas revisa cada pasada lo fija `RECONCILIACION_LOTE_MAX` de POLICY."
+  type        = string
+  default     = "*/15 * * * *"
 }

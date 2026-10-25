@@ -91,3 +91,127 @@ class PuertoPasarelaPagos(Protocol):
         reales (p. ej. Wompi `reference`, PayU `referenceCode`), de modo que cambiar de
         proveedor sigue siendo solo agregar un adaptador (CA-W05-06). `None` si no existe."""
         ...
+
+
+EstadoFirma = Literal["firmada", "pendiente"]
+
+
+@dataclass
+class SolicitudFirma:
+    """Firma electrónica del documento de la póliza (HU-W03, CA-W03-03, no repudio).
+
+    El proveedor recibe solo el **hash** del documento, nunca su contenido: el contenido (con la
+    prima) vive cifrado en POLICY junto a la evidencia, y con el hash se puede probar que es el que
+    se firmó."""
+
+    id_firma: str  # un mismo id recibido dos veces devuelve la misma evidencia (idempotente)
+    documento_hash: str  # SHA-256 en hexadecimal
+    version_documento: str
+    firmante_id: str  # identificador opaco del usuario que firma, nunca un documento ni un correo
+
+
+@dataclass
+class ResultadoFirma:
+    estado: EstadoFirma
+    referencia: str | None = None  # la evidencia que entrega el proveedor
+    firmada_en: str | None = None  # sello de tiempo del proveedor (ISO 8601)
+    motivo: str | None = None
+    detalle: dict[str, Any] = field(default_factory=dict)
+
+
+class PuertoFirmaElectronica(Protocol):
+    def firmar(self, solicitud: SolicitudFirma) -> ResultadoFirma: ...
+
+
+EstadoKyc = Literal["aprobada", "rechazada", "pendiente"]
+
+
+@dataclass
+class SolicitudKyc:
+    """Verificación de identidad del cliente (KYC) para decidir la suscripción (HU-W03).
+
+    Solo viaja el identificador opaco del cliente (el HMAC que calcula el BFF), nunca un documento
+    ni un dato personal. Un proveedor real pediría más (documento, validación biométrica): ese dato
+    llegaría por un canal propio, no por este puerto (ver `docs/plan-completar-hu-w03.md`, W03-10).
+    """
+
+    id_verificacion: str  # un mismo id recibido dos veces devuelve el mismo resultado (idempotente)
+    cliente_id: str
+
+
+@dataclass
+class ResultadoKyc:
+    # `pendiente` = no se pudo verificar (proveedor caído o circuito abierto), no que el proveedor
+    # esté revisando: quien decide la suscripción lo manda a revisión manual.
+    estado: EstadoKyc
+    referencia: str | None = None
+    motivo: str | None = None
+    verificada_en: str | None = None
+    detalle: dict[str, Any] = field(default_factory=dict)
+
+
+class PuertoKyc(Protocol):
+    def verificar(self, solicitud: SolicitudKyc) -> ResultadoKyc: ...
+
+
+EstadoNotificacion = Literal["enviada", "pendiente"]
+
+
+@dataclass
+class Adjunto:
+    """Un archivo que viaja con el aviso (el PDF de la póliza). El contenido va en base64."""
+
+    nombre: str
+    tipo: str  # tipo de medio; hoy solo `application/pdf`
+    contenido_base64: str
+
+
+@dataclass
+class SolicitudNotificacion:
+    """Aviso al cliente de que su póliza fue emitida (HU-W03, CA-W03-08).
+
+    **Regla cambiada en el bloque 8 (decisión W03-16, 2026-10-24).** Antes el proveedor solo recibía
+    la plantilla, el identificador opaco del usuario y los datos de la plantilla, y resolvía el
+    contacto con su propia base. Ahora AUTH guarda el correo y el teléfono del cliente y el aviso
+    lleva el PDF de la póliza, así que el proveedor recibe **datos personales y financieros**: el
+    contacto (`correo` o `telefono`) y el adjunto (prima, cobertura, vigencia y nombre del
+    asegurado).
+    Solo se puede enviar por HTTPS al proveedor y no se guarda en el ACL ni se escribe en logs ni
+    en etiquetas de métricas (regla #6). Solo el correo lleva adjuntos: un cliente que solo tenga
+    teléfono recibe el aviso sin PDF (W03-17)."""
+
+    id_notificacion: str  # un mismo id recibido dos veces no envía dos avisos (idempotente)
+    plantilla: str
+    destinatario_id: str  # identificador opaco del usuario
+    datos: dict[str, str] = field(default_factory=dict)
+    correo: str | None = None
+    telefono: str | None = None
+    adjuntos: list[Adjunto] = field(default_factory=list)
+
+
+@dataclass
+class ResultadoNotificacion:
+    # `pendiente` = no se pudo enviar (proveedor caído o circuito abierto): quien llama reintenta.
+    estado: EstadoNotificacion
+    referencia: str | None = None
+    motivo: str | None = None
+
+
+class PuertoNotificaciones(Protocol):
+    def enviar(self, solicitud: SolicitudNotificacion) -> ResultadoNotificacion: ...
+
+
+@dataclass
+class TablaTasas:
+    """Cuántos COP vale una unidad de cada moneda (KAN-209). Valores como texto decimal: nunca
+    float. `fecha` y `fuente` dicen de cuándo y de dónde es la tabla."""
+
+    cop_por_unidad: dict[str, str]
+    fecha: str
+    fuente: str
+
+
+class PuertoTasasCambio(Protocol):
+    """Tasas de cambio para mostrar montos en la moneda que el usuario elige en la web."""
+
+    def tasas(self) -> TablaTasas: ...

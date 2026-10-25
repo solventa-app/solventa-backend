@@ -35,7 +35,7 @@ def _solicitar(
     consentimiento_id: str = "c-1",
     documento: str = DOCUMENTO,
     valor: str = "200000000",
-    plazo: int = 240,
+    plazo: int = 60,
     direccion: str = DIRECCION,
 ):
     return asyncio.run(servicio.solicitar(consentimiento_id, documento, valor, plazo, direccion))
@@ -53,7 +53,7 @@ def test_flujo_sano_consulta_las_5_fuentes_y_devuelve_la_oferta_de_rating() -> N
     assert len(fuentes) == 5
     # RATING recibe el `operation_time` de RISK, el valor del crédito como cobertura,
     # el plazo y la dirección (para la prima).
-    assert rating.llamadas == [(cliente_id, "1700000000.1", "200000000", 240, DIRECCION)]
+    assert rating.llamadas == [(cliente_id, "1700000000.1", "200000000", 60, DIRECCION)]
 
 
 def test_el_cliente_id_es_opaco_nunca_el_documento() -> None:
@@ -198,7 +198,8 @@ def test_sin_historial_crediticio_da_error_con_reintento() -> None:
         ({"valor": "-5"}, MENSAJE_VALOR_INVALIDO),
         ({"valor": "Infinity"}, MENSAJE_VALOR_INVALIDO),
         ({"plazo": 0}, MENSAJE_PLAZO_INVALIDO),
-        ({"plazo": 361}, MENSAJE_PLAZO_INVALIDO),
+        ({"plazo": 61}, MENSAJE_PLAZO_INVALIDO),
+        ({"plazo": 360}, MENSAJE_PLAZO_INVALIDO),
         ({"direccion": "   "}, MENSAJE_DIRECCION_INVALIDA),
         ({"direccion": "x" * 201}, MENSAJE_DIRECCION_INVALIDA),
     ],
@@ -214,7 +215,7 @@ def test_solicitud_invalida_da_error_sin_reintento_y_no_consulta_nada(cambios, m
 
 
 def test_los_limites_del_plazo_son_validos() -> None:
-    for plazo in (1, 360):
+    for plazo in (1, 60):
         servicio = ServicioOferta(clientes_falsos(), "clave")
         assert not isinstance(_solicitar(servicio, plazo=plazo), ErrorOfertaDatos)
 

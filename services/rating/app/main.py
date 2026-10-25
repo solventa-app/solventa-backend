@@ -15,6 +15,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 from pymongo import MongoClient
 
+from app.application.almacen_ofertas import AlmacenOfertas
 from app.application.cache_score import CacheScore
 from app.application.cifrado import CifradorAesGcm
 from app.application.configuracion import Configuracion
@@ -39,6 +40,8 @@ class SolicitudOferta(BaseModel):
     cobertura: str
     plazo_meses: int | None = None
     direccion_inmueble: str | None = None
+    # Para poder aceptar la oferta después (HU-W03): a qué consentimiento pertenece.
+    consentimiento_id: str | None = None
 
 
 def _extraer_datos_evento_perfil_actualizado(
@@ -80,6 +83,7 @@ def create_app(
     lector_perfiles: LectorPerfiles | None = None,
     servicio_oferta: ServicioOferta | None = None,
     cache_score: CacheScore | None = None,
+    almacen_ofertas: AlmacenOfertas | None = None,
 ) -> FastAPI:
     """`lector_perfiles`/`servicio_oferta`/`cache_score` permiten inyectar
     dobles de prueba (ver `tests/fakes.py`) sin levantar un replica set ni un
@@ -121,6 +125,13 @@ def create_app(
         else:
             cliente_redis = redis.Redis.from_url(config.redis_url)
             app.state.cache_score = CacheScore(cliente_redis, config.oferta_cache_ttl_segundos)
+
+        if almacen_ofertas is not None:
+            app.state.almacen_ofertas = almacen_ofertas
+        else:
+            app.state.almacen_ofertas = AlmacenOfertas(
+                cliente_redis, config.oferta_vigencia_segundos
+            )
 
         if servicio_oferta is not None:
             app.state.servicio_oferta = servicio_oferta
@@ -183,6 +194,20 @@ def create_app(
             raise HTTPException(status_code=400, detail=f"solicitud invalida: {error}") from error
         if oferta is None:
             raise HTTPException(status_code=404, detail="perfil no encontrado")
+        # HU-W03: se guarda para poder aceptarla; la respuesta al BFF no cambia.
+        app.state.almacen_ofertas.guardar(
+            oferta, body.cliente_id, body.consentimiento_id, body.plazo_meses
+        )
+        return oferta
+
+    @app.get("/ofertas/{oferta_id}", tags=["ofertas"])
+    def obtener_oferta(oferta_id: str) -> dict:
+        """La oferta que se generó, con el cliente y el consentimiento a los que pertenece. La lee
+        POLICY al aceptarla (el precio sale de aquí, nunca del cliente) y el BFF para validar el
+        consentimiento. Vencida o desconocida: 404."""
+        oferta = app.state.almacen_ofertas.obtener(oferta_id)
+        if oferta is None:
+            raise HTTPException(status_code=404, detail="oferta no encontrada")
         return oferta
 
     @app.post("/eventos/perfil-actualizado", tags=["eventos"])

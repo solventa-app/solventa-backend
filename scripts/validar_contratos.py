@@ -13,12 +13,13 @@ RAIZ = Path(__file__).resolve().parent.parent / "contracts"
 def main() -> int:
     errores: list[str] = []
 
-    ruta_schema = RAIZ / "graphql" / "schema.graphql"
-    try:
-        build_schema(ruta_schema.read_text(encoding="utf-8"))
-        print(f"OK  {ruta_schema.relative_to(RAIZ.parent)}")
-    except Exception as e:  # noqa: BLE001 - se reporta cualquier error de sintaxis o de tipos
-        errores.append(f"{ruta_schema}: {e}")
+    # schema.graphql (BFF) y los contratos de servicios dummy (p. ej. siniestros.graphql).
+    for ruta_schema in sorted((RAIZ / "graphql").glob("*.graphql")):
+        try:
+            build_schema(ruta_schema.read_text(encoding="utf-8"))
+            print(f"OK  {ruta_schema.relative_to(RAIZ.parent)}")
+        except Exception as e:  # noqa: BLE001 - se reporta cualquier error de sintaxis o de tipos
+            errores.append(f"{ruta_schema}: {e}")
 
     for ruta in sorted((RAIZ / "events").glob("*.schema.json")):
         try:

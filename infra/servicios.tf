@@ -26,7 +26,9 @@ data "google_project" "actual" {
 locals {
   manifiesto = jsondecode(file("${path.module}/../.github/servicios.json"))
   servicios  = { for s in local.manifiesto : s.nombre => s }
-  activos    = { for n, s in local.servicios : n => s if var.crear_servicios }
+  # Los servicios `dummy` del manifiesto (sustitutos temporales para el front, p. ej. stub-siniestros) corren solo en
+  # local por ahora: no se crean en Cloud Run.
+  activos = { for n, s in local.servicios : n => s if var.crear_servicios && !try(s.dummy, false) }
 
   con_migracion  = { for n, s in local.activos : n => s if try(s.migracion, null) != null }
   publicos       = { for n, s in local.activos : n => s if try(s.publico, false) }
@@ -140,6 +142,7 @@ resource "google_cloud_run_v2_service" "servicio" {
     google_secret_manager_secret_iam_member.lectura,
     google_secret_manager_secret_version.database_url_auth,
     google_secret_manager_secret_version.database_url_payments,
+    google_secret_manager_secret_version.database_url_policy,
     google_secret_manager_secret_version.redis_url,
     google_secret_manager_secret_version.redis_url_apagado,
     google_secret_manager_secret_version.mongo_uri,

@@ -1,8 +1,10 @@
 """ACL Worker: capa anticorrupción hexagonal. Único punto de contacto con
-proveedores externos (Open Finance, Open Data, pasarela de pagos) — ver
-`app/domain/puertos.py` y el README de este servicio.
+proveedores externos (Open Finance, Open Data, pasarela de pagos, firma electrónica, KYC y
+notificaciones) — ver `app/domain/puertos.py` y el README de este servicio.
 """
 
+import base64
+import binascii
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -14,12 +16,20 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 
 from app.adapters.autenticacion_servicios import autenticacion_para
+from app.adapters.firma import AdaptadorFirma
+from app.adapters.firma_alterna import AdaptadorFirmaAlterna
+from app.adapters.kyc import AdaptadorKyc
+from app.adapters.notificaciones import AdaptadorNotificaciones
 from app.adapters.open_data import AdaptadorOpenData
 from app.adapters.open_finance import AdaptadorOpenFinance
 from app.adapters.pasarela import AdaptadorPasarela
 from app.adapters.pasarela_alterna import AdaptadorPasarelaAlterna
+from app.adapters.tasas_cambio import AdaptadorTasasReferencia
 from app.application.cache import CacheFuentes
 from app.application.circuitos import (
+    NOMBRE_CIRCUITO_FIRMA,
+    NOMBRE_CIRCUITO_KYC,
+    NOMBRE_CIRCUITO_NOTIFICACIONES,
     NOMBRE_CIRCUITO_OPEN_DATA,
     NOMBRE_CIRCUITO_OPEN_FINANCE,
     NOMBRE_CIRCUITO_PASARELA,
@@ -37,10 +47,20 @@ from app.application.reconciliacion import (
     MarcaDedupRedis,
     ProductorReconciliacion,
 )
+from app.application.servicio_firma import ServicioFirma
 from app.application.servicio_fuentes import ServicioConsultaFuentes
+from app.application.servicio_kyc import ServicioKyc
+from app.application.servicio_notificaciones import ServicioNotificaciones
 from app.application.servicio_pagos import ServicioCobro
 from app.application.sonda import SondaRecuperacion
-from app.domain.puertos import ConsultaFuente, OrdenCobro
+from app.domain.puertos import (
+    Adjunto,
+    ConsultaFuente,
+    OrdenCobro,
+    SolicitudFirma,
+    SolicitudKyc,
+    SolicitudNotificacion,
+)
 from app.observabilidad import configurar_trazas
 
 # Backoff acotado de la reconciliación diferida (contrato punto 5): 5 intentos,
@@ -97,6 +117,62 @@ class ResultadoCobroResponse(BaseModel):
     detalle: dict
 
 
+class SolicitudFirmaRequest(BaseModel):
+    id_firma: str
+    documento_hash: str
+    version_documento: str
+    firmante_id: str
+
+
+class ResultadoFirmaResponse(BaseModel):
+    estado: str
+    referencia: str | None
+    firmada_en: str | None
+    motivo: str | None
+
+
+class SolicitudKycRequest(BaseModel):
+    id_verificacion: str
+    cliente_id: str
+
+
+class ResultadoKycResponse(BaseModel):
+    estado: str
+    referencia: str | None
+    motivo: str | None
+    verificada_en: str | None
+
+
+# Tipos de medio que pueden viajar como adjunto de un aviso, y cuántos.
+TIPOS_DE_ADJUNTO = ("application/pdf",)
+MAXIMO_ADJUNTOS = 3
+
+
+class AdjuntoRequest(BaseModel):
+    nombre: str
+    tipo: str
+    contenido_base64: str
+
+
+class SolicitudNotificacionRequest(BaseModel):
+    id_notificacion: str
+    plantilla: str
+    destinatario_id: str
+    datos: dict[str, str] = {}
+    # Datos personales y financieros (bloque 8, W03-16): solo viajan al proveedor. Sus reglas se
+    # validan en la ruta y no con validadores de pydantic: un error de pydantic devuelve el cuerpo
+    # de entrada, y ahí irían el correo y el PDF.
+    correo: str | None = None
+    telefono: str | None = None
+    adjuntos: list[AdjuntoRequest] = []
+
+
+class ResultadoNotificacionResponse(BaseModel):
+    estado: str
+    referencia: str | None
+    motivo: str | None
+
+
 class ConsultaCobroResponse(BaseModel):
     """Conciliación: `encontrado` (con el cobro), `no_encontrado` o `desconocido`."""
 
@@ -104,6 +180,13 @@ class ConsultaCobroResponse(BaseModel):
     estado: str | None = None
     referencia: str | None = None
     motivo: str | None = None
+
+
+class TasasCambioResponse(BaseModel):
+    base: str
+    cop_por_unidad: dict[str, str]
+    fecha: str
+    fuente: str
 
 
 def _construir_servicios_fuentes(
@@ -160,6 +243,32 @@ def _construir_servicios_fuentes(
     return servicios_por_fuente, adaptador_open_finance, adaptador_open_data
 
 
+def _validar_adjuntos(body: SolicitudNotificacionRequest, maximo_bytes: int) -> list[Adjunto]:
+    """Los adjuntos ya validados, o un 422 cuyo mensaje nunca repite el contenido ni el correo."""
+    if not body.adjuntos:
+        return []
+    if not body.correo:
+        raise HTTPException(status_code=422, detail="Un adjunto solo se envía por correo.")
+    if len(body.adjuntos) > MAXIMO_ADJUNTOS:
+        raise HTTPException(status_code=422, detail=f"Máximo {MAXIMO_ADJUNTOS} adjuntos por aviso.")
+    validados: list[Adjunto] = []
+    for adjunto in body.adjuntos:
+        if adjunto.tipo not in TIPOS_DE_ADJUNTO:
+            raise HTTPException(status_code=422, detail="Tipo de adjunto no permitido.")
+        try:
+            contenido = base64.b64decode(adjunto.contenido_base64, validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise HTTPException(
+                status_code=422, detail="El contenido del adjunto no es base64 válido."
+            ) from error
+        if not contenido:
+            raise HTTPException(status_code=422, detail="El adjunto está vacío.")
+        if len(contenido) > maximo_bytes:
+            raise HTTPException(status_code=422, detail="El adjunto supera el tamaño permitido.")
+        validados.append(Adjunto(adjunto.nombre, adjunto.tipo, adjunto.contenido_base64))
+    return validados
+
+
 def create_app(config: Configuracion | None = None) -> FastAPI:
     config = config or Configuracion.desde_entorno()
 
@@ -212,12 +321,50 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             adaptador_pasarela, fabrica, NOMBRE_CIRCUITO_PASARELA, presupuesto_pasarela_s
         )
 
+        presupuesto_firma_s = config.presupuesto_proveedor_s("firma")
+        # EC031: cambiar de proveedor de firma es elegir otro adaptador; nada más cambia.
+        clase_firma = (
+            AdaptadorFirmaAlterna if config.proveedor_firma == "alterna" else AdaptadorFirma
+        )
+        adaptador_firma = clase_firma(
+            config.firma_url,
+            presupuesto_firma_s,
+            auth=autenticacion_para(config.autenticacion_servicios, "stub-firma"),
+        )
+        servicio_firma = ServicioFirma(
+            adaptador_firma, fabrica, NOMBRE_CIRCUITO_FIRMA, presupuesto_firma_s
+        )
+
+        presupuesto_kyc_s = config.presupuesto_proveedor_s("kyc")
+        adaptador_kyc = AdaptadorKyc(
+            config.kyc_url,
+            presupuesto_kyc_s,
+            auth=autenticacion_para(config.autenticacion_servicios, "stub-kyc"),
+        )
+        servicio_kyc = ServicioKyc(adaptador_kyc, fabrica, NOMBRE_CIRCUITO_KYC, presupuesto_kyc_s)
+
+        presupuesto_notificaciones_s = config.presupuesto_proveedor_s("notificaciones")
+        adaptador_notificaciones = AdaptadorNotificaciones(
+            config.notificaciones_url,
+            presupuesto_notificaciones_s,
+            auth=autenticacion_para(config.autenticacion_servicios, "stub-notificaciones"),
+        )
+        servicio_notificaciones = ServicioNotificaciones(
+            adaptador_notificaciones,
+            fabrica,
+            NOMBRE_CIRCUITO_NOTIFICACIONES,
+            presupuesto_notificaciones_s,
+        )
+
         sonda = SondaRecuperacion(
             fabrica,
             sondeos={
                 NOMBRE_CIRCUITO_OPEN_FINANCE: adaptador_open_finance.sondear,
                 NOMBRE_CIRCUITO_OPEN_DATA: adaptador_open_data.sondear,
                 NOMBRE_CIRCUITO_PASARELA: adaptador_pasarela.sondear,
+                NOMBRE_CIRCUITO_FIRMA: adaptador_firma.sondear,
+                NOMBRE_CIRCUITO_KYC: adaptador_kyc.sondear,
+                NOMBRE_CIRCUITO_NOTIFICACIONES: adaptador_notificaciones.sondear,
             },
             intervalo_s=config.sonda_intervalo_segundos,
         )
@@ -230,6 +377,9 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         app.state.servicios_por_fuente = servicios_por_fuente
         app.state.cache_fuentes = cache_fuentes
         app.state.servicio_cobro = servicio_cobro
+        app.state.servicio_firma = servicio_firma
+        app.state.servicio_kyc = servicio_kyc
+        app.state.servicio_notificaciones = servicio_notificaciones
 
         try:
             yield
@@ -239,6 +389,9 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 adaptador_open_finance.cerrar,
                 adaptador_open_data.cerrar,
                 adaptador_pasarela.cerrar,
+                adaptador_firma.cerrar,
+                adaptador_kyc.cerrar,
+                adaptador_notificaciones.cerrar,
             )
             for cerrar in cierres:
                 cerrar()
@@ -246,6 +399,8 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             redis_cola.close()
 
     app = FastAPI(title="solventa-acl-worker", version="0.1.0", lifespan=lifespan)
+    # No depende de Redis ni de un proveedor externo: se crea aquí y no en el lifespan.
+    tasas_cambio = AdaptadorTasasReferencia()
 
     @app.get("/health", tags=["operacion"])
     def health() -> dict[str, str]:
@@ -261,6 +416,9 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             NOMBRE_CIRCUITO_OPEN_FINANCE,
             NOMBRE_CIRCUITO_OPEN_DATA,
             NOMBRE_CIRCUITO_PASARELA,
+            NOMBRE_CIRCUITO_FIRMA,
+            NOMBRE_CIRCUITO_KYC,
+            NOMBRE_CIRCUITO_NOTIFICACIONES,
         )
         return {nombre: fabrica.get_breaker(nombre).context.state for nombre in nombres}
 
@@ -340,6 +498,77 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             estado=cobro.estado if cobro else None,
             referencia=cobro.referencia if cobro else None,
             motivo=cobro.motivo if cobro else None,
+        )
+
+    @app.post("/firma/firmar", tags=["firma"], response_model=ResultadoFirmaResponse)
+    def firmar(body: SolicitudFirmaRequest) -> ResultadoFirmaResponse:
+        """Firma electrónica del documento de la póliza (HU-W03). Recibe solo el hash. Siempre 200:
+        si el proveedor no responde o el circuito está abierto, `pendiente` con su motivo (regla
+        #4), y POLICY ofrece reintentar. Repetir el mismo `id_firma` devuelve la misma evidencia."""
+        resultado = app.state.servicio_firma.firmar(
+            SolicitudFirma(
+                id_firma=body.id_firma,
+                documento_hash=body.documento_hash,
+                version_documento=body.version_documento,
+                firmante_id=body.firmante_id,
+            )
+        )
+        return ResultadoFirmaResponse(
+            estado=resultado.estado,
+            referencia=resultado.referencia,
+            firmada_en=resultado.firmada_en,
+            motivo=resultado.motivo,
+        )
+
+    @app.post("/kyc/verificar", tags=["kyc"], response_model=ResultadoKycResponse)
+    def verificar_kyc(body: SolicitudKycRequest) -> ResultadoKycResponse:
+        """Verificación de identidad para decidir la suscripción (HU-W03). Siempre 200: si el
+        proveedor no responde o el circuito está abierto, `pendiente` con su motivo (regla #4) y
+        quien decide manda la propuesta a revisión manual. Idempotente por `id_verificacion`."""
+        resultado = app.state.servicio_kyc.verificar(
+            SolicitudKyc(id_verificacion=body.id_verificacion, cliente_id=body.cliente_id)
+        )
+        return ResultadoKycResponse(
+            estado=resultado.estado,
+            referencia=resultado.referencia,
+            motivo=resultado.motivo,
+            verificada_en=resultado.verificada_en,
+        )
+
+    @app.post(
+        "/notificaciones/enviar",
+        tags=["notificaciones"],
+        response_model=ResultadoNotificacionResponse,
+    )
+    def enviar_notificacion(body: SolicitudNotificacionRequest) -> ResultadoNotificacionResponse:
+        """Aviso al cliente (HU-W03). Con el proveedor caído o el circuito abierto responde 200
+        `pendiente` con su motivo (regla #4) y POLICY lo reintenta. Idempotente por
+        `id_notificacion`: repetirlo no manda dos avisos. Una solicitud mal armada (adjunto sin
+        correo, de un tipo no permitido, que no es base64 o que pasa el tope) es un 422 con un
+        mensaje que no repite el contenido: es un error de quien llama, no del proveedor."""
+        adjuntos = _validar_adjuntos(body, config.adjunto_maximo_bytes)
+        resultado = app.state.servicio_notificaciones.enviar(
+            SolicitudNotificacion(
+                id_notificacion=body.id_notificacion,
+                plantilla=body.plantilla,
+                destinatario_id=body.destinatario_id,
+                datos=body.datos,
+                correo=body.correo or None,
+                telefono=body.telefono or None,
+                adjuntos=adjuntos,
+            )
+        )
+        return ResultadoNotificacionResponse(
+            estado=resultado.estado, referencia=resultado.referencia, motivo=resultado.motivo
+        )
+
+    @app.get("/tasas-cambio", tags=["tasas"], response_model=TasasCambioResponse)
+    def tasas() -> TasasCambioResponse:
+        """KAN-209: cuántos COP vale una unidad de cada moneda, para que el BFF muestre los
+        montos en la moneda que el usuario eligió. Texto decimal, nunca float."""
+        tabla = tasas_cambio.tasas()
+        return TasasCambioResponse(
+            base="COP", cop_por_unidad=tabla.cop_por_unidad, fecha=tabla.fecha, fuente=tabla.fuente
         )
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
