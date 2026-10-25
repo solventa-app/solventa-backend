@@ -20,6 +20,7 @@ from app.application.autenticacion_servicios import autenticacion_para
 from app.application.bus_eventos import BusEventosLog
 from app.application.cifrado import cifrador_desde_entorno
 from app.application.cliente_acl import ClienteAcl
+from app.application.cliente_auth import ClienteAuth
 from app.application.cliente_payments import ClientePayments
 from app.application.cliente_rating import ClienteRating, RatingNoDisponible
 from app.application.cliente_under import ClienteUnder
@@ -181,6 +182,7 @@ def create_app(
         cliente_acl: ClienteAcl | None = None
         cliente_under: ClienteUnder | None = None
         cliente_payments: ClientePayments | None = None
+        cliente_auth: ClienteAuth | None = None
         if servicio_propuestas is not None:
             app.state.servicio_propuestas = servicio_propuestas
             app.state.servicio_firma = servicio_firma
@@ -209,7 +211,13 @@ def create_app(
                 config.payments_timeout_segundos,
                 autenticacion_para(config.autenticacion_servicios, "payments"),
             )
+            cliente_auth = ClienteAuth(
+                config.auth_url,
+                config.auth_timeout_segundos,
+                autenticacion_para(config.autenticacion_servicios, "auth"),
+            )
             planificador = _planificador(config)
+            servicio_de_polizas = ServicioPolizas(repositorio, config.documento_ambiente_pruebas)
             emision = ServicioEmision(
                 repositorio,
                 cliente_under,
@@ -222,19 +230,19 @@ def create_app(
                 config.emision_max_intentos,
                 config.reconciliacion_lote_max,
                 config.reconciliacion_dias,
+                contactos=cliente_auth,
+                generador_documento=servicio_de_polizas.documento,
             )
             if isinstance(planificador, PlanificadorLocal):
                 planificador.conectar(emision.emitir)
             app.state.servicio_propuestas = ServicioPropuestas(repositorio, cliente_rating)
             app.state.servicio_firma = ServicioFirma(repositorio, cliente_acl, planificador)
             app.state.servicio_emision = emision
-            app.state.servicio_polizas = ServicioPolizas(
-                repositorio, config.documento_ambiente_pruebas
-            )
+            app.state.servicio_polizas = servicio_de_polizas
         try:
             yield
         finally:
-            for cliente in (cliente_under, cliente_payments):
+            for cliente in (cliente_under, cliente_payments, cliente_auth):
                 if cliente is not None:
                     cliente.cerrar()
             if cliente_acl is not None:

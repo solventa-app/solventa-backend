@@ -33,6 +33,9 @@ class Configuracion:
     payments_url: str = "http://localhost:8004"
     under_timeout_segundos: float = 3.0
     payments_timeout_segundos: float = 5.0
+    # AUTH: el contacto y el nombre del cliente para el aviso con PDF (bloque 8, W03-16).
+    auth_url: str = "http://localhost:8001"
+    auth_timeout_segundos: float = 3.0
     # Token opaco del convenio de recaudo con el banco del crédito (W03-5, REWIRE): la prima va con
     # la cuota del crédito, no con tarjeta. Nunca datos de tarjeta. Local y staging usan stubs.
     token_recaudo_credito: str = "tok_recaudo_local"
@@ -83,6 +86,8 @@ class Configuracion:
             payments_url=os.getenv("PAYMENTS_URL", "http://localhost:8004"),
             under_timeout_segundos=float(os.getenv("POLICY_UNDER_TIMEOUT_SEGUNDOS", "3.0")),
             payments_timeout_segundos=float(os.getenv("POLICY_PAYMENTS_TIMEOUT_SEGUNDOS", "5.0")),
+            auth_url=os.getenv("AUTH_URL", "http://localhost:8001"),
+            auth_timeout_segundos=float(os.getenv("POLICY_AUTH_TIMEOUT_SEGUNDOS", "3.0")),
             token_recaudo_credito=token,
             disparador=disparador,
             tareas_proyecto=os.getenv("GCP_PROYECTO", ""),

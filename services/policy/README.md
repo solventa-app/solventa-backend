@@ -72,6 +72,18 @@ EN_EMISION ──UNDER──► RECHAZADA        ─► NO_EMITIDA
   `poliza-emitida-{id}` (idempotente en el proveedor) y registra `polizas.notificada_en`. Si el aviso no sale, **la póliza queda
   emitida** (no se deshace) y `_emitir` contesta 503 para que Cloud Tasks (o el hilo local) reintente solo el aviso; ya notificada,
   repetir la emisión no avisa de nuevo.
+- **El aviso lleva el PDF (bloque 8, decisiones W03-16 a W03-18).** Para avisar, POLICY le pide a AUTH el contacto del cliente
+  (`GET /usuarios/{id}/contacto`) y su nombre (`POST /usuarios/nombres`), y los descarta: **no guarda ni el contacto ni el nombre,
+  ni los escribe en logs** (regla #6). Según lo que tenga el cliente:
+  - **Correo:** el aviso sale por correo con la póliza en PDF adjunta, generada con el nombre que dio AUTH (el nombre vive solo en
+    memoria mientras se genera el PDF; el PDF tampoco se guarda, W03-9).
+  - **Solo teléfono:** sale por SMS con el enlace, sin PDF (un SMS no lleva archivos).
+  - **Ninguno (hoy son todos los clientes ya creados):** la póliza se emite igual y el aviso se **omite** con
+    `polizas.aviso_omitido_motivo = SIN_CONTACTO`, sin reintentar para siempre; el cliente la descarga desde la web. Si el ACL
+    rechaza la solicitud (422), el motivo es `AVISO_RECHAZADO`.
+  - **Si AUTH no responde NO se asume que no hay contacto:** `_emitir` contesta 503, el aviso se reintenta y la póliza ya emitida no
+    se toca.
+  Sin `AUTH_URL` configurada el aviso sale como antes (solo con el enlace).
 
 ## Diseño
 
@@ -96,7 +108,7 @@ EN_EMISION ──UNDER──► RECHAZADA        ─► NO_EMITIDA
 `evidencias_firma` (migración `0002_evidencias_firma.py`): `propuesta_id` (UNIQUE, FK), `documento_hash`,
 `version_documento`, `documento_cifrado` (el documento exacto que se hasheó, cifrado), `firmante_id` (id opaco),
 `referencia_proveedor`, `firmada_en`. **Append-only en la base**: triggers rechazan `UPDATE`, `DELETE` y `TRUNCATE`. Con
-`documento_cifrado` se recalcula el hash y se prueba qué se firmó. `polizas` (migraciones `0003_polizas.py` y `0004_poliza_notificada.py`, esta última suma `notificada_en`): `propuesta_id` (UNIQUE, FK), `numero` (de la secuencia `polizas_numero_seq`, UNIQUE), `cliente_id` opaco, `vigencia_desde` y `vigencia_hasta`. `propuestas` suma `intentos_emision` (acota los reintentos del cobro pendiente) y `motivo_estado` (códigos de por qué quedó en revisión o no se emitió).
+`documento_cifrado` se recalcula el hash y se prueba qué se firmó. `polizas` (migraciones `0003_polizas.py`, `0004_poliza_notificada.py`, que suma `notificada_en`, y `0006_aviso_omitido.py`, que suma `aviso_omitido_motivo`, el motivo por el que no se avisó): `propuesta_id` (UNIQUE, FK), `numero` (de la secuencia `polizas_numero_seq`, UNIQUE), `cliente_id` opaco, `vigencia_desde` y `vigencia_hasta`. `propuestas` suma `intentos_emision` (acota los reintentos del cobro pendiente) y `motivo_estado` (códigos de por qué quedó en revisión o no se emitió).
 
 ## Configuración
 
@@ -109,6 +121,8 @@ EN_EMISION ──UNDER──► RECHAZADA        ─► NO_EMITIDA
 | `ACL_URL` | `http://localhost:8005` | ACL Worker (la firma pasa por él, nunca directo al proveedor) |
 | `POLICY_ACL_TIMEOUT_SEGUNDOS` | `3.0` | Espera máxima al ACL (el ACL corta a 700 ms) |
 | `UNDER_URL`, `PAYMENTS_URL` | `http://localhost:8008`, `http://localhost:8004` | Decisión y primer cobro |
+| `AUTH_URL` | `http://localhost:8001` | AUTH: el contacto y el nombre del cliente para el aviso con PDF (bloque 8) |
+| `POLICY_AUTH_TIMEOUT_SEGUNDOS` | `3.0` | Espera máxima a AUTH |
 | `POLICY_UNDER_TIMEOUT_SEGUNDOS`, `POLICY_PAYMENTS_TIMEOUT_SEGUNDOS` | `3.0`, `5.0` | Espera máxima |
 | `TOKEN_RECAUDO_CREDITO` | `tok_recaudo_local` | Token opaco del convenio de recaudo con el banco del crédito (W03-5, REWIRE): la prima va con la cuota del crédito, no con tarjeta. En la nube no puede ser el valor local |
 | `DISPARADOR` | `bucle` | `externo` en Cloud Run (los fija Terraform): `GCP_PROYECTO`, `GCP_REGION`, `TAREAS_CUENTA`, `URL_PROPIA`, `TAREAS_COLA` |

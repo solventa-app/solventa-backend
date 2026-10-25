@@ -11,6 +11,7 @@ from app.application.cliente_acl import (
     SolicitudFirma,
     SolicitudNotificacion,
 )
+from app.application.cliente_auth import AuthNoDisponible, Contacto
 from app.application.cliente_payments import (
     CobroEnConflicto,
     OrdenPrimerCobro,
@@ -134,6 +135,7 @@ class RepositorioPropuestasFalso:
                 "vigencia_desde": vigencia_desde,
                 "vigencia_hasta": vigencia_hasta,
                 "notificada_en": None,
+                "aviso_omitido_motivo": None,
             }
             self._polizas[propuesta_id] = poliza
             propuesta["estado"] = "EMITIDA"
@@ -159,6 +161,12 @@ class RepositorioPropuestasFalso:
         for poliza in self._polizas.values():
             if poliza["id"] == poliza_id and poliza["notificada_en"] is None:
                 poliza["notificada_en"] = datetime.now(UTC)
+
+    def marcar_aviso_omitido(self, poliza_id: str, motivo: str) -> None:
+        for poliza in self._polizas.values():
+            sin_resultado = poliza["notificada_en"] is None and not poliza["aviso_omitido_motivo"]
+            if poliza["id"] == poliza_id and sin_resultado:
+                poliza["aviso_omitido_motivo"] = motivo
 
     def obtener_evidencia(self, propuesta_id: str) -> dict[str, Any] | None:
         evidencia = self._evidencias.get(propuesta_id)
@@ -305,4 +313,53 @@ class NotificadorFalso:
         if estado == "enviada":
             self.enviadas.setdefault(solicitud.id_notificacion, solicitud)
             return ResultadoNotificacion("enviada", f"nt-{solicitud.id_notificacion}")
+        if estado == "rechazada":
+            return ResultadoNotificacion("rechazada", motivo="solicitud_invalida")
         return ResultadoNotificacion("pendiente", motivo="acl_no_disponible")
+
+
+class ContactosFalso:
+    """Doble de AUTH para el aviso con PDF: el contacto y el nombre del cliente. `cae` es cuántas
+    llamadas fallan antes de responder (`True` = siempre); `cae_en_nombre` hace fallar solo el
+    nombre."""
+
+    def __init__(
+        self,
+        contacto: Contacto | None = None,
+        nombre: str | None = "María Fernanda Gómez",
+        cae: bool | int = False,
+        cae_en_nombre: bool = False,
+    ) -> None:
+        self.contacto = contacto
+        self.nombre = nombre
+        self._caidas = 10**9 if cae is True else int(cae)
+        self.cae_en_nombre = cae_en_nombre
+        self.consultas_de_contacto: list[str] = []
+        self.consultas_de_nombre: list[str] = []
+
+    def contacto_de(self, usuario_id: str) -> Contacto | None:
+        self.consultas_de_contacto.append(usuario_id)
+        if self._caidas > 0:
+            self._caidas -= 1
+            raise AuthNoDisponible("ConnectError")
+        return self.contacto
+
+    def nombre_de(self, usuario_id: str) -> str | None:
+        self.consultas_de_nombre.append(usuario_id)
+        if self.cae_en_nombre:
+            raise AuthNoDisponible("ReadTimeout")
+        return self.nombre
+
+
+class GeneradorDeDocumentoFalso:
+    """Doble de `ServicioPolizas.documento`: devuelve un PDF mínimo y recuerda con qué nombre."""
+
+    CONTENIDO = b"%PDF-1.4 poliza de prueba"
+
+    def __init__(self, devuelve_none: bool = False) -> None:
+        self.llamadas: list[tuple[str, str | None]] = []
+        self.devuelve_none = devuelve_none
+
+    def __call__(self, poliza_id: str, asegurado: str | None = None) -> bytes | None:
+        self.llamadas.append((poliza_id, asegurado))
+        return None if self.devuelve_none else self.CONTENIDO

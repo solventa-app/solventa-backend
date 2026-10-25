@@ -260,9 +260,12 @@ services:
       ACL_URL: http://acl-worker:8005
       UNDER_URL: http://under:8008
       PAYMENTS_URL: http://payments:8004
+      # El contacto y el nombre del cliente para el aviso con PDF (bloque 8, W03-16).
+      AUTH_URL: http://auth:8001
     depends_on:
       postgres: { condition: service_healthy }
       migrar-policy: { condition: service_completed_successfully }
+      auth: { condition: service_healthy }
 
   under:
     <<: *servicio
