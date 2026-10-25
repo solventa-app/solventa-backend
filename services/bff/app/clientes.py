@@ -67,7 +67,13 @@ class PuertoAuth(Protocol):
     async def listar_usuarios(self, rol: str | None) -> list[dict]: ...
 
     async def crear_usuario(
-        self, usuario: str, clave: str, rol: str, nombre: str | None = None
+        self,
+        usuario: str,
+        clave: str,
+        rol: str,
+        nombre: str | None = None,
+        correo: str | None = None,
+        telefono: str | None = None,
     ) -> dict: ...
 
     async def nombres_de_clientes(self, ids: list[str]) -> dict[str, str]: ...
@@ -78,6 +84,10 @@ class PuertoAuth(Protocol):
 
     async def actualizar_preferencias(
         self, usuario_id: str, idioma: str, moneda: str
+    ) -> dict | None: ...
+
+    async def actualizar_contacto(
+        self, usuario_id: str, correo: str | None, telefono: str | None
     ) -> dict | None: ...
 
 
@@ -241,10 +251,24 @@ class ClienteAuthHttp:
         return _json_o_error(await _pedir(self._cliente, "GET", ruta))
 
     async def crear_usuario(
-        self, usuario: str, clave: str, rol: str, nombre: str | None = None
+        self,
+        usuario: str,
+        clave: str,
+        rol: str,
+        nombre: str | None = None,
+        correo: str | None = None,
+        telefono: str | None = None,
     ) -> dict:
-        # El nombre (dato personal) y la clave viajan solo en el cuerpo, nunca en la URL.
-        cuerpo = {"usuario": usuario, "clave": clave, "rol": rol, "nombre": nombre}
+        # El nombre, el contacto (datos personales) y la clave viajan solo en el cuerpo, nunca en la
+        # URL, y no se registran.
+        cuerpo = {
+            "usuario": usuario,
+            "clave": clave,
+            "rol": rol,
+            "nombre": nombre,
+            "correo": correo,
+            "telefono": telefono,
+        }
         return _json_o_error(await _pedir(self._cliente, "POST", "/usuarios", cuerpo))
 
     async def nombres_de_clientes(self, ids: list[str]) -> dict[str, str]:
@@ -272,6 +296,21 @@ class ClienteAuthHttp:
             "POST",
             f"/usuarios/{usuario_id}/preferencias",
             {"idioma": idioma, "moneda": moneda},
+        )
+        if respuesta.status_code == 404:
+            return None
+        return _json_o_error(respuesta)
+
+    async def actualizar_contacto(
+        self, usuario_id: str, correo: str | None, telefono: str | None
+    ) -> dict | None:
+        """Correo y teléfono del propio cliente (dato personal: solo en el cuerpo, nunca se loguea).
+        AUTH responde el usuario con `tiene_contacto`, no el contacto."""
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            f"/usuarios/{usuario_id}/contacto",
+            {"correo": correo, "telefono": telefono},
         )
         if respuesta.status_code == 404:
             return None
