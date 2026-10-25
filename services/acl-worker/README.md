@@ -180,12 +180,16 @@ Agregar un proveedor nuevo no toca el código: su variable `PRESUPUESTO_MS_<PROV
 
 ## Notificaciones (HU-W03, bloque 5)
 
-- `POST /notificaciones/enviar` `{id_notificacion, plantilla, destinatario_id, datos}` → `{estado: enviada | pendiente, referencia,
+- `POST /notificaciones/enviar` `{id_notificacion, plantilla, destinatario_id, datos, correo?, telefono?, adjuntos?}` → `{estado: enviada | pendiente, referencia,
   motivo}`. Siempre 200: con el proveedor caído, lento o el circuito abierto responde `pendiente`
   (`notificaciones_no_disponibles` / `circuito_abierto`) y POLICY reintenta. Idempotente por `id_notificacion`: repetirlo no
   manda dos avisos.
-- Solo viajan la plantilla, el identificador opaco del usuario y los datos de la plantilla (número de póliza y ruta del
-  documento): nunca un correo, un teléfono ni el contenido del documento. El proveedor resuelve el contacto; el contrato del stub
-  es inventado.
+- **Regla cambiada en el bloque 8 (W03-16, 2026-10-24).** Antes solo viajaban la plantilla, el id opaco y los datos de la plantilla, y el
+  proveedor resolvía el contacto. Ahora el aviso lleva el contacto del cliente (`correo` o `telefono`, que guarda AUTH) y el PDF de la
+  póliza como adjunto (`{nombre, tipo, contenido_base64}`): **datos personales y financieros** que viajan solo en el cuerpo de la
+  petición al proveedor y nunca se guardan ni se escriben en logs ni en etiquetas. El contrato del stub es inventado.
+- Reglas del adjunto, validadas en la ruta con un `422` cuyo mensaje no repite el contenido: solo con `correo` (un SMS no lleva
+  archivos), tipo `application/pdf`, base64 válido y no vacío, hasta 3 por aviso y hasta `ADJUNTO_MAXIMO_BYTES` (5.000.000 por omisión) ya
+  decodificado. Un `422` es un error de quien llama, no del proveedor: no se reintenta.
 - Circuito `notificaciones` con su sonda (`GET /v1/estado`, que nunca envía). Variables nuevas: `NOTIFICACIONES_URL`
-  (`http://localhost:8106`), `PRESUPUESTO_MS_NOTIFICACIONES` (700).
+  (`http://localhost:8106`), `PRESUPUESTO_MS_NOTIFICACIONES` (700), `ADJUNTO_MAXIMO_BYTES` (5000000).

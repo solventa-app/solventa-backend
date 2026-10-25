@@ -10,16 +10,22 @@ espera, así que si el ACL Worker corta a los 700 ms, el aviso igual quedó envi
 No manda nada de verdad: guarda en memoria lo que "envió" y lo expone en `GET /control/enviados`,
 que es lo que las pruebas usan para comprobar que se avisó **una sola vez**.
 
-**El contrato es inventado**, no el de un proveedor real. Un proveedor real resolvería el contacto
-(correo o teléfono) del `destinatario_id` con su propia base; aquí no hay contacto. Solo llegan la
-plantilla, el identificador opaco del usuario y los datos de la plantilla (número de póliza y ruta
-del documento): nunca el contenido del documento ni datos personales (regla de arquitectura #6).
+**El contrato es inventado**, no el de un proveedor real. Desde el bloque 8 (W03-16) el aviso puede
+llevar el contacto del cliente (`correo` o `telefono`, que guarda AUTH) y el PDF de la póliza como
+adjunto (base64), que solo se admite con `correo`. El stub **no guarda ni el destino ni el
+contenido**:
+de cada aviso recuerda el canal, una huella corta del destino y, de cada adjunto, solo el nombre, el
+tipo, el tamaño, el SHA-256 y si empieza como un PDF. Con eso las pruebas comprueban a qué correo
+fue y qué se adjuntó sin retener datos personales (regla de arquitectura #6).
 
 `GET /v1/estado` **sí obedece el modo simulado** (a diferencia de `/health`): lo usa la sonda de
 recuperación del circuito del ACL Worker, que no debe mandar un aviso de verdad.
 """
 
 import asyncio
+import base64
+import binascii
+import hashlib
 import random
 import uuid
 from datetime import UTC, datetime
@@ -44,6 +50,12 @@ class SolicitudModo(BaseModel):
     modo: Modo
 
 
+class Adjunto(BaseModel):
+    nombre: str
+    tipo: str
+    contenido_base64: str
+
+
 class SolicitudNotificacion(BaseModel):
     # "Comercio" es el punto de vista del proveedor: el comercio somos nosotros. Solventa la llama
     # `id_notificacion` en su dominio y el adaptador del ACL Worker traduce entre los dos nombres.
@@ -51,6 +63,29 @@ class SolicitudNotificacion(BaseModel):
     plantilla: str
     destinatario_id: str
     datos: dict[str, str] = {}
+    correo: str | None = None
+    telefono: str | None = None
+    adjuntos: list[Adjunto] = []
+
+
+def _huella(destino: str | None) -> str | None:
+    """Los primeros 12 caracteres del SHA-256 del destino: sirve para comparar, no para leerlo."""
+    return hashlib.sha256(destino.encode("utf-8")).hexdigest()[:12] if destino else None
+
+
+def _resumen_adjunto(adjunto: Adjunto) -> dict:
+    """Lo único que el stub recuerda de un adjunto (nunca su contenido)."""
+    try:
+        contenido = base64.b64decode(adjunto.contenido_base64, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise HTTPException(status_code=422, detail="El adjunto no es base64 válido.") from error
+    return {
+        "nombre": adjunto.nombre,
+        "tipo": adjunto.tipo,
+        "bytes": len(contenido),
+        "sha256": hashlib.sha256(contenido).hexdigest(),
+        "es_pdf": contenido.startswith(b"%PDF-"),
+    }
 
 
 def create_app() -> FastAPI:
@@ -105,6 +140,10 @@ def create_app() -> FastAPI:
     ) -> dict:
         modo_efectivo = _modo_efectivo(modo, x_modo_simulado)
         await _fallar_si_corresponde(modo_efectivo)
+        if body.adjuntos and not body.correo:
+            # Un adjunto solo viaja por correo: un SMS no lleva archivos.
+            raise HTTPException(status_code=422, detail="Un adjunto solo se envía por correo.")
+        resumen_adjuntos = [_resumen_adjunto(a) for a in body.adjuntos]
         async with candado:
             aviso = enviadas.get(body.referencia_comercio)
             if aviso is None:
@@ -115,6 +154,9 @@ def create_app() -> FastAPI:
                     "plantilla": body.plantilla,
                     "destinatario_id": body.destinatario_id,
                     "datos": body.datos,
+                    "canal": "correo" if body.correo else "sms" if body.telefono else None,
+                    "destino_huella": _huella(body.correo or body.telefono),
+                    "adjuntos": resumen_adjuntos,
                     "referencia": f"nt-{uuid.uuid4()}",
                     "enviada_en": datetime.now(UTC).isoformat(),
                 }
