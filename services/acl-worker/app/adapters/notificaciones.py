@@ -1,9 +1,11 @@
 """Adaptador de notificaciones: traducción pura a HTTP contra `stubs/notificaciones` (HU-W03,
 CA-W03-08). Implementa `PuertoNotificaciones`.
 
-Solo envía la plantilla, el identificador opaco del usuario y los datos de la plantilla (número de
-póliza y ruta del documento): nunca un correo, un teléfono ni el contenido del documento (regla de
-arquitectura #6). El proveedor resuelve el contacto con su propia base."""
+Envía la plantilla, el identificador opaco del usuario y los datos de la plantilla (número de
+póliza y ruta del documento) y, desde el bloque 8 (W03-16), el contacto del cliente (correo o
+teléfono) y el PDF adjunto. Esos dos últimos son datos personales y financieros: viajan solo en el
+cuerpo de la petición al proveedor y nunca se guardan ni se escriben en logs (regla de arquitectura
+#6). Un campo vacío no se manda, así que un aviso sin contacto ni adjunto es igual al de antes."""
 
 import httpx
 
@@ -25,16 +27,22 @@ class AdaptadorNotificaciones:
         self, solicitud: SolicitudNotificacion, timeout_s: float | None = None
     ) -> ResultadoNotificacion:
         timeout = timeout_s if timeout_s is not None else self._timeout_s
-        respuesta = self._cliente.post(
-            "/v1/notificaciones",
-            json={
-                "referencia_comercio": solicitud.id_notificacion,
-                "plantilla": solicitud.plantilla,
-                "destinatario_id": solicitud.destinatario_id,
-                "datos": solicitud.datos,
-            },
-            timeout=timeout,
-        )
+        cuerpo: dict = {
+            "referencia_comercio": solicitud.id_notificacion,
+            "plantilla": solicitud.plantilla,
+            "destinatario_id": solicitud.destinatario_id,
+            "datos": solicitud.datos,
+        }
+        if solicitud.correo:
+            cuerpo["correo"] = solicitud.correo
+        if solicitud.telefono:
+            cuerpo["telefono"] = solicitud.telefono
+        if solicitud.adjuntos:
+            cuerpo["adjuntos"] = [
+                {"nombre": a.nombre, "tipo": a.tipo, "contenido_base64": a.contenido_base64}
+                for a in solicitud.adjuntos
+            ]
+        respuesta = self._cliente.post("/v1/notificaciones", json=cuerpo, timeout=timeout)
         respuesta.raise_for_status()
         cuerpo = respuesta.json()
         return ResultadoNotificacion(
