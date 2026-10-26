@@ -19,10 +19,7 @@ USO = "uso: seleccionar_servicios.py todos | lista a,b | cambios <base> <head>"
 
 
 def cargar() -> list[dict]:
-    # Los servicios `dummy` (sustitutos temporales para el front, como stub-siniestros) corren
-    # solo en local por ahora: no se despliegan a staging.
-    servicios = json.loads((RAIZ / ".github" / "servicios.json").read_text(encoding="utf-8"))
-    return [s for s in servicios if not s.get("dummy")]
+    return json.loads((RAIZ / ".github" / "servicios.json").read_text(encoding="utf-8"))
 
 
 def archivos_cambiados(base: str, head: str) -> list[str]:

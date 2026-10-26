@@ -53,6 +53,35 @@ paths:
       responses:
         "200":
           description: Respuesta GraphQL
+  /graphql/siniestros:
+    post:
+      summary: GraphQL del dummy de siniestros (HU-W04, back-office; sin token)
+      operationId: graphqlSiniestros
+      x-google-backend:
+        address: ${siniestros_url}/graphql/siniestros
+        deadline: 0.7
+      responses:
+        "200":
+          description: Respuesta GraphQL
+  /graphql/siniestros/medios/{archivo}:
+    get:
+      summary: Fotos y documentos de evidencia del dummy de siniestros
+      operationId: medioSiniestro
+      produces:
+        - image/jpeg
+        - image/png
+      parameters:
+        - name: archivo
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: ${siniestros_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: La imagen
   /polizas/{poliza_id}/documento:
     get:
       summary: PDF de la póliza emitida (CLIENTE y ASESOR; el BFF exige token siempre)

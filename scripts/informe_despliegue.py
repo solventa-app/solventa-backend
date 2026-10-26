@@ -287,8 +287,7 @@ def que_hacer(ctx: dict) -> list[str]:
 def construir_informe(args: argparse.Namespace) -> str:
     needs = cargar_json(args.needs, {})
     cloud_run = {s["metadata"]["name"]: s for s in cargar_json(args.cloud_run, [])}
-    # Los servicios `dummy` no se despliegan (solo local): no se informan como faltantes.
-    manifiesto = [m for m in cargar_json(args.manifiesto, []) if not m.get("dummy")]
+    manifiesto = cargar_json(args.manifiesto, [])
     salidas = needs.get("preparar", {}).get("outputs", {})
     objetivos = set(lista_json(salidas.get("servicios")))
     banderas = leer_banderas(Path(args.tfvars).read_text(encoding="utf-8")) if (
