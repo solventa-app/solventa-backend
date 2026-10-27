@@ -402,3 +402,49 @@ sesión de socio:
 - La versión del contrato: W07 y el plan de almacenamiento piden la siguiente libre.
 - `docs/plan-almacenamiento-archivos.md` usa el puerto 8008, que W03 reserva para `under`. Corregirlo al retomarlo
   (por ejemplo, 8009).
+
+## Revisión contra `develop` (2026-10-25)
+
+> **W07 en pausa (2026-10-26)** por pedido de Felipe. Esta sección prevalece sobre lo que diga arriba la v2 cuando
+> choquen; al retomar, se integra en el cuerpo del plan.
+
+### Qué cambió en `develop` desde la v2
+
+| Tema | Antes (v2, 2026-10-24) | Ahora (`develop` 258913b) | Efecto en W07 |
+|---|---|---|---|
+| HU-W03 | Bloques 1 y 2 integrados; 3 a 5 pendientes | **Bloques 0 a 8 hechos en código y en local**; falta staging (`main` sigue en el Sprint 1) | **La fase C ya no espera a W03.** Existen UNDER, la emisión, la suscripción de POLICY a `cobro.estado-cambiado` (W03-7), el PDF y el aviso. Las fases A, B y C se pueden construir seguidas. |
+| Contrato | v0.12 | **v0.16** | W07 toma la siguiente libre (**v0.17**), salvo que el storage o M01 la tomen antes. |
+| Migraciones de AUTH | Siguiente 0007 | Última `0007_contacto_cifrado.py` → siguiente **0008** | **M01 también pide la 0008.** La toma quien llegue primero a `develop`; el otro renumera. |
+| Migraciones de POLICY | Siguiente 0003 | Última `0006_aviso_omitido.py` → siguiente **0007** | Canal/socio/tasa en `propuestas`, `comisiones` y la solicitud de firma por enlace van en la 0007 (o en la 0007 y la 0008). |
+| Firma | Síncrona, solo el CLIENTE | **W03-13:** presupuesto propio en el ACL (`PLAZO_RUTA_SINCRONA_MS − RESERVA_SALTOS_MS` = 450 ms) | No choca: la firma por enlace del socio es asíncrona y no pasa por la ruta síncrona. |
+| Reapertura | — | **W03-14:** solo BACKOFFICE y la reconciliación reabren una póliza con cobro rechazado | El socio **no** reabre: lo dice el contrato `/v1`. |
+| Salud de Emisión | UNDER «no disponible» hasta la fase C | `under` existe (puerto 8008) y también los stubs `kyc` y `notificaciones` | La salud de Emisión cuenta UNDER desde el principio. Las APIs externas de Emisión son firma, KYC, pasarela y **notificaciones**. |
+
+### Lo que queda abierto (decisión de Felipe, pendiente)
+
+**El cliente final del socio no tiene usuario en Solventa, pero POLICY lo necesita:**
+- POLICY arma el PDF y el aviso con el nombre y el contacto del **firmante**. Los pide a AUTH por `firmante_id`, que
+  es un usuario de AUTH (`services/policy/app/application/servicio_emision.py:434-441`, `cliente_auth.py`: `GET
+  /usuarios/{id}/contacto` y `POST /usuarios/nombres`).
+- W03-16 decidió que **AUTH guarda el contacto y POLICY no guarda nada**.
+- Sin usuario, la póliza del socio saldría sin nombre en el PDF y con el aviso omitido (`SIN_CONTACTO`, W03-18).
+
+Opciones analizadas:
+
+| Opción | Cómo | Efecto |
+|---|---|---|
+| **Usuario sin acceso en AUTH** (la recomendada) | El socio envía nombre, correo y teléfono del titular al registrar el consentimiento. AUTH crea, o reutiliza por `titular_id`, un CLIENTE en un estado nuevo `SIN_ACCESO` y sin clave, que es el firmante. | POLICY y el aviso funcionan sin cambios y W03-16 queda intacta. Exige una migración en AUTH (estado nuevo), lo que suma al choque de la 0008 con M01. El cliente podría activar su cuenta después. |
+| El socio entrega todo | Solventa no avisa: el socio descarga el PDF por la API. El nombre lo manda el socio al aceptar y POLICY lo guarda cifrado en la propuesta. | **Cambia W03-16**, porque POLICY pasaría a guardar un dato personal. |
+| Sin nombre ni aviso | Se emite sin nombre en el PDF y con `SIN_CONTACTO`; el socio descarga el PDF. | Lo más simple, pero el PDF queda incompleto. |
+
+**Relación con M01:** el estado `SIN_ACCESO` y el `PENDIENTE_VERIFICACION` de M01 son dos estados nuevos del mismo
+`CHECK` de `usuarios`. Conviene hacerlos en una sola migración, la que salga primero.
+
+### Pendiente para retomar W07
+
+1. Decidir cómo se identifica al cliente final del socio (la tabla de arriba).
+2. Actualizar en la v2: las fases (A+B+C sin espera), los números (v0.17, AUTH 0008, POLICY 0007), la salud de
+   Emisión con UNDER y notificaciones, y la regla «el socio no reabre» (W03-14).
+3. Los ids de Figma de las pantallas W07.
+4. Coordinar con M01 la migración 0008 de AUTH y los estados nuevos de `usuarios`.
+5. Validar con el equipo los pesos de `salud.json` (bloque 3b).
