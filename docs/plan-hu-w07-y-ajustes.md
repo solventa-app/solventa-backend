@@ -284,8 +284,64 @@ con el workflow «Costos staging».
 
 1. **El visto bueno de Felipe** sobre las decisiones marcadas como Propuesta: W01-A2 a A6, W05-A5, W07-5, 7, 15 y 17,
    los pesos nuevos de salud y los detalles de W03 (código, límites de la imagen, presupuesto de la pasarela).
-2. **Pasar a Jira:**
-   - los CA nuevos y cambiados de KAN-26;
-   - el criterio nuevo de KAN-24 (W01-01 pide nombre y correo, W01-A1);
-   - la nota de CA-W05-03.
+2. **Pasar a Jira** todo lo de la sección 5.4.
 3. **Integrar en la v2 de W07** lo de la sección 3, en la rama `feat/KAN-30-socios-api`, cuando se retome.
+
+### 5.4 Cambios en Jira
+
+> Lo hace Felipe: el agente no edita Jira. El texto oficial de los criterios vive en el `.docx` del Sprint 2, así que
+> hay que actualizarlo también. Las claves de las tareas nuevas las asigna Jira al crearlas.
+
+**KAN-24 · HU-W01 (cotización)**
+
+| Qué | Cambio |
+|---|---|
+| Criterio nuevo | «El formulario de solicitud W01-01 pide **nombre completo y correo** del cliente. Cotizar no los guarda: se usan al aceptar la oferta para el código, el enlace de firma, el documento y el aviso.» (W01-A1) |
+| CA-W01-08, ampliar | Hoy: «revocación del consentimiento: rechaza nuevas consultas e invalida la caché en ≤ 5 min». Propuesto: agregar «**y borra el perfil de riesgo del titular y el contacto de sus propuestas no emitidas**» (W01-A2 y A3) |
+| Tareas nuevas, en historia aparte | Felipe pidió abrir los huecos de RISK aparte. Propuesta: una tarea por hueco, o una sola habilitadora de retención de datos: <br>• RISK borra el perfil al revocar el consentimiento (W01-A3); <br>• purga diaria de los perfiles con el consentimiento vencido (W01-A4); <br>• el batch nocturno omite los perfiles vencidos (W01-A5); <br>• la revocación avisa a POLICY y a RISK (W01-A2) |
+| Tarea de front | W01-01: campos de nombre y correo |
+
+**KAN-26 · HU-W03 (firma, cobro y emisión)**
+
+| Qué | Cambio |
+|---|---|
+| Descripción | Agregar que el flujo es **interactivo y con asesor**: el asesor verifica la identidad con un código y emite; el cliente firma y paga con un enlace de 30 min; cobro y emisión son síncronos y solo el correo con el PDF va en segundo plano |
+| CA-W03-02 a 10 | Reemplazar por el texto propuesto del bloque 9 de `plan-completar-hu-w03.md`. **Cambian:** 02 (contrato en PDF y tres modos de firma), 03 (evidencia con el código y la imagen), 04 (una sola vez aunque cambie de tarjeta), 05 (reintentar y, al 3.er fallo, otra tarjeta), 06 (rechazo: otra tarjeta), 07 (emitida en la misma respuesta del pago; EC005 y EC007 desde el regreso de la pasarela), 08 (PDF en otra pestaña y por correo en segundo plano), 09 (más datos cifrados; ningún dato de tarjeta) y 10 (suma la pasarela). **CA-W03-01 no cambia** |
+| Criterios nuevos | CA-W03-11 (código por correo que digita el asesor), CA-W03-12 (enlace de un solo uso y 30 min) y CA-W03-13 (página de la pasarela y confirmación con el proveedor) |
+| Tareas nuevas de back | <br>• Contrato v0.17. <br>• AUTH: cédula y correo obligatorios para el CLIENTE y recrear los usuarios de prueba (W03-27). <br>• POLICY: contacto por rol y su purga (W03-25 y 26). <br>• POLICY: código de verificación (W03-20). <br>• POLICY: «Emitir» con UNDER y enlace de firma (W03-21 y 22). <br>• POLICY: firma en tres modos y PDF con la firma (W03-24). <br>• POLICY: emisión síncrona al confirmar el pago y aviso por Cloud Tasks (W03-29). <br>• BFF: operaciones del asesor y del enlace. <br>• Infra: rutas, ingreso público del stub y Cloud Scheduler. <br>• Pruebas: Newman, EC005, EC007 y EC022 |
+| Tareas nuevas de front | <br>• Modal del asesor. <br>• Página del enlace con la firma en tres modos y el estado vacío. <br>• Retorno de la pasarela con reintentar y otra tarjeta. <br>• Ajustes de W03-02b, W03-03 y W03-04. <br>• Registro de CLIENTE con cédula y correo |
+| Tareas existentes | <br>• En las de pantallas (KAN-210 y KAN-214), anotar que **W03-05 no se construye**. <br>• En las de back ya cerradas (KAN-212, cobro y emisión; KAN-215, PDF y notificación), comentar que el bloque 9 cambia su comportamiento. **No se reabren**: el cambio va en las tareas nuevas |
+| Decisiones | Comentario con W03-19 a W03-31 y las que cambian (W03-3, 5, 6, 12, 15, 16, 17 y 18), con el enlace al plan |
+
+**KAN-28 · HU-W05 (cobros)**
+
+| Qué | Cambio |
+|---|---|
+| CA-W05-03 | Quitar la nota de que «se entiende como PAYMENTS solo recibe un token» (`docs/sprint-1.md`). **Queda cubierto tal cual**: la tarjeta se captura en la página tokenizada de la pasarela (W05-A4) |
+| CA-W05-05, aclarar | Hoy: «si la pasarela supera 700 ms el cobro queda pendiente (sin 5xx) y se reintenta con Cloud Tasks». Propuesto: agregar «**excepto el primer cobro, que hace el cliente en línea: ese se concilia y lo reintenta el propio cliente**» (W05-A3) |
+| Tareas nuevas de back | <br>• PAYMENTS: sesiones de pago, medios de pago y origen del cobro (W05-A1 a A3). <br>• `Cobro` aditivo para la tabla del BACKOFFICE (W05-A5) |
+| Tarea de front | Conciliación de pagos (W05-01): columnas de origen del cobro y de marca y tipo del medio |
+
+**Stub de la pasarela** (sección 2)
+
+| Qué | Cambio |
+|---|---|
+| Tarea nueva | «Stub de pasarela con página de pago propia y tokenización», con dos opciones de ubicación: <br>• **Bajo KAN-26** (recomendado), porque es quien la necesita para el primer pago. <br>• Como habilitadora. <br>En la descripción: el stub **no es parte de Solventa** y simula a PayU o Stripe. Su alcance es la API de sesiones, la página de pago, las tarjetas de prueba, el ACL (principal y alterno) y el ingreso público en staging |
+
+**KAN-30 · HU-W07 (socios)**
+
+| Qué | Cambio |
+|---|---|
+| Descripción | Agregar el modelo de negocio: el socio **revende la póliza** (cotización y emisión) y cobra una **comisión sobre la prima**. El socio hace el papel del asesor: verifica la identidad del titular con el código y emite. El titular firma y paga con el enlace de Solventa |
+| Criterios | **No cambian.** Los del Jira (4 claves, tokens del gateway, salud en colores, consumo, modo prueba y Swagger) siguen valiendo. Si el equipo quiere que la comisión y las ventas sean criterio, propuesta: «el socio ve sus pólizas emitidas, las primas cobradas y la comisión causada por mes» |
+| Tareas nuevas de back | Contrato v0.18 y `socios-v1.yaml`; AUTH de socios (`0009` y CLI); BFF `/v1` y el modo prueba; salud del sistema; comisiones en POLICY (`0008`); gateway de socios |
+| Tareas nuevas de front | Portal de socios (W07-01, 02 y 03) y la pantalla «Estado del sistema» del BACKOFFICE |
+| Dependencia | Enlazar KAN-30 como **bloqueada por** las tareas nuevas de KAN-26 y KAN-28 y por la del stub de la pasarela |
+
+**Escenarios de calidad**
+
+| Escenario | Cambio |
+|---|---|
+| EC005 y EC007 | Cambia el punto de medición: desde el regreso de la pasarela hasta la póliza emitida. Los umbrales no cambian (p95 ≤ 1,5 s y p99 ≤ 3 s) |
+| EC022 | Suma el nombre y el correo en la propuesta, la imagen de la firma y el token del medio de pago |
+| EC031 | Suma la pasarela con sesiones de pago (adaptador alterno) |
