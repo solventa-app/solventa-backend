@@ -29,22 +29,22 @@ EC031 (reemplazo de adaptador).
 |---|---|---|---|
 | W03-1 | Quién guarda la oferta aceptada | **POLICY** (escritor único de propuestas y pólizas). RATING deja la oferta generada en Redis con TTL igual a su vigencia y la sirve en `GET /ofertas/{id}`; POLICY la lee de ahí y **nunca confía en el precio que manda el cliente**. Si Redis la perdió, se pide cotizar de nuevo | Propuesta |
 | W03-2 | D-03: cuándo se cobra la primera prima | **Al firmar y antes de emitir.** La decisión de UNDER va antes del cobro para no cobrar a quien luego se rechaza | **Cerrada** |
-| W03-3 | Primer cobro pendiente o rechazado | Pendiente: la póliza espera (`PENDIENTE_PAGO`) y se emite sola al pasar a cobrado. Rechazado: no hay póliza (`PAGO_RECHAZADO`); el reintento manual de W05 la reabre | Propuesta |
+| W03-3 | Primer cobro pendiente o rechazado | Pendiente: la póliza espera (`PENDIENTE_PAGO`) y se emite sola al pasar a cobrado. Rechazado: no hay póliza (`PAGO_RECHAZADO`); el reintento manual de W05 la reabre | Propuesta · **Cambiada (bloque 9):** un rechazo lleva a elegir otra tarjeta y no deja la propuesta en `PAGO_RECHAZADO` |
 | W03-4 | Quién llama a PAYMENTS | POLICY, de servicio a servicio (`policy` entra en el `llama` de `payments`). `crearCobro` del BFF sigue siendo solo de BACKOFFICE | Propuesta |
-| W03-5 | `tokenMedioPago` | Token opaco del convenio de recaudo con el banco del crédito, por configuración (`TOKEN_RECAUDO_CREDITO`, marcado REWIRE). No hay captura de tarjeta | Propuesta |
-| W03-6 | Asincronía en Cloud Run | La emisión se agenda con Cloud Tasks (copia de `PlanificadorCloudTasks` de PAYMENTS); en local corre inline. Nada de bucles de fondo | Propuesta |
+| W03-5 | `tokenMedioPago` | Token opaco del convenio de recaudo con el banco del crédito, por configuración (`TOKEN_RECAUDO_CREDITO`, marcado REWIRE). No hay captura de tarjeta | Propuesta · **Cambiada (bloque 9):** el token lo genera la pasarela al capturar la tarjeta en su propia página |
+| W03-6 | Asincronía en Cloud Run | La emisión se agenda con Cloud Tasks (copia de `PlanificadorCloudTasks` de PAYMENTS); en local corre inline. Nada de bucles de fondo | Propuesta · **Cambiada (bloque 9):** cobro y emisión son síncronos; Cloud Tasks queda solo para el aviso |
 | W03-7 | Aviso del cobro a POLICY | **Cambiada en el bloque 4: no se usa Pub/Sub.** La propuesta original (PAYMENTS publica `cobro.estado-cambiado` por Pub/Sub y POLICY lo recibe por push) ampliaba la decisión cerrada W05-8, que solo aprobó Pub/Sub para `perfil.actualizado`, y no hubo visto bueno del equipo. En su lugar, cuando el primer cobro queda pendiente POLICY lo vuelve a consultar con una tarea de Cloud Tasks, re-enviando a PAYMENTS la misma orden idempotente (devuelve el cobro existente sin cobrar de nuevo), y `poliza.emitida` va al bus de log, igual que `cobro.estado-cambiado`. Si el equipo quiere eventos reales, es una decisión aparte | Cambiada |
-| W03-8 | Quién firma | Solo el CLIENTE titular firma (no repudio). El ASESOR puede aceptar la oferta pero no firmar | Propuesta |
+| W03-8 | Quién firma | Solo el CLIENTE titular firma (no repudio). El ASESOR puede aceptar la oferta pero no firmar | Propuesta · **Se mantiene (bloque 9):** el titular firma desde su enlace, no desde una sesión |
 | W03-9 | PDF | Se genera al pedirlo con `fpdf2` a partir de los datos de la póliza. Sin GCS ni costo nuevo | Propuesta |
 | W03-10 | KYC | Puerto `PuertoKyc` en el ACL con un stub que simula Truora. El consolidador de KYC real queda para el Sprint 3 | Propuesta |
 | W03-11 | Servicios | **Dos servicios nuevos**: `under` (sin almacén, decide) y `policy` (PostgreSQL, escritor único de pólizas) | **Cerrada** |
-| W03-12 | Proveedor de firma | Solventa **no** construye un servicio de firma electrónica: lo contrata a un tercero detrás del ACL. `stubs/firma` simula solo lo que es de Solventa (idempotencia por referencia, hash, modos de falla) y **no** la identidad del firmante, el certificado ni el sello de tiempo, que son del proveedor. Su contrato (`referencia_comercio`, `documento_hash`, `SIGNED`) es inventado, no el de un proveedor real. Con uno elegido, el puerto y `evidencias_firma` ganarán campos opcionales (referencia del certificado, sello de tiempo, enlace al documento firmado) en una migración aditiva. Qué tipo de firma hace exigible la póliza lo valida el equipo con legal | Propuesta |
+| W03-12 | Proveedor de firma | Solventa **no** construye un servicio de firma electrónica: lo contrata a un tercero detrás del ACL. `stubs/firma` simula solo lo que es de Solventa (idempotencia por referencia, hash, modos de falla) y **no** la identidad del firmante, el certificado ni el sello de tiempo, que son del proveedor. Su contrato (`referencia_comercio`, `documento_hash`, `SIGNED`) es inventado, no el de un proveedor real. Con uno elegido, el puerto y `evidencias_firma` ganarán campos opcionales (referencia del certificado, sello de tiempo, enlace al documento firmado) en una migración aditiva. Qué tipo de firma hace exigible la póliza lo valida el equipo con legal | Propuesta · **Cambiada (bloque 9):** la identidad la prueba un código por correo; el stub sigue sin verificarla |
 | W03-13 | Firma dentro del plazo del gateway (CA-W03-05) | Presupuesto propio de la firma en el ACL, **configurable y sin valores fijos en el código**: `PLAZO_RUTA_SINCRONA_MS − RESERVA_SALTOS_MS` (700 − 250 = 450 ms) para los proveedores de `PROVEEDORES_RUTA_SINCRONA`, y presupuestos por proveedor leídos como `PRESUPUESTO_MS_<PROVEEDOR>`. Hecho el 2026-10-24 (`docs/evidencias/CA-W03-05-firma-2026-10-24.md`) | **Cerrada** |
 | W03-14 | Quién reabre una póliza con cobro rechazado o pendiente agotado (CA-W03-06) | **Solo el back-office y los procesos de reconciliación**, no el cliente. La reapertura es idempotente. Hecho en código y en Terraform el 2026-10-24 (`docs/evidencias/CA-W03-06-reapertura-2026-10-24.md`) | **Cerrada** |
-| W03-15 | Textos de «qué hacer» y del aviso (CA-W03-06 y 08) | Revisado en Figma `Solventa-web-Final` el 2026-10-24: la pantalla «Resultado del pago» **no existe** (hay que crearla, D-03) y W03-04 dice que el documento «llega por correo o notificación». Los textos que ya sirve el BFF (`mensajeEstado`, tabla en `servicio_suscripcion.py`) son una **propuesta** para ajustar con UX; cambiarlos es editar una tabla y su traducción | Propuesta |
-| W03-16 | Adjuntar el PDF al aviso de póliza emitida (CA-W03-08) | **Decidido (2026-10-24): el aviso llevará el PDF, en un bloque nuevo (8).** La recomendación del análisis era dejar solo el enlace, pero se eligió adjuntarlo, con tres decisiones de diseño: **AUTH guarda el correo y el teléfono**, **el proveedor sí puede recibir el PDF** (se cambia la regla del puerto) y **POLICY pide el nombre a AUTH al emitir**. Mientras no se construya, el aviso sigue llevando el enlace | **Cerrada; bloque 8 planeado** |
-| W03-17 | Quién captura el correo y el teléfono del cliente (bloque 8) | **Confirmado (2026-10-24):** `crearUsuario` (lo usa el BACKOFFICE) y una mutación para que el propio usuario los actualice, junto a idioma y moneda. Exige una pantalla en Web, que hoy no existe. **Detalle abierto, no bloquea:** AUTH guarda ambos datos (opcionales) y el adjunto viaja por correo; un cliente que solo tenga teléfono recibe el aviso sin PDF | **Cerrada** |
-| W03-18 | Cliente sin contacto (bloque 8) | **Confirmado (2026-10-24):** la póliza se emite igual y el aviso se omite con el motivo `SIN_CONTACTO`, sin reintentar para siempre; el cliente la descarga desde la web | **Cerrada** |
+| W03-15 | Textos de «qué hacer» y del aviso (CA-W03-06 y 08) | Revisado en Figma `Solventa-web-Final` el 2026-10-24: la pantalla «Resultado del pago» **no existe** (hay que crearla, D-03) y W03-04 dice que el documento «llega por correo o notificación». Los textos que ya sirve el BFF (`mensajeEstado`, tabla en `servicio_suscripcion.py`) son una **propuesta** para ajustar con UX; cambiarlos es editar una tabla y su traducción | Propuesta · **Cambiada (bloque 9):** el resultado del pago lo muestra la página de la pasarela y luego W03-04 |
+| W03-16 | Adjuntar el PDF al aviso de póliza emitida (CA-W03-08) | **Decidido (2026-10-24): el aviso llevará el PDF, en un bloque nuevo (8).** La recomendación del análisis era dejar solo el enlace, pero se eligió adjuntarlo, con tres decisiones de diseño: **AUTH guarda el correo y el teléfono**, **el proveedor sí puede recibir el PDF** (se cambia la regla del puerto) y **POLICY pide el nombre a AUTH al emitir**. Mientras no se construya, el aviso sigue llevando el enlace | **Cerrada; bloque 8 planeado** · **Cambiada en parte (bloque 9):** AUTH guarda el contacto solo del CLIENTE; con un ASESOR va cifrado en la propuesta |
+| W03-17 | Quién captura el correo y el teléfono del cliente (bloque 8) | **Confirmado (2026-10-24):** `crearUsuario` (lo usa el BACKOFFICE) y una mutación para que el propio usuario los actualice, junto a idioma y moneda. Exige una pantalla en Web, que hoy no existe. **Detalle abierto, no bloquea:** AUTH guarda ambos datos (opcionales) y el adjunto viaja por correo; un cliente que solo tenga teléfono recibe el aviso sin PDF | **Cerrada** · **Cambiada (bloque 9):** el registro del CLIENTE exige correo y cédula; ya no bloquea el aviso |
+| W03-18 | Cliente sin contacto (bloque 8) | **Confirmado (2026-10-24):** la póliza se emite igual y el aviso se omite con el motivo `SIN_CONTACTO`, sin reintentar para siempre; el cliente la descarga desde la web | **Cerrada** · **Cambiada (bloque 9):** casi no ocurre, porque el correo es obligatorio al aceptar |
 
 ## Criterios de aceptación (oficiales)
 
@@ -214,6 +214,150 @@ proxy de Vite; una web desplegada que llame al gateway desde otro origen lo nece
 **Documentos:** `contracts/CHANGELOG.md` (fila 3 hecha en la v0.13; filas 4 y 8 en la v0.15), `docs/plan-completar-hu-w03.md`, `docs/evidencias/` (filas 1, 4, 6, 8 y 9) y los README de `policy`, `bff` y `acl-worker`.
 Las claves de Jira de estas filas están por decidir: las tareas de back de W03 ya están cerradas o en revisión.
 
+### Bloque 9 · Firma y pago interactivos con el asesor (cambio de KAN-26; planeado el 2026-10-27, sin empezar)
+
+El 2026-10-27 Felipe redefinió cómo firma y paga el cliente. El flujo es **interactivo**: el cliente está esperando su
+póliza. Por eso **el cobro y la emisión son síncronos** y solo el correo con el PDF va en segundo plano. El cambio
+reemplaza, de los bloques 2, 4 y 8:
+
+- cómo se prueba la identidad;
+- cuándo decide UNDER;
+- de dónde sale el medio de pago;
+- de dónde sale el contacto.
+
+**Se mantiene:**
+
+- D-03 (cobrar antes de emitir);
+- la evidencia append-only;
+- el cobro idempotente y la conciliación;
+- el circuito y el timeout del ACL;
+- el PDF con `fpdf2`;
+- el aviso con el PDF adjunto;
+- W03-13 y W03-14.
+
+Pantallas de Figma `Solventa-web-Final` (`yKWD8jrwERtJkuSj0mk0Gz`):
+
+| Pantalla | Nodo |
+|---|---|
+| W01-01 | `2001:1016` |
+| W03-02 | `2001:1832` |
+| W03-02b | `2020:32` |
+| W03-03 | `2001:1969` |
+| W03-04 | `2001:2057` |
+| W03-05 | `2001:2128`; no se construye |
+
+**Flujo nuevo:**
+
+```
+W01-01 (ASESOR)    ─► el formulario suma nombre y correo del cliente (cotizar no los guarda)
+aceptarOferta      ─► POLICY: Propuesta(ACEPTADA)
+                      ├─ con el contacto cifrado (si acepta un ASESOR)
+                      └─ con «contacto en AUTH» (si acepta un CLIENTE)
+enviarCodigo       ─► POLICY genera un código (guarda su huella; vence y tiene intentos)
+                      └─ ACL /notificaciones (plantilla codigo-verificacion)
+verificarCodigo    ─► el ASESOR digita en el modal el código que le dicta el cliente ─► IDENTIDAD_VERIFICADA
+emitir (modal)     ─► UNDER /decisiones (KYC por ACL)
+                      ├─ RECHAZADA / REVISION_MANUAL ─► NO_EMITIDA | EN_REVISION
+                      └─ APROBADA ─► enlace de un solo uso, 30 min (POLICY guarda su huella)
+                                     └─ ACL /notificaciones (plantilla enlace-firma) ─► EN_FIRMA
+página del enlace  ─► contrato en PDF (borrador) ─► acepta términos ─► firma (trazo | imagen | nombre)
+                      └─ ACL /firma/firmar ─► evidencia append-only + imagen ─► FIRMADA
+                      └─ W03-02b ─► W03-03 «Pagar»
+Pagar              ─► POLICY ─► PAYMENTS ─► ACL ─► stub POST /v1/sesiones-pago (vence a los 10 min)
+                      └─ el navegador va a la página de pago del stub (no es Solventa)
+página del stub    ─► tarjeta de crédito o débito ─► el stub tokeniza y cobra
+                      └─ animación ─► «Regresar al comercio» (?sesion=…)
+confirmarPago      ─► POLICY ─► PAYMENTS ─► ACL ─► stub GET /v1/sesiones-pago/{id}
+                      ├─ cobrado      ─► token cifrado + POLICY emite (EMITIDA, poliza.emitida) ─► W03-04
+                      │                  └─ Cloud Tasks: correo con el PDF firmado
+                      ├─ rechazado    ─► sesión nueva: otra tarjeta
+                      └─ falla o calla ─► se concilia; «Reintentar» (al 3.er fallo seguido: otra tarjeta)
+```
+
+**Decisiones nuevas** (2026-10-27):
+
+| # | Tema | Decisión | Estado |
+|---|---|---|---|
+| W03-19 | Quién inicia el proceso | **Por ahora siempre hay un ASESOR**: él acepta la oferta, pide el código y pulsa «Emitir». El autoservicio del CLIENTE queda fuera | **Cerrada** |
+| W03-20 | Identidad del firmante | **Código por correo** (POLICY lo genera y lo envía por el ACL) que **el ASESOR digita en el modal**. Detalles propuestos: 6 dígitos, se guarda su huella (HMAC), vence a los 10 min, admite 5 intentos y pedir otro anula el anterior | **Cerrada**; los detalles, Propuesta |
+| W03-21 | Cuándo decide UNDER | **Al pulsar «Emitir»**, antes de enviar el enlace. Así no firma quien luego se rechaza (sigue W03-2) y la decisión no consume el plazo del pago | Propuesta |
+| W03-22 | Enlace de firma | Token aleatorio de un solo uso por propuesta; POLICY guarda solo su huella. **Vence a los 30 min y cubre todo el proceso**, desde abrir el contrato hasta la póliza emitida y la descarga del PDF. Un enlace nuevo anula el anterior. Vencido, se muestra un estado vacío: el ASESOR reenvía y el cliente **retoma donde iba**. Una sesión de pago abierta antes de vencer se acepta al regresar, para no perder un cobro hecho | **Cerrada** (los 30 min y el alcance); lo demás, Propuesta |
+| W03-23 | Cómo viaja el token del enlace | En el **fragmento** de la URL (`/firma#t=…`), que el navegador no envía al servidor y que no queda en los logs. La web lo lee y lo manda en una cabecera (`X-Enlace-Firma`) | Propuesta |
+| W03-24 | Modos de firma | Trazo con el mouse (llega como PNG), imagen **PNG o JPG** validada o **nombre estilizado** (se guarda el modo y el texto; el PDF lo dibuja con una fuente). **POLICY valida la imagen**: tipo real por su contenido, tamaño y dimensiones máximos (propuesto: 500 KB, 1200×600) y bordes blancos o transparentes (Pillow). La imagen se guarda **cifrada en POLICY** (no existe el servicio de almacenamiento) y se estampa en el PDF final | **Cerrada** (los modos); los límites, Propuesta |
+| W03-25 | Contacto según el rol | **CLIENTE:** POLICY lo lee de AUTH al usarlo, como hoy (W03-16), y no lo copia. **ASESOR:** el nombre y el correo vienen de W01-01 y se guardan **cifrados en la propuesta**. La propuesta guarda de dónde sale el contacto. El modal muestra el correo enmascarado y deja corregirlo | **Cerrada** |
+| W03-26 | Retención del contacto de quien no es cliente | Sigue al consentimiento. Si el consentimiento **vence o se revoca antes de emitir**, la propuesta pasa a `CANCELADA` y se borran el nombre, el correo y la imagen de la firma; la evidencia conserva la huella, la versión y el sello. Al revocar, el BFF avisa a POLICY (como ya avisa al ACL). Al vencer, lo borra **una pasada diaria con Cloud Scheduler**. **Con la póliza emitida, el contacto se conserva por el contrato** | **Cerrada** |
+| W03-27 | Registro del CLIENTE | `crearUsuario` de un CLIENTE **exige cédula y correo**. La cédula se guarda como `titular_id` (el HMAC del consentimiento) más el documento cifrado. **Los usuarios de prueba se recrean** (no hay migración de datos) | **Cerrada** |
+| W03-28 | Pasarela | **El stub `pasarela` no es parte de Solventa**: simula a PayU o Stripe. Sirve **su propia página de pago** (*checkout* alojado, en su origen) con: <br>• **solo tarjeta de crédito o débito**, sin PSE, porque PSE no deja un token para el cobro recurrente; <br>• sesión de **10 min** que se puede reabrir si vence; <br>• animación de «pagando» y botón «Regresar al comercio». <br>El stub **tokeniza**. Solventa nunca ve un dato de tarjeta y **confirma el pago de servidor a servidor**, sin confiar en la redirección | **Cerrada** |
+| W03-29 | Plazo de 700 ms | Solo aplica a **las dos llamadas de pago**: crear la sesión y confirmar al regresar (con la emisión). Leer, firmar y llenar la pasarela son tiempos del cliente. La pasarela entra en `PROVEEDORES_RUTA_SINCRONA` con su presupuesto (W03-13) | **Cerrada**; el presupuesto, Propuesta |
+| W03-30 | Fallos del pago | **Falla la pasarela** (error, caída o sin respuesta): se ofrece «Reintentar», que **concilia antes** de cobrar. Al **3.er fallo seguido**, se pide otra tarjeta. **Rechazo:** sesión nueva con otra tarjeta, sin perder la firma. El contador lo lleva PAYMENTS por propuesta. **El reintento de fondo (`/cobros/_reintentar`) no toca estos cobros**: un pendiente abandonado solo se concilia y, si salió pagado, se emite | **Cerrada** (el comportamiento) |
+| W03-31 | Pantallas | <br>• W03-02, 02b y 03 sin perfil ni migas. <br>• W03-02 muestra el contrato en PDF. <br>• W03-03 cambia «Ir al inicio» por «Pagar». <br>• W03-04 quita «Ir al inicio» y «Descargar documento» abre el PDF en una pestaña nueva. <br>• W03-05 no se construye. <br>Textos por corregir: W03-02b dice que se cobra «junto con la cuota del crédito» y que la póliza se emite al confirmar la firma; W03-03 dice que el cobro sigue «en segundo plano» y que hubo una «validación biométrica» | **Cerrada** |
+
+**Criterios de aceptación propuestos** (cambio de KAN-26; Felipe los ajusta en Jira, porque el texto oficial vive en el `.docx` del Sprint 2):
+
+| CA | Texto propuesto |
+|---|---|
+| 01 | Sin cambios |
+| 02 | El cliente, desde el enlace de firma, ve el **contrato en PDF** y la autorización de cobro recurrente. Firmar solo se habilita al aceptar los términos. La firma puede ser **dibujada, una imagen PNG o JPG validada** (tipo, tamaño y fondo blanco o transparente) **o su nombre estilizado** |
+| 03 | Evidencia append-only (hash, titular, actor, sello de tiempo, identificador del proveedor), más la **verificación de identidad por código** y la **imagen de la firma**, estampada en la póliza. Firma siempre el titular, desde su enlace; el asesor no firma |
+| 04 | Primera prima cobrada **una sola vez** aunque el cliente reintente, regrese de la pasarela varias veces o cambie de tarjeta |
+| 05 | Si la firma, el KYC o la pasarela superan su tiempo o fallan, el circuito abre, **nunca llega un 5xx** y el cliente ve qué hacer. Si **falla la pasarela** se ofrece reintentar, y al **3.er fallo seguido** se pide otra tarjeta. Un pago sin respuesta se **concilia** antes de reintentar |
+| 06 | Si la pasarela **rechaza** el pago, el cliente elige otra tarjeta de crédito o débito sin perder su firma |
+| 07 | Con el pago confirmado, la póliza queda `Emitida` con número y `poliza.emitida` **en la misma respuesta**. Desde el regreso de la pasarela hasta la póliza emitida: p95 ≤ 1,5 s y p99 ≤ 3 s en pico |
+| 08 | El cliente abre la póliza emitida **en una pestaña nueva** desde la confirmación, y el documento **firmado** le llega por correo **en segundo plano** |
+| 09 | Como hoy, más **nombre, correo, imagen de la firma y token del medio de pago** cifrados. **Solventa no recibe ningún dato de tarjeta**: se capturan en la página de la pasarela |
+| 10 | Como hoy, sumando **la pasarela** |
+| 11 (nuevo) | El asesor envía un **código al correo** del cliente y lo digita en el modal; solo con el código válido se habilita «Emitir». El código vence en minutos y admite pocos intentos |
+| 12 (nuevo) | «Emitir» envía un **enlace de un solo uso vigente 30 min** que cubre la firma, el pago y la póliza emitida. Vencido, el cliente ve un estado vacío, el asesor puede reenviarlo y el cliente retoma donde iba. Un enlace nuevo anula el anterior |
+| 13 (nuevo) | «Pagar» abre la **página de la pasarela**, externa a Solventa, donde el cliente captura su tarjeta y paga en una sesión de **10 min** que se puede reabrir. Al **regresar al comercio**, Solventa **confirma el pago con la pasarela** |
+| 14 (nuevo) | El formulario W01-01 pide **nombre completo y correo** del cliente, que se usan para el código, el enlace, el documento y el aviso. Toca W01 (KAN-24); Felipe decide dónde se registra |
+
+**Qué cambia, por servicio** (propuesto):
+
+| # | Dónde | Cambio |
+|---|---|---|
+| 1 | `contracts` | **v0.17**, solo aditivo: <br>• `aceptarOferta` suma el argumento opcional `contacto: ContactoTitularInput` (nombre y correo), que el BFF exige a un ASESOR; <br>• mutaciones del ASESOR: `enviarCodigoVerificacion`, `verificarCodigo`, `emitirPropuesta` y `reenviarEnlaceFirma`; <br>• operaciones del enlace, sin sesión y con el token en `X-Enlace-Firma`: `firmaPorEnlace` (estado, documento y si venció), `firmarPorEnlace` (versión, términos, autorización de cobro, modo y firma), `iniciarPago` (devuelve la URL de la pasarela) y `confirmarPago` (por id de sesión; devuelve la póliza o qué hacer); <br>• estados nuevos de `Propuesta`: `IDENTIDAD_VERIFICADA`, `EN_FIRMA`, `FIRMADA` y `CANCELADA` (aviso al frontend: un enum de salida que crece); <br>• `CrearUsuarioInput.documentoIdentidad`. <br>Plantillas `codigo-verificacion` y `enlace-firma` en el contrato de notificaciones. W07 tomará la versión siguiente |
+| 2 | `stubs/pasarela` | Página de pago propia, en HTML sencillo servido por el FastAPI del stub y en su origen: <br>• **`POST /v1/sesiones-pago`** (monto, referencia idempotente, URL de retorno; devuelve el id y la URL; vence a los 10 min); <br>• **`GET /v1/sesiones-pago/{id}`** (estado, token del medio, marca y tipo); <br>• la página, que captura la tarjeta (Luhn, fecha y CVV, solo en memoria y nunca en logs), **tokeniza** (`tok_…`), cobra, anima y vuelve con «Regresar al comercio»; <br>• tarjetas de prueba al estilo de Stripe (una aprueba, otra rechaza) y los modos de falla de siempre (`sano`, `lento`, `error`, `caido`, `rechaza`); <br>• el cobro con token (`/v1/cobros`) se mantiene para los cobros recurrentes. <br>El README dice que el stub **no es parte de Solventa** |
+| 3 | `acl-worker` | El puerto de la pasarela suma `crear_sesion_pago` y `consultar_sesion_pago`, en el adaptador principal y en el alterno (EC031). La pasarela entra en la ruta síncrona con su presupuesto (W03-13) |
+| 4 | `payments` | Migración `0008` (solo expandir): <br>• `sesiones_pago` (propuesta, intento, id del proveedor, estado, vencimiento y fallos seguidos); <br>• `medios_pago` (token cifrado, marca y tipo crédito o débito; **ni número ni últimos dígitos**); <br>• `cobros.origen` (`INTERACTIVO` o `RECURRENTE`), para que `_reintentar` excluya los interactivos. <br>Endpoints: `POST /sesiones-pago`, `POST /sesiones-pago/{id}/confirmar` (concilia, cuenta fallos y nunca da 5xx) y la reapertura de una sesión vencida. El cobro sigue idempotente por intento, y cada tarjeta nueva es un intento nuevo (`uuid5(propuesta, n)`) |
+| 5 | `auth` | Migración `0008` (solo expandir): `usuarios.titular_id` y `documento_cifrado`. `crearUsuario` de un CLIENTE exige cédula y correo. Se recrean los usuarios de prueba. **Choca con la `0008` de M01**: la toma quien llegue primero |
+| 6 | `policy` | Migración `0007` (solo expandir): <br>• en `propuestas`: `origen_contacto`, `nombre_cifrado`, `correo_cifrado` y `contacto_borrado_en`; <br>• tablas `verificaciones_identidad` (huella, vencimiento, intentos, verificada) y `enlaces_firma` (huella, vencimiento, anulado); <br>• en `evidencias_firma`: `modo_firma` y `imagen_firma_cifrada`. <br>Servicios: código, verificación, «Emitir» (UNDER + enlace), firma por enlace con la validación de la imagen, **emisión síncrona** al confirmar el pago y aviso por Cloud Tasks (`_emitir` queda solo para el aviso). El PDF estampa la firma y sale por el token del enlace. `POST /_purgar-contactos` (Cloud Scheduler) y la purga al revocar. Se quitan `contacto_de` y `nombre_de` cuando el origen es la propuesta |
+| 7 | `bff` | `aceptarOferta` con el contacto según el rol (el ASESOR lo exige). Mutaciones del ASESOR. Operaciones del enlace **sin sesión**, autorizadas solo por el token. Revocar el consentimiento avisa también a POLICY. Ruta del PDF por enlace. `mensajeEstado` con los estados nuevos |
+| 8 | `infra` | <br>• Rutas nuevas en Envoy y en API Gateway; <br>• la página del stub debe **llegar al navegador** (ingreso público solo para `stub-pasarela` en staging); <br>• Cloud Scheduler para la purga diaria; <br>• `policy → payments` en `.github/servicios.json`. <br>Sin recursos que cobren por hora |
+| 9 | `tests` | Unitarias por servicio; carpeta 6 de Newman (código, enlace vencido, tres modos de firma, imagen inválida, pago aprobado, rechazado, 3 fallos y pago sin respuesta conciliado); k6 de EC005 y EC007 medido desde el regreso de la pasarela; EC022 del contacto, la imagen y el token |
+
+**Front (`solventa-frontend-web`), para su propio plan:**
+
+- W01-01 suma nombre y correo.
+- Modal del ASESOR: código, «Emitir» y reenvío.
+- Página del enlace: W03-02 con el PDF, los tres modos de firma y el estado vacío; luego W03-02b, W03-03 con «Pagar» y W03-04.
+- Las correcciones de W03-31.
+
+**Orden sugerido:**
+
+1. Contrato.
+2. Stub de la pasarela y ACL.
+3. PAYMENTS.
+4. AUTH.
+5. POLICY.
+6. BFF.
+7. Infra.
+8. Pruebas.
+
+**Riesgos:**
+
+- **El pago cruza cinco saltos** (gateway, BFF, POLICY, PAYMENTS y ACL) hasta la pasarela, y después emite. Hay que medir si cabe en 700 ms. Si no cabe, se baja el presupuesto de la pasarela o BFF llama a PAYMENTS directo.
+- **El token del enlace autoriza sin sesión.** Si se filtra, se puede firmar o pagar mientras esté vigente. Lo acotan el código previo, el vencimiento de 30 min y que un enlace nuevo anula el anterior.
+- **La imagen de la firma es un dato personal** que no existía. Va cifrada y entra en EC022.
+- **Exponer el stub al navegador en staging** es una superficie nueva, aunque sin datos reales.
+- **CA-W03-05, 07 y 08 cambian de texto** y EC005 se mide desde otro punto. Hay que alinearlo con el equipo.
+
+**Fuera de este bloque:**
+
+- PSE;
+- los cobros recurrentes con el token guardado;
+- el autoservicio del CLIENTE;
+- los huecos de RISK: el perfil no vence y el batch no revisa el consentimiento. Se abren aparte.
+
 ## Cambios en despliegue, infraestructura y pipelines
 
 | Dónde | Cambio | Bloque | Costo |
@@ -246,12 +390,13 @@ Terraform se aplica desde el pipeline al hacer merge a `main` (ADR-09); nadie lo
 | 6 · Pruebas y evidencia | **Hecho en local (2026-10-24), rama `feat/KAN-216-hu-w03-bloque-6-pruebas-evidencia`; falta staging** | k6 `ec005-emision.js` y `ec007-emision-pico.js`, colección Newman `hu-w03.postman_collection.json` (78 peticiones por el gateway) y tablero `hu-w03.json`. **Medido en local con el compose** (informes en `docs/evidencias/`): EC005 p95 370 ms con 301 emisiones, todas `EMITIDA` (umbral 1,5 s); EC007 p99 1.042 ms con 479 emisiones, todas `EMITIDA`, máximo 2.558 ms sin causa identificada (umbral 3 s); 0 % de 5xx; Newman dos veces seguidas sin fallos (153 aserciones). **Supuestos:** la carga (1 firma por segundo, 3× en pico) no está definida en el repo; local emite en línea, sin Cloud Tasks ni arranques en frío, así que es un piso optimista. **Hallazgos:** con la firma caída el primer intento por el gateway da 504 (corte de 700 ms); el BACKOFFICE recibe 403 al pedir el PDF (decisión del bloque 5; el CA-W03-08 oficial sólo habla del cliente, sin conflicto). **Ya estaban** las pruebas de contrato de `poliza.emitida` y del esquema, y la de reemplazo de adaptador de firma (EC031). **Falta:** la corrida en staging, confirmar la carga oficial y decidir si `policy`, `under` y los stubs de firma, KYC y notificaciones pasan a `instancia_fija` (cobra por hora) |
 | 7 · Brechas contra los criterios oficiales | **Hecho en código y en local (2026-10-24); falta una decisión y staging** | Hechas las filas 1 (PR #280), 2 y 3 (PR #281), 5 (PR #282, con su Cloud Scheduler), 6 (PR #283), 4 y 8 (contrato v0.15). Decididas: W03-13 y W03-14. **Decidida:** la fila 7 (W03-16: el aviso llevará el PDF, bloque 8 planeado). **Por ajustar:** los textos de W03-15, que son una propuesta. **Parcial:** la fila 9 (lo que no necesita staging está hecho; Cloud Tasks real, el `plan` completo y EC005/EC007 esperan una liberación a `main`). Ver el bloque 7 |
 | 8 · PDF adjunto al aviso | **Hecho en código y en local (2026-10-24); falta staging** | W03-16 a W03-18 cerradas y las ocho filas hechas: contrato v0.16, AUTH (`0007`), BFF, ACL, stub, POLICY (`0006`), infra y pruebas. **Falta:** una liberación a `main` para verlo en staging, el `plan` completo de Terraform (pide la llave de MongoDB Atlas), Cloud KMS real y una pantalla en Web para que el cliente deje su contacto (W03-17): **mientras no exista, ningún cliente tiene contacto y su aviso se omite**. Detalle abierto que no bloquea: con correo y teléfono el aviso va por correo. Ver el bloque 8 |
+| 9 · Firma y pago interactivos | **Planeado (2026-10-27), sin empezar**; rama `feat/KAN-26-firma-y-pago-interactivos` | Decisiones W03-19 a W03-31 y los CA propuestos en el bloque 9. Reemplaza el cobro en segundo plano y el token por configuración |
 
 ## Decisiones abiertas
 
 - Ligar al usuario con el titular de la oferta: hoy un CLIENTE solo acepta lo que él mismo consintió (si el consentimiento guarda su actor), pero AUTH no sabe de qué documento es titular el usuario. Mientras tanto `Query.oferta` queda en `null`.
 - Confirmar W03-1, 3 a 6 y 8 a 12 y los CA propuestos. W03-7 (Pub/Sub) quedó sin ejecutar: si el equipo quiere eventos reales, ampliar W05-8.
 - Qué pasa con una propuesta en `PAGO_RECHAZADO` o `PENDIENTE_PAGO` agotado: hoy quedan así y alguien del back-office debe resolverlas; no hay pantalla ni tarea que las reabra.
-- De dónde sale realmente el `tokenMedioPago` cuando la prima va con la cuota del crédito (convenio de recaudo): hoy es una
-  configuración simulada.
-- Diseñar en Figma la pantalla de resultado del pago (cobrado, en proceso, rechazado): el prototipo no la tiene.
+- ~~De dónde sale realmente el `tokenMedioPago`~~: resuelto en el bloque 9 (W03-28). Lo genera la pasarela al capturar la tarjeta.
+- ~~Diseñar en Figma la pantalla de resultado del pago~~: resuelto en el bloque 9. La muestra la página de la pasarela y luego W03-04.
+- Bloque 9: los detalles propuestos (código, límites de la imagen, presupuesto de la pasarela) y dónde se registra el CA-W03-14 (W01 o W03).
