@@ -137,6 +137,19 @@ class PuertoPolicy(Protocol):
     ) -> dict: ...
 
 
+class PuertoAlmacenamiento(Protocol):
+    """KAN-250. Cada llamada lleva el actor (rol e id del token); ALMACENAMIENTO decide con el
+    catálogo de tipos quién sube y quién lee. Un rechazo llega como `ArchivoRechazado`."""
+
+    async def solicitar_subida(self, rol: str, actor_id: str, solicitud: dict) -> dict: ...
+
+    async def confirmar(self, rol: str, actor_id: str, archivo_id: str) -> dict: ...
+
+    async def obtener(self, rol: str, actor_id: str, archivo_id: str) -> dict | None: ...
+
+    async def descarga(self, rol: str, actor_id: str, archivo_id: str) -> dict: ...
+
+
 class PuertoPayments(Protocol):
     async def listar_cobros(
         self,
@@ -159,6 +172,7 @@ class Clientes:
     rating: PuertoRating
     payments: PuertoPayments
     policy: PuertoPolicy
+    almacenamiento: PuertoAlmacenamiento
 
 
 async def _pedir(
@@ -575,6 +589,58 @@ class ClientePaymentsHttp:
         return respuesta.json()
 
 
+class ArchivoRechazado(Exception):
+    """ALMACENAMIENTO rechazó la operación; `codigo` es el de su respuesta."""
+
+    def __init__(self, codigo: str) -> None:
+        super().__init__(codigo)
+        self.codigo = codigo
+
+
+class ClienteAlmacenamientoHttp:
+    """Archivos (KAN-250). Los bytes no pasan por aquí: solo URLs firmadas y metadatos."""
+
+    def __init__(self, cliente: httpx.AsyncClient) -> None:
+        self._cliente = cliente
+
+    async def _pedir(
+        self, metodo: str, ruta: str, rol: str, actor_id: str, cuerpo: dict | None = None
+    ) -> httpx.Response:
+        try:
+            respuesta = await self._cliente.request(
+                metodo,
+                ruta,
+                json=cuerpo,
+                headers={"X-Actor-Rol": rol, "X-Actor-Id": actor_id},
+            )
+        except httpx.HTTPError as error:
+            raise ErrorServicio(type(error).__name__) from error
+        if respuesta.status_code >= 500:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        if respuesta.is_error:
+            raise ArchivoRechazado(str(respuesta.json().get("detail", "SOLICITUD_INVALIDA")))
+        return respuesta
+
+    async def solicitar_subida(self, rol: str, actor_id: str, solicitud: dict) -> dict:
+        return (await self._pedir("POST", "/archivos/subidas", rol, actor_id, solicitud)).json()
+
+    async def confirmar(self, rol: str, actor_id: str, archivo_id: str) -> dict:
+        ruta = f"/archivos/{archivo_id}/confirmar"
+        return (await self._pedir("POST", ruta, rol, actor_id)).json()
+
+    async def obtener(self, rol: str, actor_id: str, archivo_id: str) -> dict | None:
+        try:
+            return (await self._pedir("GET", f"/archivos/{archivo_id}", rol, actor_id)).json()
+        except ArchivoRechazado as error:
+            if error.codigo in ("ARCHIVO_NO_ENCONTRADO", "NO_AUTORIZADO"):
+                return None
+            raise
+
+    async def descarga(self, rol: str, actor_id: str, archivo_id: str) -> dict:
+        ruta = f"/archivos/{archivo_id}/descarga"
+        return (await self._pedir("GET", ruta, rol, actor_id)).json()
+
+
 def construir_clientes(config: Configuracion) -> tuple[Clientes, list[httpx.AsyncClient]]:
     """Devuelve los clientes y los `httpx.AsyncClient` abiertos, para cerrarlos al apagar."""
 
@@ -591,6 +657,9 @@ def construir_clientes(config: Configuracion) -> tuple[Clientes, list[httpx.Asyn
     rating = http(config.rating_url, "rating", config.servicios_timeout_segundos)
     payments = http(config.payments_url, "payments", config.servicios_timeout_segundos)
     policy = http(config.policy_url, "policy", config.servicios_timeout_segundos)
+    almacenamiento = http(
+        config.almacenamiento_url, "almacenamiento", config.servicios_timeout_segundos
+    )
     clientes = Clientes(
         auth=ClienteAuthHttp(auth),
         acl=ClienteAclHttp(acl),
@@ -598,5 +667,6 @@ def construir_clientes(config: Configuracion) -> tuple[Clientes, list[httpx.Asyn
         rating=ClienteRatingHttp(rating),
         payments=ClientePaymentsHttp(payments),
         policy=ClientePolicyHttp(policy),
+        almacenamiento=ClienteAlmacenamientoHttp(almacenamiento),
     )
-    return clientes, [auth, acl, risk, rating, payments, policy]
+    return clientes, [auth, acl, risk, rating, payments, policy, almacenamiento]

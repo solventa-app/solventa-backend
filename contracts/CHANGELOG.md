@@ -207,3 +207,16 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Afecta al frontend: sí. Web debe construir la pantalla donde el cliente deja su correo y su teléfono (hoy no existe en
   Figma) y llamar a `actualizarContacto`; puede usar `tieneContacto` de `yo` o `iniciarSesion` para pedirlo. Hasta que un
   cliente tenga contacto, el aviso de su póliza sigue llevando solo el enlace. Los campos son opcionales: no rompen el codegen.
+
+## v0.17 — 2026-10-27
+
+- KAN-250 (habilitadora de almacenamiento de archivos, base de HU-M01 y de otras historias): tipos `Archivo`,
+  `EstadoArchivo`, `SubidaArchivo`, `EncabezadoSubida`, `DescargaArchivo`, `ErrorArchivo`, la entrada
+  `SolicitudSubidaArchivoInput` y las uniones `ResultadoSubidaArchivo`, `ResultadoArchivo` y
+  `ResultadoDescargaArchivo`. Consulta `archivo(id)`; mutaciones `solicitarSubidaArchivo`, `confirmarSubidaArchivo` y
+  `descargarArchivo`. Todas exigen token siempre. Solo cambios aditivos.
+- Los bytes no pasan por el BFF: el cliente hace `PUT` a la URL firmada con los `encabezados` devueltos y luego
+  confirma. El catálogo de tipos es `contracts/tipos-archivo.json`; eventos nuevos `archivo.disponible` y
+  `archivo.rechazado` (`contracts/events/`).
+- Afecta al frontend: sí, cuando una pantalla suba archivos (hoy ningún tipo activo lo sube un CLIENTE directamente).
+

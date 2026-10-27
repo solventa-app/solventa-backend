@@ -31,6 +31,24 @@ EN: dict[str, str] = {
         "We couldn't process the request. Please try again."
     ),
     "Usuario no encontrado.": "User not found.",
+    # Archivos (KAN-250)
+    "Este tipo de archivo no se admite.": "This file type isn't supported.",
+    "El formato del archivo no se admite.": "This file format isn't supported.",
+    "El archivo supera el tamaño permitido.": "The file exceeds the allowed size.",
+    "No tienes permiso para este archivo.": "You don't have permission for this file.",
+    "Aún no recibimos el archivo. Súbelo e intenta de nuevo.": (
+        "We haven't received the file yet. Upload it and try again."
+    ),
+    "Archivo no encontrado.": "File not found.",
+    "El archivo aún no está disponible.": "The file isn't available yet.",
+    "Indica a quién pertenece el archivo.": "Indicate who the file belongs to.",
+    "Este archivo requiere tu autorización vigente.": (
+        "This file requires your current authorization."
+    ),
+    "No pudimos procesar el archivo.": "We couldn't process the file.",
+    "No pudimos procesar el archivo. Intenta de nuevo.": (
+        "We couldn't process the file. Please try again."
+    ),
     "No pudimos consultar los cobros. Intenta de nuevo.": (
         "We couldn't load the payments. Please try again."
     ),

@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "tipos": [
+    {
+      "tipo": "onboarding-documento",
+      "descripcion": "Foto de una cara del documento de identidad (HU-M01, frente o reverso).",
+      "activo": true,
+      "tipos_contenido": ["image/jpeg", "image/png"],
+      "tamano_max_bytes": 5242880,
+      "quien_sube": ["servicio:onboarding"],
+      "quien_lee": ["servicio:onboarding"],
+      "propietario": "onboarding",
+      "requiere_consentimiento": true,
+      "retencion_dias": 30
+    },
+    {
+      "tipo": "onboarding-rostro",
+      "descripcion": "Fotograma frontal de la prueba de vida (HU-M01).",
+      "activo": true,
+      "tipos_contenido": ["image/jpeg"],
+      "tamano_max_bytes": 2097152,
+      "quien_sube": ["servicio:onboarding"],
+      "quien_lee": ["servicio:onboarding"],
+      "propietario": "onboarding",
+      "requiere_consentimiento": true,
+      "retencion_dias": 30
+    },
+    {
+      "tipo": "onboarding-video",
+      "descripcion": "Video corto de la prueba de vida (HU-M01, <= 10 s).",
+      "activo": true,
+      "tipos_contenido": ["video/mp4"],
+      "tamano_max_bytes": 15728640,
+      "quien_sube": ["servicio:onboarding"],
+      "quien_lee": ["servicio:onboarding"],
+      "propietario": "onboarding",
+      "requiere_consentimiento": true,
+      "retencion_dias": 30
+    },
+    {
+      "tipo": "poliza-pdf",
+      "descripcion": "Ejemplo, desactivado: la póliza en PDF se genera al pedirla y no se guarda (decisión W03-9).",
+      "activo": false,
+      "tipos_contenido": ["application/pdf"],
+      "tamano_max_bytes": 2097152,
+      "quien_sube": ["servicio:policy"],
+      "quien_lee": ["BACKOFFICE", "servicio:policy"],
+      "propietario": "poliza",
+      "requiere_consentimiento": false,
+      "retencion_dias": null
+    }
+  ]
+}

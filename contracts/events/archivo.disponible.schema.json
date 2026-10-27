@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/archivo.disponible/v1",
+  "title": "archivo.disponible",
+  "description": "ALMACENAMIENTO validó un archivo subido (tamaño, tipo de contenido y firma de sus primeros bytes) y ya se puede leer. Pub/Sub lleva el atributo `tipoArchivo` para que cada HU filtre su suscripción. Sin datos personales: solo identificadores opacos (KAN-250).",
+  "type": "object",
+  "required": ["eventId", "tipo", "version", "ocurridoEn", "datos"],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "tipo": { "const": "archivo.disponible" },
+    "version": { "const": 1 },
+    "ocurridoEn": { "type": "string", "format": "date-time" },
+    "datos": {
+      "type": "object",
+      "required": ["archivoId", "tipoArchivo", "propietarioTipo", "propietarioId", "tipoContenido", "tamanoBytes"],
+      "additionalProperties": false,
+      "properties": {
+        "archivoId": { "type": "string" },
+        "tipoArchivo": { "type": "string", "description": "Un `tipo` de contracts/tipos-archivo.json." },
+        "propietarioTipo": { "enum": ["usuario", "onboarding", "poliza", "siniestro"] },
+        "propietarioId": { "type": "string" },
+        "tipoContenido": { "type": "string" },
+        "tamanoBytes": { "type": "integer", "minimum": 1 },
+        "derivadoDe": { "type": "string", "description": "El archivo del que sale este (linaje), si aplica." }
+      }
+    }
+  }
+}

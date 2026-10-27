@@ -39,6 +39,20 @@ resource "google_kms_crypto_key" "campos_personales" {
   }
 }
 
+# CMEK del bucket de archivos (almacenamiento.tf, KAN-250): llave aparte para rotarla y auditarla sin tocar la de
+# los campos personales. Solo la usa el agente de Cloud Storage.
+resource "google_kms_crypto_key" "archivos" {
+  count    = (var.crear_kms && var.crear_almacenamiento) ? 1 : 0
+  name     = "archivos"
+  key_ring = google_kms_key_ring.solventa[0].id
+
+  rotation_period = "7776000s" # 90 días
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 resource "google_kms_crypto_key_iam_member" "cifrado_servicios" {
   for_each      = local.servicios_con_kms
   crypto_key_id = google_kms_crypto_key.campos_personales[0].id

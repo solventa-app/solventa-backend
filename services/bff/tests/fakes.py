@@ -6,6 +6,7 @@ import uuid
 import jwt
 
 from app.clientes import (
+    ArchivoRechazado,
     Clientes,
     ErrorServicio,
     FirmaRechazada,
@@ -559,6 +560,75 @@ class PolicyFalso:
         )
 
 
+class AlmacenamientoFalso:
+    """ALMACENAMIENTO en memoria: un CLIENTE solo ve lo suyo."""
+
+    def __init__(self) -> None:
+        self.archivos: dict[str, dict] = {}
+        self.llamadas: list[tuple] = []
+        self.rechazo: str | None = None
+        self.error: Exception | None = None
+
+    def _revisar(self, *llamada) -> None:
+        self.llamadas.append(llamada)
+        if self.error is not None:
+            raise self.error
+        if self.rechazo is not None:
+            raise ArchivoRechazado(self.rechazo)
+
+    def _propio(self, rol: str, actor_id: str, archivo_id: str) -> dict:
+        archivo = self.archivos.get(archivo_id)
+        if archivo is None or (rol == "CLIENTE" and archivo["propietario_id"] != actor_id):
+            raise ArchivoRechazado("ARCHIVO_NO_ENCONTRADO")
+        return archivo
+
+    async def solicitar_subida(self, rol: str, actor_id: str, solicitud: dict) -> dict:
+        self._revisar("subida", rol, actor_id, solicitud)
+        archivo_id = f"arc-{len(self.archivos) + 1}"
+        archivo = {
+            "id": archivo_id,
+            "tipo": solicitud["tipo"],
+            "estado": "PENDIENTE",
+            "propietario_tipo": "usuario",
+            "propietario_id": solicitud["propietario_id"],
+            "tipo_contenido": solicitud["tipo_contenido"],
+            "tamano_bytes": None,
+            "motivo": None,
+            "creado_en": "2026-10-27T15:00:00+00:00",
+        }
+        self.archivos[archivo_id] = archivo
+        return {
+            "archivo": archivo,
+            "url": f"https://almacen.prueba/{archivo_id}?firma=subida",
+            "metodo": "PUT",
+            "encabezados": {"Content-Type": solicitud["tipo_contenido"]},
+            "vence_en": "2026-10-27T15:10:00+00:00",
+        }
+
+    async def confirmar(self, rol: str, actor_id: str, archivo_id: str) -> dict:
+        self._revisar("confirmar", rol, actor_id, archivo_id)
+        archivo = self._propio(rol, actor_id, archivo_id)
+        archivo.update(estado="DISPONIBLE", tamano_bytes=64)
+        return archivo
+
+    async def obtener(self, rol: str, actor_id: str, archivo_id: str) -> dict | None:
+        self._revisar("obtener", rol, actor_id, archivo_id)
+        try:
+            return self._propio(rol, actor_id, archivo_id)
+        except ArchivoRechazado:
+            return None
+
+    async def descarga(self, rol: str, actor_id: str, archivo_id: str) -> dict:
+        self._revisar("descarga", rol, actor_id, archivo_id)
+        archivo = self._propio(rol, actor_id, archivo_id)
+        if archivo["estado"] != "DISPONIBLE":
+            raise ArchivoRechazado("ARCHIVO_NO_DISPONIBLE")
+        return {
+            "url": f"https://almacen.prueba/{archivo_id}?firma=descarga",
+            "vence_en": "2026-10-27T15:05:00+00:00",
+        }
+
+
 def clientes_falsos(
     auth: AuthFalso | None = None,
     acl: AclFalso | None = None,
@@ -566,6 +636,7 @@ def clientes_falsos(
     rating: RatingFalso | None = None,
     payments: PaymentsFalso | None = None,
     policy: PolicyFalso | None = None,
+    almacenamiento: AlmacenamientoFalso | None = None,
 ) -> Clientes:
     return Clientes(
         auth=auth or AuthFalso(),
@@ -574,4 +645,5 @@ def clientes_falsos(
         rating=rating or RatingFalso(),
         payments=payments or PaymentsFalso(),
         policy=policy or PolicyFalso(),
+        almacenamiento=almacenamiento or AlmacenamientoFalso(),
     )

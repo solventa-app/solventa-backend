@@ -36,7 +36,7 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - ./dev/postgres:/docker-entrypoint-initdb.d:ro   # crea una base por servicio (auth, payments, policy)
+      - ./dev/postgres:/docker-entrypoint-initdb.d:ro   # crea una base por servicio (auth, payments, policy, almacenamiento)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -52,6 +52,15 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Emulador de Cloud Storage para el servicio `almacenamiento` (KAN-250). No revisa firmas ni rangos de tamaño y no
+  # emite notificaciones: el servicio vuelve a medir todo al confirmar (ver services/almacenamiento/README.md).
+  # `-public-host` es la dirección con la que el cliente (navegador, emulador móvil) llega a las URLs firmadas.
+  fake-gcs:
+    image: fsouza/fake-gcs-server:1.52.2
+    command: ["-scheme", "http", "-port", "4443", "-public-host", "localhost:4443", "-external-url", "http://localhost:4443"]
+    ports:
+      - "${FAKE_GCS_PORT:-4443}:4443"
 
   mongo1:
     image: mongo:7.0
@@ -124,6 +133,7 @@ services:
       RATING_URL: http://rating:8003
       PAYMENTS_URL: http://payments:8004
       POLICY_URL: http://policy:8007
+      ALMACENAMIENTO_URL: http://almacenamiento:8009
       # Solo local: el repo es público. En Cloud Run llega de Secret Manager (clave-cliente-id).
       CLIENTE_ID_CLAVE: solo-local-no-secreta
       # Mismo valor que AUTH (firma HS256). Solo local; en Cloud Run llega de Secret Manager (clave-jwt).
@@ -266,6 +276,34 @@ services:
       postgres: { condition: service_healthy }
       migrar-policy: { condition: service_completed_successfully }
       auth: { condition: service_healthy }
+
+  migrar-almacenamiento:
+    <<: *tarea
+    image: solventa/almacenamiento:local
+    build: ./services/almacenamiento
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/almacenamiento
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  almacenamiento:
+    <<: *servicio
+    image: solventa/almacenamiento:local
+    build: ./services/almacenamiento
+    ports: ["8009:8009"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/almacenamiento
+      # Local: firma con una llave de prueba contra el emulador (en Cloud Run: signBlob de IAM).
+      FIRMANTE: local
+      STORAGE_EMULATOR_HOST: http://fake-gcs:4443
+      ALMACEN_BUCKET: solventa-archivos-local
+      # Con el emulador de Android: http://10.0.2.2:4443 (y -public-host de fake-gcs igual).
+      ALMACEN_URL_PUBLICA: http://localhost:${FAKE_GCS_PORT:-4443}
+    depends_on:
+      postgres: { condition: service_healthy }
+      fake-gcs: { condition: service_started }
+      migrar-almacenamiento: { condition: service_completed_successfully }
 
   under:
     <<: *servicio
