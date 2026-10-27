@@ -33,7 +33,7 @@ Figma `Solventa-web-Final` (`yKWD8jrwERtJkuSj0mk0Gz`):
 
 | # | Ajuste | Decisión | Estado |
 |---|---|---|---|
-| W01-A1 | El formulario W01-01 pide **nombre completo y correo** del cliente | Cotizar **no los guarda**, porque RATING no los usa. Viajan en `aceptarOferta` y POLICY los guarda cifrados en la propuesta solo si acepta un ASESOR (W03-25). Es el CA-W03-14 propuesto | **Cerrada**; falta decidir si el CA se registra en W01 o en W03 |
+| W01-A1 | El formulario W01-01 pide **nombre completo y correo** del cliente | Cotizar **no los guarda**, porque RATING no los usa. Viajan en `aceptarOferta` y POLICY los guarda cifrados en la propuesta solo si acepta un ASESOR (W03-25). **Es un criterio nuevo de W01 (KAN-24)**, no de W03, porque el formulario es de W01 (decidido el 2026-10-27) | **Cerrada** |
 | W01-A2 | Revocar el consentimiento avisa a todos los que guardan datos del titular | Hoy el BFF solo avisa al ACL (`/fuentes/invalidar-cache`). Pasa a avisar también a **POLICY** (borra el contacto de las propuestas abiertas, W03-26) y a **RISK** (W01-A3). Son llamadas directas desde el BFF, como en el bloque 7 de W01: el evento `consentimiento.revocado` exigiría ampliar W05-8 (Pub/Sub solo para `perfil.actualizado`). Si un aviso falla, la revocación no falla: queda en el log y lo recoge la pasada diaria de W01-A4 | Propuesta |
 | W01-A3 | **Hueco de RISK: el perfil no se borra al revocar** | El perfil de MongoDB guarda `consentimiento_id` y `consentimiento_vence_en` al crearse (`POST /perfiles` pasa a recibirlos). `POST /perfiles/consentimiento-revocado` (`titular_id`) borra el perfil y su caché del score en Redis. Las pólizas emitidas no se afectan, porque la propuesta ya copió el `nivel_riesgo` | Propuesta |
 | W01-A4 | **Hueco de RISK: el perfil no vence** | Una pasada diaria (Cloud Scheduler hacia `POST /perfiles/_purgar`) borra los perfiles cuyo consentimiento venció. Los perfiles anteriores al cambio, sin `consentimiento_vence_en`, se tratan como vencidos a los 30 días de su `operation_time` | Propuesta |
@@ -44,7 +44,7 @@ Figma `Solventa-web-Final` (`yKWD8jrwERtJkuSj0mk0Gz`):
 
 ### 1.2 HU-W03 · Firma, cobro y emisión (KAN-26)
 
-Es el bloque 9 de `plan-completar-hu-w03.md` (W03-19 a W03-31 y los CA-W03-01 a 14 propuestos), sin la pasarela, que va
+Es el bloque 9 de `plan-completar-hu-w03.md` (W03-19 a W03-31 y los CA-W03-01 a 13 propuestos), sin la pasarela, que va
 en la sección 2. En resumen:
 
 | # | Ajuste | Dónde |
@@ -284,6 +284,8 @@ con el workflow «Costos staging».
 
 1. **El visto bueno de Felipe** sobre las decisiones marcadas como Propuesta: W01-A2 a A6, W05-A5, W07-5, 7, 15 y 17,
    los pesos nuevos de salud y los detalles de W03 (código, límites de la imagen, presupuesto de la pasarela).
-2. **Dónde se registra el CA-W03-14** (el formulario W01-01): en W01 o en W03.
-3. **Pasar a Jira** los CA nuevos y cambiados de KAN-26, y la nota de CA-W05-03.
-4. **Integrar en la v2 de W07** lo de la sección 3, en la rama `feat/KAN-30-socios-api`, cuando se retome.
+2. **Pasar a Jira:**
+   - los CA nuevos y cambiados de KAN-26;
+   - el criterio nuevo de KAN-24 (W01-01 pide nombre y correo, W01-A1);
+   - la nota de CA-W05-03.
+3. **Integrar en la v2 de W07** lo de la sección 3, en la rama `feat/KAN-30-socios-api`, cuando se retome.

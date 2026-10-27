@@ -309,7 +309,7 @@ confirmarPago      ─► POLICY ─► PAYMENTS ─► ACL ─► stub GET /v1/
 | 11 (nuevo) | El asesor envía un **código al correo** del cliente y lo digita en el modal; solo con el código válido se habilita «Emitir». El código vence en minutos y admite pocos intentos |
 | 12 (nuevo) | «Emitir» envía un **enlace de un solo uso vigente 30 min** que cubre la firma, el pago y la póliza emitida. Vencido, el cliente ve un estado vacío, el asesor puede reenviarlo y el cliente retoma donde iba. Un enlace nuevo anula el anterior |
 | 13 (nuevo) | «Pagar» abre la **página de la pasarela**, externa a Solventa, donde el cliente captura su tarjeta y paga en una sesión de **10 min** que se puede reabrir. Al **regresar al comercio**, Solventa **confirma el pago con la pasarela** |
-| 14 (nuevo) | El formulario W01-01 pide **nombre completo y correo** del cliente, que se usan para el código, el enlace, el documento y el aviso. Toca W01 (KAN-24); Felipe decide dónde se registra |
+| ~~14~~ | **Pasa a W01 (KAN-24), decidido el 2026-10-27:** el formulario W01-01 pide nombre completo y correo del cliente (W01-A1 de `docs/plan-hu-w07-y-ajustes.md`). No es un criterio de W03 |
 
 **Qué cambia, por servicio** (propuesto):
 
@@ -399,4 +399,4 @@ Terraform se aplica desde el pipeline al hacer merge a `main` (ADR-09); nadie lo
 - Qué pasa con una propuesta en `PAGO_RECHAZADO` o `PENDIENTE_PAGO` agotado: hoy quedan así y alguien del back-office debe resolverlas; no hay pantalla ni tarea que las reabra.
 - ~~De dónde sale realmente el `tokenMedioPago`~~: resuelto en el bloque 9 (W03-28). Lo genera la pasarela al capturar la tarjeta.
 - ~~Diseñar en Figma la pantalla de resultado del pago~~: resuelto en el bloque 9. La muestra la página de la pasarela y luego W03-04.
-- Bloque 9: los detalles propuestos (código, límites de la imagen, presupuesto de la pasarela) y dónde se registra el CA-W03-14 (W01 o W03).
+- Bloque 9: los detalles propuestos (código, límites de la imagen, presupuesto de la pasarela).
