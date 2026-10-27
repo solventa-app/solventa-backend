@@ -143,6 +143,7 @@ resource "google_cloud_run_v2_service" "servicio" {
     google_secret_manager_secret_version.database_url_auth,
     google_secret_manager_secret_version.database_url_payments,
     google_secret_manager_secret_version.database_url_policy,
+    google_secret_manager_secret_version.database_url_almacenamiento,
     google_secret_manager_secret_version.redis_url,
     google_secret_manager_secret_version.redis_url_apagado,
     google_secret_manager_secret_version.mongo_uri,
@@ -211,6 +212,20 @@ resource "google_cloud_run_v2_service" "servicio" {
       dynamic "env" {
         for_each = contains(tolist(local.servicios_con_kms), each.key) ? {
           KMS_KEY_NAME = google_kms_crypto_key.campos_personales[0].id
+        } : {}
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      # Almacenamiento de archivos (almacenamiento.tf, KAN-250): el bucket y los temas de sus eventos. Sin esto el
+      # servicio arranca sano pero responde 503 ALMACEN_NO_CONFIGURADO.
+      dynamic "env" {
+        for_each = (each.key == "almacenamiento" && local.almacenamiento_activo) ? {
+          ALMACEN_BUCKET                 = google_storage_bucket.archivos[0].name
+          PUBSUB_TEMA_ARCHIVO_DISPONIBLE = google_pubsub_topic.archivo["archivo-disponible"].id
+          PUBSUB_TEMA_ARCHIVO_RECHAZADO  = google_pubsub_topic.archivo["archivo-rechazado"].id
         } : {}
         content {
           name  = env.key

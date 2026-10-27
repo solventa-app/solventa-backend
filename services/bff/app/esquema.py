@@ -28,7 +28,7 @@ from strawberry.extensions import MaskErrors
 from strawberry.types import Info
 
 from app.autenticacion_usuarios import MENSAJE_SIN_PERMISO, MENSAJE_SIN_SESION, UsuarioActual
-from app.clientes import ErrorServicio, SolicitudInvalida
+from app.clientes import ArchivoRechazado, ErrorServicio, SolicitudInvalida
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.idioma import TraducirMensajes
 from app.monedas import (
@@ -655,6 +655,111 @@ def _usuario(datos: dict) -> Usuario:
     )
 
 
+# ---------- Archivos (KAN-250) ----------
+
+
+@strawberry.enum
+class EstadoArchivo(Enum):
+    PENDIENTE = "PENDIENTE"
+    DISPONIBLE = "DISPONIBLE"
+    RECHAZADO = "RECHAZADO"
+    ELIMINADO = "ELIMINADO"
+
+
+@strawberry.type
+class Archivo:
+    id: strawberry.ID
+    tipo: str
+    estado: EstadoArchivo
+    tipo_contenido: str
+    tamano_bytes: int | None
+    motivo: str | None
+    creado_en: datetime
+
+
+@strawberry.type
+class EncabezadoSubida:
+    nombre: str
+    valor: str
+
+
+@strawberry.type
+class SubidaArchivo:
+    archivo: Archivo
+    url: str
+    metodo: str
+    encabezados: list[EncabezadoSubida]
+    vence_en: datetime
+
+
+@strawberry.type
+class DescargaArchivo:
+    url: str
+    vence_en: datetime
+
+
+@strawberry.type
+class ErrorArchivo:
+    codigo: str
+    mensaje: str
+
+
+ResultadoSubidaArchivo = Annotated[
+    SubidaArchivo | ErrorArchivo, strawberry.union("ResultadoSubidaArchivo")
+]
+ResultadoArchivo = Annotated[Archivo | ErrorArchivo, strawberry.union("ResultadoArchivo")]
+ResultadoDescargaArchivo = Annotated[
+    DescargaArchivo | ErrorArchivo, strawberry.union("ResultadoDescargaArchivo")
+]
+
+
+@strawberry.input
+class SolicitudSubidaArchivoInput:
+    tipo: str
+    tipo_contenido: str
+    tamano_bytes: int
+    propietario_id: strawberry.ID | None = None
+    consentimiento_id: strawberry.ID | None = None
+
+
+def _archivo(datos: dict) -> Archivo:
+    return Archivo(
+        id=strawberry.ID(datos["id"]),
+        tipo=datos["tipo"],
+        estado=EstadoArchivo(datos["estado"]),
+        tipo_contenido=datos["tipo_contenido"],
+        tamano_bytes=datos.get("tamano_bytes"),
+        motivo=datos.get("motivo"),
+        creado_en=datetime.fromisoformat(datos["creado_en"]),
+    )
+
+
+# Mensaje para mostrar por código de ALMACENAMIENTO; el código viaja tal cual en `codigo`.
+MENSAJES_ARCHIVO = {
+    "TIPO_NO_ADMITIDO": "Este tipo de archivo no se admite.",
+    "TIPO_CONTENIDO_NO_ADMITIDO": "El formato del archivo no se admite.",
+    "TAMANO_NO_ADMITIDO": "El archivo supera el tamaño permitido.",
+    "NO_AUTORIZADO": "No tienes permiso para este archivo.",
+    "OBJETO_NO_SUBIDO": "Aún no recibimos el archivo. Súbelo e intenta de nuevo.",
+    "ARCHIVO_NO_ENCONTRADO": "Archivo no encontrado.",
+    "ARCHIVO_NO_DISPONIBLE": "El archivo aún no está disponible.",
+    "PROPIETARIO_INVALIDO": "Indica a quién pertenece el archivo.",
+    "CONSENTIMIENTO_REQUERIDO": "Este archivo requiere tu autorización vigente.",
+}
+MENSAJE_ARCHIVO_GENERICO = "No pudimos procesar el archivo."
+MENSAJE_ARCHIVOS_NO_DISPONIBLES = "No pudimos procesar el archivo. Intenta de nuevo."
+
+
+def _error_archivo(codigo: str) -> ErrorArchivo:
+    return ErrorArchivo(
+        codigo=codigo, mensaje=MENSAJES_ARCHIVO.get(codigo, MENSAJE_ARCHIVO_GENERICO)
+    )
+
+
+def _almacenamiento(info: Info):
+    return info.context["clientes"].almacenamiento
+
+
 # ---------- Operaciones ----------
 
 
@@ -703,6 +808,18 @@ RESUMEN_CANAL = {
 
 @strawberry.type
 class Query:
+    @strawberry.field
+    async def archivo(self, info: Info, id: strawberry.ID) -> Archivo | None:
+        """KAN-250: el archivo si existe y quien pregunta puede leerlo (decide ALMACENAMIENTO)."""
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True)
+        try:
+            datos = await _almacenamiento(info).obtener(usuario.rol, usuario.id, str(id))
+        except ArchivoRechazado:
+            return None
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_ARCHIVOS_NO_DISPONIBLES) from error
+        return _archivo(datos) if datos else None
+
     @strawberry.field
     async def oferta(self, info: Info, id: strawberry.ID) -> Oferta | None:
         """La oferta que RATING guardó (CA-W03-01), p. ej. para «ver fuentes» al aceptarla. `null`
@@ -1068,6 +1185,64 @@ class Mutation:
         if datos is None:
             return ErrorUsuario(mensaje=MENSAJE_USUARIO_NO_ENCONTRADO)
         return _usuario(datos)
+
+    @strawberry.mutation
+    async def solicitar_subida_archivo(
+        self, info: Info, entrada: SolicitudSubidaArchivoInput
+    ) -> ResultadoSubidaArchivo:
+        """KAN-250: URL firmada para subir directo al almacén. Un CLIENTE sube siempre a su
+        nombre; el resto indica el propietario."""
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True)
+        propietario = usuario.id if usuario.rol == "CLIENTE" else entrada.propietario_id
+        if not propietario:
+            return _error_archivo("PROPIETARIO_INVALIDO")
+        solicitud = {
+            "tipo": entrada.tipo,
+            "tipo_contenido": entrada.tipo_contenido,
+            "tamano_bytes": entrada.tamano_bytes,
+            "propietario_id": str(propietario),
+            "consentimiento_id": str(entrada.consentimiento_id)
+            if entrada.consentimiento_id
+            else None,
+        }
+        try:
+            datos = await _almacenamiento(info).solicitar_subida(usuario.rol, usuario.id, solicitud)
+        except ArchivoRechazado as error:
+            return _error_archivo(error.codigo)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_ARCHIVOS_NO_DISPONIBLES) from error
+        return SubidaArchivo(
+            archivo=_archivo(datos["archivo"]),
+            url=datos["url"],
+            metodo=datos["metodo"],
+            encabezados=[
+                EncabezadoSubida(nombre=nombre, valor=valor)
+                for nombre, valor in datos["encabezados"].items()
+            ],
+            vence_en=datetime.fromisoformat(datos["vence_en"]),
+        )
+
+    @strawberry.mutation
+    async def confirmar_subida_archivo(self, info: Info, id: strawberry.ID) -> ResultadoArchivo:
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True)
+        try:
+            datos = await _almacenamiento(info).confirmar(usuario.rol, usuario.id, str(id))
+        except ArchivoRechazado as error:
+            return _error_archivo(error.codigo)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_ARCHIVOS_NO_DISPONIBLES) from error
+        return _archivo(datos)
+
+    @strawberry.mutation
+    async def descargar_archivo(self, info: Info, id: strawberry.ID) -> ResultadoDescargaArchivo:
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True)
+        try:
+            datos = await _almacenamiento(info).descarga(usuario.rol, usuario.id, str(id))
+        except ArchivoRechazado as error:
+            return _error_archivo(error.codigo)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_ARCHIVOS_NO_DISPONIBLES) from error
+        return DescargaArchivo(url=datos["url"], vence_en=datetime.fromisoformat(datos["vence_en"]))
 
 
 schema = strawberry.Schema(

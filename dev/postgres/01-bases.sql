@@ -2,3 +2,4 @@
 CREATE DATABASE auth;
 CREATE DATABASE payments;
 CREATE DATABASE policy;
+CREATE DATABASE almacenamiento;

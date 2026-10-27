@@ -252,3 +252,16 @@ variable "reconciliacion_cobros_cron" {
   type        = string
   default     = "*/15 * * * *"
 }
+
+variable "crear_almacenamiento" {
+  description = "Crea el bucket privado de archivos (CMEK con la llave `archivos` si crear_kms), sus avisos por Pub/Sub a ALMACENAMIENTO y los temas `archivo-disponible` y `archivo-rechazado` (KAN-250, ADR-10). Cobra por GB guardado (~USD 0,02/GB-mes)."
+  type        = bool
+  default     = false
+}
+
+variable "almacenamiento_origenes_cors" {
+  description = "Orígenes del frontend que pueden subir y bajar archivos directo al bucket con las URLs firmadas (CORS)."
+  type        = list(string)
+  default     = ["http://localhost:3000", "http://localhost:5173"]
+}
+

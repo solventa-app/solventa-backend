@@ -40,3 +40,8 @@ crear_tareas = true
 # oferta. Cobran por hora (estimado ~USD 3 al día todas juntas); «Costos staging → apagar» las devuelve a mínimo 0 y
 # «encender» las restituye.
 instancias_fijas_encendidas = true
+
+# Almacenamiento de archivos (KAN-250, ADR-10): bucket privado con CMEK, URLs firmadas y avisos por Pub/Sub. Requiere
+# crear_cloud_sql (base `almacenamiento`). Encenderlo es un PR que pone true aquí y los orígenes reales del frontend.
+crear_almacenamiento = false
+

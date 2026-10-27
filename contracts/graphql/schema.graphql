@@ -382,7 +382,70 @@ input ContactoInput {
 
 # ---------- Operaciones ----------
 
+# ---------- Archivos (KAN-250, servicio ALMACENAMIENTO) ----------
+# Los bytes nunca pasan por el BFF: el cliente sube con un PUT directo a la URL firmada que
+# devuelve `solicitarSubidaArchivo` (mandando `encabezados` tal cual) y luego confirma.
+# Qué tipos existen, quién sube y quién lee lo dice `contracts/tipos-archivo.json`.
+
+enum EstadoArchivo {
+  PENDIENTE
+  DISPONIBLE
+  RECHAZADO
+  ELIMINADO
+}
+
+type Archivo {
+  id: ID!
+  tipo: String!
+  estado: EstadoArchivo!
+  tipoContenido: String!
+  tamanoBytes: Int
+  # Por qué se rechazó (p. ej. CONTENIDO_NO_COINCIDE); solo con estado RECHAZADO.
+  motivo: String
+  creadoEn: DateTime!
+}
+
+type EncabezadoSubida {
+  nombre: String!
+  valor: String!
+}
+
+type SubidaArchivo {
+  archivo: Archivo!
+  url: String!
+  metodo: String!
+  encabezados: [EncabezadoSubida!]!
+  venceEn: DateTime!
+}
+
+type DescargaArchivo {
+  url: String!
+  venceEn: DateTime!
+}
+
+# `codigo` es estable (TIPO_NO_ADMITIDO, TAMANO_NO_ADMITIDO, NO_AUTORIZADO, OBJETO_NO_SUBIDO,
+# ARCHIVO_NO_ENCONTRADO, ARCHIVO_NO_DISPONIBLE, ...); `mensaje` es para mostrar.
+type ErrorArchivo {
+  codigo: String!
+  mensaje: String!
+}
+
+union ResultadoSubidaArchivo = SubidaArchivo | ErrorArchivo
+union ResultadoArchivo = Archivo | ErrorArchivo
+union ResultadoDescargaArchivo = DescargaArchivo | ErrorArchivo
+
+input SolicitudSubidaArchivoInput {
+  tipo: String!
+  tipoContenido: String!
+  tamanoBytes: Int!
+  # Un CLIENTE sube siempre a su nombre: se ignora y se usa el id del token.
+  propietarioId: ID = null
+  consentimientoId: ID = null
+}
+
 type Query {
+  # El archivo si existe y quien pregunta puede leerlo; si no, null.
+  archivo(id: ID!): Archivo
   oferta(id: ID!): Oferta
   cobros(polizaId: ID, estado: EstadoCobro, pagina: Int = 1, tamano: Int = 10): [Cobro!]!
   yo: Usuario
@@ -416,4 +479,10 @@ type Mutation {
   aceptarOferta(ofertaId: ID!): ResultadoAceptacion!
   # Solo el CLIENTE titular firma (no repudio). Firmar dos veces devuelve la misma evidencia.
   firmarPropuesta(entrada: FirmarPropuestaInput!): ResultadoFirma!
+  # KAN-250: URL firmada para subir un archivo directo al almacén (exige token).
+  solicitarSubidaArchivo(entrada: SolicitudSubidaArchivoInput!): ResultadoSubidaArchivo!
+  # Tras el PUT: valida el objeto (tamaño y firma del contenido). Idempotente.
+  confirmarSubidaArchivo(id: ID!): ResultadoArchivo!
+  # URL firmada de corta vida para leer un archivo DISPONIBLE; cada una queda auditada.
+  descargarArchivo(id: ID!): ResultadoDescargaArchivo!
 }

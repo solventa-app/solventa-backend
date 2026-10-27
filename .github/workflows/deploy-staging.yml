@@ -304,10 +304,10 @@ jobs:
       matrix:
         servicio: ${{ fromJSON(needs.preparar.outputs.migraciones) }}
     steps:
-      # Con los costos apagados Cloud SQL está DETENIDA: migrar `auth`, `payments` o `policy` fallaría con un error de conexión poco
+      # Con los costos apagados Cloud SQL está DETENIDA: migrar `auth`, `payments`, `policy` o `almacenamiento` fallaría con un error de conexión poco
       # claro. Se avisa antes de gastar tiempo. (`risk` usa MongoDB Atlas, que no se apaga.)
       - name: ¿Cloud SQL está apagada?
-        if: matrix.servicio == 'auth' || matrix.servicio == 'payments' || matrix.servicio == 'policy'
+        if: matrix.servicio == 'auth' || matrix.servicio == 'payments' || matrix.servicio == 'policy' || matrix.servicio == 'almacenamiento'
         env:
           COSTOS: ${{ needs.costos.outputs.estado }}
         run: |

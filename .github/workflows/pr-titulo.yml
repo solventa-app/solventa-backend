@@ -21,11 +21,11 @@ jobs:
         env:
           TITULO: ${{ github.event.pull_request.title }}
         run: |
-          patron='^(feat|fix|refactor|test|docs|chore|ci|infra)\((bff|auth|risk|rating|payments|policy|under|acl|stubs|contracts|infra|tests)\): KAN-[0-9]+ .+'
+          patron='^(feat|fix|refactor|test|docs|chore|ci|infra)\((bff|auth|risk|rating|payments|policy|almacenamiento|under|acl|stubs|contracts|infra|tests)\): KAN-[0-9]+ .+'
           if ! printf '%s' "$TITULO" | grep -Eq "$patron"; then
             echo "::error title=Título del PR::Formato esperado: tipo(alcance): KAN-N descripción. Ej.: feat(auth): KAN-24 registra consentimiento append-only"
             echo "Recibido: $TITULO"
             echo "Tipos: feat fix refactor test docs chore ci infra"
-            echo "Alcances: bff auth risk rating payments policy under acl stubs contracts infra tests"
+            echo "Alcances: bff auth risk rating payments policy almacenamiento under acl stubs contracts infra tests"
             exit 1
           fi

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/archivo.rechazado/v1",
+  "title": "archivo.rechazado",
+  "description": "ALMACENAMIENTO rechazó un archivo subido y borró el objeto: no coincide con lo declarado o con el catálogo. Pub/Sub lleva el atributo `tipoArchivo`. Sin datos personales (KAN-250).",
+  "type": "object",
+  "required": ["eventId", "tipo", "version", "ocurridoEn", "datos"],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "tipo": { "const": "archivo.rechazado" },
+    "version": { "const": 1 },
+    "ocurridoEn": { "type": "string", "format": "date-time" },
+    "datos": {
+      "type": "object",
+      "required": ["archivoId", "tipoArchivo", "propietarioTipo", "propietarioId", "motivo"],
+      "additionalProperties": false,
+      "properties": {
+        "archivoId": { "type": "string" },
+        "tipoArchivo": { "type": "string" },
+        "propietarioTipo": { "enum": ["usuario", "onboarding", "poliza", "siniestro"] },
+        "propietarioId": { "type": "string" },
+        "motivo": {
+          "enum": ["TIPO_NO_ADMITIDO", "TAMANO_EXCEDIDO", "TAMANO_DISTINTO", "TIPO_CONTENIDO_DISTINTO", "CONTENIDO_NO_COINCIDE"]
+        }
+      }
+    }
+  }
+}
