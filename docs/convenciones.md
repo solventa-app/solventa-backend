@@ -111,8 +111,8 @@ Además de `gitleaks`, `Dependabot` y `actionlint` (obligatorios), `.github/work
 - Contrato: la **misma suite** corre contra el stub y contra el sandbox real del proveedor (EC031).
 - Servicios **dummy** (`"dummy": true` en `.github/servicios.json`, p. ej. `stubs/siniestros` para HU-W04): sustitutos
   temporales de un servicio que aún no existe, para que el front avance. Son autónomos (sin base, sin tokens, sin
-  llamar a nadie), publican su contrato en `contracts/graphql/<nombre>.graphql` y por ahora corren **solo en local**: no
-  se despliegan ni se crean en Terraform. Se reemplazan por el servicio real sin que el front cambie más que la URL.
+  llamar a nadie) y publican su contrato en `contracts/graphql/<nombre>.graphql`. En staging se despliegan **privados**
+  y solo los invoca el API Gateway, con rutas propias en `infra/gateway/openapi.yaml` y `envoy.yaml`. Se reemplazan por el servicio real sin que el front cambie más que la URL.
 - Carga y escenarios: k6 en `tests/k6/`. Los guiones de los experimentos pasan a ser pruebas de regresión en cada sprint.
 - Fixtures sin datos personales reales.
 
