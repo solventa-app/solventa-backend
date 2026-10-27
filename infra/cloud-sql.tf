@@ -86,6 +86,13 @@ resource "google_sql_database" "almacenamiento" {
   instance = google_sql_database_instance.principal[0].name
 }
 
+resource "google_sql_database" "onboarding" {
+  count    = var.crear_cloud_sql ? 1 : 0
+  project  = var.project_id
+  name     = "onboarding"
+  instance = google_sql_database_instance.principal[0].name
+}
+
 resource "google_sql_user" "postgres" {
   count    = var.crear_cloud_sql ? 1 : 0
   project  = var.project_id
@@ -131,6 +138,14 @@ resource "google_secret_manager_secret_version" "database_url_almacenamiento" {
   depends_on = [google_secret_manager_secret_version.marcador]
 
   secret_data = "postgresql://postgres:${random_password.postgres[0].result}@/almacenamiento?host=/cloudsql/${google_sql_database_instance.principal[0].connection_name}"
+}
+
+resource "google_secret_manager_secret_version" "database_url_onboarding" {
+  count      = (var.crear_cloud_sql && var.crear_servicios) ? 1 : 0
+  secret     = google_secret_manager_secret.secreto["database-url-onboarding"].id
+  depends_on = [google_secret_manager_secret_version.marcador]
+
+  secret_data = "postgresql://postgres:${random_password.postgres[0].result}@/onboarding?host=/cloudsql/${google_sql_database_instance.principal[0].connection_name}"
 }
 
 # --- IAM: cada servicio con Postgres corre con su propia cuenta (rt-<servicio>, ver servicios.tf) y esa es la

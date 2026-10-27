@@ -36,7 +36,7 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - ./dev/postgres:/docker-entrypoint-initdb.d:ro   # crea una base por servicio (auth, payments, policy, almacenamiento)
+      - ./dev/postgres:/docker-entrypoint-initdb.d:ro   # crea una base por servicio (auth, payments, policy, almacenamiento, onboarding)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -134,6 +134,7 @@ services:
       PAYMENTS_URL: http://payments:8004
       POLICY_URL: http://policy:8007
       ALMACENAMIENTO_URL: http://almacenamiento:8009
+      ONBOARDING_URL: http://onboarding:8010
       # Solo local: el repo es público. En Cloud Run llega de Secret Manager (clave-cliente-id).
       CLIENTE_ID_CLAVE: solo-local-no-secreta
       # Mismo valor que AUTH (firma HS256). Solo local; en Cloud Run llega de Secret Manager (clave-jwt).
@@ -304,6 +305,34 @@ services:
       postgres: { condition: service_healthy }
       fake-gcs: { condition: service_started }
       migrar-almacenamiento: { condition: service_completed_successfully }
+
+  migrar-onboarding:
+    <<: *tarea
+    image: solventa/onboarding:local
+    build: ./services/onboarding
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/onboarding
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # Recorrido de verificación de identidad de HU-M01. En local la verificación corre en un hilo (DISPARADOR=bucle).
+  onboarding:
+    <<: *servicio
+    image: solventa/onboarding:local
+    build: ./services/onboarding
+    ports: ["8010:8010"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/onboarding
+      ALMACENAMIENTO_URL: http://almacenamiento:8009
+      ACL_URL: http://acl-worker:8005
+      # Solo local: el repo es público. En Cloud Run llegan de Secret Manager (clave-cliente-id, clave-cifrado).
+      CLIENTE_ID_CLAVE: solo-local-no-secreta
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
+    depends_on:
+      almacenamiento: { condition: service_healthy }
+      acl-worker: { condition: service_healthy }
+      migrar-onboarding: { condition: service_completed_successfully }
 
   under:
     <<: *servicio
