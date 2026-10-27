@@ -68,7 +68,7 @@ Arquitectura: [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md). Co
     | PAYMENTS | `0008` | — |
 
     M01 también pide la `0008` de AUTH.
-  - El plan del front está en `solventa-frontend-web/docs/plan-w03-w07-front.md`.
+  - El plan del front está en `solventa-frontend-web/docs/plan-w01-w05-w07-front.md`.
 - **Decisiones del Planning:** D-02, D-04, D-05 y D-06 **cerradas** (2026-10-18). Sigue abierta **D-01** (base de velocidad); D-03 y guardar la oferta pasan al Sprint 2 (HU-W03).
 - GitHub: organización `solventa-app` (`origin` = https://github.com/solventa-app/solventa-backend.git). Proyecto GCP de staging: `solventa-511815` (ver `infra/README.md`).
 

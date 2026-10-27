@@ -267,7 +267,7 @@ con el workflow «Costos staging».
 
 | Historia | Pantalla o pieza | Qué cambia |
 |---|---|---|
-| W01 | W01-01 Solicitud y consentimiento | Suma **nombre completo y correo**. Con un CLIENTE se rellenan desde su perfil. Se envían al aceptar la oferta, no al cotizar |
+| W01 | W01-01 Solicitud y consentimiento | Suma **nombre completo y correo solo para el ASESOR**. Un CLIENTE no los ve: POLICY lee su contacto de AUTH y el contrato no lo devuelve, así que no hay con qué rellenarlos. Se envían al aceptar la oferta, no al cotizar |
 | W03 | Registro de CLIENTE (`crearUsuario`) | Cédula y correo obligatorios |
 | W03 | **Modal del asesor** (nuevo) | Correo enmascarado y editable, «Enviar código», campo del código, **«Emitir»**, «Reenviar enlace» y los mensajes de UNDER (rechazo y revisión) |
 | W03 | **Página del enlace** (W03-02) | Ruta pública `/firma#t=…` **sin perfil ni migas**. Lee el token del fragmento y lo envía en `X-Enlace-Firma`. Muestra: <br>• el **contrato en PDF**; <br>• la casilla de términos; <br>• **firma en tres modos**: lienzo para dibujar, carga de PNG o JPG con validación previa de tipo, tamaño y fondo, y nombre estilizado; <br>• un **estado vacío** si el enlace venció. <br>Retoma el paso donde iba |
