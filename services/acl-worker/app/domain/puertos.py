@@ -215,3 +215,55 @@ class PuertoTasasCambio(Protocol):
     """Tasas de cambio para mostrar montos en la moneda que el usuario elige en la web."""
 
     def tasas(self) -> TablaTasas: ...
+
+
+# ------------------------------------------------------------ verificación de identidad (HU-M01)
+
+EstadoIdentidad = Literal["aprobada", "rechazada", "pendiente"]
+
+
+@dataclass(frozen=True)
+class ImagenesIdentidad:
+    """Las imágenes del onboarding (HU-M01, KAN-31), ya descargadas del almacenamiento. El reverso
+    es opcional: un pasaporte no tiene."""
+
+    anverso: bytes
+    rostro: bytes
+    reverso: bytes | None = None
+
+
+@dataclass(frozen=True)
+class DatosDocumento:
+    """Lo que el proveedor extrae del documento. Son datos personales: el ACL los entrega a
+    ONBOARDING, que los cifra; nunca se registran (regla #6)."""
+
+    nombres: str | None
+    apellidos: str | None
+    numero: str | None
+    fecha_nacimiento: str | None  # AAAA-MM-DD
+    pais: str | None  # ISO 3166-1 alfa-3, como lo entrega el proveedor
+    tipo: str | None
+
+
+@dataclass(frozen=True)
+class ResultadoIdentidad:
+    """`pendiente` = no se pudo verificar (proveedor caído, circuito abierto o una imagen que no se
+    pudo descargar), no que el proveedor esté revisando: ONBOARDING reintenta sin cobrarle al
+    cliente un rechazo que no es suyo. `alertas` son códigos del proveedor (p. ej.
+    `DOCUMENT_EXPIRED`), sin datos personales."""
+
+    estado: EstadoIdentidad
+    motivo: str | None = None
+    datos: DatosDocumento | None = None
+    documento_autentico: bool | None = None
+    coincide_rostro: bool | None = None
+    puntaje_rostro: float | None = None
+    vivo: bool | None = None
+    puntaje_vida: float | None = None
+    alertas: tuple[str, ...] = ()
+
+
+class PuertoVerificacionIdentidad(Protocol):
+    def verificar_identidad(
+        self, referencia: str, imagenes: ImagenesIdentidad, timeout_s: float | None = None
+    ) -> ResultadoIdentidad: ...

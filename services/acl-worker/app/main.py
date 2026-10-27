@@ -6,6 +6,7 @@ notificaciones) — ver `app/domain/puertos.py` y el README de este servicio.
 import base64
 import binascii
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -13,11 +14,12 @@ import redis
 import rq
 from fastapi import FastAPI, HTTPException
 from prometheus_fastapi_instrumentator import Instrumentator
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.adapters.autenticacion_servicios import autenticacion_para
 from app.adapters.firma import AdaptadorFirma
 from app.adapters.firma_alterna import AdaptadorFirmaAlterna
+from app.adapters.identidad_didit import AdaptadorIdentidadDidit
 from app.adapters.kyc import AdaptadorKyc
 from app.adapters.notificaciones import AdaptadorNotificaciones
 from app.adapters.open_data import AdaptadorOpenData
@@ -26,8 +28,10 @@ from app.adapters.pasarela import AdaptadorPasarela
 from app.adapters.pasarela_alterna import AdaptadorPasarelaAlterna
 from app.adapters.tasas_cambio import AdaptadorTasasReferencia
 from app.application.cache import CacheFuentes
+from app.application.cache_identidad import CacheIdentidad
 from app.application.circuitos import (
     NOMBRE_CIRCUITO_FIRMA,
+    NOMBRE_CIRCUITO_IDENTIDAD,
     NOMBRE_CIRCUITO_KYC,
     NOMBRE_CIRCUITO_NOTIFICACIONES,
     NOMBRE_CIRCUITO_OPEN_DATA,
@@ -49,6 +53,7 @@ from app.application.reconciliacion import (
 )
 from app.application.servicio_firma import ServicioFirma
 from app.application.servicio_fuentes import ServicioConsultaFuentes
+from app.application.servicio_identidad import DescargadorImagenes, ServicioIdentidad
 from app.application.servicio_kyc import ServicioKyc
 from app.application.servicio_notificaciones import ServicioNotificaciones
 from app.application.servicio_pagos import ServicioCobro
@@ -76,6 +81,7 @@ REINTENTOS_RECONCILIACION = rq.Retry(max=5, interval=[10, 30, 60, 120, 300])
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 configurar_trazas("acl-worker", instrumentos=("httpx", "redis"))
+logger = logging.getLogger("acl_worker")
 
 
 class ConsultaFuenteRequest(BaseModel):
@@ -141,6 +147,35 @@ class ResultadoKycResponse(BaseModel):
     referencia: str | None
     motivo: str | None
     verificada_en: str | None
+
+
+class SolicitudIdentidadRequest(BaseModel):
+    # Referencia opaca del onboarding; las URLs son las firmadas de descarga del almacenamiento.
+    referencia: str = Field(min_length=1, max_length=100)
+    anverso_url: str = Field(min_length=1, max_length=4096)
+    rostro_url: str = Field(min_length=1, max_length=4096)
+    reverso_url: str | None = Field(default=None, min_length=1, max_length=4096)
+
+
+class DatosDocumentoResponse(BaseModel):
+    nombres: str | None
+    apellidos: str | None
+    numero: str | None
+    fecha_nacimiento: str | None
+    pais: str | None
+    tipo: str | None
+
+
+class ResultadoIdentidadResponse(BaseModel):
+    estado: str
+    motivo: str | None
+    datos: DatosDocumentoResponse | None
+    documento_autentico: bool | None
+    coincide_rostro: bool | None
+    puntaje_rostro: float | None
+    vivo: bool | None
+    puntaje_vida: float | None
+    alertas: list[str]
 
 
 # Tipos de medio que pueden viajar como adjunto de un aviso, y cuántos.
@@ -343,6 +378,42 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         )
         servicio_kyc = ServicioKyc(adaptador_kyc, fabrica, NOMBRE_CIRCUITO_KYC, presupuesto_kyc_s)
 
+        adaptador_identidad = AdaptadorIdentidadDidit(
+            config.identidad_url,
+            config.identidad_api_key,
+            config.identidad_timeout_s,
+            auth=(
+                None
+                if config.identidad_url.startswith("https://verification.didit.me")
+                else autenticacion_para(config.autenticacion_servicios, "stub-kyc")
+            ),
+        )
+        descargador_imagenes = DescargadorImagenes(
+            config.identidad_origenes_imagenes,
+            config.identidad_timeout_s,
+            reescrituras=dict(config.identidad_reescrituras),
+        )
+        llave_cache_identidad = config.identidad_llave_cache
+        if llave_cache_identidad is None and config.autenticacion_servicios == "ninguna":
+            # Local y CI: una llave por proceso (la caché se pierde al reiniciar, como se espera).
+            llave_cache_identidad = os.urandom(32)
+        servicio_identidad = ServicioIdentidad(
+            adaptador_identidad,
+            fabrica,
+            NOMBRE_CIRCUITO_IDENTIDAD,
+            config.identidad_timeout_s,
+            descargador_imagenes.descargar,
+            cache=(
+                CacheIdentidad(
+                    cache_redis, llave_cache_identidad, config.identidad_cache_ttl_segundos
+                )
+                if llave_cache_identidad is not None
+                else None
+            ),
+        )
+        if llave_cache_identidad is None:
+            logger.warning("IDENTIDAD_LLAVE_CACHE sin cargar: la caché de identidad está apagada")
+
         presupuesto_notificaciones_s = config.presupuesto_proveedor_s("notificaciones")
         adaptador_notificaciones = AdaptadorNotificaciones(
             config.notificaciones_url,
@@ -364,6 +435,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 NOMBRE_CIRCUITO_PASARELA: adaptador_pasarela.sondear,
                 NOMBRE_CIRCUITO_FIRMA: adaptador_firma.sondear,
                 NOMBRE_CIRCUITO_KYC: adaptador_kyc.sondear,
+                NOMBRE_CIRCUITO_IDENTIDAD: adaptador_identidad.sondear,
                 NOMBRE_CIRCUITO_NOTIFICACIONES: adaptador_notificaciones.sondear,
             },
             intervalo_s=config.sonda_intervalo_segundos,
@@ -379,6 +451,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         app.state.servicio_cobro = servicio_cobro
         app.state.servicio_firma = servicio_firma
         app.state.servicio_kyc = servicio_kyc
+        app.state.servicio_identidad = servicio_identidad
         app.state.servicio_notificaciones = servicio_notificaciones
 
         try:
@@ -391,6 +464,8 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 adaptador_pasarela.cerrar,
                 adaptador_firma.cerrar,
                 adaptador_kyc.cerrar,
+                adaptador_identidad.cerrar,
+                descargador_imagenes.cerrar,
                 adaptador_notificaciones.cerrar,
             )
             for cerrar in cierres:
@@ -418,6 +493,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             NOMBRE_CIRCUITO_PASARELA,
             NOMBRE_CIRCUITO_FIRMA,
             NOMBRE_CIRCUITO_KYC,
+            NOMBRE_CIRCUITO_IDENTIDAD,
             NOMBRE_CIRCUITO_NOTIFICACIONES,
         )
         return {nombre: fabrica.get_breaker(nombre).context.state for nombre in nombres}
@@ -533,6 +609,28 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             referencia=resultado.referencia,
             motivo=resultado.motivo,
             verificada_en=resultado.verificada_en,
+        )
+
+    @app.post("/identidad/verificar", tags=["identidad"], response_model=ResultadoIdentidadResponse)
+    def verificar_identidad(body: SolicitudIdentidadRequest) -> ResultadoIdentidadResponse:
+        """Verificación de identidad del onboarding móvil (HU-M01): documento, prueba de vida y
+        rostro. La llama ONBOARDING en segundo plano. Siempre 200: si una imagen no se pudo bajar,
+        el proveedor falla o el circuito está abierto, `pendiente` con su motivo (regla #4).
+        La respuesta trae datos personales del documento: no se registra."""
+        resultado = app.state.servicio_identidad.verificar(
+            body.referencia, body.anverso_url, body.rostro_url, body.reverso_url
+        )
+        datos = resultado.datos
+        return ResultadoIdentidadResponse(
+            estado=resultado.estado,
+            motivo=resultado.motivo,
+            datos=DatosDocumentoResponse(**vars(datos)) if datos is not None else None,
+            documento_autentico=resultado.documento_autentico,
+            coincide_rostro=resultado.coincide_rostro,
+            puntaje_rostro=resultado.puntaje_rostro,
+            vivo=resultado.vivo,
+            puntaje_vida=resultado.puntaje_vida,
+            alertas=list(resultado.alertas),
         )
 
     @app.post(

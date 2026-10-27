@@ -178,6 +178,21 @@ Agregar un proveedor nuevo no toca el código: su variable `PRESUPUESTO_MS_<PROV
 - Circuito `kyc` con su sonda (`GET /v1/estado`, que nunca verifica). Variables nuevas: `KYC_URL` (`http://localhost:8105`),
   `PRESUPUESTO_MS_KYC` (700).
 
+## Verificación de identidad (HU-M01)
+
+- `POST /identidad/verificar` `{referencia, anverso_url, rostro_url, reverso_url?}` → `{estado: aprobada | rechazada | pendiente, motivo,
+  datos?, documento_autentico, coincide_rostro, puntaje_rostro, vivo, puntaje_vida, alertas}`. Siempre 200. Las imágenes llegan como URLs
+  firmadas de `almacenamiento`; el ACL las descarga solo de `IDENTIDAD_ORIGENES_IMAGENES` (anti-SSRF, máx. 10 MB) y llama a las APIs
+  independientes de Didit v3 (`id-verification`, `passive-liveness`, `face-match`, encabezado `x-api-key`, `save_api_request=false`).
+- Motivos: `documento_rechazado`, `prueba_de_vida_fallida`, `rostro_no_coincide`; en `pendiente`, `imagen_no_disponible`,
+  `circuito_abierto` o `proveedor_no_disponible`. Circuito `identidad` con su sonda (`GET /`), sin reintento (Didit cobra por llamada).
+- **Caché por huella**: llave `acl:identidad:{sha256 de las imágenes}`, nunca la cédula; valor cifrado AES-GCM con
+  `IDENTIDAD_LLAVE_CACHE` (32 bytes en base64), TTL `IDENTIDAD_CACHE_TTL_SEGUNDOS` (30 días). Solo guarda resultados definitivos.
+  Sin llave en la nube, la caché se apaga con un aviso; en local la llave es aleatoria por proceso.
+- Variables: `IDENTIDAD_URL` (por omisión `KYC_URL`, el stub), `DIDIT_API_KEY` (obligatoria si `IDENTIDAD_URL` apunta a Didit),
+  `IDENTIDAD_TIMEOUT_SEGUNDOS` (15), `IDENTIDAD_ORIGENES_IMAGENES`, `IDENTIDAD_REESCRITURA_ORIGENES` (`orig=dest`, solo en local para
+  fake-gcs). Logs solo con la referencia opaca y códigos. Evidencia: `docs/evidencias/identidad-didit-2026-10-27.md`.
+
 ## Notificaciones (HU-W03, bloque 5)
 
 - `POST /notificaciones/enviar` `{id_notificacion, plantilla, destinatario_id, datos, correo?, telefono?, adjuntos?}` → `{estado: enviada | pendiente, referencia,

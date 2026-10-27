@@ -322,7 +322,9 @@ services:
       OPEN_DATA_URL: http://stub-open-data:8102
       PASARELA_URL: http://stub-pasarela:8103
       FIRMA_URL: http://stub-firma:8104
-      KYC_URL: http://stub-kyc:8105
+      KYC_URL: http://stub-kyc:8105   # también la verificación de identidad de M01 (rutas de Didit)
+      # M01: las URLs firmadas del almacenamiento apuntan a localhost:4443; desde aquí es fake-gcs.
+      IDENTIDAD_REESCRITURA_ORIGENES: http://localhost:4443/=http://fake-gcs:4443/
       NOTIFICACIONES_URL: http://stub-notificaciones:8106
       TIMEOUT_MS: "700"        # umbral duro de EC009/EC010
       BREAKER_UMBRAL_FALLOS: "3"       # fallos consecutivos que abren el circuito

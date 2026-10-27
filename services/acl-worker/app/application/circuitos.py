@@ -1,8 +1,8 @@
 """Wiring del Circuit Breaker (`purgatory`) del ACL Worker (HA-LAT-002).
 
-Un breaker por ADAPTADOR/proveedor (`open-finance`, `open-data`, `pasarela`, `firma`, `kyc` y
-`notificaciones`), no por fuente individual: si Open Finance cae, afecta a sus 2 fuentes por
-igual (tal como pide la tarea T-W01-10).
+Un breaker por ADAPTADOR/proveedor (`open-finance`, `open-data`, `pasarela`, `firma`, `kyc`,
+`notificaciones` e `identidad`), no por fuente individual: si Open Finance cae, afecta a sus 2
+fuentes por igual (tal como pide la tarea T-W01-10).
 
 `purgatory` no expone un modo "forzar half-open" ni un evento "circuito
 abierto hace N segundos": su modelo es perezoso (ver `OpenedState` más abajo)
@@ -26,6 +26,7 @@ NOMBRE_CIRCUITO_PASARELA = "pasarela"
 NOMBRE_CIRCUITO_FIRMA = "firma"
 NOMBRE_CIRCUITO_KYC = "kyc"
 NOMBRE_CIRCUITO_NOTIFICACIONES = "notificaciones"
+NOMBRE_CIRCUITO_IDENTIDAD = "identidad"
 
 
 def construir_fabrica(

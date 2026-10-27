@@ -112,7 +112,9 @@
     "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": {
       "REDIS_URL": "redis-url-acl",
-      "COLA_RECONCILIACION_REDIS_URL": "redis-url-cola-reconciliacion"
+      "COLA_RECONCILIACION_REDIS_URL": "redis-url-cola-reconciliacion",
+      "DIDIT_API_KEY": "didit-api-key",
+      "IDENTIDAD_LLAVE_CACHE": "clave-cache-identidad"
     }
   },
   {

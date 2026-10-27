@@ -2,6 +2,8 @@
 código). Nombres y defaults documentados en `README.md` y en
 `docs/arquitectura-backend.md`."""
 
+import base64
+import binascii
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -31,6 +33,23 @@ def _presupuestos_desde_entorno() -> dict[str, int]:
     return presupuestos
 
 
+# Terraform crea cada secreto con este valor hasta que alguien carga el real.
+VALOR_MARCADOR = "pendiente-de-cargar"
+
+
+def _llave_cache_identidad(valor: str) -> bytes | None:
+    valor = valor.strip()
+    if not valor or valor == VALOR_MARCADOR:
+        return None
+    try:
+        llave = base64.b64decode(valor, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise ValueError("IDENTIDAD_LLAVE_CACHE no es base64 válido") from error
+    if len(llave) != 32:
+        raise ValueError("IDENTIDAD_LLAVE_CACHE debe tener 32 bytes")
+    return llave
+
+
 @dataclass(frozen=True)
 class Configuracion:
     redis_url: str
@@ -53,6 +72,24 @@ class Configuracion:
     proveedor_firma: str = "estandar"
     # KYC (HU-W03): dónde está el proveedor de verificación de identidad.
     kyc_url: str = "http://localhost:8105"
+    # Verificación de identidad del onboarding móvil (HU-M01): Didit en staging, `stubs/kyc` (que
+    # imita las rutas de Didit) en local y CI. Corre en segundo plano, así que su corte es largo y
+    # no lo acota `timeout_s` (700 ms es para el camino del usuario).
+    identidad_url: str = "http://localhost:8105"
+    identidad_api_key: str = "local"
+    identidad_timeout_s: float = 15.0
+    # De dónde acepta el ACL bajar imágenes (el bucket de archivos): nadie lo usa de proxy.
+    identidad_origenes_imagenes: tuple[str, ...] = (
+        "https://storage.googleapis.com/",
+        "http://localhost:4443/",
+        "http://fake-gcs:4443/",
+    )
+    # Llave AES-256 (base64) de la caché cifrada del resultado. Sin ella: en local se genera una por
+    # proceso; en la nube la caché queda apagada (cada verificación se paga, pero nada se rompe).
+    identidad_llave_cache: bytes | None = None
+    # Solo local: `origen=destino` para bajar del emulador las URLs firmadas para el celular.
+    identidad_reescrituras: Mapping[str, str] = field(default_factory=dict)
+    identidad_cache_ttl_segundos: int = 30 * 24 * 3600
     # Notificaciones al cliente (HU-W03, bloque 5).
     notificaciones_url: str = "http://localhost:8106"
     # Tope del contenido de un archivo adjunto a un aviso (bytes ya decodificados). El PDF de una
@@ -127,7 +164,31 @@ class Configuracion:
             ]
             if faltan:
                 raise ValueError(f"DISPARADOR=externo exige {', '.join(faltan)}")
+        identidad_url = os.getenv("IDENTIDAD_URL") or os.getenv("KYC_URL", "http://localhost:8105")
+        identidad_api_key = os.getenv("DIDIT_API_KEY", "local").strip()
+        if os.getenv("IDENTIDAD_URL") and identidad_api_key in ("", "local", VALOR_MARCADOR):
+            raise ValueError("IDENTIDAD_URL apunta a un proveedor real y falta DIDIT_API_KEY")
         return cls(
+            identidad_url=identidad_url,
+            identidad_api_key=identidad_api_key,
+            identidad_timeout_s=float(os.getenv("IDENTIDAD_TIMEOUT_SEGUNDOS", "15")),
+            identidad_origenes_imagenes=tuple(
+                origen.strip()
+                for origen in os.getenv(
+                    "IDENTIDAD_ORIGENES_IMAGENES",
+                    "https://storage.googleapis.com/,http://localhost:4443/,http://fake-gcs:4443/",
+                ).split(",")
+                if origen.strip()
+            ),
+            identidad_reescrituras=dict(
+                par.split("=", 1)
+                for par in os.getenv("IDENTIDAD_REESCRITURA_ORIGENES", "").split(",")
+                if "=" in par
+            ),
+            identidad_llave_cache=_llave_cache_identidad(os.getenv("IDENTIDAD_LLAVE_CACHE", "")),
+            identidad_cache_ttl_segundos=int(
+                os.getenv("IDENTIDAD_CACHE_TTL_SEGUNDOS", str(30 * 24 * 3600))
+            ),
             redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/1"),
             open_finance_url=os.getenv("OPEN_FINANCE_URL", "http://localhost:8101"),
             open_data_url=os.getenv("OPEN_DATA_URL", "http://localhost:8102"),
