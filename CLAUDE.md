@@ -25,6 +25,50 @@ Arquitectura: [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md). Co
 - **Plan y decisiones cerradas de HU-W01 (2026-10-18):** [`docs/plan-completar-hu-w01.md`](docs/plan-completar-hu-w01.md) (backend; el del front está en `solventa-frontend-web/docs/plan-completar-hu-w01.md`). Léelo antes de tocar W01, cifrado, observabilidad o seguridad del CI. D-04 quedó cerrada ahí (campo + Secret Manager envuelto por KMS, CMEK salvo Atlas M0). Guardar la oferta pasa al Sprint 2 con HU-W03. En el Sprint 1 entran también el API Gateway (LAT-004, bloque 10) y el batch nocturno (ESC-004, bloque 9); ESC-001 queda en el Sprint 2.
 - **Plan de HU-W05 (2026-10-18):** [`docs/plan-completar-hu-w05.md`](docs/plan-completar-hu-w05.md). Léelo antes de tocar cobros, PAYMENTS o la pasarela. Su bloque 0 (decidido): el reintento de cobros, la sonda del circuito y el consolidador se disparan con Cloud Tasks y Cloud Scheduler, porque en Cloud Run (`cpu_idle = true`) los bucles de fondo no corren.
 - **HU-W03 (KAN-26) hecha en código y en local (2026-10-24):** [`docs/plan-completar-hu-w03.md`](docs/plan-completar-hu-w03.md) (léelo antes de tocar suscripción, firma, cobro, emisión, el PDF o los avisos). Bloques 0 a 8 hechos; de la fila 9 del bloque 7 solo falta lo que necesita staging. **Staging corre el Sprint 1** (`main` está muy atrás de `develop`): faltan una liberación, el `terraform plan` completo (pide la llave de MongoDB Atlas), Cloud Tasks real, EC005/EC007 allí y Cloud KMS real. **El aviso de póliza lleva el PDF por correo** (decisión W03-16): AUTH guarda el correo y el teléfono de los CLIENTE, cifrados y solo legibles por POLICY, y el proveedor de notificaciones recibe el PDF. **Hoy ningún cliente tiene contacto y su aviso se omite (`SIN_CONTACTO`, W03-18) hasta que Web construya la pantalla donde lo dejan (W03-17).**
+- **Rediseño de firma y pago, y HU-W07 (KAN-30): planeado el 2026-10-27, en borrador y sin código.** El plan que
+  manda es [`docs/plan-hu-w07-y-ajustes.md`](docs/plan-hu-w07-y-ajustes.md), con los ajustes por historia, la pasarela,
+  W07, el orden en 13 pasos, el reparto entre back y front y los cambios en Jira. El detalle de W03 está en el
+  **bloque 9** de `plan-completar-hu-w03.md`, con las decisiones W03-19 a W03-31. **Léelos antes de tocar** la firma,
+  el cobro, la emisión, PAYMENTS, `stubs/pasarela`, RISK (la retención) o los socios.
+
+  **Lo que cambia frente al código de hoy:**
+  - **Flujo con asesor, interactivo** (W03-19 a W03-22):
+    - el ASESOR digita en un modal el código que llegó al correo del cliente;
+    - al pulsar «Emitir», decide UNDER;
+    - se envía un **enlace de un solo uso, vigente 30 min**, que cubre todo el proceso hasta la póliza emitida;
+    - el cliente firma en una página pública con el contrato en PDF, en tres modos: trazo, imagen validada o nombre estilizado.
+  - **Cobro y emisión son síncronos** al regresar de la pasarela. Solo el correo con el PDF va por Cloud Tasks. Esto
+    reemplaza W03-6.
+  - **Los 700 ms solo aplican a las llamadas de pago.**
+  - **`stubs/pasarela` no es parte de Solventa** (simula a PayU o Stripe):
+    - tendrá **su propia página de pago**, con sesión de 10 min que se reabre, animación y «Regresar al comercio»;
+    - **tokeniza la tarjeta**, solo de crédito o débito y **sin PSE**;
+    - Solventa confirma de servidor a servidor y **nunca ve un dato de tarjeta**.
+  - **Fallos de la pasarela:** reintentar con conciliación y, al 3.er fallo seguido o con un rechazo, otra tarjeta.
+    El reintento de fondo de PAYMENTS no toca estos cobros.
+  - **Contacto según el rol** (W03-25 a W03-27):
+    - un CLIENTE lo toma de AUTH, y su registro exige cédula y correo;
+    - con un ASESOR, el nombre y el correo vienen de W01-01 y van **cifrados en la propuesta de POLICY**;
+    - se borran si el consentimiento vence o se revoca antes de emitir, y con la póliza emitida se conservan por el contrato;
+    - los usuarios de prueba se recrean.
+  - **Huecos de RISK** (W01-A3 a A5, propuesta, historia aparte): el perfil no se borra al revocar, no vence y el batch
+    no revisa el consentimiento.
+  - **W07:**
+    - el socio revende la póliza y hace **el papel del asesor por la API**;
+    - el titular firma y paga con el enlace de W03, que **nunca se le devuelve al socio**;
+    - la comisión se causa al emitir;
+    - el contacto del cliente final va en la propuesta.
+  - **Numeración reservada:**
+
+    | Qué | W03 y W05 | W07 |
+    |---|---|---|
+    | Contrato | v0.17 | v0.18 |
+    | AUTH | `0008` | `0009` |
+    | POLICY | `0007` | `0008` |
+    | PAYMENTS | `0008` | — |
+
+    M01 también pide la `0008` de AUTH.
+  - El plan del front está en `solventa-frontend-web/docs/plan-w03-w07-front.md`.
 - **Decisiones del Planning:** D-02, D-04, D-05 y D-06 **cerradas** (2026-10-18). Sigue abierta **D-01** (base de velocidad); D-03 y guardar la oferta pasan al Sprint 2 (HU-W03).
 - GitHub: organización `solventa-app` (`origin` = https://github.com/solventa-app/solventa-backend.git). Proyecto GCP de staging: `solventa-511815` (ver `infra/README.md`).
 

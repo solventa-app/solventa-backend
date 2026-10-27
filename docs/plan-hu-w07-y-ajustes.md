@@ -4,7 +4,7 @@
 > (KAN-30) contra `develop`. Antes de W07 hay que ajustar las historias que reutiliza, porque Felipe redefinió la firma y
 > el cobro de W03 (2026-10-26/27).
 >
-> Rama: `feat/KAN-26-firma-y-pago-interactivos`.
+> Rama: `chore/KAN-30-plan-w07-y-ajustes`.
 >
 > El detalle de cada parte vive en su plan:
 > - **W03:** el bloque 9 de [`plan-completar-hu-w03.md`](plan-completar-hu-w03.md), con las decisiones W03-19 a W03-31 y los CA propuestos.
