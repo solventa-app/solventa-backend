@@ -227,7 +227,7 @@ el merge. Localmente: `export TF_VAR_project_id=... TF_VAR_billing_account_id=..
 valor marcador (`pendiente-de-cargar`). Con `crear_cloud_sql` (y `crear_servicios`) Terraform ya escribe solo
 `database-url-auth`, `database-url-payments` y `database-url-policy`; con `crear_redis`, `redis-url-*`; y con `crear_mongo_atlas`,
 `mongo-uri-risk` y `mongo-uri-rating`: esos no hay que cargarlos. Lo que se agrega aparte es `clave-jwt`,
-`clave-cliente-id` y `clave-cifrado`, y ese valor nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
+`clave-cliente-id`, `clave-cifrado` y, para M01, `didit-api-key` y `clave-cache-identidad` (ver «Didit»), y ese valor nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
 
 ```bash
 printf '%s' 'postgresql://USUARIO:CLAVE@/auth?host=/cloudsql/PROYECTO:REGION:INSTANCIA' \
@@ -236,6 +236,24 @@ printf '%s' 'postgresql://USUARIO:CLAVE@/auth?host=/cloudsql/PROYECTO:REGION:INS
 
 Una migración con el valor marcador falla fuerte y a propósito. `mongo-uri-rating` es un usuario de **solo lectura**
 (RATING nunca escribe en Riesgo) y `mongo-uri-risk` el de lectura/escritura; Terraform crea los dos.
+
+### Didit (verificación de identidad de HU-M01)
+
+El ACL Worker usa `stubs/kyc` mientras `IDENTIDAD_URL` no esté definida, también en staging. Para pasar a Didit:
+
+1. Crea la cuenta y una aplicación en `business.didit.me` y copia su **API key** (la de *sandbox* responde siempre
+   aprobado con datos ficticios y no cobra; la real cobra cada llamada que responde 200).
+2. Carga la llave y la de la caché cifrada del resultado (32 bytes al azar), desde tu terminal:
+
+```bash
+P=solventa-511815
+read -rsp "Didit API key: " K; echo; printf '%s' "$K" | gcloud secrets versions add didit-api-key --project=$P --data-file=-; unset K
+openssl rand -base64 32 | tr -d '\n' | gcloud secrets versions add clave-cache-identidad --project=$P --data-file=-
+```
+
+3. En el `entorno` de `acl-worker` (`.github/servicios.json`) agrega `"IDENTIDAD_URL": "https://verification.didit.me"`.
+   Sin la llave cargada el ACL no arranca con esa URL, a propósito. Sin `clave-cache-identidad` funciona, pero cada
+   reintento se vuelve a cobrar.
 
 ### MongoDB Atlas: lo único que hay que hacer a mano
 
