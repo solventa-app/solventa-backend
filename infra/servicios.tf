@@ -30,8 +30,11 @@ locals {
   # local por ahora: no se crean en Cloud Run.
   activos = { for n, s in local.servicios : n => s if var.crear_servicios && !try(s.dummy, false) }
 
-  con_migracion  = { for n, s in local.activos : n => s if try(s.migracion, null) != null }
-  publicos       = { for n, s in local.activos : n => s if try(s.publico, false) }
+  con_migracion = { for n, s in local.activos : n => s if try(s.migracion, null) != null }
+  # Públicos: `publico` (ninguno hoy: el BFF solo lo invoca el gateway) y `ingreso_directo`, los que abre el navegador
+  # sin pasar por el gateway: `avisos` (stream SSE, no cabe en el gateway) y `stub-pasarela` (la página de pago del
+  # titular). Ambos son del flujo de firma y pago de HU-W03.
+  publicos       = { for n, s in local.activos : n => s if try(s.publico, false) || try(s.ingreso_directo, false) }
   camino_critico = toset(["bff", "auth", "acl-worker", "risk", "rating", "stub-open-finance", "stub-open-data"])
 
   # Instancias fijas mientras `instancias_fijas_encendidas` sea true: los servicios con `instancia_fija` en el manifiesto
@@ -63,6 +66,25 @@ locals {
       for d in try(s.llama, []) : "${n}->${d}" => { origen = n, destino = d }
     }
   ]...)
+
+  # Variables de HU-W03 (firma, pago y avisos) que dependen de la URL de otros servicios o del front, y por eso no
+  # caben en el manifiesto. `url_front` es el origen del front web (Vercel); sin él valdría el local.
+  entorno_w03 = {
+    bff = {
+      AVISOS_URL = "${local.url["avisos"]}/avisos/stream"
+      URL_FRONT  = var.url_front
+    }
+    policy = {
+      URL_FRONT = var.url_front
+    }
+    avisos = {
+      ORIGENES_PERMITIDOS = var.url_front
+    }
+    "stub-pasarela" = {
+      PASARELA_URL_PUBLICA    = local.url["stub-pasarela"]
+      URLS_RETORNO_PERMITIDAS = var.url_front
+    }
+  }
 
   secretos = var.crear_servicios ? toset(flatten([for s in local.manifiesto : values(try(s.secretos, {}))])) : toset([])
   lecturas_de_secretos = merge([
@@ -245,6 +267,14 @@ resource "google_cloud_run_v2_service" "servicio" {
           URL_PROPIA    = local.url[each.key]
           TAREAS_CUENTA = google_service_account.runtime[each.key].email
         } : {}
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      dynamic "env" {
+        for_each = try(local.entorno_w03[each.key], {})
         content {
           name  = env.key
           value = env.value

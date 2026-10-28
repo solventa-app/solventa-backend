@@ -250,16 +250,41 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `imagenArchivoId` (la imagen va al almacenamiento, W03-24 revisada) y `nombreFirma`, y suma `aceptaTerminos` y
   `propuestaId`; `EnlaceFirma.venceEn` es opcional (no aplica con sesión); `iniciarPago` y `confirmarPago` suman
   `propuestaId` opcional. Lo demás conserva los nombres del borrador.
-- **Estado en el BFF:** solo el esqueleto. Las operaciones nuevas responden «Esta operación aún no está disponible»
-  con reintento (o un error público en `propuestas` y `ticketAvisos`) hasta F-B6; `estadoVisible` y `creadaEn` ya
-  salen en las propuestas existentes. Mientras tanto, `solicitarOferta` sin documento responde
-  `DATOS_INSUFICIENTES`.
+- **Estado en el BFF:** implementado en F-B6 (PR #368): las operaciones del asesor, las de la página del enlace, `propuestas`
+  y `ticketAvisos` leen y escriben en POLICY y AUTH. `solicitarOferta` sin documento sigue dando `DATOS_INSUFICIENTES`
+  para el ASESOR; un CLIENTE cotiza con el documento de su cuenta (W03-34). `mensajeEstado` solo sale en los cuatro
+  estados que lista `Propuesta` (no en `CANCELADA`).
 - Afecta al frontend: sí. Web copia este esquema, borra `contrato/borrador-v0.17.graphql` y regenera tipos (F-F1). Los
   enums de salida que crecen (`EstadoPropuesta`, `MotivoErrorFirma`) piden manejar los valores nuevos.
 
-## v0.19 — 2026-10-28
+## v0.20 — 2026-10-28
 
-- KAN-242 (HU-W04, mesa de siniestros del BACKOFFICE; plan `docs/plan-completar-hu-w04.md`). Los tipos del dummy
+- KAN-31 (HU-M01): onboarding de identidad del móvil. La v0.19 queda reservada para HU-W07. **Solo cambios aditivos.**
+  - **Recorrido:** mutaciones `iniciarOnboarding` (pública), `registrarConsentimientoOnboarding`,
+    `solicitarSubidaOnboarding`, `confirmarSubidaOnboarding`, `crearCuentaOnboarding`, `enviarVerificacion` y
+    `reintentarOnboarding`; consulta `onboarding(id)`. Llevan el token del recorrido en la cabecera
+    `X-Onboarding-Token` (30 min; no es una sesión). Tipos `Onboarding`, `InicioOnboarding`, `CuentaOnboarding`,
+    `ErrorOnboarding` (con `codigo` estable), los enums `EstadoOnboarding`, `MotivoOnboarding`, `PasoOnboarding` y
+    `TipoDocumentoOnboarding`, los inputs `IniciarOnboardingInput` y `CuentaOnboardingInput` y las uniones
+    `ResultadoInicioOnboarding`, `ResultadoOnboarding`, `ResultadoSubidaOnboarding` (reusa `SubidaArchivo` de la v0.17)
+    y `ResultadoCuentaOnboarding`.
+  - **Consentimiento:** `registrarConsentimientoOnboarding` registra en AUTH la finalidad `onboarding-biometrico`
+    (canal `APP`) antes de cualquier captura (regla 7).
+  - **Cuenta y sesión:** `crearCuentaOnboarding` crea un CLIENTE en `PENDIENTE_VERIFICACION` (inicia sesión con su
+    correo) y devuelve una sesión con el único scope `verificacion-pendiente`, que solo entra a `yo`, `miVerificacion`
+    y `actualizarSesion`. Consulta nueva `miVerificacion` y mutación nueva `actualizarSesion` (token con los permisos
+    del estado actual y la misma expiración).
+  - **Usuarios:** `EstadoUsuario` suma `PENDIENTE_VERIFICACION` y `RECHAZADA`; `ErrorAutenticacion` suma `codigo`
+    (`VERIFICACION_PENDIENTE` cuando una cuenta sin verificar entra por la web).
+  - **Eventos:** `onboarding.verificado` y `onboarding.rechazado` (`contracts/events/`), solo ids opacos y códigos.
+- Detrás: el servicio `onboarding` lleva el resultado a AUTH (`POST /usuarios/{id}/verificacion`, migración `0002` del
+  onboarding) y el BFF pasa el canal al iniciar sesión.
+- Afecta al frontend: sí. El móvil (HU-M01) usa las operaciones nuevas. La web solo debe manejar los valores nuevos de
+  `EstadoUsuario` y el `codigo` `VERIFICACION_PENDIENTE` en el login.
+## v0.21 — 2026-10-28
+
+- KAN-242 (HU-W04, mesa de siniestros del BACKOFFICE; plan `docs/plan-completar-hu-w04.md`). Toma la v0.21 porque la
+  v0.19 está reservada para HU-W07 y la v0.20 es del onboarding. Los tipos del dummy
   `contracts/graphql/siniestros.graphql` pasan al contrato principal con **los mismos nombres, argumentos y campos**:
   `Siniestro`, `Asegurado`, `Ubicacion`, `Evidencia`, `Verificacion`, `Perito`, `Resolucion`, `ErrorSiniestro`, la
   union `ResultadoResolucion` y los enums `EstadoSiniestro`, `TipoEvidencia`, `TipoResolucion` y `MotivoRechazo`.
@@ -270,8 +295,8 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   - Eventos nuevos `siniestro.aprobado`, `siniestro.rechazado` y `siniestro.derivado` (`contracts/events/`), sin datos
     personales.
   - Tipos de archivo nuevos `siniestro-foto` y `siniestro-documento` (`contracts/tipos-archivo.json`).
-- **Estado en el BFF:** solo el esqueleto. Las consultas responden «Esta operación aún no está disponible» y las
-  mutaciones un `ErrorSiniestro` con ese mensaje, hasta que el servicio `claims` esté conectado.
+- **Estado en el BFF:** conectado al servicio `claims` (puerto 8012). También expone `/v1/graphql/{web,app,movil}`
+  con las rutas actuales como alias (W04-10).
 - Afecta al frontend: sí, cuando la web cambie del dummy al BFF. Pasos documentados en
   `solventa-frontend-web/docs/plan-ejecucion-hu-w04-siniestros.md` («Conexión al backend real»). `siniestros.graphql`
   se conserva para el dummy, que sigue funcionando sin cambios.

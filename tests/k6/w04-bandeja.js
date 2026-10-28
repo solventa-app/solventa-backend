@@ -11,13 +11,13 @@
 // (ver docs/evidencias/EC011-EC012-W04-<fecha>.md). Requiere la semilla (`sembrar-siniestros`).
 //
 // Uso:
-//   k6 run -e CLAIMS_URL=http://localhost:8011 -e GATEWAY_URL=http://localhost:8080 tests/k6/w04-bandeja.js
+//   k6 run -e CLAIMS_URL=http://localhost:8012 -e GATEWAY_URL=http://localhost:8080 tests/k6/w04-bandeja.js
 
 import http from "k6/http";
 import { check } from "k6";
 import { Trend } from "k6/metrics";
 
-const CLAIMS_URL = (__ENV.CLAIMS_URL || "http://localhost:8011").replace(/\/$/, "");
+const CLAIMS_URL = (__ENV.CLAIMS_URL || "http://localhost:8012").replace(/\/$/, "");
 const GATEWAY_URL = (__ENV.GATEWAY_URL || "http://localhost:8080").replace(/\/$/, "");
 const DURACION = __ENV.DURACION_NORMAL || "2m";
 const RITMO = Number(__ENV.RITMO || 10);

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/onboarding.rechazado/v1",
+  "title": "onboarding.rechazado",
+  "description": "ONBOARDING rechazó un intento de verificación de identidad. Puede haber otro intento si quedan (máximo 3). Sin datos personales (HU-M01).",
+  "type": "object",
+  "required": [
+    "eventId",
+    "tipo",
+    "version",
+    "ocurridoEn",
+    "datos"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tipo": {
+      "const": "onboarding.rechazado"
+    },
+    "version": {
+      "const": 1
+    },
+    "ocurridoEn": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "datos": {
+      "type": "object",
+      "required": [
+        "onboardingId",
+        "intento",
+        "motivo"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "onboardingId": {
+          "type": "string"
+        },
+        "intento": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "usuarioId": {
+          "type": "string",
+          "description": "La cuenta ligada al recorrido; ausente si aún no se creó."
+        },
+        "motivo": {
+          "enum": [
+            "ILEGIBLE",
+            "SUPLANTACION",
+            "ROSTRO_NO_COINCIDE",
+            "MENOR_DE_EDAD",
+            "DOCUMENTO_YA_REGISTRADO"
+          ]
+        }
+      }
+    }
+  }
+}

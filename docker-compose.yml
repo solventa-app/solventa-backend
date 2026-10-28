@@ -135,7 +135,12 @@ services:
       POLICY_URL: http://policy:8007
       ALMACENAMIENTO_URL: http://almacenamiento:8009
       ONBOARDING_URL: http://onboarding:8010
-      CLAIMS_URL: http://claims:8011
+      CLAIMS_URL: http://claims:8012
+      # Tickets de un solo uso del stream de avisos (W03-37): misma base que POLICY, que publica allí.
+      REDIS_URL: redis://redis:6379/3
+      AVISOS_URL: http://localhost:8011/avisos/stream
+      # A donde regresa el titular desde la página de pago (debe estar en URLS_RETORNO_PERMITIDAS).
+      URL_FRONT: http://localhost:5173
       # Solo local: el repo es público. En Cloud Run llega de Secret Manager (clave-cliente-id).
       CLIENTE_ID_CLAVE: solo-local-no-secreta
       # Mismo valor que AUTH (firma HS256). Solo local; en Cloud Run llega de Secret Manager (clave-jwt).
@@ -147,6 +152,7 @@ services:
       acl-worker: { condition: service_healthy }
       risk: { condition: service_healthy }
       rating: { condition: service_healthy }
+      redis: { condition: service_healthy }
 
   migrar-auth:
     <<: *tarea
@@ -234,7 +240,7 @@ services:
     <<: *servicio
     image: solventa/claims:local
     build: ./services/claims
-    ports: ["8011:8011"]
+    ports: ["8012:8012"]
     environment:
       MONGO_URI: mongodb://mongo1:27017,mongo2:27017/?replicaSet=rs0
       MONGO_DB: claims
@@ -404,13 +410,27 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/onboarding
       ALMACENAMIENTO_URL: http://almacenamiento:8009
       ACL_URL: http://acl-worker:8005
+      AUTH_URL: http://auth:8001  # cierra la cuenta PENDIENTE_VERIFICACION al terminar (HU-M01)
       # Solo local: el repo es público. En Cloud Run llegan de Secret Manager (clave-cliente-id, clave-cifrado).
       CLIENTE_ID_CLAVE: solo-local-no-secreta
       CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
     depends_on:
       almacenamiento: { condition: service_healthy }
       acl-worker: { condition: service_healthy }
+      auth: { condition: service_healthy }
       migrar-onboarding: { condition: service_completed_successfully }
+
+  # Avisos en vivo (SSE, HU-W03 W03-37). Lo abre el navegador directamente (fuera del gateway): por eso el puerto
+  # 8011 y el `Origin` permitido. Lee los tickets que guarda el BFF y los avisos que publica POLICY (Redis, base 3).
+  avisos:
+    <<: *servicio
+    build: ./services/avisos
+    ports: ["8011:8011"]
+    environment:
+      REDIS_URL: redis://redis:6379/3
+      ORIGENES_PERMITIDOS: http://localhost:5173,http://localhost:8080
+    depends_on:
+      redis: { condition: service_healthy }
 
   under:
     <<: *servicio
@@ -433,6 +453,11 @@ services:
       # M01: las URLs firmadas del almacenamiento apuntan a localhost:4443; desde aquí es fake-gcs.
       IDENTIDAD_REESCRITURA_ORIGENES: http://localhost:4443/=http://fake-gcs:4443/
       NOTIFICACIONES_URL: http://stub-notificaciones:8106
+      # Correo real (HU-W03): NOTIFICACIONES_PROVEEDOR=resend RESEND_API_KEY=re_... docker compose up.
+      # Por defecto el simulador; con Resend los avisos ya no aparecen en /control/enviados.
+      NOTIFICACIONES_PROVEEDOR: ${NOTIFICACIONES_PROVEEDOR:-simulado}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      CORREO_REMITENTE: ${CORREO_REMITENTE:-Solventa <onboarding@resend.dev>}
       TIMEOUT_MS: "700"        # umbral duro de EC009/EC010
       BREAKER_UMBRAL_FALLOS: "3"       # fallos consecutivos que abren el circuito
       BREAKER_TTL_SEGUNDOS: "5"        # tiempo abierto antes de permitir la próxima sonda

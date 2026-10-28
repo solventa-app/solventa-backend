@@ -4,7 +4,7 @@ CLAIMS: escritor único de la mesa de siniestros (HU-W04, KAN-27). Guarda los si
 (referencias a archivos del almacenamiento), las verificaciones, las asignaciones a perito y las resoluciones. Plan:
 [`docs/plan-completar-hu-w04.md`](../../docs/plan-completar-hu-w04.md).
 
-- **Puerto:** 8011. Privado: solo lo llama el BFF, que exige el rol BACKOFFICE antes de llamar (W04-11).
+- **Puerto:** 8012 (el 8011 es de `avisos`). Privado: solo lo llama el BFF, que exige el rol BACKOFFICE antes de llamar (W04-11).
 - **Almacén:** MongoDB, base `claims`, con colecciones referenciadas (W04-2). Escribe en la primaria; la bandeja y el
   detalle se leen de la secundaria (`secondaryPreferred` + `maxTimeMS`, HA-LAT-003). Tras una mutación se lee de la
   primaria.

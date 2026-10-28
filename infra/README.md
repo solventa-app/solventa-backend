@@ -227,7 +227,7 @@ el merge. Localmente: `export TF_VAR_project_id=... TF_VAR_billing_account_id=..
 valor marcador (`pendiente-de-cargar`). Con `crear_cloud_sql` (y `crear_servicios`) Terraform ya escribe solo
 `database-url-auth`, `database-url-payments` y `database-url-policy`; con `crear_redis`, `redis-url-*`; y con `crear_mongo_atlas`,
 `mongo-uri-risk` y `mongo-uri-rating`: esos no hay que cargarlos. Lo que se agrega aparte es `clave-jwt`,
-`clave-cliente-id`, `clave-cifrado` y, para M01, `didit-api-key` y `clave-cache-identidad` (ver «Didit»), y ese valor nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
+`clave-cliente-id`, `clave-cifrado` y, para M01, `didit-api-key` y `clave-cache-identidad` (ver «Didit»), y para el correo real `resend-api-key` (ver «Resend»), y ese valor nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
 
 ```bash
 printf '%s' 'postgresql://USUARIO:CLAVE@/auth?host=/cloudsql/PROYECTO:REGION:INSTANCIA' \
@@ -254,6 +254,30 @@ openssl rand -base64 32 | tr -d '\n' | gcloud secrets versions add clave-cache-i
 3. En el `entorno` de `acl-worker` (`.github/servicios.json`) agrega `"IDENTIDAD_URL": "https://verification.didit.me"`.
    Sin la llave cargada el ACL no arranca con esa URL, a propósito. Sin `clave-cache-identidad` funciona, pero cada
    reintento se vuelve a cobrar.
+
+### Resend (correo real de los avisos de HU-W03)
+
+El ACL manda los avisos (código de verificación, enlace de firma y póliza emitida con el PDF) por el simulador
+(`stubs/notificaciones`) mientras `NOTIFICACIONES_PROVEEDOR` sea `simulado`. Para correo real:
+
+1. Crea la cuenta en `resend.com`, verifica un dominio (registros DNS que da Resend) y crea una API key con permiso de
+   **envío** («Sending access»). Sin dominio verificado, el remitente de prueba `onboarding@resend.dev` solo entrega al
+   correo del dueño de la cuenta. El plan gratis permite 100 correos al día y 3.000 al mes.
+2. Carga la llave:
+
+```bash
+P=solventa-511815
+read -rsp "Resend API key: " K; echo; printf '%s' "$K" | gcloud secrets versions add resend-api-key --project=$P --data-file=-; unset K
+```
+
+3. En el `entorno` de `acl-worker` (`.github/servicios.json`) cambia `"NOTIFICACIONES_PROVEEDOR": "resend"` y
+   `"CORREO_REMITENTE": "Solventa <avisos@TU-DOMINIO>"`. Con `resend` y sin la llave cargada el ACL no arranca, a
+   propósito.
+4. En POLICY, `URL_FRONT` debe ser la URL real del front: con ella se arma el enlace de firma del correo.
+
+Cada aviso viaja con su id como `Idempotency-Key`: si POLICY lo reintenta (p. ej. tras un corte a los 700 ms), Resend
+no manda otro correo. Un aviso sin correo, como el del asesor (AUTH no guarda su contacto), queda `rechazada` y POLICY
+lo omite.
 
 ### MongoDB Atlas: lo único que hay que hacer a mano
 
@@ -352,6 +376,23 @@ En local, `docker-compose.yml` levanta el servicio `gateway` (Envoy en `:8080`) 
 mismo corte de 700 ms. Durante sesiones de medición con k6 se puede activar `calentar_camino_critico = true` para fijar
 `min_instance_count = 1` en los servicios del camino crítico de HU-W01 y evitar arranques en frío; al terminar la sesión
 se vuelve a poner en `false`.
+
+### Firma, pago y avisos de HU-W03 (F-B8)
+
+- **Ingreso directo, fuera del gateway.** `avisos` (stream SSE: un stream largo no cabe en el corte de 700 ms) y `stub-pasarela`
+  (la página de pago que abre el titular) llevan `ingreso_directo` en `.github/servicios.json`: Terraform les da `allUsers`
+  como invocador, igual que haría con `publico`. Si la organización bloquea `allUsers`, esos dos recursos fallan (es
+  esperable, como con el gateway). El resto de servicios sigue privado.
+- **`url_front`** (variable, sin barra final) es el origen del front web (Vercel). De ella salen `ORIGENES_PERMITIDOS` de
+  `avisos`, `URLS_RETORNO_PERMITIDAS` de la pasarela y `URL_FRONT` de POLICY y del BFF (a `<url_front>/pago/retorno/<id>`
+  regresa el titular). **Sin fijarla en `staging.tfvars` vale `http://localhost:5173`, y el stream de avisos y el regreso
+  de la pasarela no sirven en staging.** El mismo origen va en `almacenamiento_origenes_cors` al encender el almacenamiento.
+- **Redis base 3 (`redis-url-w03`)**: tickets del BFF, avisos que publica POLICY y lectura de `avisos`. Con Memorystore apagado,
+  la URL marcador no resuelve: los avisos se pierden (de mejor esfuerzo) y `ticketAvisos` responde error con reintento.
+- **Cloud Scheduler `purgar-contactos-policy`** (`purgar_contactos_cron`, diario 03:00 Bogotá): `POST /_purgar-contactos` de
+  POLICY. Con el almacenamiento encendido, `purga-almacenamiento` (F-B0) borra las subidas abandonadas.
+- **Gateway:** `GET /propuestas/{id}/contrato.pdf` en `openapi.yaml` y `envoy.yaml` (`scripts/validar_gateway.py` las compara).
+  La cabecera `X-Enlace-Firma` del token del enlace pasa tal cual hasta el BFF.
 
 ### Pub/Sub (`crear_pubsub`) y Batch nocturno (`crear_batch`)
 

@@ -1,5 +1,5 @@
 """
-Contrato GraphQL del BFF (v0, Sprint 1: HU-W01 y HU-W05).
+Contrato GraphQL del BFF (v0, Sprint 1: HU-W01 y HU-W05; v0.20 suma el onboarding de HU-M01).
 
 Este archivo es la FUENTE DE VERDAD del contrato con `solventa-frontend`.
 Reglas (ver contracts/README.md): solo cambios ADITIVOS; para quitar algo se marca @deprecated
@@ -353,7 +353,7 @@ type Poliza {
   prima: Monto!
   cobertura: Monto!
   documentoUrl: String! # ruta del BFF que entrega el PDF; solo el titular, su asesor o un BACKOFFICE
-  # v0.19 (HU-W04): ramo del producto. Hoy hay uno solo y lo pone el BFF por configuración (RAMO_POLIZA).
+  # v0.21 (HU-W04): ramo del producto. Hoy hay uno solo y lo pone el BFF por configuración (RAMO_POLIZA).
   ramo: String!
 }
 
@@ -492,6 +492,10 @@ enum RolUsuario {
 enum EstadoUsuario {
   ACTIVO
   SUSPENDIDO
+  # v0.20 (HU-M01): cuenta creada en el onboarding del móvil, aún sin identidad verificada (solo entra por la app, con
+  # el scope `verificacion-pendiente`), o cuya verificación se rechazó sin más intentos.
+  PENDIENTE_VERIFICACION
+  RECHAZADA
 }
 
 type Usuario {
@@ -522,6 +526,9 @@ type Sesion {
 
 type ErrorAutenticacion {
   mensaje: String!
+  # v0.20 (HU-M01): null en credenciales incorrectas. VERIFICACION_PENDIENTE: la clave es correcta pero la identidad
+  # aún no se verificó y el canal no es la app (la web no admite esas cuentas).
+  codigo: String
 }
 
 union ResultadoSesion = Sesion | ErrorAutenticacion
@@ -624,7 +631,90 @@ input SolicitudSubidaArchivoInput {
   consentimientoId: ID = null
 }
 
-# ---------- Siniestros (v0.19, HU-W04, servicio CLAIMS) ----------
+# ---------- Onboarding de identidad (HU-M01, v0.20) ----------
+# Recorrido del móvil antes de tener cuenta: documento (anverso y reverso), selfie y video de prueba de vida, que
+# verifica el proveedor de identidad detrás del ACL Worker. `iniciarOnboarding` es pública y devuelve un token de
+# 30 min que la app manda en la cabecera `X-Onboarding-Token` en las demás operaciones del recorrido (no es una
+# sesión de usuario). Las imágenes no pasan por el BFF: la app hace el PUT directo a la URL firmada.
+# Orden: iniciarOnboarding -> registrarConsentimientoOnboarding -> solicitarSubidaOnboarding + PUT +
+# confirmarSubidaOnboarding (x4) -> crearCuentaOnboarding -> enviarVerificacion -> onboarding / miVerificacion.
+# La cuenta puede crearse antes o después de enviar; al cerrar la verificación AUTH la activa (con nombre y documento
+# leídos del documento) o la rechaza si ya no quedan intentos. Luego la app llama `actualizarSesion`.
+
+enum EstadoOnboarding {
+  INICIADO
+  EN_VERIFICACION
+  VERIFICADA
+  RECHAZADA
+  EN_REVISION
+}
+
+# Un código, nunca un dato del documento.
+enum MotivoOnboarding {
+  ILEGIBLE
+  SUPLANTACION
+  ROSTRO_NO_COINCIDE
+  MENOR_DE_EDAD
+  DOCUMENTO_YA_REGISTRADO
+  PROVEEDOR_NO_DISPONIBLE # EN_REVISION: el proveedor no respondió; se revisa sin que la persona repita nada
+  IMAGEN_NO_DISPONIBLE # EN_REVISION
+}
+
+enum PasoOnboarding {
+  ANVERSO
+  REVERSO
+  ROSTRO
+  VIDEO
+}
+
+enum TipoDocumentoOnboarding {
+  CC
+  CE
+}
+
+type Onboarding {
+  id: ID!
+  estado: EstadoOnboarding!
+  motivo: MotivoOnboarding
+  intento: Int! # 1 a 3
+  intentosRestantes: Int! # 0 con DOCUMENTO_YA_REGISTRADO
+}
+
+type InicioOnboarding {
+  onboarding: Onboarding!
+  token: String! # va en `X-Onboarding-Token`; solo se entrega aquí
+  tokenVenceEn: DateTime!
+}
+
+type CuentaOnboarding {
+  # Sesión con el único scope `verificacion-pendiente` hasta que la verificación cierre.
+  sesion: Sesion!
+  onboarding: Onboarding!
+}
+
+# `codigo` es estable: TOKEN_INVALIDO, SIN_CONSENTIMIENTO, ESTADO_INVALIDO, PIEZAS_INCOMPLETAS, SIN_INTENTOS,
+# SESION_CON_CUENTA, CORREO_YA_REGISTRADO, DATO_INVALIDO, JURISDICCION_NO_SOPORTADA, NO_DISPONIBLE (con reintento)
+# o un código del almacenamiento (TIPO_CONTENIDO_NO_ADMITIDO, TAMANO_NO_ADMITIDO, OBJETO_NO_SUBIDO, ...).
+type ErrorOnboarding {
+  codigo: String!
+  mensaje: String!
+}
+
+union ResultadoInicioOnboarding = InicioOnboarding | ErrorOnboarding
+union ResultadoOnboarding = Onboarding | ErrorOnboarding
+union ResultadoSubidaOnboarding = SubidaArchivo | ErrorOnboarding
+union ResultadoCuentaOnboarding = CuentaOnboarding | ErrorOnboarding
+
+input IniciarOnboardingInput {
+  jurisdiccion: String! = "CO"
+  tipoDocumento: TipoDocumentoOnboarding!
+}
+
+input CuentaOnboardingInput {
+  correo: String! # con él inicia sesión; AUTH lo guarda cifrado
+  clave: String!
+}
+# ---------- Siniestros (v0.21, HU-W04, servicio CLAIMS) ----------
 # Mesa de siniestros del BACKOFFICE: todas las operaciones exigen token de BACKOFFICE. Reemplaza al dummy
 # `siniestros.graphql` (mismos nombres, argumentos y campos). Derivar a perito deja el caso EN_REVISION: no hay
 # estado DERIVADO. Un caso derivado todavía se puede aprobar o rechazar; uno resuelto ya no admite cambios.
@@ -754,7 +844,14 @@ type Query {
   propuestas(estado: EstadoVisible, pagina: Int = 1, tamano: Int = 10): PaginaPropuestas!
   # v0.18: página del enlace o sesión de CLIENTE (ver «Autorización» arriba). null si no existe o no es suya.
   firmaPorEnlace(propuestaId: ID = null): EnlaceFirma
-  # v0.19 (HU-W04): mesa de siniestros, solo BACKOFFICE. `estado` null = todos, del más reciente al más antiguo.
+  # ---------- v0.20 (HU-M01) ----------
+  # Con `X-Onboarding-Token`. Lee el estado guardado: responde aunque el proveedor esté caído. null si el token no es
+  # de ese recorrido.
+  onboarding(id: ID!): Onboarding
+  # Con sesión de CLIENTE (también la del scope `verificacion-pendiente`): el recorrido más reciente de su cuenta.
+  miVerificacion: Onboarding
+  # ---------- v0.21 (HU-W04) ----------
+  # Mesa de siniestros, solo BACKOFFICE. `estado` null = todos, del más reciente al más antiguo.
   siniestros(estado: EstadoSiniestro = null): [Siniestro!]!
   siniestro(id: ID!): Siniestro
   # Peritos disponibles para derivar este caso, cada uno con su fecha límite de informe si se le deriva hoy.
@@ -816,7 +913,33 @@ type Mutation {
   confirmarPago(sesionId: ID!, propuestaId: ID = null): ResultadoPago!
   # Ticket de un solo uso (60 s) para abrir el stream de avisos. Exige sesión de cualquier rol.
   ticketAvisos: TicketAvisos!
-  # v0.19 (HU-W04), solo BACKOFFICE. Aprobar registra la orden de pago de la indemnización en PAYMENTS (sin
+  # ---------- v0.20 (HU-M01): onboarding del móvil, ver la sección arriba ----------
+  # Pública. Crea el recorrido y su token.
+  iniciarOnboarding(entrada: IniciarOnboardingInput!): ResultadoInicioOnboarding!
+  # Con `X-Onboarding-Token`. Registra en AUTH el consentimiento `onboarding-biometrico` (append-only) antes de
+  # cualquier captura (regla 7).
+  registrarConsentimientoOnboarding(onboardingId: ID!, versionTexto: String!): ResultadoOnboarding!
+  # Con `X-Onboarding-Token`. URL firmada para una pieza (documento y selfie en JPG o PNG; video en MP4).
+  solicitarSubidaOnboarding(
+    onboardingId: ID!
+    paso: PasoOnboarding!
+    tipoContenido: String!
+    tamanoBytes: Int!
+  ): ResultadoSubidaOnboarding!
+  # Con `X-Onboarding-Token`, tras el PUT. Idempotente.
+  confirmarSubidaOnboarding(onboardingId: ID!, archivoId: ID!): ResultadoOnboarding!
+  # Con `X-Onboarding-Token`. Crea la cuenta CLIENTE en PENDIENTE_VERIFICACION, la liga al recorrido y abre su sesión.
+  crearCuentaOnboarding(onboardingId: ID!, entrada: CuentaOnboardingInput!): ResultadoCuentaOnboarding!
+  # Con `X-Onboarding-Token` y las cuatro piezas confirmadas: responde EN_VERIFICACION y el resultado llega después
+  # (consultar `onboarding` o `miVerificacion`).
+  enviarVerificacion(onboardingId: ID!): ResultadoOnboarding!
+  # Con `X-Onboarding-Token`, tras un RECHAZADA con intentos: vuelve a INICIADO y pide las cuatro piezas de nuevo.
+  reintentarOnboarding(onboardingId: ID!): ResultadoOnboarding!
+  # Con sesión (cualquier rol o scope): un token nuevo con los permisos del estado actual de la cuenta y la misma
+  # expiración. Tras VERIFICADA, el token deja de ser `verificacion-pendiente`.
+  actualizarSesion: ResultadoSesion!
+  # ---------- v0.21 (HU-W04): mesa de siniestros, solo BACKOFFICE ----------
+  # Aprobar registra la orden de pago de la indemnización en PAYMENTS (sin
   # dispersión); si no se puede registrar, responde ErrorSiniestro y el caso sigue abierto.
   aprobarSiniestro(id: ID!): ResultadoResolucion!
   rechazarSiniestro(id: ID!, motivo: MotivoRechazo!, comentario: String = null): ResultadoResolucion!

@@ -89,6 +89,7 @@ jobs:
             services/policy: ['services/policy/**']
             services/almacenamiento: ['services/almacenamiento/**']
             services/onboarding: ['services/onboarding/**']
+            services/avisos: ['services/avisos/**']
             services/claims: ['services/claims/**']
             services/under: ['services/under/**']
             services/acl-worker: ['services/acl-worker/**']

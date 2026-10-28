@@ -1,7 +1,7 @@
 # stub-siniestros
 
 > **Obsoleto desde 2026-10-28 (W04-13).** El servicio real es [`services/claims`](../../services/claims/README.md) y la
-> mesa de siniestros ya está en el BFF (contrato principal v0.19). Este dummy se conserva sin cambios mientras la web
+> mesa de siniestros ya está en el BFF (contrato principal v0.21). Este dummy se conserva sin cambios mientras la web
 > no se conecte al BFF (pasos en `solventa-frontend-web/docs/plan-ejecucion-hu-w04-siniestros.md`) y hasta que el
 > equipo decida retirarlo. **No lo borres:** `app/datos/` alimenta la semilla de `claims` (`sembrar-siniestros` la
 > monta, no la copia).

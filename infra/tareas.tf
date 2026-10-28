@@ -327,3 +327,34 @@ resource "google_cloud_scheduler_job" "reconciliacion_cobros_policy" {
     }
   }
 }
+
+# ------------------------------------------------------------------ purga de contactos de POLICY (Cloud Scheduler)
+# W03-26: pasada diaria que borra el nombre, el correo y la imagen de la firma de las propuestas cuyo consentimiento
+# venció (la revocación a mano la avisa el BFF al instante). Idempotente: una pasada que no termina la retoma la del día
+# siguiente. Misma cuenta `programador`; POLICY es privado.
+resource "google_cloud_scheduler_job" "purgar_contactos_policy" {
+  count       = local.hay_tareas ? 1 : 0
+  depends_on  = [google_project_service.tareas_apis]
+  project     = var.project_id
+  region      = var.region
+  name        = "purgar-contactos-policy"
+  description = "Una pasada de la purga de contactos de POLICY: borra nombre, correo e imagen de la firma de lo que ya no tiene consentimiento vigente"
+  schedule    = var.purgar_contactos_cron
+  time_zone   = "America/Bogota"
+
+  attempt_deadline = "300s"
+
+  retry_config {
+    retry_count = 0
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.url["policy"]}/_purgar-contactos"
+
+    oidc_token {
+      service_account_email = google_service_account.programador[0].email
+      audience              = local.url["policy"]
+    }
+  }
+}

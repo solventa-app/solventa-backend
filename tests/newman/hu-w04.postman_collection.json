@@ -1222,7 +1222,7 @@
   "variable": [
     {
       "key": "claims_url",
-      "value": "http://localhost:8011"
+      "value": "http://localhost:8012"
     },
     {
       "key": "clave_nuevos",

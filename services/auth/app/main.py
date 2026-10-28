@@ -25,7 +25,7 @@ from app.configuracion import Configuracion
 from app.consentimientos import AlmacenConsentimientos, AlmacenConsentimientosPostgres
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.observabilidad import configurar_trazas
-from app.sesiones import CredencialesInvalidas, ServicioSesiones
+from app.sesiones import CredencialesInvalidas, ServicioSesiones, VerificacionPendiente
 from app.usuarios import (
     DatoInvalido,
     RepositorioUsuariosPostgres,
@@ -76,8 +76,29 @@ class ConsentimientoResponse(BaseModel):
 
 
 class Credenciales(BaseModel):
+    # El alias, o el correo de una cuenta del onboarding (HU-M01).
     usuario: str
     clave: str
+    # Canal desde el que se inicia sesión (`app` = móvil, `web`). Sin canal se trata como `web`.
+    canal: str | None = None
+
+
+class SolicitudCuentaOnboarding(BaseModel):
+    correo: str
+    clave: str
+
+
+class SolicitudCierreVerificacion(BaseModel):
+    aprobada: bool
+    # Leídos del documento por el onboarding; solo con `aprobada`. Se guardan cifrados, y el
+    # documento fija además el `titular_id` del CLIENTE (W03-36).
+    nombre: str | None = None
+    documento: str | None = None
+
+
+class SolicitudRenovacion(BaseModel):
+    usuario_id: str
+    expira_en: datetime
 
 
 class SolicitudUsuario(BaseModel):
@@ -183,7 +204,11 @@ def create_app(
                 repositorio, hasher, cifrador, config.cliente_id_clave
             )
             app.state.sesiones = ServicioSesiones(
-                repositorio, hasher, config.jwt_secreto, config.jwt_vigencia_minutos
+                repositorio,
+                hasher,
+                config.jwt_secreto,
+                config.jwt_vigencia_minutos,
+                clave_correo=config.cliente_id_clave,
             )
         try:
             yield
@@ -251,13 +276,29 @@ def create_app(
     @app.post("/sesiones", tags=["sesiones"], response_model=SesionResponse)
     def iniciar_sesion(body: Credenciales) -> SesionResponse:
         try:
-            sesion = app.state.sesiones.iniciar_sesion(body.usuario, body.clave)
+            sesion = app.state.sesiones.iniciar_sesion(body.usuario, body.clave, body.canal)
         except CredencialesInvalidas as error:
             raise HTTPException(status_code=401, detail=str(error)) from error
+        except VerificacionPendiente as error:
+            raise HTTPException(status_code=403, detail="VERIFICACION_PENDIENTE") from error
         usuario_id = sesion["usuario"]["id"]
         sesion["usuario"]["nombre"] = app.state.usuarios.nombre_de(usuario_id)
         sesion["usuario"]["documento_enmascarado"] = app.state.usuarios.documento_enmascarado_de(
             usuario_id
+        )
+        return SesionResponse(**sesion)
+
+    @app.post("/sesiones/renovar", tags=["sesiones"], response_model=SesionResponse)
+    def renovar_permisos(body: SolicitudRenovacion) -> SesionResponse:
+        """`actualizarSesion` (HU-M01): un token nuevo con los scopes del estado actual y la misma
+        expiración. Solo lo llama el BFF con el id y la expiración de un token que ya validó."""
+        try:
+            sesion = app.state.sesiones.renovar_permisos(body.usuario_id, body.expira_en)
+        except CredencialesInvalidas as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        sesion["usuario"]["nombre"] = app.state.usuarios.nombre_de(body.usuario_id)
+        sesion["usuario"]["documento_enmascarado"] = app.state.usuarios.documento_enmascarado_de(
+            body.usuario_id
         )
         return SesionResponse(**sesion)
 
@@ -280,6 +321,41 @@ def create_app(
         except UsuarioDuplicado as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         logger_usuarios.info("usuario creado id=%s rol=%s", id_opaco(usuario["id"]), usuario["rol"])
+        return UsuarioResponse(**usuario)
+
+    @app.post("/usuarios/onboarding", tags=["usuarios"], response_model=UsuarioResponse)
+    def crear_cuenta_onboarding(body: SolicitudCuentaOnboarding) -> UsuarioResponse:
+        """Cuenta del onboarding del móvil (HU-M01, M01-05b): CLIENTE en PENDIENTE_VERIFICACION
+        con correo y clave. La llama el BFF; el correo se guarda cifrado y nunca se loguea."""
+        try:
+            usuario = app.state.usuarios.crear_cuenta_onboarding(body.correo, body.clave)
+        except DatoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except UsuarioDuplicado as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        logger_usuarios.info("cuenta de onboarding creada id=%s", id_opaco(usuario["id"]))
+        return UsuarioResponse(**usuario)
+
+    @app.post(
+        "/usuarios/{usuario_id}/verificacion", tags=["usuarios"], response_model=UsuarioResponse
+    )
+    def cerrar_verificacion(usuario_id: str, body: SolicitudCierreVerificacion) -> UsuarioResponse:
+        """Resultado del onboarding (HU-M01): ACTIVO o RECHAZADA. Solo lo llama el servicio
+        `onboarding` (AUTH es privado y el BFF no expone esta ruta). Idempotente. 404 si la cuenta
+        no existe o ya no está pendiente."""
+        try:
+            usuario = app.state.usuarios.cerrar_verificacion(
+                usuario_id, body.aprobada, body.nombre, body.documento
+            )
+        except DatoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except UsuarioDuplicado as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        if usuario is None:
+            raise HTTPException(status_code=404, detail="usuario no encontrado")
+        logger_usuarios.info(
+            "verificación cerrada id=%s estado=%s", id_opaco(usuario_id), usuario["estado"]
+        )
         return UsuarioResponse(**usuario)
 
     @app.post(

@@ -92,6 +92,12 @@ class Configuracion:
     identidad_cache_ttl_segundos: int = 30 * 24 * 3600
     # Notificaciones al cliente (HU-W03, bloque 5).
     notificaciones_url: str = "http://localhost:8106"
+    # "simulado" (`stubs/notificaciones`, local y CI) o "resend" (correo real). Con "resend"
+    # hacen falta `RESEND_API_KEY` (secreto `resend-api-key`) y `CORREO_REMITENTE` de un
+    # dominio verificado.
+    proveedor_notificaciones: str = "simulado"
+    resend_api_key: str = ""
+    correo_remitente: str = "Solventa <onboarding@resend.dev>"
     # Tope del contenido de un archivo adjunto a un aviso (bytes ya decodificados). El PDF de una
     # póliza pesa pocos KB; el tope evita que por aquí viaje cualquier cosa.
     adjunto_maximo_bytes: int = 5_000_000
@@ -169,7 +175,16 @@ class Configuracion:
         identidad_api_key = os.getenv("DIDIT_API_KEY", "local").strip()
         if os.getenv("IDENTIDAD_URL") and identidad_api_key in ("", "local", VALOR_MARCADOR):
             raise ValueError("IDENTIDAD_URL apunta a un proveedor real y falta DIDIT_API_KEY")
+        proveedor_notificaciones = os.getenv("NOTIFICACIONES_PROVEEDOR", "simulado").strip()
+        if proveedor_notificaciones not in ("simulado", "resend"):
+            raise ValueError("NOTIFICACIONES_PROVEEDOR debe ser 'simulado' o 'resend'")
+        resend_api_key = os.getenv("RESEND_API_KEY", "").strip()
+        if proveedor_notificaciones == "resend" and resend_api_key in ("", VALOR_MARCADOR):
+            raise ValueError("NOTIFICACIONES_PROVEEDOR=resend y falta RESEND_API_KEY")
         return cls(
+            proveedor_notificaciones=proveedor_notificaciones,
+            resend_api_key=resend_api_key,
+            correo_remitente=os.getenv("CORREO_REMITENTE", "Solventa <onboarding@resend.dev>"),
             identidad_url=identidad_url,
             identidad_api_key=identidad_api_key,
             identidad_timeout_s=float(os.getenv("IDENTIDAD_TIMEOUT_SEGUNDOS", "15")),

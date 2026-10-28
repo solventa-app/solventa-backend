@@ -9,7 +9,6 @@ from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
 from typing import Any
 
-import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -27,6 +26,7 @@ from app.configuracion import Configuracion
 from app.esquema import schema
 from app.idioma import idioma_de
 from app.observabilidad import configurar_trazas
+from app.servicio_firma_pago import ErrorFlujoDatos, ServicioFirmaPago
 from app.servicio_oferta import ServicioOferta
 from app.servicio_suscripcion import MENSAJE_DOCUMENTO_NO_DISPONIBLE, ServicioSuscripcion
 
@@ -45,12 +45,15 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        abiertos: list[httpx.AsyncClient] = []
+        abiertos: list[Any] = []
         if clientes is not None:
             app.state.clientes = clientes
         else:
             app.state.clientes, abiertos = construir_clientes(config)
         app.state.servicio_oferta = ServicioOferta(app.state.clientes, config.cliente_id_clave)
+        app.state.servicio_firma_pago = ServicioFirmaPago(
+            app.state.clientes, config.avisos_url, config.url_front
+        )
         try:
             yield
         finally:
@@ -78,12 +81,17 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
                 "canal": canal,
                 "clientes": app.state.clientes,
                 "servicio_oferta": app.state.servicio_oferta,
+                "servicio_firma_pago": app.state.servicio_firma_pago,
+                # Token del enlace de firma (W03-33): viaja en esta cabecera, nunca en la URL.
+                "enlace_firma": request.headers.get("x-enlace-firma"),
                 "usuario": usuario,
                 "error_token": error_token,
                 # Idioma del selector del header (lo manda el frontend); ver app/idioma.py.
                 "idioma": idioma_de(request.headers.get("accept-language")),
                 "modo_autenticacion": config.autenticacion_usuarios,
                 "cliente_id_clave": config.cliente_id_clave,
+                # Token del recorrido de onboarding (HU-M01): no es una sesión de usuario.
+                "token_onboarding": request.headers.get("x-onboarding-token"),
             }
 
         return contexto
@@ -138,8 +146,54 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
             },
         )
 
+    @app.get(
+        "/propuestas/{propuesta_id}/contrato.pdf", tags=["propuestas"], response_class=Response
+    )
+    async def contrato_pdf(propuesta_id: str, request: Request) -> Response:
+        """El contrato a firmar en PDF (W03-31), con la misma autorización doble de la página del
+        enlace: `X-Enlace-Firma` o la sesión del CLIENTE titular. Sin datos personales. Una
+        propuesta ajena o inexistente responde igual (404)."""
+        try:
+            usuario = leer_usuario(
+                extraer_cabecera_autorizacion(request.headers), config.jwt_secreto
+            )
+        except TokenInvalido as error:
+            return JSONResponse({"mensaje": str(error)}, status_code=401)
+        servicio: ServicioFirmaPago = app.state.servicio_firma_pago
+        autorizado = await servicio.autorizar_enlace(
+            usuario, request.headers.get("x-enlace-firma"), propuesta_id
+        )
+        if isinstance(autorizado, ErrorFlujoDatos):
+            return _respuesta_de_error(autorizado)
+        pdf = await servicio.contrato_pdf(autorizado)
+        if isinstance(pdf, ErrorFlujoDatos):
+            return _respuesta_de_error(pdf)
+        if pdf is None:
+            return JSONResponse({"mensaje": "Propuesta no encontrada."}, status_code=404)
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": 'inline; filename="contrato.pdf"',
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app
+
+
+def _respuesta_de_error(error: ErrorFlujoDatos) -> JSONResponse:
+    """Una ruta REST no tiene uniones de error: el motivo se vuelve un estado HTTP."""
+    if error.motivo in ("PROPUESTA_NO_ENCONTRADA", "PROPUESTA_NO_VALIDA"):
+        estado = 404
+    elif error.motivo == "ENLACE_VENCIDO":
+        estado = 409
+    else:
+        estado = 503
+    cabeceras = {"Retry-After": "5"} if estado == 503 else None
+    return JSONResponse({"mensaje": error.mensaje}, status_code=estado, headers=cabeceras)
 
 
 app = create_app()

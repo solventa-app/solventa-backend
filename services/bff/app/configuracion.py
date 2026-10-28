@@ -28,6 +28,16 @@ class Configuracion:
     policy_url: str
     # Archivos (KAN-250): `solicitarSubidaArchivo`, `archivo`, `descargarArchivo`.
     almacenamiento_url: str
+    # Tickets de un solo uso del stream de avisos (W03-37): se guardan 60 s en Redis.
+    redis_url: str
+    # URL pública del stream SSE del servicio `avisos` (fuera del API Gateway), sin el ticket.
+    avisos_url: str
+    # Origen del front web: a él regresa el titular desde la página de pago de la pasarela
+    # (`<url_front>/pago/retorno/<propuestaId>?sesion=…`). Debe estar en la lista blanca de la
+    # pasarela (`URLS_RETORNO_PERMITIDAS`).
+    url_front: str
+    # Onboarding del móvil (HU-M01, contrato v0.20).
+    onboarding_url: str
     acl_timeout_segundos: float
     servicios_timeout_segundos: float
     cliente_id_clave: str
@@ -38,7 +48,7 @@ class Configuracion:
     # "opcional" | "obligatoria": ver app/autenticacion_usuarios.py.
     autenticacion_usuarios: str
     # Mesa de siniestros (HU-W04): `siniestros`, `aprobarSiniestro`...
-    claims_url: str = "http://localhost:8011"
+    claims_url: str = "http://localhost:8012"
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -69,7 +79,11 @@ class Configuracion:
             payments_url=os.getenv("PAYMENTS_URL", "http://localhost:8004"),
             policy_url=os.getenv("POLICY_URL", "http://localhost:8007"),
             almacenamiento_url=os.getenv("ALMACENAMIENTO_URL", "http://localhost:8009"),
-            claims_url=os.getenv("CLAIMS_URL", "http://localhost:8011"),
+            redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+            avisos_url=os.getenv("AVISOS_URL", "http://localhost:8011/avisos/stream"),
+            url_front=os.getenv("URL_FRONT", "http://localhost:5173").rstrip("/"),
+            onboarding_url=os.getenv("ONBOARDING_URL", "http://localhost:8010"),
+            claims_url=os.getenv("CLAIMS_URL", "http://localhost:8012"),
             # El ACL Worker corta a los 700 ms (EC009/EC010) y degrada; el margen
             # cubre la red y su propia respuesta degradada.
             acl_timeout_segundos=float(os.getenv("ACL_TIMEOUT_SEGUNDOS", "1.0")),

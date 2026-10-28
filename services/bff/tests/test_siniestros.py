@@ -1,4 +1,4 @@
-"""Mesa de siniestros por GraphQL (HU-W04, contrato v0.19): solo BACKOFFICE; la póliza la resuelve
+"""Mesa de siniestros por GraphQL (HU-W04, contrato v0.21): solo BACKOFFICE; la póliza la resuelve
 POLICY y la URL de cada evidencia el almacenamiento, como el BACKOFFICE que consulta."""
 
 import pytest

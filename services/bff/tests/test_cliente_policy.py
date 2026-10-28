@@ -28,7 +28,9 @@ def test_envia_la_oferta_y_el_actor_pero_nunca_un_precio() -> None:
     propuesta, enviados = _crear(lambda: httpx.Response(200, json={"id": "p-1"}))
 
     assert propuesta == {"id": "p-1"}
-    assert enviados == [{"oferta_id": "o-1", "actor_usuario_id": "u-1"}]
+    assert enviados == [
+        {"oferta_id": "o-1", "actor_usuario_id": "u-1", "actor_rol": None, "contacto": None}
+    ]
 
 
 @pytest.mark.parametrize(

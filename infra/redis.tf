@@ -83,12 +83,13 @@ resource "google_redis_instance" "cache" {
 # solo si los servicios existen; depends_on con la versión marcadora asegura que la real sea la más nueva
 # ("latest" es la que lee Cloud Run). El número es la base lógica, igual que redis:6379/0,1,2 en docker-compose.yml:
 # 0 = acl-worker (cache y circuito), 1 = rating (sesión causal, D-02), 2 = cola de reconciliación (acl-worker y
-# consolidador-fuentes).
+# consolidador-fuentes), 3 = HU-W03 (tickets del BFF, avisos que publica POLICY y lee `avisos`).
 locals {
   redis_bases = (var.crear_redis && var.redis_encendida && var.crear_servicios) ? {
     "redis-url-acl"                 = 0
     "redis-url-rating"              = 1
     "redis-url-cola-reconciliacion" = 2
+    "redis-url-w03"                 = 3
   } : {}
 }
 
@@ -103,6 +104,7 @@ locals {
     "redis-url-acl"                 = 0
     "redis-url-rating"              = 1
     "redis-url-cola-reconciliacion" = 2
+    "redis-url-w03"                 = 3
   } : {}
 }
 

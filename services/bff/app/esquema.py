@@ -10,10 +10,9 @@ Operaciones sin backend todavía (alcance del Sprint 1, KAN-24):
   leen y escriben en POLICY (bloques 1, 2 y 4). `Poliza.documentoUrl` apunta a una ruta del BFF que
   entrega el PDF y que llega con el bloque 5. `oferta(id)` lee la oferta que RATING guardó, con la
   misma validación de dueño que `aceptarOferta`.
-- HU-W03 bloque 9 (contrato v0.18): las operaciones del asesor, de la página del enlace,
-  `propuestas` y `ticketAvisos` son solo el esqueleto: responden «aún no disponible» con
-  reintento hasta F-B6 (`docs/plan-hu-w03-frans.md`). `aceptarOferta` recibe el contacto pero
-  aún no lo guarda.
+- HU-W03 bloque 9 (contrato v0.18, F-B6): las operaciones del asesor, las de la página del enlace
+  (token del enlace o sesión de CLIENTE, W03-33), `propuestas` (filtradas por el rol del token) y
+  `ticketAvisos` leen y escriben en POLICY y AUTH a través de `ServicioFirmaPago`.
 `cobros` y `reintentarCobro` (KAN-28) leen y reintentan en PAYMENTS, que concilia
 con la pasarela antes de cobrar (ver `docs/cobros-conciliacion.md`).
 Ninguna produce un 5xx: los errores de GraphQL viajan con HTTP 200.
@@ -24,7 +23,7 @@ matriz completa está en `docs/autenticacion-usuarios.md`."""
 import asyncio
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Annotated
 
@@ -33,12 +32,19 @@ from graphql import GraphQLError
 from strawberry.extensions import MaskErrors
 from strawberry.types import Info
 
-from app.autenticacion_usuarios import MENSAJE_SIN_PERMISO, MENSAJE_SIN_SESION, UsuarioActual
+from app.autenticacion_usuarios import (
+    MENSAJE_SIN_PERMISO,
+    MENSAJE_SIN_SESION,
+    MENSAJE_VERIFICACION_PENDIENTE,
+    UsuarioActual,
+)
 from app.clientes import (
     ArchivoRechazado,
+    ErrorOnboardingServicio,
     ErrorServicio,
     ResolucionRechazada,
     SolicitudInvalida,
+    VerificacionPendiente,
 )
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.idioma import TraducirMensajes
@@ -48,6 +54,14 @@ from app.monedas import (
     MENSAJE_TASAS_NO_DISPONIBLES,
     ConversionInvalida,
     convertir,
+)
+from app.servicio_firma_pago import (
+    MENSAJE_AVISOS_NO_DISPONIBLES,
+    MENSAJE_POLIZA_YA_EMITIDA,
+    MENSAJE_PROPUESTAS_NO_DISPONIBLES,
+    ErrorFlujoDatos,
+    ServicioFirmaPago,
+    documento_del_cliente,
 )
 from app.servicio_oferta import ErrorOfertaDatos
 from app.servicio_suscripcion import (
@@ -78,13 +92,17 @@ def _mostrar_solo_errores_publicos(error: GraphQLError) -> bool:
     return error.original_error is not None and not isinstance(error.original_error, ErrorPublico)
 
 
-def exigir_rol(info: Info, *roles: str, siempre: bool = False) -> UsuarioActual | None:
+def exigir_rol(
+    info: Info, *roles: str, siempre: bool = False, admite_pendiente: bool = False
+) -> UsuarioActual | None:
     """Aplica la autorización de una operación y devuelve el usuario (o `None`).
 
     - Token presente pero inválido o vencido: error, en cualquier modo.
     - Sin token: error si `siempre` o si la bandera está en `obligatoria`; si no
       (modo `opcional`), se permite como antes y devuelve `None`.
-    - Con token: el rol debe estar en `roles`."""
+    - Con token: el rol debe estar en `roles`.
+    - Un token con el scope `verificacion-pendiente` (HU-M01) solo entra a las operaciones con
+      `admite_pendiente` (`yo`, `miVerificacion`, `actualizarSesion`)."""
     contexto = info.context
     if contexto["error_token"]:
         raise ErrorPublico(contexto["error_token"])
@@ -95,6 +113,8 @@ def exigir_rol(info: Info, *roles: str, siempre: bool = False) -> UsuarioActual 
         return None
     if usuario.rol not in roles:
         raise ErrorPublico(MENSAJE_SIN_PERMISO)
+    if usuario.verificacion_pendiente and not admite_pendiente:
+        raise ErrorPublico(MENSAJE_VERIFICACION_PENDIENTE)
     return usuario
 
 
@@ -400,7 +420,7 @@ class Poliza:
     prima: Monto
     cobertura: Monto
     documento_url: str  # ruta del BFF que entrega el PDF
-    ramo: str  # v0.19 (HU-W04): un solo producto hoy, por configuración (RAMO_POLIZA)
+    ramo: str  # v0.21 (HU-W04): un solo producto hoy, por configuración (RAMO_POLIZA)
 
 
 @strawberry.type
@@ -621,6 +641,9 @@ class RolUsuario(Enum):
 class EstadoUsuario(Enum):
     ACTIVO = "ACTIVO"
     SUSPENDIDO = "SUSPENDIDO"
+    # v0.20 (HU-M01): cuentas del onboarding del móvil.
+    PENDIENTE_VERIFICACION = "PENDIENTE_VERIFICACION"
+    RECHAZADA = "RECHAZADA"
 
 
 @strawberry.type
@@ -653,6 +676,8 @@ class Sesion:
 @strawberry.type
 class ErrorAutenticacion:
     mensaje: str
+    # v0.20 (HU-M01): VERIFICACION_PENDIENTE fuera de la app; null en credenciales incorrectas.
+    codigo: str | None = None
 
 
 ResultadoSesion = Annotated[Sesion | ErrorAutenticacion, strawberry.union("ResultadoSesion")]
@@ -739,7 +764,12 @@ def _monto(datos: dict | None) -> Monto | None:
     return Monto(valor=datos["valor"], moneda=datos["moneda"]) if datos else None
 
 
-def _propuesta(datos: dict) -> Propuesta:
+def _propuesta(
+    datos: dict,
+    poliza: Poliza | None = None,
+    nombre_titular: str | None = None,
+    nombre_asesor: str | None = None,
+) -> Propuesta:
     explicacion = explicar_estado(datos)
     return Propuesta(
         id=datos["id"],
@@ -755,6 +785,24 @@ def _propuesta(datos: dict) -> Propuesta:
         accion_sugerida=AccionSugerida(explicacion.accion) if explicacion else None,
         estado_visible=estado_visible(datos["estado"]),
         creada_en=_fecha(datos.get("creado_en")),
+        poliza=poliza,
+        nombre_titular=nombre_titular,
+        nombre_asesor=nombre_asesor,
+    )
+
+
+def _poliza_de_resumen(resumen: dict | None, propuesta: dict) -> Poliza | None:
+    """La lista de POLICY trae de la póliza solo número y vigencia; el precio es el de la
+    propuesta."""
+    if not resumen:
+        return None
+    return _poliza(
+        {
+            **resumen,
+            "estado": "EMITIDA",
+            "prima": propuesta["prima"],
+            "cobertura": propuesta["cobertura"],
+        }
     )
 
 
@@ -974,7 +1022,165 @@ def _almacenamiento(info: Info):
     return info.context["clientes"].almacenamiento
 
 
-# ---------- Siniestros (v0.19, HU-W04, servicio CLAIMS) ----------
+# ---------- Onboarding de identidad (HU-M01, v0.20) ----------
+
+
+@strawberry.enum
+class EstadoOnboarding(Enum):
+    INICIADO = "INICIADO"
+    EN_VERIFICACION = "EN_VERIFICACION"
+    VERIFICADA = "VERIFICADA"
+    RECHAZADA = "RECHAZADA"
+    EN_REVISION = "EN_REVISION"
+
+
+@strawberry.enum
+class MotivoOnboarding(Enum):
+    ILEGIBLE = "ILEGIBLE"
+    SUPLANTACION = "SUPLANTACION"
+    ROSTRO_NO_COINCIDE = "ROSTRO_NO_COINCIDE"
+    MENOR_DE_EDAD = "MENOR_DE_EDAD"
+    DOCUMENTO_YA_REGISTRADO = "DOCUMENTO_YA_REGISTRADO"
+    PROVEEDOR_NO_DISPONIBLE = "PROVEEDOR_NO_DISPONIBLE"
+    IMAGEN_NO_DISPONIBLE = "IMAGEN_NO_DISPONIBLE"
+
+
+@strawberry.enum
+class PasoOnboarding(Enum):
+    ANVERSO = "ANVERSO"
+    REVERSO = "REVERSO"
+    ROSTRO = "ROSTRO"
+    VIDEO = "VIDEO"
+
+
+@strawberry.enum
+class TipoDocumentoOnboarding(Enum):
+    CC = "CC"
+    CE = "CE"
+
+
+@strawberry.type
+class Onboarding:
+    id: strawberry.ID
+    estado: EstadoOnboarding
+    motivo: MotivoOnboarding | None
+    intento: int
+    intentos_restantes: int
+
+
+@strawberry.type
+class InicioOnboarding:
+    onboarding: Onboarding
+    token: str
+    token_vence_en: datetime
+
+
+@strawberry.type
+class CuentaOnboarding:
+    sesion: Sesion
+    onboarding: Onboarding
+
+
+@strawberry.type
+class ErrorOnboarding:
+    codigo: str
+    mensaje: str
+
+
+ResultadoInicioOnboarding = Annotated[
+    InicioOnboarding | ErrorOnboarding, strawberry.union("ResultadoInicioOnboarding")
+]
+ResultadoOnboarding = Annotated[
+    Onboarding | ErrorOnboarding, strawberry.union("ResultadoOnboarding")
+]
+ResultadoSubidaOnboarding = Annotated[
+    SubidaArchivo | ErrorOnboarding, strawberry.union("ResultadoSubidaOnboarding")
+]
+ResultadoCuentaOnboarding = Annotated[
+    CuentaOnboarding | ErrorOnboarding, strawberry.union("ResultadoCuentaOnboarding")
+]
+
+
+@strawberry.input
+class IniciarOnboardingInput:
+    tipo_documento: TipoDocumentoOnboarding
+    jurisdiccion: str = "CO"
+
+
+@strawberry.input
+class CuentaOnboardingInput:
+    correo: str  # dato personal: solo en el cuerpo hacia AUTH, nunca se loguea
+    clave: str
+
+
+# Finalidad del consentimiento de la biometría (regla 7): se registra en AUTH antes de capturar.
+FINALIDAD_ONBOARDING = "onboarding-biometrico"
+CANAL_APP = "app"
+MENSAJES_ONBOARDING = {
+    "TOKEN_INVALIDO": "Tu verificación venció o no es válida. Empieza de nuevo.",
+    "SESION_NO_ENCONTRADA": "Tu verificación venció o no es válida. Empieza de nuevo.",
+    "SIN_CONSENTIMIENTO": "Primero acepta el tratamiento de tus datos biométricos.",
+    "ESTADO_INVALIDO": "Este paso ya no aplica a tu verificación.",
+    "PIEZAS_INCOMPLETAS": "Faltan fotos o el video. Complétalos e intenta de nuevo.",
+    "SIN_INTENTOS": "Ya no quedan intentos de verificación.",
+    "SESION_CON_CUENTA": "Esta verificación ya tiene una cuenta.",
+    "CORREO_YA_REGISTRADO": "Ya existe una cuenta con ese correo.",
+    "DATO_INVALIDO": "Revisa los datos e intenta de nuevo.",
+    "JURISDICCION_NO_SOPORTADA": "Aún no verificamos documentos de ese país.",
+    "TIPO_DOCUMENTO_NO_SOPORTADO": "Ese tipo de documento no se admite.",
+    "PASO_INVALIDO": "Ese paso no existe.",
+    "ARCHIVO_NO_ENCONTRADO": "No encontramos ese archivo. Súbelo de nuevo.",
+    "NO_DISPONIBLE": "No pudimos continuar tu verificación. Intenta de nuevo.",
+}
+
+
+def _error_onboarding(codigo: str) -> ErrorOnboarding:
+    mensaje = MENSAJES_ONBOARDING.get(codigo) or MENSAJES_ARCHIVO.get(
+        codigo, MENSAJES_ONBOARDING["NO_DISPONIBLE"]
+    )
+    return ErrorOnboarding(codigo=codigo, mensaje=mensaje)
+
+
+def _onboarding_de(datos: dict) -> Onboarding:
+    motivo = datos.get("motivo")
+    return Onboarding(
+        id=strawberry.ID(datos["id"]),
+        estado=EstadoOnboarding(datos["estado"]),
+        motivo=MotivoOnboarding(motivo) if motivo in MotivoOnboarding._value2member_map_ else None,
+        intento=datos["intento"],
+        intentos_restantes=datos["intentos_restantes"],
+    )
+
+
+def _onboarding(info: Info):
+    return info.context["clientes"].onboarding
+
+
+def _token_onboarding(info: Info) -> str:
+    """El token del recorrido; sin él responde el mismo TOKEN_INVALIDO que un token ajeno."""
+    token = info.context.get("token_onboarding")
+    if not token:
+        raise ErrorOnboardingServicio("TOKEN_INVALIDO")
+    return token
+
+
+async def _paso_onboarding(llamada) -> Onboarding | ErrorOnboarding:
+    """Ejecuta una llamada al servicio y traduce su resultado o su rechazo (nunca un 5xx)."""
+    try:
+        return _onboarding_de(await llamada())
+    except ErrorOnboardingServicio as error:
+        return _error_onboarding(error.codigo)
+    except ErrorServicio:
+        return _error_onboarding("NO_DISPONIBLE")
+
+
+def _sesion(datos: dict) -> Sesion:
+    return Sesion(
+        token=datos["token"],
+        expira_en=datetime.fromisoformat(datos["expira_en"]),
+        usuario=_usuario(datos["usuario"]),
+    )
+# ---------- Siniestros (v0.21, HU-W04, servicio CLAIMS) ----------
 
 
 @strawberry.enum
@@ -1183,7 +1389,7 @@ def _resolucion(datos: dict | None) -> Resolucion | None:
 
 
 def _siniestro(datos: dict) -> Siniestro:
-    """El expediente que arma CLAIMS (snake_case) en los tipos del contrato v0.19."""
+    """El expediente que arma CLAIMS (snake_case) en los tipos del contrato v0.21."""
     return Siniestro(
         id=strawberry.ID(datos["id"]),
         radicado=datos["radicado"],
@@ -1244,8 +1450,6 @@ SOLO_CLIENTE = ("CLIENTE",)
 MENSAJE_AUTH_NO_DISPONIBLE = "No pudimos procesar la solicitud. Intenta de nuevo."
 MENSAJE_USUARIO_NO_ENCONTRADO = "Usuario no encontrado."
 MENSAJE_COBROS_NO_DISPONIBLES = "No pudimos consultar los cobros. Intenta de nuevo."
-# Esqueleto de la v0.18 (HU-W03, bloque 9): se reemplaza al construir cada operación (F-B6).
-MENSAJE_OPERACION_NO_DISPONIBLE = "Esta operación aún no está disponible. Intenta más tarde."
 MENSAJE_DOCUMENTO_REQUERIDO = "Indica el documento de identidad del titular."
 TODOS_LOS_ROLES = ("CLIENTE", "ASESOR", "BACKOFFICE")
 
@@ -1275,6 +1479,76 @@ async def _nombres_de_clientes(info: Info, cobros: list[dict]) -> dict[str, str]
     except (ErrorServicio, SolicitudInvalida) as error:
         logger.warning("nombres de clientes no disponibles error=%s", type(error).__name__)
     return nombres
+
+
+def _usuario_de_la_pagina_de_firma(info: Info) -> UsuarioActual | None:
+    """Quién entra a la página de firma (W03-33). Con el token del enlace no hace falta sesión (y
+    una sesión vencida que viaje con él no estorba); sin él se exige la sesión de un CLIENTE."""
+    if info.context.get("enlace_firma"):
+        usuario = None if info.context["error_token"] else info.context["usuario"]
+        return usuario if usuario is not None and usuario.rol == "CLIENTE" else None
+    return exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+
+
+def _firma_pago(info: Info) -> ServicioFirmaPago:
+    return info.context["servicio_firma_pago"]
+
+
+def _en_enum(enum: type[Enum], motivo: str | None) -> Enum | None:
+    return enum(motivo) if motivo in {m.value for m in enum} else None
+
+
+def _error_codigo(error: ErrorFlujoDatos) -> ErrorCodigo:
+    motivo = "PROPUESTA_NO_VALIDA" if error.motivo == "PROPUESTA_NO_ENCONTRADA" else error.motivo
+    return ErrorCodigo(
+        mensaje=error.mensaje,
+        puede_reintentar=error.puede_reintentar,
+        motivo=_en_enum(MotivoErrorCodigo, motivo),
+        intentos_restantes=error.extra.get("intentos_restantes"),
+    )
+
+
+def _error_firma(error: ErrorFlujoDatos) -> ErrorFirma:
+    motivo = error.motivo
+    if motivo in ("PROPUESTA_NO_ENCONTRADA", "PROPUESTA_NO_VALIDA"):
+        motivo = "PROPUESTA_NO_FIRMABLE"
+    elif motivo is None:
+        motivo = "SERVICIO_FIRMA_NO_DISPONIBLE"
+    return ErrorFirma(
+        mensaje=error.mensaje,
+        puede_reintentar=error.puede_reintentar,
+        motivo=_en_enum(MotivoErrorFirma, motivo),
+    )
+
+
+def _error_pago(error: ErrorFlujoDatos) -> ErrorPago:
+    return ErrorPago(
+        mensaje=error.mensaje,
+        puede_reintentar=error.puede_reintentar,
+        motivo=_en_enum(MotivoErrorPago, error.motivo),
+        fallos_seguidos=error.extra.get("fallos"),
+    )
+
+
+def _resultado_emision(resultado: dict | ErrorFlujoDatos) -> ResultadoEmision:
+    if isinstance(resultado, ErrorFlujoDatos):
+        return ErrorEmision(mensaje=resultado.mensaje, puede_reintentar=resultado.puede_reintentar)
+    propuesta, enlace = _propuesta(resultado["propuesta"]), resultado.get("enlace")
+    if enlace is None:
+        return propuesta
+    return EnlaceEnviado(
+        propuesta=propuesta,
+        correo_enmascarado=enlace["correo_enmascarado"],
+        vence_en=_fecha(enlace["vence_en"]),
+    )
+
+
+def _nulo_o_error_publico(error: ErrorFlujoDatos) -> None:
+    """Una consulta no tiene unión de error: lo inexistente es `null`; una falla del servicio, un
+    error con reintento."""
+    if error.motivo is None:
+        raise ErrorPublico(error.mensaje)
+    return None
 
 
 # Cómo se nombra cada canal en el resumen de `contactarAsesor` (CA-W01-07).
@@ -1355,16 +1629,77 @@ class Query:
         pagina: int | None = 1,
         tamano: int | None = 10,
     ) -> PaginaPropuestas:
-        """W03-35: filtradas por el rol del token. Esqueleto de la v0.18 hasta F-B6."""
-        exigir_rol(info, *TODOS_LOS_ROLES, siempre=True)
-        raise ErrorPublico(MENSAJE_OPERACION_NO_DISPONIBLE)
+        """W03-35: filtradas por el rol del token (nunca por un argumento): CLIENTE las de su
+        titular, ASESOR las que aceptó y BACKOFFICE todas. Los datos personales salen solo para
+        ASESOR y BACKOFFICE."""
+        usuario = exigir_rol(info, *TODOS_LOS_ROLES, siempre=True)
+        filtro = estado.value if isinstance(estado, EstadoVisible) else None
+        servicio = _firma_pago(info)
+        try:
+            datos = await servicio.listar_propuestas(
+                usuario, filtro, max(1, pagina or 1), max(1, min(tamano or 10, 50))
+            )
+            asesores = (
+                await servicio.nombres_de_asesores(datos["propuestas"])
+                if usuario.rol == "BACKOFFICE"
+                else {}
+            )
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_PROPUESTAS_NO_DISPONIBLES) from error
+        ve_personales = usuario.rol != "CLIENTE"
+        return PaginaPropuestas(
+            propuestas=[
+                _propuesta(
+                    p,
+                    poliza=_poliza_de_resumen(p.get("poliza"), p),
+                    nombre_titular=p.get("nombre_titular") if ve_personales else None,
+                    nombre_asesor=asesores.get(p.get("actor_usuario_id") or ""),
+                )
+                for p in datos["propuestas"]
+            ],
+            total=datos["total"],
+            pagina=datos["pagina"],
+            tamano=datos["tamano"],
+        )
 
     @strawberry.field
     async def firma_por_enlace(
         self, info: Info, propuesta_id: strawberry.ID | None = None
     ) -> EnlaceFirma | None:
-        """W03-33: token del enlace o sesión de CLIENTE. Esqueleto de la v0.18 hasta F-B6."""
-        return None
+        """W03-33: el estado de la página de firma. Token del enlace (`X-Enlace-Firma`) o sesión de
+        CLIENTE con `propuestaId`. Sin acceso a esa propuesta, `null`: no se revela si existe."""
+        usuario = _usuario_de_la_pagina_de_firma(info)
+        servicio = _firma_pago(info)
+        autorizado = await servicio.autorizar_enlace(
+            usuario, info.context.get("enlace_firma"), str(propuesta_id) if propuesta_id else None
+        )
+        if isinstance(autorizado, ErrorFlujoDatos):
+            return _nulo_o_error_publico(autorizado)
+        datos = await servicio.estado_enlace(autorizado)
+        if isinstance(datos, ErrorFlujoDatos):
+            return _nulo_o_error_publico(datos)
+        firma = datos.get("firma")
+        propuesta = datos["propuesta"]
+        poliza = datos.get("poliza")
+        return EnlaceFirma(
+            # Con sesión de CLIENTE no hay enlace: siempre vigente y sin vencimiento.
+            vigente=datos["vigente"] or autorizado.acceso.enlace_token is None,
+            vence_en=_fecha(datos.get("vence_en")) if autorizado.acceso.enlace_token else None,
+            propuesta=_propuesta(propuesta),
+            documento=_documento_firma(datos["documento"]) if datos.get("documento") else None,
+            documento_url=(
+                f"/propuestas/{propuesta['id']}/contrato.pdf" if datos.get("documento") else None
+            ),
+            firma=FirmaRegistrada(
+                propuesta_id=propuesta["id"],
+                firmada_en=_fecha(firma["firmada_en"]),
+                referencia=firma["referencia"],
+                estado=EstadoPropuesta(propuesta["estado"]),
+            )
+            if firma
+            else None,
+            poliza=_poliza(poliza) if poliza else None,
+        )
 
     @strawberry.field
     async def siniestros(
@@ -1420,8 +1755,33 @@ class Query:
         return [_cobro(c, nombres) for c in datos]
 
     @strawberry.field
+    async def onboarding(self, info: Info, id: strawberry.ID) -> Onboarding | None:
+        """v0.20 (HU-M01): con `X-Onboarding-Token`; null si el token no es de ese recorrido."""
+        token = info.context.get("token_onboarding")
+        if not token:
+            return None
+        try:
+            return _onboarding_de(await _onboarding(info).consultar(str(id), token))
+        except ErrorOnboardingServicio:
+            return None
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJES_ONBOARDING["NO_DISPONIBLE"]) from error
+
+    @strawberry.field
+    async def mi_verificacion(self, info: Info) -> Onboarding | None:
+        """v0.20 (HU-M01): el recorrido más reciente de la cuenta del token."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True, admite_pendiente=True)
+        try:
+            datos = await _onboarding(info).de_usuario(usuario.id)
+        except (ErrorServicio, ErrorOnboardingServicio) as error:
+            raise ErrorPublico(MENSAJES_ONBOARDING["NO_DISPONIBLE"]) from error
+        return _onboarding_de(datos) if datos else None
+
+    @strawberry.field
     async def yo(self, info: Info) -> Usuario | None:
-        usuario = exigir_rol(info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True)
+        usuario = exigir_rol(
+            info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True, admite_pendiente=True
+        )
         try:
             datos = await _auth(info).obtener_usuario(usuario.id)
         except ErrorServicio as error:
@@ -1472,9 +1832,15 @@ class Mutation:
         # lo hizo en nombre del cliente. Sin sesión (modo `opcional`) va vacío.
         actor = {"rol": usuario.rol, "usuario_id": usuario.id} if usuario else None
         clave_titular = info.context.get("cliente_id_clave", "dev-cliente-id-clave-local")
+        # W03-34: como en `solicitarOferta`, un CLIENTE consiente con el documento de su cuenta.
+        titular = await documento_del_cliente(
+            info.context["clientes"], usuario, entrada.documento_identidad, clave_titular
+        )
+        if titular.error:
+            raise ErrorPublico(titular.error)
         titular_id = (
-            cliente_id_desde_documento(entrada.documento_identidad, clave_titular)
-            if entrada.documento_identidad
+            cliente_id_desde_documento(titular.documento, clave_titular)
+            if titular.documento
             else None
         )
         canal = entrada.canal or info.context.get("canal", "").upper() or None
@@ -1505,25 +1871,36 @@ class Mutation:
             raise ErrorPublico("Consentimiento no encontrado.")
         titular_id = datos.get("titular_id")
         if titular_id:
-            try:
-                await info.context["clientes"].acl.invalidar_cache_cliente(titular_id)
-            except (ErrorServicio, AttributeError):
+            # Las dos avisos van en paralelo y ninguno hace fallar la revocación.
+            resultados = await asyncio.gather(
+                info.context["clientes"].acl.invalidar_cache_cliente(titular_id),
+                _firma_pago(info).consentimiento_revocado(titular_id, str(id)),
+                return_exceptions=True,
+            )
+            if isinstance(resultados[0], Exception):
                 logger.warning("no se pudo invalidar cache del titular al revocar consentimiento")
         return _consentimiento(datos)
 
     @strawberry.mutation
     async def solicitar_oferta(self, info: Info, entrada: SolicitudOfertaInput) -> ResultadoOferta:
-        exigir_rol(info, *CLIENTE_O_ASESOR)
-        if not entrada.documento_identidad:
-            # Hasta F-B6 el BFF no lo toma de AUTH para el CLIENTE: sigue siendo obligatorio.
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
+        # W03-34: un CLIENTE cotiza con el documento de su cuenta (AUTH lo da en memoria); el
+        # ASESOR lo escribe siempre.
+        titular = await documento_del_cliente(
+            info.context["clientes"],
+            usuario,
+            entrada.documento_identidad,
+            info.context["cliente_id_clave"],
+        )
+        if titular.error or not titular.documento:
             return ErrorOferta(
-                mensaje=MENSAJE_DOCUMENTO_REQUERIDO,
+                mensaje=titular.error or MENSAJE_DOCUMENTO_REQUERIDO,
                 puede_reintentar=False,
                 motivo=MotivoErrorOferta.DATOS_INSUFICIENTES,
             )
         resultado = await info.context["servicio_oferta"].solicitar(
             str(entrada.consentimiento_id),
-            entrada.documento_identidad,
+            titular.documento,
             entrada.valor_credito,
             entrada.plazo_meses,
             entrada.direccion_inmueble,
@@ -1555,11 +1932,15 @@ class Mutation:
         self,
         info: Info,
         oferta_id: strawberry.ID,
-        contacto: ContactoTitularInput | None = None,  # v0.18: se guarda desde F-B5/F-B6
+        contacto: ContactoTitularInput | None = None,
     ) -> ResultadoAceptacion:
+        """El `contacto` (nombre y correo del titular) lo da el ASESOR y POLICY lo guarda cifrado;
+        el de un CLIENTE sale de AUTH."""
         usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
         resultado = await ServicioSuscripcion(info.context["clientes"]).aceptar(
-            str(oferta_id), usuario
+            str(oferta_id),
+            usuario,
+            {"nombre": contacto.nombre, "correo": contacto.correo} if contacto else None,
         )
         if isinstance(resultado, ErrorAceptacionDatos):
             return ErrorAceptacion(
@@ -1636,17 +2017,22 @@ class Mutation:
     @strawberry.mutation
     async def iniciar_sesion(self, info: Info, entrada: CredencialesInput) -> ResultadoSesion:
         """Pública: es la única operación que no exige rol. La clave nunca se loguea."""
+        # El canal decide qué recibe una cuenta del onboarding sin verificar (HU-M01): en la app,
+        # un token `verificacion-pendiente`; en la web, VERIFICACION_PENDIENTE.
         try:
-            sesion = await _auth(info).iniciar_sesion(entrada.usuario, entrada.clave)
+            sesion = await _auth(info).iniciar_sesion(
+                entrada.usuario, entrada.clave, info.context.get("canal")
+            )
+        except VerificacionPendiente:
+            return ErrorAutenticacion(
+                mensaje="Tu identidad aún no está verificada. Ingresa desde la app Solventa.",
+                codigo="VERIFICACION_PENDIENTE",
+            )
         except ErrorServicio as error:
             raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
         if sesion is None:
             return ErrorAutenticacion(mensaje="Usuario o clave incorrectos.")
-        return Sesion(
-            token=sesion["token"],
-            expira_en=datetime.fromisoformat(sesion["expira_en"]),
-            usuario=_usuario(sesion["usuario"]),
-        )
+        return _sesion(sesion)
 
     @strawberry.mutation
     async def crear_usuario(self, info: Info, entrada: CrearUsuarioInput) -> ResultadoUsuario:
@@ -1786,33 +2172,47 @@ class Mutation:
             raise ErrorPublico(MENSAJE_ARCHIVOS_NO_DISPONIBLES) from error
         return DescargaArchivo(url=datos["url"], vence_en=datetime.fromisoformat(datos["vence_en"]))
 
-    # ---------- v0.18 (HU-W03, bloque 9): esqueleto hasta F-B6 ----------
+    # ---------- v0.18 (HU-W03, bloque 9, F-B6) ----------
 
     @strawberry.mutation
     async def enviar_codigo_verificacion(
         self, info: Info, propuesta_id: strawberry.ID, correo: str | None = None
     ) -> ResultadoEnvioCodigo:
-        exigir_rol(info, "ASESOR", siempre=True)
-        return ErrorCodigo(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE, puede_reintentar=True)
+        usuario = exigir_rol(info, "ASESOR", siempre=True)
+        resultado = await _firma_pago(info).enviar_codigo(usuario, str(propuesta_id), correo)
+        if isinstance(resultado, ErrorFlujoDatos):
+            return _error_codigo(resultado)
+        return CodigoEnviado(
+            propuesta_id=resultado["propuesta_id"],
+            correo_enmascarado=resultado["correo_enmascarado"],
+            vence_en=_fecha(resultado["vence_en"]),
+        )
 
     @strawberry.mutation
     async def verificar_codigo(
         self, info: Info, propuesta_id: strawberry.ID, codigo: str
     ) -> ResultadoVerificacion:
-        exigir_rol(info, "ASESOR", siempre=True)
-        return ErrorCodigo(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE, puede_reintentar=True)
+        usuario = exigir_rol(info, "ASESOR", siempre=True)
+        resultado = await _firma_pago(info).verificar_codigo(usuario, str(propuesta_id), codigo)
+        if isinstance(resultado, ErrorFlujoDatos):
+            return _error_codigo(resultado)
+        return _propuesta(resultado)
 
     @strawberry.mutation
     async def emitir_propuesta(self, info: Info, propuesta_id: strawberry.ID) -> ResultadoEmision:
-        exigir_rol(info, *CLIENTE_O_ASESOR, siempre=True)
-        return ErrorEmision(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE, puede_reintentar=True)
+        """ASESOR: «Emitir» (UNDER decide y, si aprueba, sale el enlace de 30 min). CLIENTE:
+        «Firmar» (UNDER decide y la propuesta pasa a EN_FIRMA en su sesión)."""
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR, siempre=True)
+        resultado = await _firma_pago(info).emitir(usuario, str(propuesta_id))
+        return _resultado_emision(resultado)
 
     @strawberry.mutation
     async def reenviar_enlace_firma(
         self, info: Info, propuesta_id: strawberry.ID
     ) -> ResultadoEmision:
-        exigir_rol(info, "ASESOR", siempre=True)
-        return ErrorEmision(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE, puede_reintentar=True)
+        usuario = exigir_rol(info, "ASESOR", siempre=True)
+        resultado = await _firma_pago(info).reenviar_enlace(usuario, str(propuesta_id))
+        return _resultado_emision(resultado)
 
     @strawberry.mutation
     async def solicitar_subida_firma(
@@ -1822,28 +2222,259 @@ class Mutation:
         tamano_bytes: int,
         propuesta_id: strawberry.ID | None = None,
     ) -> ResultadoSubidaArchivo:
-        return ErrorArchivo(codigo="NO_DISPONIBLE", mensaje=MENSAJE_OPERACION_NO_DISPONIBLE)
+        """La URL firmada para subir la imagen de la firma directo al bucket."""
+        usuario = _usuario_de_la_pagina_de_firma(info)
+        servicio = _firma_pago(info)
+        autorizado = await servicio.autorizar_enlace(
+            usuario, info.context.get("enlace_firma"), str(propuesta_id) if propuesta_id else None
+        )
+        if isinstance(autorizado, ErrorFlujoDatos):
+            return ErrorArchivo(codigo="NO_DISPONIBLE", mensaje=autorizado.mensaje)
+        resultado = await servicio.subida_firma(autorizado, tipo_contenido, tamano_bytes)
+        if isinstance(resultado, ErrorFlujoDatos):
+            return ErrorArchivo(
+                codigo=resultado.motivo or "NO_DISPONIBLE", mensaje=resultado.mensaje
+            )
+        return SubidaArchivo(
+            archivo=_archivo(resultado["archivo"]),
+            url=resultado["url"],
+            metodo=resultado["metodo"],
+            encabezados=[
+                EncabezadoSubida(nombre=nombre, valor=valor)
+                for nombre, valor in resultado["encabezados"].items()
+            ],
+            vence_en=datetime.fromisoformat(resultado["vence_en"]),
+        )
 
     @strawberry.mutation
     async def firmar_por_enlace(self, info: Info, entrada: FirmarPorEnlaceInput) -> ResultadoFirma:
-        return ErrorFirma(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE, puede_reintentar=True)
+        usuario = _usuario_de_la_pagina_de_firma(info)
+        servicio = _firma_pago(info)
+        autorizado = await servicio.autorizar_enlace(
+            usuario,
+            info.context.get("enlace_firma"),
+            str(entrada.propuesta_id) if entrada.propuesta_id else None,
+        )
+        if isinstance(autorizado, ErrorFlujoDatos):
+            return _error_firma(autorizado)
+        resultado = await servicio.firmar(
+            autorizado,
+            {
+                "version_documento": entrada.version_documento,
+                "acepta_terminos": entrada.acepta_terminos,
+                "autoriza_cobro": entrada.autoriza_cobro,
+                "modo": entrada.modo.value,
+                "imagen_archivo_id": str(entrada.imagen_archivo_id)
+                if entrada.imagen_archivo_id
+                else None,
+                "nombre_firma": entrada.nombre_firma,
+            },
+        )
+        if isinstance(resultado, ErrorFlujoDatos):
+            return _error_firma(resultado)
+        return FirmaRegistrada(
+            propuesta_id=resultado["propuesta_id"],
+            firmada_en=_fecha(resultado["firmada_en"]),
+            referencia=resultado["referencia"],
+            estado=EstadoPropuesta(resultado["estado"]),
+        )
 
     @strawberry.mutation
     async def iniciar_pago(
         self, info: Info, propuesta_id: strawberry.ID | None = None
     ) -> ResultadoInicioPago:
-        return ErrorPago(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE, puede_reintentar=True)
+        usuario = _usuario_de_la_pagina_de_firma(info)
+        servicio = _firma_pago(info)
+        autorizado = await servicio.autorizar_enlace(
+            usuario, info.context.get("enlace_firma"), str(propuesta_id) if propuesta_id else None
+        )
+        if isinstance(autorizado, ErrorFlujoDatos):
+            return _error_pago(autorizado)
+        resultado = await servicio.iniciar_pago(autorizado, info.context["idioma"])
+        if isinstance(resultado, ErrorFlujoDatos):
+            return _error_pago(resultado)
+        if "poliza" in resultado:  # ya estaba cobrada y emitida: no hay nada que pagar
+            return ErrorPago(mensaje=MENSAJE_POLIZA_YA_EMITIDA, puede_reintentar=False)
+        sesion = resultado["sesion"]
+        return SesionPago(
+            sesion_id=sesion["sesion_id"],
+            url_pago=sesion["url_pago"],
+            vence_en=_fecha(sesion["vence_en"]),
+        )
 
     @strawberry.mutation
     async def confirmar_pago(
         self, info: Info, sesion_id: strawberry.ID, propuesta_id: strawberry.ID | None = None
     ) -> ResultadoPago:
-        return ErrorPago(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE, puede_reintentar=True)
+        """Al regresar de la pasarela. Si se cobró, la póliza sale emitida en la misma respuesta."""
+        usuario = _usuario_de_la_pagina_de_firma(info)
+        servicio = _firma_pago(info)
+        autorizado = await servicio.autorizar_enlace(
+            usuario, info.context.get("enlace_firma"), str(propuesta_id) if propuesta_id else None
+        )
+        if isinstance(autorizado, ErrorFlujoDatos):
+            return _error_pago(autorizado)
+        resultado = await servicio.confirmar_pago(autorizado, str(sesion_id))
+        if isinstance(resultado, ErrorFlujoDatos):
+            return _error_pago(resultado)
+        return _poliza(resultado["poliza"])
 
     @strawberry.mutation
     async def ticket_avisos(self, info: Info) -> TicketAvisos:
-        exigir_rol(info, *TODOS_LOS_ROLES, siempre=True)
-        raise ErrorPublico(MENSAJE_OPERACION_NO_DISPONIBLE)
+        usuario = exigir_rol(info, *TODOS_LOS_ROLES, siempre=True)
+        try:
+            datos = await _firma_pago(info).ticket_avisos(usuario)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_AVISOS_NO_DISPONIBLES) from error
+        return TicketAvisos(ticket=datos["ticket"], url=datos["url"], vence_en=datos["vence_en"])
+
+    # ---------- v0.20 (HU-M01): onboarding del móvil ----------
+
+    @strawberry.mutation
+    async def iniciar_onboarding(
+        self, info: Info, entrada: IniciarOnboardingInput
+    ) -> ResultadoInicioOnboarding:
+        """Pública, como `iniciarSesion`: aún no hay cuenta."""
+        try:
+            datos = await _onboarding(info).iniciar(
+                entrada.jurisdiccion.upper(), entrada.tipo_documento.value
+            )
+            estado = await _onboarding(info).consultar(datos["onboarding_id"], datos["token"])
+        except ErrorOnboardingServicio as error:
+            return _error_onboarding(error.codigo)
+        except ErrorServicio:
+            return _error_onboarding("NO_DISPONIBLE")
+        return InicioOnboarding(
+            onboarding=_onboarding_de(estado),
+            token=datos["token"],
+            token_vence_en=datetime.fromisoformat(datos["token_vence_en"]),
+        )
+
+    @strawberry.mutation
+    async def registrar_consentimiento_onboarding(
+        self, info: Info, onboarding_id: strawberry.ID, version_texto: str
+    ) -> ResultadoOnboarding:
+        """El consentimiento se registra en AUTH (append-only) antes de cualquier captura, y el
+        recorrido guarda su id; el storage lo exige en cada subida (regla 7)."""
+
+        async def llamada() -> dict:
+            token = _token_onboarding(info)
+            servicio = _onboarding(info)
+            await servicio.consultar(str(onboarding_id), token)  # el token es de este recorrido
+            consentimiento = await _auth(info).registrar_consentimiento(
+                FINALIDAD_ONBOARDING, version_texto, None, canal=CANAL_APP.upper()
+            )
+            return await servicio.registrar_consentimiento(
+                str(onboarding_id), token, consentimiento["id"]
+            )
+
+        return await _paso_onboarding(llamada)
+
+    @strawberry.mutation
+    async def solicitar_subida_onboarding(
+        self,
+        info: Info,
+        onboarding_id: strawberry.ID,
+        paso: PasoOnboarding,
+        tipo_contenido: str,
+        tamano_bytes: int,
+    ) -> ResultadoSubidaOnboarding:
+        try:
+            datos = await _onboarding(info).solicitar_subida(
+                str(onboarding_id),
+                _token_onboarding(info),
+                paso.value,
+                tipo_contenido,
+                tamano_bytes,
+            )
+        except ErrorOnboardingServicio as error:
+            return _error_onboarding(error.codigo)
+        except ErrorServicio:
+            return _error_onboarding("NO_DISPONIBLE")
+        return SubidaArchivo(
+            archivo=Archivo(
+                id=strawberry.ID(datos["archivo_id"]),
+                tipo=f"onboarding-{paso.value.lower()}",
+                estado=EstadoArchivo.PENDIENTE,
+                tipo_contenido=tipo_contenido,
+                tamano_bytes=tamano_bytes,
+                motivo=None,
+                creado_en=datetime.now(UTC),
+            ),
+            url=datos["url"],
+            metodo=datos["metodo"],
+            encabezados=[
+                EncabezadoSubida(nombre=k, valor=v) for k, v in datos["encabezados"].items()
+            ],
+            vence_en=datetime.fromisoformat(datos["vence_en"]),
+        )
+
+    @strawberry.mutation
+    async def confirmar_subida_onboarding(
+        self, info: Info, onboarding_id: strawberry.ID, archivo_id: strawberry.ID
+    ) -> ResultadoOnboarding:
+        async def llamada() -> dict:
+            token = _token_onboarding(info)
+            servicio = _onboarding(info)
+            await servicio.confirmar_subida(str(onboarding_id), token, str(archivo_id))
+            return await servicio.consultar(str(onboarding_id), token)
+
+        return await _paso_onboarding(llamada)
+
+    @strawberry.mutation
+    async def crear_cuenta_onboarding(
+        self, info: Info, onboarding_id: strawberry.ID, entrada: CuentaOnboardingInput
+    ) -> ResultadoCuentaOnboarding:
+        """M01-05b: cuenta CLIENTE en PENDIENTE_VERIFICACION ligada al recorrido, y su sesión
+        (scope `verificacion-pendiente`). El correo y la clave no se loguean."""
+        try:
+            token = _token_onboarding(info)
+            servicio = _onboarding(info)
+            # Valida el token antes de crear nada en AUTH.
+            await servicio.consultar(str(onboarding_id), token)
+            cuenta = await _auth(info).crear_cuenta_onboarding(entrada.correo, entrada.clave)
+            ligada = await servicio.vincular_cuenta(str(onboarding_id), token, cuenta["id"])
+            sesion = await _auth(info).iniciar_sesion(entrada.correo, entrada.clave, CANAL_APP)
+        except ErrorOnboardingServicio as error:
+            return _error_onboarding(error.codigo)
+        except (ErrorServicio, SolicitudInvalida, VerificacionPendiente):
+            return _error_onboarding("NO_DISPONIBLE")
+        if sesion is None:
+            return _error_onboarding("NO_DISPONIBLE")
+        logger.info("cuenta de onboarding creada usuario=%s", id_opaco(cuenta["id"]))
+        return CuentaOnboarding(sesion=_sesion(sesion), onboarding=_onboarding_de(ligada))
+
+    @strawberry.mutation
+    async def enviar_verificacion(
+        self, info: Info, onboarding_id: strawberry.ID
+    ) -> ResultadoOnboarding:
+        async def llamada() -> dict:
+            return await _onboarding(info).enviar(str(onboarding_id), _token_onboarding(info))
+
+        return await _paso_onboarding(llamada)
+
+    @strawberry.mutation
+    async def reintentar_onboarding(
+        self, info: Info, onboarding_id: strawberry.ID
+    ) -> ResultadoOnboarding:
+        async def llamada() -> dict:
+            return await _onboarding(info).reintentar(str(onboarding_id), _token_onboarding(info))
+
+        return await _paso_onboarding(llamada)
+
+    @strawberry.mutation
+    async def actualizar_sesion(self, info: Info) -> ResultadoSesion:
+        """Un token con los permisos del estado actual (p. ej. tras VERIFICADA) y la misma
+        expiración del que llega: no alarga la sesión."""
+        usuario = exigir_rol(info, *TODOS_LOS_ROLES, siempre=True, admite_pendiente=True)
+        expira = datetime.fromtimestamp(usuario.expira or 0, UTC).isoformat()
+        try:
+            sesion = await _auth(info).renovar_sesion(usuario.id, expira)
+        except (ErrorServicio, SolicitudInvalida) as error:
+            raise ErrorPublico("No pudimos actualizar tu sesión. Intenta de nuevo.") from error
+        if sesion is None:
+            return ErrorAutenticacion(mensaje="Tu sesión ya no es válida. Inicia sesión de nuevo.")
+        return _sesion(sesion)
 
     @strawberry.mutation
     async def aprobar_siniestro(self, info: Info, id: strawberry.ID) -> ResultadoResolucion:

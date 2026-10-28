@@ -52,7 +52,7 @@ El dummy no tenía base de datos (decisión del plan del front de W04), así que
   tocar los demás bloques.
 - **La rama del front (solo documentación) no depende de la del backend:** su PR se encola por separado.
 - **Mientras el PR espera,** otros PR pueden llegar a `develop`. Antes de abrirlo se **mezcla `develop` en la rama**, sin
-  rebase porque la rama ya está publicada. Si otro PR tomó la v0.19 del contrato o la migración `0009` de PAYMENTS, se
+  rebase porque la rama ya está publicada. Si otro PR tomó la versión del contrato o la migración `0009` de PAYMENTS, se
   **renumera** en ese momento.
 - **Push** de la rama al cerrar cada bloque, para que el trabajo no quede solo en local.
 
@@ -60,7 +60,7 @@ El dummy no tenía base de datos (decisión del plan del front de W04), así que
 
 | # | Decisión | Estado |
 |---|---|---|
-| W04-1 | Servicio nuevo **`claims`**, escritor único de siniestros, peritos, evidencias, asignaciones y resoluciones. **Puerto 8011** | Cerrada |
+| W04-1 | Servicio nuevo **`claims`**, escritor único de siniestros, peritos, evidencias, asignaciones y resoluciones. **Puerto 8012** (el 8011 lo tomó `avisos` en `develop` el 2026-10-28; primero se había elegido el 8011) | Cerrada |
 | W04-2 | **MongoDB con colecciones referenciadas.** La base `claims` va en el mismo replica set o cluster de RISK. Se escribe en la primaria; la bandeja y el detalle se leen de la **secundaria** (`secondaryPreferred` + `maxTimeMS`, como `services/rating/app/application/lector_perfiles.py`). Tras una mutación se devuelve lo escrito, sin releer la réplica | Cerrada |
 | W04-3 | **Pólizas reales con un script nuevo de POLICY** (`python -m app.sembrar_demo`): 10 propuestas y pólizas `EMITIDA` con prima, cobertura y plazo cifrados, ids fijos e idempotente. Después, la semilla de `claims` apunta a esas pólizas | Cerrada |
 | W04-4 | **`ramo` lo pone el BFF** (`RAMO_POLIZA`, porque hay un solo producto). Lo agrega a `Poliza` en el contrato como cambio aditivo. **POLICY no se modifica**. El BFF resuelve la póliza del siniestro con el `GET /polizas/{id}` que ya existe en POLICY | Cerrada |
@@ -71,7 +71,7 @@ El dummy no tenía base de datos (decisión del plan del front de W04), así que
 | W04-9 | **Eventos `siniestro.aprobado`, `.rechazado` y `.derivado` validados al publicar** (`jsonschema` en ejecución; los esquemas se copian a la imagen con un script verificado en el CI). Van al bus de log | Propuesta |
 | W04-10 | **`/v1/graphql/{web,app,movil}` en el BFF.** Las rutas actuales siguen igual, como alias. Convive con W07, porque la API REST de socios usará `/v1/<recurso>`, sin `graphql`, registrada después | Propuesta |
 | W04-11 | Todas las operaciones con `exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)` | Cerrada |
-| W04-12 | **Contrato v0.19, aditivo.** Se reutilizan `Poliza`, `Monto` y `EstadoPoliza` | Cerrada |
+| W04-12 | **Contrato v0.21, aditivo.** Se reutilizan `Poliza`, `Monto` y `EstadoPoliza` | Cerrada |
 | W04-13 | **El dummy se conserva, sin borrarlo.** Deja de usarse y se marca obsoleto en su README, en `docs/convenciones.md` y en el encabezado de `contracts/graphql/siniestros.graphql`. Se retira en una tarea aparte cuando el equipo lo decida | Cerrada |
 | W04-14 | **Geoetiqueta desde el EXIF:** no se trabaja ahora y se anota en el plan del front. El backend guarda `geoetiquetada`, `latitud` y `longitud` por evidencia (por ahora los fija la semilla) | Cerrada |
 | W04-15 | **Reinicio para las E2E:** `claims` `POST /_demo/reiniciar`, solo con `DEMO_REINICIAR=true` (compose; nunca en staging) | Propuesta |
@@ -130,7 +130,7 @@ para la mesa de un operador, pero limita la medición de EC011/EC012 en staging.
 
 | Dónde | Cambio | Tipo |
 |---|---|---|
-| `contracts/graphql/schema.graphql` + `CHANGELOG.md` | Tipos de siniestros, consultas y mutaciones nuevas; `Poliza` suma `ramo` | Aditivo (v0.19) |
+| `contracts/graphql/schema.graphql` + `CHANGELOG.md` | Tipos de siniestros, consultas y mutaciones nuevas; `Poliza` suma `ramo` | Aditivo (v0.21) |
 | `contracts/tipos-archivo.json` y su copia `services/almacenamiento/app/tipos-archivo.json` | Dos tipos nuevos de archivo. **Sin cambios de código** en el almacenamiento | Aditivo (datos) |
 | `contracts/graphql/siniestros.graphql`, `stubs/siniestros/README.md`, `docs/convenciones.md` | Solo una nota de «obsoleto» | Documentación |
 | `services/bff/app/esquema.py`, `clientes.py`, `configuracion.py`, `main.py`, `tests/fakes.py`, `tests/test_permisos.py` | Tipos y resolutores nuevos, cliente de `claims`, `CLAIMS_URL` y `RAMO_POLIZA`, y routers `/v1/graphql/*` **adicionales**. `Poliza` gana un campo resuelto en el BFF. Las rutas y operaciones actuales no cambian | Aditivo en archivos existentes |
@@ -142,7 +142,7 @@ para la mesa de un operador, pero limita la medición de EC011/EC012 en staging.
 | `scripts/verificar-migraciones.sh` | Caso `claims` en el `case` | Aditivo |
 | `infra/mongo-atlas.tf` | Usuario `claims` y versión del secreto `mongo-uri-claims` | Aditivo (Terraform, sin `apply`) |
 | `infra/gateway/envoy.yaml`, `infra/gateway/openapi.yaml` | Rutas nuevas `/v1/graphql/*`; las actuales se conservan | Aditivo |
-| `docs/`: `CLAUDE.md`, `arquitectura-backend.md`, `cobros-conciliacion.md`, `plan-completar-hu-w05.md` (W05-3), `plan-hu-w07-y-ajustes.md` (nota W04-10), `plan-completar-hu-w04.md` | Estado, `claims` en el Sprint 2 con el puerto 8011, indemnizaciones, W05-3 y la convivencia con `/v1` | Documentación |
+| `docs/`: `CLAUDE.md`, `arquitectura-backend.md`, `cobros-conciliacion.md`, `plan-completar-hu-w05.md` (W05-3), `plan-hu-w07-y-ajustes.md` (nota W04-10), `plan-completar-hu-w04.md` | Estado, `claims` en el Sprint 2 con el puerto 8012, indemnizaciones, W05-3 y la convivencia con `/v1` | Documentación |
 | **Nada se borra en el backend** | El dummy se conserva (W04-13) | — |
 | Front (`solventa-frontend-web`) | **Solo documentación** en `docs/plan-ejecucion-hu-w04-siniestros.md`. Los ajustes (que sí quitarán el uso del dummy y la copia de su SDL) se hacen después en ese repo | Documentación |
 
@@ -151,8 +151,8 @@ para la mesa de un operador, pero limita la medición de EC011/EC012 en staging.
 | # | Clave | Qué entrega |
 |---|---|---|
 | 0 | KAN-249 | **Primer paso tras aprobar:** guardar una copia de este plan como referencia en `docs/plan-completar-hu-w04.md` del backend, reemplazando el borrador sin versionar. La nota W04-10 va en `docs/plan-hu-w07-y-ajustes.md` cuando ese plan llegue a `develop` (hoy vive solo en la rama `chore/KAN-30-plan-w07-y-ajustes`) |
-| 1 | KAN-242 | **Contrato v0.19:** tipos de siniestros, `Poliza.ramo`, `siniestro.*.schema.json` y tipos `siniestro-foto` / `-documento` (con `scripts/sincronizar_tipos_archivo.py`). Esqueleto en el BFF para que pase la paridad (`tests/test_esquema_contrato.py`) |
-| 2 | KAN-242 | **`services/claims`** con capas simples (regla 3): migraciones Mongo, repositorio con primaria y secundaria, `GET /siniestros?estado=`, `GET /siniestros/{id}`, `GET /siniestros/{id}/peritos`, `/health` y `/metrics`. Registro en `servicios.json` (8011, `migracion`, `MONGO_URI`, `llama: [almacenamiento, policy, payments]`), compose, CI, dependabot, `verificar-migraciones.sh` e `infra/mongo-atlas.tf` |
+| 1 | KAN-242 | **Contrato v0.21:** tipos de siniestros, `Poliza.ramo`, `siniestro.*.schema.json` y tipos `siniestro-foto` / `-documento` (con `scripts/sincronizar_tipos_archivo.py`). Esqueleto en el BFF para que pase la paridad (`tests/test_esquema_contrato.py`) |
+| 2 | KAN-242 | **`services/claims`** con capas simples (regla 3): migraciones Mongo, repositorio con primaria y secundaria, `GET /siniestros?estado=`, `GET /siniestros/{id}`, `GET /siniestros/{id}/peritos`, `/health` y `/metrics`. Registro en `servicios.json` (8012, `migracion`, `MONGO_URI`, `llama: [almacenamiento, policy, payments]`), compose, CI, dependabot, `verificar-migraciones.sh` e `infra/mongo-atlas.tf` |
 | 3 | KAN-242 | **Semillas:** POLICY `sembrar_demo` y `claims` `python -m app.sembrar`, que crea peritos, siniestros y verificaciones y **sube las 37 imágenes del dummy al almacenamiento** como `servicio:claims` (las copia a `services/claims/semilla/`). Incluye `/_demo/reiniciar` |
 | 4 | KAN-244 | **Resolución:** aprobar, rechazar y derivar, con las reglas y los mensajes del dummy, el SLA y la indemnización. PAYMENTS `0009` + `POST/GET /indemnizaciones` en un commit propio, que Frans revisa en el PR y que se puede revertir solo |
 | 5 | KAN-245 | **Eventos `siniestro.*`** validados al publicar, con la prueba de que uno inválido no se publica |
@@ -206,7 +206,7 @@ para la mesa de un operador, pero limita la medición de EC011/EC012 en staging.
 | 5 | Quitar `siniestros.graphql` de `scripts/contrato.mjs`, de `codegen.ts`, de la exclusión de cobertura y del CI; borrar `contrato/siniestros.graphql` y `tipos-siniestros.ts` | front |
 | 6 | La bandeja pide solo `id radicado estado asegurado { nombre } notificadoEn`, para no firmar unas 37 URLs en cada carga | `useSiniestros.ts` |
 | 7 | Mocks en `*/v1/graphql/web`, registrados también en `mocks/browser.ts`, para que `dev:mock` funcione sin backend | `src/mocks/` |
-| 8 | Los 8 specs E2E reinician con `POST http://localhost:8011/_demo/reiniciar` | `e2e/cypress/e2e/**/w04-*` |
+| 8 | Los 8 specs E2E reinician con `POST http://localhost:8012/_demo/reiniciar` | `e2e/cypress/e2e/**/w04-*` |
 | 9 | Nota de la geoetiqueta desde el EXIF (W04-14), pendiente | `docs/plan-ejecucion-hu-w04-siniestros.md` |
 
 La URL firmada vence a los 300 s: si el detalle queda abierto más de 5 min, abrir una imagen falla hasta recargar. Se
@@ -220,7 +220,7 @@ Rama del backend `feat/KAN-27-backend-siniestros` (desde `develop` 45f140b) y de
 | # | Bloque | Estado | Verificación |
 |---|---|---|---|
 | 0 | Plan versionado | Hecho | — |
-| 1 | Contrato v0.19 | Hecho | Paridad del BFF y `validar_contratos.py` en verde |
+| 1 | Contrato v0.21 | Hecho | Paridad del BFF y `validar_contratos.py` en verde |
 | 2 | Servicio `claims` | Hecho | 20 pruebas; `verificar-migraciones.sh claims` (2 corridas, 2 migraciones); MongoDB rechaza un documento inválido |
 | 3 | Semillas | Hecho | En vivo: 10 siniestros con pólizas reales de POLICY, 37 archivos `DISPONIBLE` en el almacenamiento, 0 datos personales en claro; la segunda corrida no duplica nada |
 | 4 | Resolución + PAYMENTS | Hecho (PAYMENTS en un commit propio para Frans) | 117 pruebas de PAYMENTS y `verificar-migraciones.sh payments`; 8 aprobaciones simultáneas dejan 1 resolución y 1 orden |
@@ -236,7 +236,7 @@ Rama del backend `feat/KAN-27-backend-siniestros` (desde `develop` 45f140b) y de
   a `services/claims/semilla/`: evita duplicar ~8 MB de imágenes y el dummy se conserva (W04-13). Si el dummy se retira,
   sus `datos/` deben moverse antes.
 - **`contracts/graphql/siniestros.graphql` no lleva la nota de obsoleto en su encabezado**: la web verifica su copia byte
-  a byte en el CI y cambiarlo rompería ese chequeo. La nota va en `CHANGELOG.md` (v0.19), el README del dummy y
+  a byte en el CI y cambiarlo rompería ese chequeo. La nota va en `CHANGELOG.md` (v0.21), el README del dummy y
   `convenciones.md`.
 - **Se agregó el alcance `claims`** a `.github/workflows/pr-titulo.yml` y `convenciones.md`, y `verificar-migraciones.sh`
   generaliza el caso de MongoDB (`risk | claims`, mismo comportamiento para RISK).
@@ -244,8 +244,12 @@ Rama del backend `feat/KAN-27-backend-siniestros` (desde `develop` 45f140b) y de
   orden (idempotente).
 - **La nota W04-10 en `docs/plan-hu-w07-y-ajustes.md`** queda pendiente: ese plan no está en `develop` (vive en la rama
   `chore/KAN-30-plan-w07-y-ajustes`). Al integrarlo: la API REST de socios va en `/v1/<recurso>`, registrada después de
-  `/v1/graphql/*`, y W07 toma la versión v0.20 del contrato (la v0.19 es de W04).
+  `/v1/graphql/*`, y W07 conserva la versión v0.21 que le reservó el onboarding (W04 quedó en la v0.21).
 - En este equipo el puerto 5432 lo usa un PostgreSQL local; el compose se levantó con `POSTGRES_PORT=55432`.
+
+- **Al mezclar `develop` (2026-10-28) cambiaron dos números:** el puerto de `claims` pasó de 8011 a **8012**, porque
+  `avisos` tomó el 8011, y el contrato de W04 pasó de v0.19 a **v0.21**, porque la entrada v0.20 del onboarding dejó la
+  v0.19 reservada para HU-W07. La migración `0009` de PAYMENTS seguía libre.
 
 **Pendiente:**
 

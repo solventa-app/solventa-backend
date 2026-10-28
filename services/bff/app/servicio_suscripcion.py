@@ -4,6 +4,7 @@ El BFF valida el consentimiento y el titular ANTES de pasarle la oferta a POLICY
 vuelve a leer la oferta de RATING y guarda el precio de RATING, nunca uno que mande el cliente."""
 
 import logging
+import re
 from dataclasses import dataclass
 
 from app.autenticacion_usuarios import UsuarioActual
@@ -17,12 +18,23 @@ MENSAJE_OFERTA_PRELIMINAR = "Esta oferta es preliminar y no se puede aceptar. Vu
 MENSAJE_OFERTA_VENCIDA = "La oferta venció. Vuelve a cotizar."
 MENSAJE_ACEPTACION_SIN_CONSENTIMIENTO = "No hay un consentimiento vigente para esta oferta."
 MENSAJE_SUSCRIPCION_NO_DISPONIBLE = "No pudimos procesar tu suscripción. Intenta de nuevo."
+MENSAJE_CONTACTO_INVALIDO = "Revisa el nombre y el correo del titular."
 
 MENSAJE_DOCUMENTO_NO_DISPONIBLE = "No pudimos generar el documento. Intenta de nuevo."
 MENSAJE_COBRO_NO_AUTORIZADO = "Debes autorizar el cobro de la prima para firmar."
 MENSAJE_DOCUMENTO_DESACTUALIZADO = "El documento cambió. Revísalo de nuevo antes de firmar."
 MENSAJE_PROPUESTA_NO_FIRMABLE = "Esta propuesta no se puede firmar."
 MENSAJE_FIRMA_NO_DISPONIBLE = "No pudimos registrar tu firma. Intenta de nuevo."
+
+CORREO_VALIDO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def contacto_valido(contacto: dict) -> bool:
+    """W03-25: el nombre de 2 a 100 caracteres y un correo con forma de correo (POLICY lo valida
+    igual; aquí se rechaza antes con un mensaje del contrato)."""
+    nombre, correo = (contacto.get("nombre") or "").strip(), (contacto.get("correo") or "").strip()
+    return 2 <= len(nombre) <= 100 and len(correo) <= 254 and bool(CORREO_VALIDO.match(correo))
+
 
 # Motivos de `MotivoErrorAceptacion`: texto para el usuario y si hay algo que reintentar. Una oferta
 # `PRELIMINAR` se resuelve recalculándola, es decir, volviendo a cotizar (D-11, CA-W03-01);
@@ -121,10 +133,20 @@ class ServicioSuscripcion:
         self._clientes = clientes
 
     async def aceptar(
-        self, oferta_id: str, usuario: UsuarioActual | None
+        self, oferta_id: str, usuario: UsuarioActual | None, contacto: dict | None = None
     ) -> dict | ErrorAceptacionDatos:
         """La propuesta tal como la entrega POLICY, o un `ErrorAceptacionDatos`. Nunca lanza por
         una falla de un servicio: se devuelve un error con reintento (CA-W03-01)."""
+        # El contacto lo da el ASESOR; el de un CLIENTE sale de AUTH (W03-25), así que se ignora.
+        if usuario is not None and usuario.rol == "ASESOR":
+            # Obligatorio para el ASESOR (v0.18): sin él no hay a quién mandar el código ni el
+            # enlace, y aceptar otra vez devuelve la misma propuesta, que quedaría trabada.
+            if contacto is None or not contacto_valido(contacto):
+                return ErrorAceptacionDatos(MENSAJE_CONTACTO_INVALIDO, puede_reintentar=False)
+            contacto = {"nombre": contacto["nombre"].strip(), "correo": contacto["correo"].strip()}
+        else:
+            contacto = None
+
         # 1. La oferta tal como RATING la guardó: de ella salen el titular y el consentimiento.
         try:
             oferta = await self._clientes.rating.obtener_oferta(oferta_id)
@@ -142,7 +164,10 @@ class ServicioSuscripcion:
         # 3. POLICY guarda la propuesta con el precio de RATING (idempotente por oferta).
         try:
             return await self._clientes.policy.crear_propuesta(
-                oferta_id, usuario.id if usuario is not None else None
+                oferta_id,
+                usuario.id if usuario is not None else None,
+                usuario.rol if usuario is not None else None,
+                contacto,
             )
         except PropuestaRechazada as rechazo:
             if rechazo.motivo not in _ACEPTACION_POR_MOTIVO:

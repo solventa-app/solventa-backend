@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/onboarding.verificado/v1",
+  "title": "onboarding.verificado",
+  "description": "ONBOARDING aprobó la identidad de un recorrido del móvil: documento auténtico, rostro y prueba de vida, mayor de edad y documento sin otra cuenta. Sin datos personales (HU-M01).",
+  "type": "object",
+  "required": [
+    "eventId",
+    "tipo",
+    "version",
+    "ocurridoEn",
+    "datos"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tipo": {
+      "const": "onboarding.verificado"
+    },
+    "version": {
+      "const": 1
+    },
+    "ocurridoEn": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "datos": {
+      "type": "object",
+      "required": [
+        "onboardingId",
+        "intento"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "onboardingId": {
+          "type": "string"
+        },
+        "intento": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "usuarioId": {
+          "type": "string",
+          "description": "La cuenta ligada al recorrido; ausente si aún no se creó."
+        }
+      }
+    }
+  }
+}
