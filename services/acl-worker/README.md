@@ -202,7 +202,7 @@ Agregar un proveedor nuevo no toca el código: su variable `PRESUPUESTO_MS_<PROV
 
 ## Notificaciones (HU-W03, bloque 5)
 
-- `POST /notificaciones/enviar` `{id_notificacion, plantilla, destinatario_id, datos, correo?, telefono?, adjuntos?}` → `{estado: enviada | pendiente, referencia,
+- `POST /notificaciones/enviar` `{id_notificacion, plantilla, destinatario_id, datos, correo?, telefono?, adjuntos?}` → `{estado: enviada | pendiente | rechazada, referencia,
   motivo}`. Siempre 200: con el proveedor caído, lento o el circuito abierto responde `pendiente`
   (`notificaciones_no_disponibles` / `circuito_abierto`) y POLICY reintenta. Idempotente por `id_notificacion`: repetirlo no
   manda dos avisos.
@@ -215,3 +215,13 @@ Agregar un proveedor nuevo no toca el código: su variable `PRESUPUESTO_MS_<PROV
   decodificado. Un `422` es un error de quien llama, no del proveedor: no se reintenta.
 - Circuito `notificaciones` con su sonda (`GET /v1/estado`, que nunca envía). Variables nuevas: `NOTIFICACIONES_URL`
   (`http://localhost:8106`), `PRESUPUESTO_MS_NOTIFICACIONES` (700), `ADJUNTO_MAXIMO_BYTES` (5000000).
+- **Correo real con Resend** (`app/adapters/correo_resend.py`): `NOTIFICACIONES_PROVEEDOR=resend` cambia el simulador por
+  `POST https://api.resend.com/emails` (EC031: el mismo puerto, otro adaptador). Variables: `NOTIFICACIONES_PROVEEDOR`
+  (`simulado` | `resend`), `RESEND_API_KEY` (secreto `resend-api-key`; con `resend` y sin ella no arranca) y `CORREO_REMITENTE`
+  (de un dominio verificado en Resend). El asunto y el cuerpo de las 4 plantillas (`codigo-verificacion`, `enlace-firma`,
+  `poliza-emitida` y `poliza-emitida-asesor`) viven en el adaptador, con los datos escapados en el HTML. El `id_notificacion`
+  va como `Idempotency-Key`: un reintento no manda dos correos. Un aviso sin `correo` o con una plantilla desconocida
+  responde `rechazada` sin llamar a Resend (POLICY lo omite); 429, 5xx y fallas de red cuentan para el circuito y quedan
+  `pendiente`; otro 4xx es `rechazada` con el nombre del error de Resend, nunca su mensaje (puede repetir el correo). La
+  sonda hace `GET /domains`, que nunca envía (con una llave de solo envío responde 401, y eso también cuenta como arriba).
+  Cómo cargar la llave: `infra/README.md`, «Resend».

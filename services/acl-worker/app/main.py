@@ -17,6 +17,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 
 from app.adapters.autenticacion_servicios import autenticacion_para
+from app.adapters.correo_resend import AdaptadorCorreoResend
 from app.adapters.firma import AdaptadorFirma
 from app.adapters.firma_alterna import AdaptadorFirmaAlterna
 from app.adapters.identidad_didit import AdaptadorIdentidadDidit
@@ -457,11 +458,18 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             logger.warning("IDENTIDAD_LLAVE_CACHE sin cargar: la caché de identidad está apagada")
 
         presupuesto_notificaciones_s = config.presupuesto_proveedor_s("notificaciones")
-        adaptador_notificaciones = AdaptadorNotificaciones(
-            config.notificaciones_url,
-            presupuesto_notificaciones_s,
-            auth=autenticacion_para(config.autenticacion_servicios, "stub-notificaciones"),
-        )
+        if config.proveedor_notificaciones == "resend":
+            adaptador_notificaciones: AdaptadorCorreoResend | AdaptadorNotificaciones = (
+                AdaptadorCorreoResend(
+                    config.resend_api_key, config.correo_remitente, presupuesto_notificaciones_s
+                )
+            )
+        else:
+            adaptador_notificaciones = AdaptadorNotificaciones(
+                config.notificaciones_url,
+                presupuesto_notificaciones_s,
+                auth=autenticacion_para(config.autenticacion_servicios, "stub-notificaciones"),
+            )
         servicio_notificaciones = ServicioNotificaciones(
             adaptador_notificaciones,
             fabrica,
