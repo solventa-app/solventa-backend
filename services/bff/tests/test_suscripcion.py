@@ -144,12 +144,36 @@ def test_un_cliente_no_acepta_lo_que_consintio_otro_usuario() -> None:
     assert error["motivo"] == "CONSENTIMIENTO_NO_VIGENTE"
 
 
+ACEPTAR_CON_CONTACTO = """mutation($id: ID!, $c: ContactoTitularInput) {
+  aceptarOferta(ofertaId: $id, contacto: $c) {
+    __typename
+    ... on Propuesta { id }
+    ... on ErrorAceptacion { mensaje puedeReintentar }
+  }
+}"""
+CONTACTO = {"nombre": "Ana Pérez", "correo": "ana@correo.com"}
+
+
 def test_un_asesor_puede_aceptar_por_el_cliente() -> None:
     consentimiento = {**CONSENTIMIENTO_VIGENTE, "actor": {"rol": "CLIENTE", "usuario_id": "u-otro"}}
     with _cliente(auth=AuthFalso({"c-1": consentimiento})) as client:
-        propuesta = _post(client, ACEPTAR, {"id": "o-1"}, rol="ASESOR")["data"]["aceptarOferta"]
+        propuesta = _post(client, ACEPTAR_CON_CONTACTO, {"id": "o-1", "c": CONTACTO}, rol="ASESOR")[
+            "data"
+        ]["aceptarOferta"]
 
     assert propuesta["__typename"] == "Propuesta"
+
+
+def test_un_asesor_sin_el_contacto_del_titular_no_acepta() -> None:
+    """Sin contacto no hay a quién mandar el código: la propuesta quedaría trabada (F-B9)."""
+    consentimiento = {**CONSENTIMIENTO_VIGENTE, "actor": {"rol": "CLIENTE", "usuario_id": "u-otro"}}
+    policy = PolicyFalso()
+    with _cliente(auth=AuthFalso({"c-1": consentimiento}), policy=policy) as client:
+        error = _post(client, ACEPTAR, {"id": "o-1"}, rol="ASESOR")["data"]["aceptarOferta"]
+
+    assert error["__typename"] == "ErrorAceptacion"
+    assert error["mensaje"] == "Revisa el nombre y el correo del titular."
+    assert error["puedeReintentar"] is False
 
 
 def test_oferta_preliminar_la_rechaza_policy_con_su_motivo() -> None:

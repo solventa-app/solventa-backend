@@ -138,8 +138,10 @@ class ServicioSuscripcion:
         """La propuesta tal como la entrega POLICY, o un `ErrorAceptacionDatos`. Nunca lanza por
         una falla de un servicio: se devuelve un error con reintento (CA-W03-01)."""
         # El contacto lo da el ASESOR; el de un CLIENTE sale de AUTH (W03-25), así que se ignora.
-        if usuario is not None and usuario.rol == "ASESOR" and contacto is not None:
-            if not contacto_valido(contacto):
+        if usuario is not None and usuario.rol == "ASESOR":
+            # Obligatorio para el ASESOR (v0.18): sin él no hay a quién mandar el código ni el
+            # enlace, y aceptar otra vez devuelve la misma propuesta, que quedaría trabada.
+            if contacto is None or not contacto_valido(contacto):
                 return ErrorAceptacionDatos(MENSAJE_CONTACTO_INVALIDO, puede_reintentar=False)
             contacto = {"nombre": contacto["nombre"].strip(), "correo": contacto["correo"].strip()}
         else:

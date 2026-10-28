@@ -298,6 +298,11 @@ class ServicioFirmaPago:
         fallos = sesion.get("fallos_seguidos") or 0
         if estado == "abierta":
             if confirmando:
+                if motivo in ("pasarela_no_disponible", "requiere_otra_tarjeta"):
+                    # La pasarela no respondió al confirmar (W03-30): reintentar concilia el pago,
+                    # que pudo hacerse, antes de abrir otra sesión.
+                    contrato, mensaje = _PAGO_POR_MOTIVO[motivo]
+                    return ErrorFlujoDatos(mensaje, True, contrato, {"fallos": fallos})
                 # Regresó de la pasarela sin pagar: la sesión sigue abierta.
                 return ErrorFlujoDatos(MENSAJE_PAGO_PENDIENTE, True, None, {"fallos": fallos})
             return {"sesion": sesion}

@@ -1,25 +1,26 @@
-// Recorrido de emisión de HU-W03 para los guiones de EC005 y EC007 (plan de HU-W03, bloque 6).
+// Recorrido de emisión de HU-W03 para los guiones de EC005 y EC007 (plan de HU-W03, bloque 6; F-B9 con el
+// contrato v0.18).
 //
-// Un CLIENTE hace todo el camino por el BFF, como el front: consentimiento -> oferta -> aceptarOferta ->
-// documentoFirma -> firmarPropuesta -> espera a que la propuesta quede EMITIDA. Solo el CLIENTE titular firma
-// (decisión W03-8), por eso no se usa un ASESOR como en `preparar.js`.
+// Un CLIENTE hace todo el camino por el BFF, como el front (flujo con sesión, W03-33): consentimiento -> oferta ->
+// aceptarOferta -> emitirPropuesta («Firmar», UNDER y KYC) -> firmaPorEnlace -> firmarPorEnlace (modo NOMBRE) ->
+// iniciarPago -> paga en la página de la pasarela de prueba -> confirmarPago, que devuelve la Poliza EMITIDA.
 //
-// Lo que se mide (CA-W03-07): "de la firma a EMITIDA". El reloj arranca justo antes de `firmarPropuesta` y se
-// detiene en la primera consulta de `propuesta(id)` que ya dice EMITIDA. Esa consulta se repite cada
-// `SONDEO_MS`, así que la cifra tiene hasta esa resolución de más: no es un tiempo interno de POLICY.
-// Todo lo anterior (oferta, aceptación, documento) se mide aparte y NO cuenta para el umbral.
+// Lo que se mide (CA-W03-07, F-B9): «desde el regreso de la pasarela». El reloj arranca justo antes de
+// `confirmarPago` (lo que hace la web al volver a `/pago/retorno/...`) y se detiene con su respuesta: concilia el
+// pago con la pasarela, registra el cobro y emite la póliza en la misma llamada. Todo lo anterior se mide aparte y
+// NO cuenta para el umbral.
 //
 // Variables de entorno (valores por defecto SOLO LOCALES, no secretos):
 //   USUARIO_BACKOFFICE / CLAVE_BACKOFFICE   admin.solventa / admin-local-solventa (crean los CLIENTES de prueba)
 //   CLIENTES_PRUEBA                         cuántos CLIENTES crear (por defecto 20)
-//   SONDEO_MS                               cada cuánto se consulta la propuesta (por defecto 100)
-//   TIMEOUT_EMISION_MS                      cuánto se espera la emisión antes de darla por fallida (por defecto 10000)
+//   STUB_PASARELA_URL                       la pasarela de prueba donde se paga (por defecto http://localhost:8103)
 
-import { sleep } from "k6";
+import http from "k6/http";
 import { graphql, pedirOferta } from "./preparar.js";
 
-export const SONDEO_MS = Number(__ENV.SONDEO_MS || 100);
-export const TIMEOUT_EMISION_MS = Number(__ENV.TIMEOUT_EMISION_MS || 10000);
+const PASARELA_URL = (__ENV.STUB_PASARELA_URL || "http://localhost:8103").replace(/\/$/, "");
+// Tarjeta de prueba que la pasarela aprueba (`stubs/pasarela/README.md`).
+const TARJETA_APROBADA = { numero: "4242424242424242", nombre: "Cliente k6", vencimiento: "12/30", cvv: "123", tipo: "CREDITO" };
 
 const SESION = `mutation($e: CredencialesInput!) {
   iniciarSesion(entrada: $e) { __typename ... on Sesion { token } ... on ErrorAutenticacion { mensaje } }
@@ -41,26 +42,31 @@ const ACEPTAR = `mutation($id: ID!) {
   }
 }`;
 
-const DOCUMENTO = `query($id: ID!) { documentoFirma(propuestaId: $id) { propuestaId version } }`;
+const EMITIR = `mutation($p: ID!) {
+  emitirPropuesta(propuestaId: $p) { __typename ... on Propuesta { estado } ... on ErrorEmision { mensaje } }
+}`;
 
-const FIRMAR = `mutation($e: FirmarPropuestaInput!) {
-  firmarPropuesta(entrada: $e) {
+const PAGINA = `query($p: ID) { firmaPorEnlace(propuestaId: $p) { vigente documento { version } } }`;
+
+const FIRMAR = `mutation($e: FirmarPorEnlaceInput!) {
+  firmarPorEnlace(entrada: $e) {
     __typename
-    ... on FirmaRegistrada { propuestaId estado }
-    ... on ErrorFirma { mensaje puedeReintentar motivo }
+    ... on FirmaRegistrada { estado }
+    ... on ErrorFirma { mensaje motivo }
   }
 }`;
 
-const PROPUESTA = `query($id: ID!) { propuesta(id: $id) { id estado polizaId } }`;
+const INICIAR_PAGO = `mutation($p: ID) {
+  iniciarPago(propuestaId: $p) { __typename ... on SesionPago { sesionId } ... on ErrorPago { motivo } }
+}`;
 
-/**
- * Un documento nuevo por recorrido (cada uno necesita su consentimiento y su oferta). El BFF exige 6 dígitos o más
- * y 20 caracteres como máximo: `<prefijo de 2>-<7 dígitos de la marca>-<VU>-<iteración>` llega a 20 con 3 dígitos
- * de VU y 5 de iteración.
- */
-export function documentoDePrueba(prefijo, marca) {
-  return `${prefijo}-${String(marca % 10000000).padStart(7, "0")}-${__VU}-${__ITER}`;
-}
+const CONFIRMAR_PAGO = `mutation($s: ID!, $p: ID) {
+  confirmarPago(sesionId: $s, propuestaId: $p) {
+    __typename
+    ... on Poliza { id estado }
+    ... on ErrorPago { motivo fallosSeguidos }
+  }
+}`;
 
 function sufijoAleatorio() {
   const letras = "abcdefghijklmnopqrstuvwxyz";
@@ -77,8 +83,12 @@ function exigir(condicion, mensaje) {
   }
 }
 
-/** Crea `cantidad` CLIENTES con el BACKOFFICE y devuelve sus tokens. Aborta la corrida si algo falla. */
-export function prepararClientes(graphqlUrl, cantidad) {
+/**
+ * Crea `cantidad` CLIENTES con el BACKOFFICE y devuelve sus tokens. Aborta la corrida si algo falla. Cada CLIENTE
+ * necesita su documento y su correo (W03-27) y cotiza con el documento de su cuenta (W03-34, F-B3): solo dígitos y
+ * distinto por corrida (`marca`).
+ */
+export function prepararClientes(graphqlUrl, cantidad, marca) {
   const backoffice = graphql(graphqlUrl, SESION, {
     e: {
       usuario: __ENV.USUARIO_BACKOFFICE || "admin.solventa",
@@ -91,12 +101,23 @@ export function prepararClientes(graphqlUrl, cantidad) {
 
   const clientes = [];
   for (let i = 0; i < cantidad; i++) {
-    const alias = `k6.cliente.${sufijoAleatorio()}`;
+    const sufijo = sufijoAleatorio();
+    const alias = `k6.cliente.${sufijo}`;
     const clave = "clave-k6-0001";
+    const documento = `7${String(marca % 10000000).padStart(7, "0")}${String(i).padStart(3, "0")}`;
     const alta = graphql(
       graphqlUrl,
       CREAR_USUARIO,
-      { e: { usuario: alias, clave, rol: "CLIENTE", nombre: `Cliente k6 ${i + 1}` } },
+      {
+        e: {
+          usuario: alias,
+          clave,
+          rol: "CLIENTE",
+          nombre: `Cliente k6 ${i + 1}`,
+          correo: `k6.${sufijo}@ejemplo.co`,
+          documentoIdentidad: documento,
+        },
+      },
       tokenBackoffice
     );
     exigir(
@@ -117,92 +138,90 @@ function datos(cuerpo, campo) {
 
 /**
  * Un recorrido completo. Devuelve:
- *   `previa`    { cinco_xx, ok }  consentimiento, oferta, aceptación y documento (no cuentan para EC005/EC007)
- *   `emision`   { cinco_xx, ok, ms, estado }  solo si llegó a firmar; `ms` es de la firma a EMITIDA (o hasta el
- *               corte por `TIMEOUT_EMISION_MS`); `estado` es el último estado visto de la propuesta
- * Un fallo antes de firmar devuelve `emision: null`: no hay muestra de emisión y la corrida lo cuenta aparte.
+ *   `previa`    { cinco_xx, ok }  de la oferta al pago en la pasarela (no cuenta para EC005/EC007)
+ *   `emision`   { cinco_xx, ok, ms, estado }  solo si llegó a pagar; `ms` es lo que tardó `confirmarPago`;
+ *               `estado` es EMITIDA o el motivo del `ErrorPago`
+ * Un fallo antes de pagar devuelve `emision: null`: no hay muestra de emisión y la corrida lo cuenta aparte.
  */
-export function recorrerEmision(graphqlUrl, cliente, documento) {
+export function recorrerEmision(graphqlUrl, cliente) {
   const previa = { cinco_xx: false, ok: false };
   const huboCincoXx = (res) => res.status >= 500;
+  const paso = (consulta, variables, campo) => {
+    const r = graphql(graphqlUrl, consulta, variables, cliente.token);
+    previa.cinco_xx = previa.cinco_xx || huboCincoXx(r.res);
+    return datos(r.cuerpo, campo);
+  };
 
-  const consentimiento = graphql(
-    graphqlUrl,
+  // Sin documento: el CLIENTE consiente y cotiza con el de su cuenta.
+  const registrado = paso(
     CONSENTIMIENTO,
-    {
-      e: {
-        finalidad: "cotizacion-vida-hipotecario",
-        versionTexto: "v1",
-        documentoIdentidad: documento,
-        tipoDato: "financiero",
-        fuenteDatos: "open-finance",
-        canal: "web",
-      },
-    },
-    cliente.token
+    { e: { finalidad: "cotizacion-vida-hipotecario", versionTexto: "v1", tipoDato: "financiero", fuenteDatos: "open-finance", canal: "web" } },
+    "registrarConsentimiento"
   );
-  previa.cinco_xx = huboCincoXx(consentimiento.res);
-  const registrado = datos(consentimiento.cuerpo, "registrarConsentimiento");
   if (!registrado || !registrado.vigente) {
     return { previa, emision: null };
   }
 
-  const pedida = pedirOferta(graphqlUrl, { token: cliente.token, consentimientoId: registrado.id, documento });
+  const pedida = pedirOferta(graphqlUrl, { token: cliente.token, consentimientoId: registrado.id, documento: null });
   previa.cinco_xx = previa.cinco_xx || huboCincoXx(pedida.res);
   // Solo una oferta COMPLETA se puede aceptar (CA-W03-01).
   if (!pedida.oferta || pedida.oferta.__typename !== "Oferta" || pedida.oferta.tipo !== "COMPLETA") {
     return { previa, emision: null };
   }
 
-  const aceptada = graphql(graphqlUrl, ACEPTAR, { id: pedida.oferta.id }, cliente.token);
-  previa.cinco_xx = previa.cinco_xx || huboCincoXx(aceptada.res);
-  const propuesta = datos(aceptada.cuerpo, "aceptarOferta");
+  const propuesta = paso(ACEPTAR, { id: pedida.oferta.id }, "aceptarOferta");
   if (!propuesta || propuesta.__typename !== "Propuesta") {
     return { previa, emision: null };
   }
-
-  const documentoFirma = graphql(graphqlUrl, DOCUMENTO, { id: propuesta.id }, cliente.token);
-  previa.cinco_xx = previa.cinco_xx || huboCincoXx(documentoFirma.res);
-  const aFirmar = datos(documentoFirma.cuerpo, "documentoFirma");
-  if (!aFirmar) {
+  const emitida = paso(EMITIR, { p: propuesta.id }, "emitirPropuesta");
+  if (!emitida || emitida.estado !== "EN_FIRMA") {
+    return { previa, emision: null };
+  }
+  const pagina = paso(PAGINA, { p: propuesta.id }, "firmaPorEnlace");
+  if (!pagina || !pagina.vigente) {
+    return { previa, emision: null };
+  }
+  const firma = paso(
+    FIRMAR,
+    {
+      e: {
+        propuestaId: propuesta.id,
+        versionDocumento: pagina.documento.version,
+        aceptaTerminos: true,
+        autorizaCobro: true,
+        modo: "NOMBRE",
+        nombreFirma: "Cliente k6",
+      },
+    },
+    "firmarPorEnlace"
+  );
+  if (!firma || firma.__typename !== "FirmaRegistrada") {
+    return { previa, emision: null };
+  }
+  const sesion = paso(INICIAR_PAGO, { p: propuesta.id }, "iniciarPago");
+  if (!sesion || sesion.__typename !== "SesionPago") {
+    return { previa, emision: null };
+  }
+  const pago = http.post(`${PASARELA_URL}/checkout/${sesion.sesionId}/pagar`, JSON.stringify(TARJETA_APROBADA), {
+    headers: { "Content-Type": "application/json" },
+    tags: { name: "pasarela_pagar" },
+  });
+  if (pago.status !== 200) {
+    previa.cinco_xx = previa.cinco_xx || huboCincoXx(pago);
     return { previa, emision: null };
   }
   previa.ok = true;
 
-  // ---- Lo que cuenta: de la firma a EMITIDA ----
+  // ---- Lo que cuenta: del regreso de la pasarela a la póliza EMITIDA ----
   const inicio = Date.now();
-  const firma = graphql(
-    graphqlUrl,
-    FIRMAR,
-    { e: { propuestaId: propuesta.id, autorizaCobro: true, versionDocumento: aFirmar.version } },
-    cliente.token
-  );
-  const emision = { cinco_xx: huboCincoXx(firma.res), ok: false, ms: 0, estado: null };
-  const registrada = datos(firma.cuerpo, "firmarPropuesta");
-  if (!registrada || registrada.__typename !== "FirmaRegistrada") {
-    emision.ms = Date.now() - inicio;
-    emision.estado = "FIRMA_RECHAZADA";
-    return { previa, emision };
+  const confirmacion = graphql(graphqlUrl, CONFIRMAR_PAGO, { s: sesion.sesionId, p: propuesta.id }, cliente.token);
+  const emision = { cinco_xx: huboCincoXx(confirmacion.res), ok: false, ms: Date.now() - inicio, estado: null };
+  const resultado = datos(confirmacion.cuerpo, "confirmarPago");
+  if (resultado && resultado.__typename === "Poliza") {
+    emision.estado = resultado.estado;
+    emision.ok = resultado.estado === "EMITIDA";
+  } else {
+    emision.estado = (resultado && resultado.motivo) || "SIN_RESPUESTA";
   }
-
-  emision.estado = registrada.estado;
-  while (Date.now() - inicio < TIMEOUT_EMISION_MS) {
-    if (emision.estado === "EMITIDA") {
-      emision.ok = true;
-      break;
-    }
-    // Estados que ya no cambian solos en este recorrido: seguir esperando solo gastaría tiempo.
-    if (["EN_REVISION", "NO_EMITIDA", "PAGO_RECHAZADO"].includes(emision.estado)) {
-      break;
-    }
-    sleep(SONDEO_MS / 1000);
-    const consulta = graphql(graphqlUrl, PROPUESTA, { id: propuesta.id }, cliente.token);
-    emision.cinco_xx = emision.cinco_xx || huboCincoXx(consulta.res);
-    const actual = datos(consulta.cuerpo, "propuesta");
-    if (actual) {
-      emision.estado = actual.estado;
-    }
-  }
-  emision.ms = Date.now() - inicio;
   return { previa, emision };
 }
