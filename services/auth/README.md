@@ -68,6 +68,20 @@ los llama el BFF, que ya validó el token y el rol.
   staging se crea directo en AUTH con `--auth <url-de-auth>` (ver `infra/README.md`, «Usuarios de staging»).
 - Logs: solo el id opaco del usuario; nunca el alias, la clave ni el token.
 
+## Cuentas del onboarding del móvil (HU-M01)
+
+- `POST /usuarios/onboarding {correo, clave}`: CLIENTE en `PENDIENTE_VERIFICACION` (M01-05b). El alias es opaco (`c-…`):
+  el cliente entra con su **correo**, que se guarda cifrado (`correo_cifrado`, sirve también para el aviso de póliza) y se
+  busca por su HMAC (`correo_hmac`, con `CLIENTE_ID_CLAVE`). Un correo, una cuenta (`409`).
+- `POST /sesiones {usuario, clave, canal}`: `usuario` puede ser el correo. Una cuenta sin verificar (`PENDIENTE_VERIFICACION`
+  o `RECHAZADA`) recibe en `canal = app` un token con el único scope `verificacion-pendiente`, y en cualquier otro canal
+  `403 VERIFICACION_PENDIENTE` (solo con la clave correcta; no cuenta como intento fallido).
+- `POST /usuarios/{id}/verificacion {aprobada, nombre?, documento?}`: lo llama el servicio `onboarding` al cerrar. ACTIVO
+  con el nombre y el documento leídos (cifrados) y su `titular_id` (W03-36, liga las pólizas previas), o RECHAZADA.
+  Idempotente; `404` si la cuenta no está pendiente; `409` si el documento ya es de otra cuenta.
+- `POST /sesiones/renovar {usuario_id, expira_en}`: `actualizarSesion`. Un token con los scopes del estado actual y **la
+  misma expiración** (no alarga la sesión). El BFF lo llama con un token que ya validó.
+
 ## Operación
 
 - Puerto local: `8001`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.
@@ -81,4 +95,4 @@ PostgreSQL `auth` (este servicio es su único escritor). Alembic con SQL explíc
 - Aplicar: `alembic upgrade head` (necesita `DATABASE_URL`). En `docker compose` lo hace `migrar-auth` antes de arrancar el servicio; en staging, el Cloud Run Job `migrar-auth` con la misma imagen.
 - Nueva migración: `alembic revision -m "texto" --rev-id 0002`, escribir `upgrade` **y** `downgrade`, y verificar con `bash ../../scripts/verificar-migraciones.sh auth` (una sola cabeza; subir, bajar a base y subir).
 - Compatibles hacia atrás: agregar sí; renombrar o borrar en dos despliegues (ADR-07). Nunca edites una migración ya integrada a `main`.
-- `0002_usuarios` crea la tabla de usuarios (HU-M02), `0004_consentimientos` la de consentimiento (append-only, T-W01-4) y `0005_consentimiento_titular_y_vencimiento` agrega `titular_id`, `tipo_dato`, `fuente_datos`, `canal` y `vence_en`. `0008_titular_y_documento` agrega a `usuarios` el `titular_id` (único) y el `documento_cifrado` del CLIENTE (W03-27); los usuarios anteriores quedan sin ellos y los de prueba se recrean.
+- `0002_usuarios` crea la tabla de usuarios (HU-M02), `0004_consentimientos` la de consentimiento (append-only, T-W01-4) y `0005_consentimiento_titular_y_vencimiento` agrega `titular_id`, `tipo_dato`, `fuente_datos`, `canal` y `vence_en`. `0008_titular_y_documento` agrega a `usuarios` el `titular_id` (único) y el `documento_cifrado` del CLIENTE (W03-27); los usuarios anteriores quedan sin ellos y los de prueba se recrean. `0009_cuentas_onboarding` (HU-M01) amplía los estados con `PENDIENTE_VERIFICACION` y `RECHAZADA` y agrega `correo_hmac` (login por correo).

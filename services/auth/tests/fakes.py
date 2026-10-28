@@ -69,6 +69,7 @@ class RepositorioUsuariosMemoria:
             "telefono_cifrado": telefono_cifrado,
             "titular_id": titular_id,
             "documento_cifrado": documento_cifrado,
+            "correo_hmac": None,
             "idioma": "ES",
             "moneda": "COP",
         }
@@ -148,6 +149,35 @@ class RepositorioUsuariosMemoria:
     def registrar_exito(self, usuario_id: str) -> None:
         self.filas[usuario_id]["intentos_fallidos"] = 0
         self.filas[usuario_id]["bloqueado_hasta"] = None
+
+    def crear_pendiente(self, usuario_id, alias, hash_clave, correo_cifrado, correo_hmac):
+        if any(f.get("correo_hmac") == correo_hmac for f in self.filas.values()):
+            return None
+        fila = self.crear(usuario_id, alias, hash_clave, "CLIENTE", None, correo_cifrado)
+        self.filas[usuario_id].update(estado="PENDIENTE_VERIFICACION", correo_hmac=correo_hmac)
+        return dict(self.filas[usuario_id]) if fila else None
+
+    def obtener_por_correo_hmac(self, correo_hmac):
+        for fila in self.filas.values():
+            if fila.get("correo_hmac") == correo_hmac:
+                return dict(fila)
+        return None
+
+    def cerrar_verificacion(
+        self, usuario_id, estado, nombre_cifrado, titular_id=None, documento_cifrado=None
+    ):
+        fila = self.filas.get(usuario_id)
+        if fila is None or fila["estado"] not in ("PENDIENTE_VERIFICACION", estado):
+            return None
+        fila["estado"] = estado
+        for campo, valor in (
+            ("nombre_cifrado", nombre_cifrado),
+            ("titular_id", titular_id),
+            ("documento_cifrado", documento_cifrado),
+        ):
+            if valor:
+                fila[campo] = valor
+        return dict(fila)
 
 
 class Reloj:
