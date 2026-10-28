@@ -113,6 +113,9 @@ Además de `gitleaks`, `Dependabot` y `actionlint` (obligatorios), `.github/work
   temporales de un servicio que aún no existe, para que el front avance. Son autónomos (sin base, sin tokens, sin
   llamar a nadie), publican su contrato en `contracts/graphql/<nombre>.graphql` y por ahora corren **solo en local**: no
   se despliegan ni se crean en Terraform. Se reemplazan por el servicio real sin que el front cambie más que la URL.
+  **`stubs/siniestros` está obsoleto desde 2026-10-28:** el servicio real `claims` lo reemplaza (HU-W04,
+  `docs/plan-completar-hu-w04.md`). Se conserva sin cambios hasta que la web se conecte al BFF y el equipo decida
+  retirarlo (W04-13); sus datos alimentan la semilla de `claims`.
 - Carga y escenarios: k6 en `tests/k6/`. Los guiones de los experimentos pasan a ser pruebas de regresión en cada sprint.
 - Fixtures sin datos personales reales.
 

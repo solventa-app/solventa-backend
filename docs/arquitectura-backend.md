@@ -23,7 +23,8 @@ se actualiza este archivo en el mismo cambio.
 | `stubs/notificaciones` | 8106 | Proveedor de notificaciones simulado (idempotente por referencia; `GET /control/enviados`) | — | 2 |
 | `stubs/kyc` | 8105 | Proveedor de KYC simulado (idempotente por referencia; modo `rechaza`) | — | 2 |
 | `consolidador-fuentes` | 8006 | Reconciliación diferida de Open Finance/Open Data degradadas (`rq` sobre Redis) | Redis (cola, db 2) | 1 (ampliación de alcance) |
-| `claims`, `consolidador-kyc` | — | Siniestros y Consolidador de KYC (Truora) | — | 3 |
+| `claims` | 8011 | Mesa de siniestros (HU-W04): siniestros, peritos, evidencias (referencias al almacenamiento), derivaciones y resoluciones; la orden de pago de la indemnización la registra PAYMENTS | MongoDB `claims` (colecciones referenciadas; bandeja y detalle en la secundaria) | 2 |
+| `consolidador-kyc` | — | Consolidador de KYC (Truora) | — | 3 |
 
 Cada servicio tiene su propia base: **nadie lee ni escribe en la base de otro**.
 

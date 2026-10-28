@@ -212,6 +212,51 @@ para la mesa de un operador, pero limita la medición de EC011/EC012 en staging.
 La URL firmada vence a los 300 s: si el detalle queda abierto más de 5 min, abrir una imagen falla hasta recargar. Se
 acepta.
 
+## Estado de ejecución (2026-10-28)
+
+Rama del backend `feat/KAN-27-backend-siniestros` (desde `develop` 45f140b) y del front
+`feat/KAN-27-siniestros-backend-real` (desde `develop` 7caaf2d), ambas en GitHub y **sin PR** (se encolan).
+
+| # | Bloque | Estado | Verificación |
+|---|---|---|---|
+| 0 | Plan versionado | Hecho | — |
+| 1 | Contrato v0.19 | Hecho | Paridad del BFF y `validar_contratos.py` en verde |
+| 2 | Servicio `claims` | Hecho | 20 pruebas; `verificar-migraciones.sh claims` (2 corridas, 2 migraciones); MongoDB rechaza un documento inválido |
+| 3 | Semillas | Hecho | En vivo: 10 siniestros con pólizas reales de POLICY, 37 archivos `DISPONIBLE` en el almacenamiento, 0 datos personales en claro; la segunda corrida no duplica nada |
+| 4 | Resolución + PAYMENTS | Hecho (PAYMENTS en un commit propio para Frans) | 117 pruebas de PAYMENTS y `verificar-migraciones.sh payments`; 8 aprobaciones simultáneas dejan 1 resolución y 1 orden |
+| 5 | Eventos validados | Hecho | Un evento inválido no se publica; en vivo, el log solo lleva ids opacos |
+| 6 y 7 | BFF y `/v1` | Hecho | 331 pruebas del BFF; `validar_gateway.py` (8 rutas); de punta a punta por Envoy con la imagen firmada descargada |
+| 8 | Front documentado | Hecho | Sección «Conexión al backend real» en el plan del front; sin cambios de código |
+| 9 | Pruebas | Hecho | Newman `hu-w04` 26 peticiones / 52 aserciones, dos corridas en verde; k6 EC011/EC012 local p95 28 ms y p99 32 ms ([evidencia](evidencias/EC011-EC012-W04-2026-10-28.md)) |
+| 10 | Documentos | Hecho | README de `claims` y PAYMENTS, `arquitectura-backend.md`, `convenciones.md`, `cobros-conciliacion.md`, `plan-completar-hu-w05.md` (W05-3), README del dummy, `CLAUDE.md` |
+
+**Desvíos frente al plan (decididos al ejecutar):**
+
+- **La semilla de `claims` monta los datos del dummy** (`./stubs/siniestros/app/datos:/semilla:ro`) en vez de copiarlos
+  a `services/claims/semilla/`: evita duplicar ~8 MB de imágenes y el dummy se conserva (W04-13). Si el dummy se retira,
+  sus `datos/` deben moverse antes.
+- **`contracts/graphql/siniestros.graphql` no lleva la nota de obsoleto en su encabezado**: la web verifica su copia byte
+  a byte en el CI y cambiarlo rompería ese chequeo. La nota va en `CHANGELOG.md` (v0.19), el README del dummy y
+  `convenciones.md`.
+- **Se agregó el alcance `claims`** a `.github/workflows/pr-titulo.yml` y `convenciones.md`, y `verificar-migraciones.sh`
+  generaliza el caso de MongoDB (`risk | claims`, mismo comportamiento para RISK).
+- **El reinicio de la demo no toca las órdenes de PAYMENTS**: aprobar otra vez un caso reiniciado devuelve la misma
+  orden (idempotente).
+- **La nota W04-10 en `docs/plan-hu-w07-y-ajustes.md`** queda pendiente: ese plan no está en `develop` (vive en la rama
+  `chore/KAN-30-plan-w07-y-ajustes`). Al integrarlo: la API REST de socios va en `/v1/<recurso>`, registrada después de
+  `/v1/graphql/*`, y W07 toma la versión v0.20 del contrato (la v0.19 es de W04).
+- En este equipo el puerto 5432 lo usa un PostgreSQL local; el compose se levantó con `POSTGRES_PORT=55432`.
+
+**Pendiente:**
+
+1. Abrir los dos PR hacia `develop` (Felipe) y el visto bueno de Frans sobre el commit de PAYMENTS.
+2. Ejecutar los 9 ajustes del front (su plan) y correr sus E2E contra el backend real.
+3. Staging: liberación a `main`; el usuario de Atlas `claims` y su secreto salen por el pipeline; **las evidencias no
+   funcionan en staging mientras `crear_almacenamiento = false`** (decisión de costo); las semillas son solo locales.
+4. La geoetiqueta desde el EXIF (W04-14), con la subida móvil de HU-M04.
+5. La reintegración `main → develop` del hotfix #331 (se dejó para la próxima liberación).
+6. Los cambios en Jira de la tabla siguiente.
+
 ## Cambios en Jira (los hace Felipe)
 
 | Incidencia | Cambio |
