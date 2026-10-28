@@ -29,11 +29,13 @@ from app.application.disparador import (
 )
 from app.application.reintento import ReintentoCobrosPendientes
 from app.application.repositorio_cobros import RepositorioCobrosPostgres, construir_pool
+from app.application.repositorio_sesiones import RepositorioSesionesPostgres
 from app.application.servicio_cobros import (
     IntentoCobroEnConflicto,
     NoReintentable,
     ServicioCobros,
 )
+from app.application.servicio_sesiones import ServicioSesionesPago, SolicitudSesionInvalida
 from app.observabilidad import configurar_trazas
 
 # Sin esto, los logs INFO de app.application.servicio_cobros/bus_eventos/reintento
@@ -58,6 +60,13 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
+class MedioPagoResponse(BaseModel):
+    """Solo la marca y el tipo: nunca el token, el número ni los últimos dígitos (W05-A2)."""
+
+    marca: str
+    tipo: str
+
+
 class CobroResponse(BaseModel):
     id: str
     id_intento_cobro: str
@@ -72,8 +81,45 @@ class CobroResponse(BaseModel):
     # Reintentos manuales de un rechazado ya hechos y los que quedan (CA-W05-02).
     reintentos_rechazo: int = 0
     reintentos_rechazo_restantes: int = 0
+    # W05-A3 y A5: INTERACTIVO (página de la pasarela) o RECURRENTE, y el medio tokenizado.
+    origen: str = "RECURRENTE"
+    medio: MedioPagoResponse | None = None
     creado_en: datetime | None = None
     actualizado_en: datetime | None = None
+
+
+class SolicitudSesionPagoRequest(BaseModel):
+    """La envía POLICY cuando el titular pulsa «Pagar» (HU-W03, W03-28)."""
+
+    propuesta_id: str = Field(min_length=1)
+    cliente_id: str | None = Field(default=None, min_length=1)
+    monto: str = Field(min_length=1)
+    moneda: str = Field(min_length=1)
+    descripcion: str = Field(min_length=1, max_length=120)
+    url_retorno: str = Field(min_length=1)
+    idioma: str = "es"
+
+
+class ConfirmarSesionRequest(BaseModel):
+    # La sesión debe ser de esta propuesta: si no, 404 igual que una inexistente.
+    propuesta_id: str = Field(min_length=1)
+
+
+class SesionPagoResponse(BaseModel):
+    """`estado`: abierta, cobrada, rechazada, fallida, vencida o no_disponible. `motivo` dice qué
+    hacer (p. ej. `pasarela_no_disponible`: reintentar; `requiere_otra_tarjeta`: al 3.er fallo
+    seguido). `sesion_id` es el id de la pasarela, el que vuelve en la URL de regreso."""
+
+    sesion_id: str | None = None
+    propuesta_id: str
+    intento: int
+    id_intento_cobro: str
+    estado: str
+    motivo: str | None = None
+    url_pago: str | None = None
+    vence_en: datetime | None = None
+    fallos_seguidos: int = 0
+    cobro: CobroResponse | None = None
 
 
 EstadoCobro = Literal["cobrando", "cobrado", "rechazado", "pendiente"]
@@ -115,6 +161,8 @@ def create_app(
     config: Configuracion | None = None,
     servicio_cobros: ServicioCobros | None = None,
     reintento: ReintentoCobrosPendientes | None = None,
+    servicio_sesiones: ServicioSesionesPago | None = None,
+    medios=None,
 ) -> FastAPI:
     """`servicio_cobros`/`reintento` permiten inyectar dobles de prueba ya
     construidos sin levantar PostgreSQL ni el ACL Worker reales (ver
@@ -131,6 +179,8 @@ def create_app(
         if servicio_cobros is not None:
             app.state.servicio_cobros = servicio_cobros
             app.state.reintento = reintento
+            app.state.servicio_sesiones = servicio_sesiones
+            app.state.medios = medios
         else:
             pool = construir_pool(config.database_url)
             repositorio = RepositorioCobrosPostgres(pool, cifrador_desde_entorno())
@@ -146,6 +196,11 @@ def create_app(
                 bus = BusConReintento(bus, planificador, config.reintento_intervalo_segundos)
             app.state.servicio_cobros = ServicioCobros(
                 repositorio, cliente_acl, bus, config.reintentos_rechazo_maximo
+            )
+            repositorio_sesiones = RepositorioSesionesPostgres(pool, cifrador_desde_entorno())
+            app.state.medios = repositorio_sesiones.medios
+            app.state.servicio_sesiones = ServicioSesionesPago(
+                repositorio_sesiones, cliente_acl, bus, repositorio.obtener
             )
             app.state.reintento = ReintentoCobrosPendientes(
                 repositorio,
@@ -173,9 +228,24 @@ def create_app(
 
     app = FastAPI(title="solventa-payments", version="0.1.0", lifespan=lifespan)
 
-    def _respuesta(cobro: dict) -> CobroResponse:
+    def _medios(cobros: list[dict]) -> dict[str, dict]:
+        ids = sorted({c["medio_pago_id"] for c in cobros if c.get("medio_pago_id")})
+        return app.state.medios(ids) if ids and app.state.medios else {}
+
+    def _respuesta(cobro: dict, medios: dict[str, dict] | None = None) -> CobroResponse:
         restantes = app.state.servicio_cobros.reintentos_restantes(cobro)
-        return CobroResponse(**cobro, reintentos_rechazo_restantes=restantes)
+        medios = _medios([cobro]) if medios is None else medios
+        medio = medios.get(cobro.get("medio_pago_id") or "")
+        datos = {k: v for k, v in cobro.items() if k != "medio"}
+        return CobroResponse(**datos, reintentos_rechazo_restantes=restantes, medio=medio)
+
+    def _sesion(datos: dict) -> SesionPagoResponse:
+        cobro = datos.get("cobro")
+        return SesionPagoResponse(
+            **{k: v for k, v in datos.items() if k not in ("cobro", "id", "proveedor_sesion_id")},
+            sesion_id=datos.get("proveedor_sesion_id"),
+            cobro=_respuesta(cobro) if cobro else None,
+        )
 
     @app.get("/health", tags=["operacion"])
     def health() -> dict[str, str]:
@@ -210,7 +280,8 @@ def create_app(
         cobros = app.state.servicio_cobros.listar(
             filtro.poliza_id, filtro.estado, filtro.pagina, filtro.tamano
         )
-        return [_respuesta(c) for c in cobros]
+        medios = _medios(cobros)  # una sola consulta para toda la página
+        return [_respuesta(c, medios) for c in cobros]
 
     @app.get(
         "/cobros/{cobro_id}",
@@ -241,6 +312,50 @@ def create_app(
         if cobro is None:
             raise HTTPException(status_code=404, detail="cobro no encontrado")
         return _respuesta(cobro)
+
+    # ---------- Página de pago alojada de la pasarela (HU-W03, W03-28 a W03-30) ----------
+
+    @app.post(
+        "/sesiones-pago",
+        tags=["sesiones"],
+        response_model=SesionPagoResponse,
+        responses={422: {"model": ErrorResponse, "description": "la pasarela no la aceptó"}},
+    )
+    def abrir_sesion(body: SolicitudSesionPagoRequest) -> SesionPagoResponse:
+        """Abre la sesión de pago de la propuesta o devuelve la vigente. Concilia la anterior antes
+        de abrir otra, así que nunca cobra dos veces. Nunca un 5xx por la pasarela: sin respuesta,
+        `estado` no_disponible con el motivo."""
+        try:
+            return _sesion(app.state.servicio_sesiones.abrir(body.model_dump()))
+        except SolicitudSesionInvalida as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.post(
+        "/sesiones-pago/{sesion_id}/confirmar",
+        tags=["sesiones"],
+        response_model=SesionPagoResponse,
+        responses={404: {"model": ErrorResponse}},
+    )
+    def confirmar_sesion(sesion_id: str, body: ConfirmarSesionRequest) -> SesionPagoResponse:
+        """Al regresar de la pasarela (`sesion_id` es el de la URL de regreso). Confirma con la
+        pasarela de servidor a servidor; si se cobró, devuelve el cobro. Idempotente."""
+        datos = app.state.servicio_sesiones.confirmar(sesion_id, body.propuesta_id)
+        if datos is None:
+            raise HTTPException(status_code=404, detail="sesión no encontrada")
+        return _sesion(datos)
+
+    @app.get(
+        "/propuestas/{propuesta_id}/sesion-pago",
+        tags=["sesiones"],
+        response_model=SesionPagoResponse,
+        responses={404: {"model": ErrorResponse}},
+    )
+    def ultima_sesion(propuesta_id: str) -> SesionPagoResponse:
+        """La última sesión de la propuesta, sin preguntarle a la pasarela."""
+        datos = app.state.servicio_sesiones.ultima(propuesta_id)
+        if datos is None:
+            raise HTTPException(status_code=404, detail="sin sesión de pago")
+        return _sesion(datos)
 
     @app.get("/polizas/{poliza_id}/balance", tags=["cobros"], response_model=BalanceResponse)
     def balance(poliza_id: str) -> BalanceResponse:

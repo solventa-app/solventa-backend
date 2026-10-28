@@ -41,6 +41,8 @@ class RepositorioCobrosFalso:
                 "intentos": 1,
                 "reintentos_rechazo": 0,
                 "referencia_pasarela": None,
+                "origen": orden.get("origen", "RECURRENTE"),
+                "medio_pago_id": None,
                 "creado_en": datetime.now(UTC),
                 "actualizado_en": datetime.now(UTC),
             }
@@ -88,7 +90,9 @@ class RepositorioCobrosFalso:
             return [
                 dict(cobro)
                 for cobro in self._por_id.values()
-                if cobro["estado"] == "pendiente" and cobro["intentos"] < max_intentos
+                if cobro["estado"] == "pendiente"
+                and cobro["intentos"] < max_intentos
+                and cobro["origen"] != "INTERACTIVO"
             ]
 
     def listar_atascados(self, minutos: float) -> list[dict]:
@@ -97,7 +101,9 @@ class RepositorioCobrosFalso:
             return [
                 dict(cobro)
                 for cobro in self._por_id.values()
-                if cobro["estado"] == "cobrando" and cobro["actualizado_en"] < limite
+                if cobro["estado"] == "cobrando"
+                and cobro["actualizado_en"] < limite
+                and cobro["origen"] != "INTERACTIVO"
             ]
 
     def envejecer(self, cobro_id: str, minutos: float) -> None:

@@ -88,6 +88,26 @@ A diferencia de RISK, aquí **no se hashea `cobroId` ni `idIntentoCobro`** en el
   de pago (antes devolvía en silencio el cobro original). El nombre viene de la migración `0003`/`0004` (antes
   `clave_idempotencia`).
 - `GET /polizas/{poliza_id}/balance` → `{poliza_id, balance}`.
+- **Página de pago alojada (HU-W03, W03-28 a W03-30; W05-A1 a A4).** El titular paga en la página de la pasarela;
+  PAYMENTS abre la sesión por el ACL y confirma el resultado de servidor a servidor (`app/application/servicio_sesiones.py`).
+  - `POST /sesiones-pago` `{propuesta_id, cliente_id?, monto, moneda, descripcion, url_retorno, idioma?}` → la sesión
+    `{sesion_id, intento, id_intento_cobro, estado, motivo, url_pago, vence_en, fallos_seguidos, cobro}`. Si la anterior
+    sigue abierta, **la concilia primero**: si ya se cobró la devuelve cobrada, si sigue vigente devuelve la misma, y
+    solo si venció, se rechazó o falló abre otra (intento `n + 1`, `id_intento_cobro = uuid5(propuesta, n)`). Sin
+    respuesta de la pasarela no abre otra (la anterior pudo cobrarse). `422` si la pasarela no acepta la solicitud
+    (p. ej. un retorno fuera de su lista blanca).
+  - `POST /sesiones-pago/{sesion_id}/confirmar` `{propuesta_id}` → la sesión tras preguntarle a la pasarela
+    (`sesion_id` es el de la pasarela, el que vuelve en la URL de regreso). `cobrada`: guarda en una transacción el
+    medio (`medios_pago`), el cobro `INTERACTIVO` y la sesión, y publica `cobro.estado-cambiado`. Idempotente. `404`
+    si no existe o es de otra propuesta.
+  - `GET /propuestas/{propuesta_id}/sesion-pago` → la última sesión, sin preguntarle a la pasarela.
+  - **Fallas (W03-30):** sin respuesta de la pasarela, una sesión `fallida` o una que no se pudo abrir suman un fallo
+    (`fallos_seguidos`); al tercero el motivo es `requiere_otra_tarjeta` y la sesión siguiente arranca en 0. Un rechazo
+    (`fondos_insuficientes`, `tarjeta_vencida`) no es una falla: se pide otra tarjeta. Nunca un 5xx por la pasarela.
+  - **Medios de pago:** solo el token del proveedor cifrado (`enc:v1:`, con el id del medio), la marca y el tipo
+    (`CREDITO` o `DEBITO`); **ni el número ni los últimos dígitos**. Los cobros devuelven `origen` (`INTERACTIVO` o
+    `RECURRENTE`) y `medio` (`{marca, tipo}`); el token nunca sale de PAYMENTS.
+  - `/cobros/_reintentar` **no toca los `INTERACTIVO`** (W05-A3): esos solo se concilian al confirmar la sesión.
 - `POST /cobros/buscar` `{poliza_id?, estado?}` → lista de cobros (también con `creado_en` y `actualizado_en`). Los
   filtros van en el cuerpo y no en la URL porque las URL quedan en los logs de acceso (regla #6).
 - `GET /cobros/{id}` → el cobro, o `404`.
@@ -109,6 +129,8 @@ PostgreSQL `payments` (este servicio es su único escritor). Alembic con SQL exp
 - Aplicar: `alembic upgrade head` (necesita `DATABASE_URL`). En `docker compose` lo hace `migrar-payments` antes de arrancar el servicio; en staging, el Cloud Run Job `migrar-payments` con la misma imagen.
 - Nueva migración: `alembic revision -m "texto" --rev-id NNNN`, escribir `upgrade` **y** `downgrade`, y verificar con `bash ../../scripts/verificar-migraciones.sh payments` (una sola cabeza; subir, bajar a base y subir).
 - Compatibles hacia atrás: agregar sí; renombrar o borrar en dos despliegues (ADR-07). Nunca edites una migración ya integrada a `main`.
+- `0008_sesiones_y_medios_de_pago` (HU-W03): tablas `sesiones_pago` y `medios_pago`, y `cobros.origen` (por defecto
+  `RECURRENTE`) y `cobros.medio_pago_id`. Solo expandir.
 - Estados de cobro, idempotencia y balances (T-W05-3) viven en la tabla `cobros`, creada por la migración `0002`
   (`migrations/versions/0002_cobros.py`, `down_revision = "0001"`). El esquema ya **no** lo crea la app al arrancar
   (se quitó `RepositorioCobrosPostgres.preparar_esquema` y `app/sql/001_cobros.sql`): Alembic es la única fuente del esquema,

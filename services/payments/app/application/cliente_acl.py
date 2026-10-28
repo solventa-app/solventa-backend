@@ -52,10 +52,70 @@ class ResultadoConsulta:
     motivo: str | None = None
 
 
+@dataclass
+class SolicitudSesion:
+    """Sesión de la página de pago alojada (HU-W03, W03-28). La tarjeta la captura la pasarela."""
+
+    id_intento_cobro: str  # la referencia ante la pasarela; idempotente
+    monto: str
+    moneda: str
+    descripcion: str
+    url_retorno: str
+    idioma: str = "es"
+
+
+@dataclass
+class SesionPasarela:
+    """Lo que la pasarela dice de una sesión. `medio` (token, marca y tipo) solo con `cobrada`."""
+
+    estado: str  # abierta | procesando | cobrada | rechazada | fallida | vencida
+    sesion_id: str | None = None
+    url_pago: str | None = None
+    vence_en: str | None = None
+    motivo: str | None = None
+    medio: dict[str, str] | None = None
+    referencia: str | None = None
+
+
+@dataclass
+class ResultadoSesionAcl:
+    """`creada` (con la sesión) o `no_disponible` (la pasarela o el ACL no respondieron)."""
+
+    resultado: str
+    sesion: SesionPasarela | None = None
+    motivo: str | None = None
+
+
+@dataclass
+class ConsultaSesionAcl:
+    """`encontrado` (con la sesión), `no_encontrado` o `desconocido` (no se pudo preguntar)."""
+
+    resultado: str
+    sesion: SesionPasarela | None = None
+
+
 class PuertoClienteAcl(Protocol):
     def cobrar(self, orden: OrdenCobro) -> ResultadoCobro: ...
 
     def consultar(self, id_intento_cobro: str) -> ResultadoConsulta: ...
+
+    def crear_sesion(self, solicitud: SolicitudSesion) -> ResultadoSesionAcl: ...
+
+    def consultar_sesion(self, proveedor_sesion_id: str) -> ConsultaSesionAcl: ...
+
+
+def _sesion(cuerpo: dict | None) -> SesionPasarela | None:
+    if not cuerpo:
+        return None
+    return SesionPasarela(
+        estado=cuerpo["estado"],
+        sesion_id=cuerpo.get("sesion_id"),
+        url_pago=cuerpo.get("url_pago"),
+        vence_en=cuerpo.get("vence_en"),
+        motivo=cuerpo.get("motivo"),
+        medio=cuerpo.get("medio"),
+        referencia=cuerpo.get("referencia"),
+    )
 
 
 class ClienteAcl:
@@ -113,6 +173,52 @@ class ClienteAcl:
                 type(error).__name__,
             )
             return ResultadoConsulta(resultado="desconocido")
+
+    def crear_sesion(self, solicitud: SolicitudSesion) -> ResultadoSesionAcl:
+        """`POST {ACL_URL}/pagos/sesiones`. Ante cualquier falla, `no_disponible`."""
+        try:
+            respuesta = self._cliente.post(
+                "/pagos/sesiones",
+                json={
+                    "id_intento_cobro": solicitud.id_intento_cobro,
+                    "monto": solicitud.monto,
+                    "moneda": solicitud.moneda,
+                    "descripcion": solicitud.descripcion,
+                    "url_retorno": solicitud.url_retorno,
+                    "idioma": solicitud.idioma,
+                },
+            )
+            respuesta.raise_for_status()
+            cuerpo = respuesta.json()
+            return ResultadoSesionAcl(
+                resultado=cuerpo["resultado"],
+                sesion=_sesion(cuerpo.get("sesion")),
+                motivo=cuerpo.get("motivo"),
+            )
+        except Exception as error:
+            logger.warning(
+                "fallo creando la sesión de pago en el acl-worker intento=%s error=%s",
+                id_opaco(solicitud.id_intento_cobro),
+                type(error).__name__,
+            )
+            return ResultadoSesionAcl(resultado="no_disponible", motivo="acl_no_disponible")
+
+    def consultar_sesion(self, proveedor_sesion_id: str) -> ConsultaSesionAcl:
+        """`GET {ACL_URL}/pagos/sesiones/{id}`. Ante cualquier falla, `desconocido`."""
+        try:
+            respuesta = self._cliente.get(f"/pagos/sesiones/{proveedor_sesion_id}")
+            respuesta.raise_for_status()
+            cuerpo = respuesta.json()
+            return ConsultaSesionAcl(
+                resultado=cuerpo["resultado"], sesion=_sesion(cuerpo.get("sesion"))
+            )
+        except Exception as error:
+            logger.warning(
+                "fallo consultando la sesión de pago sesion=%s error=%s",
+                id_opaco(proveedor_sesion_id),
+                type(error).__name__,
+            )
+            return ConsultaSesionAcl(resultado="desconocido")
 
     def cerrar(self) -> None:
         self._cliente.close()

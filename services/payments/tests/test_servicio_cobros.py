@@ -141,4 +141,3 @@ def test_listar_con_paginacion() -> None:
     assert pag1[0]["id_intento_cobro"] == "intento-0"
     assert pag2[0]["id_intento_cobro"] == "intento-2"
     assert pag3[0]["id_intento_cobro"] == "intento-4"
-
