@@ -45,3 +45,7 @@ instancias_fijas_encendidas = true
 # crear_cloud_sql (base `almacenamiento`). Encenderlo es un PR que pone true aquí y los orígenes reales del frontend.
 crear_almacenamiento = false
 
+# Firma, pago y avisos de HU-W03 (F-B8). PENDIENTE: el origen real del front web de staging (sin barra final). Hasta
+# fijarlo, el stream de avisos y el regreso desde la pasarela no funcionan en staging. Al ponerlo, repetirlo en
+# `almacenamiento_origenes_cors` y pasar `crear_almacenamiento` a true (necesita el mismo origen para las URLs firmadas).
+# url_front = "https://<front-staging>"

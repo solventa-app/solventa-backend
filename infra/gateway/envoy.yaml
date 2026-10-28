@@ -67,6 +67,17 @@ static_resources:
                           route:
                             cluster: bff_cluster
                             timeout: 0.7s
+                        # Contrato a firmar en PDF (HU-W03, W03-31).
+                        - match:
+                            safe_regex:
+                              regex: "/propuestas/[^/]+/contrato[.]pdf"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
                 http_filters:
                   - name: envoy.filters.http.router
                     typed_config:

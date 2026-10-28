@@ -22,6 +22,7 @@ RUTAS_ESPERADAS = {
     ("POST", "/graphql/movil"),
     ("POST", "/graphql/app"),
     ("GET", "/polizas/{*}/documento"),
+    ("GET", "/propuestas/{*}/contrato.pdf"),
 }
 PARAMETRO = "{*}"  # cómo se escribe cualquier parámetro de ruta al comparar OpenAPI con Envoy
 
@@ -72,7 +73,7 @@ def extraer_envoy(texto: str) -> dict[tuple[str, str], float]:
             # Ruta con parámetro: `safe_regex` con `[^/]+` en lugar de cada parámetro.
             m_regex = re.search(r'regex:\s*"([^"]+)"', bloque)
             if m_regex:
-                m_path = re.match(r"(.+)", m_regex.group(1).replace("[^/]+", PARAMETRO))
+                m_path = re.match(r"(.+)", m_regex.group(1).replace("[^/]+", PARAMETRO).replace("[.]", "."))
         m_metodo = re.search(r'exact:\s*"([A-Z]+)"', bloque)
         m_timeout = re.search(r"timeout:\s*([0-9.]+)s\b", bloque)
         if m_path and m_metodo and m_timeout:
