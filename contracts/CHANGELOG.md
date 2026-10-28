@@ -220,3 +220,39 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `archivo.rechazado` (`contracts/events/`).
 - Afecta al frontend: sí, cuando una pantalla suba archivos (hoy ningún tipo activo lo sube un CLIENTE directamente).
 
+## v0.18 — 2026-10-27
+
+- KAN-26 (HU-W03, bloque 9; decisiones W03-19 a W03-37 de `docs/plan-hu-w07-y-ajustes.md`) y lo que W05 necesita del
+  pago (W05-A3 y W05-A5). Parte del borrador del front (`contrato/borrador-v0.17.graphql` de `solventa-frontend-web`),
+  renombrado a v0.18 porque la v0.17 ya es del almacenamiento. **Solo cambios aditivos.**
+  - **Flujo del ASESOR:** `aceptarOferta` suma `contacto: ContactoTitularInput` (opcional en el contrato, obligatorio
+    para el ASESOR). Mutaciones `enviarCodigoVerificacion`, `verificarCodigo`, `emitirPropuesta` y
+    `reenviarEnlaceFirma`, con `CodigoEnviado`, `ErrorCodigo`, `MotivoErrorCodigo`, `EnlaceEnviado`, `ErrorEmision` y
+    las uniones `ResultadoEnvioCodigo`, `ResultadoVerificacion` y `ResultadoEmision`.
+  - **Página del enlace o sesión del CLIENTE (W03-33):** `firmaPorEnlace`, `solicitarSubidaFirma` (devuelve el
+    `ResultadoSubidaArchivo` de la v0.17, tipo `firma-imagen`), `firmarPorEnlace`, `iniciarPago` y `confirmarPago`,
+    con `EnlaceFirma`, `FirmarPorEnlaceInput`, `ModoFirma`, `SesionPago`, `ErrorPago`, `MotivoErrorPago`,
+    `ResultadoInicioPago` y `ResultadoPago`. Aceptan el token del enlace en `X-Enlace-Firma` **o** la sesión del
+    CLIENTE titular; con sesión, `propuestaId` es obligatorio. `emitirPropuesta` es también el «Firmar» del CLIENTE.
+  - **Estados:** `EstadoPropuesta` suma `IDENTIDAD_VERIFICADA`, `EN_FIRMA`, `FIRMADA` y `CANCELADA`;
+    `MotivoErrorFirma` suma `ENLACE_VENCIDO` e `IMAGEN_INVALIDA`.
+  - **«Mis pólizas» / «Pólizas emitidas» (W03-35):** consulta `propuestas(estado: EstadoVisible, pagina, tamano)` que
+    devuelve `PaginaPropuestas`, filtrada por el rol del token. `Propuesta` suma `estadoVisible`, `creadaEn`,
+    `poliza`, `nombreTitular` y `nombreAsesor` (estos dos solo para el ASESOR y el BACKOFFICE).
+  - **Avisos en vivo (W03-37):** mutación `ticketAvisos` (`TicketAvisos`: ticket de un solo uso de 60 s y la URL del
+    servicio `avisos`). La forma de los eventos SSE (`propuesta` y `cobro`) va documentada en `schema.graphql`.
+  - **W05:** `Cobro.origen` (`OrigenCobro`) y `Cobro.medio` (`MedioPago`: marca y `TipoMedioPago`; nunca el número).
+  - **Usuarios (W03-27 y W03-34):** `CrearUsuarioInput.documentoIdentidad`, `Usuario.documentoEnmascarado` y
+    `SolicitudOfertaInput.documentoIdentidad` pasa a opcional (obligatorio para el ASESOR; un CLIENTE lo toma de AUTH).
+  - Plantillas de notificación nuevas: `codigo-verificacion`, `enlace-firma` y `poliza-emitida-asesor`
+    (`stubs/notificaciones/README.md`).
+- **Diferencias con el borrador del front:** `FirmarPorEnlaceInput` cambia `firma: String!` (base64) por
+  `imagenArchivoId` (la imagen va al almacenamiento, W03-24 revisada) y `nombreFirma`, y suma `aceptaTerminos` y
+  `propuestaId`; `EnlaceFirma.venceEn` es opcional (no aplica con sesión); `iniciarPago` y `confirmarPago` suman
+  `propuestaId` opcional. Lo demás conserva los nombres del borrador.
+- **Estado en el BFF:** solo el esqueleto. Las operaciones nuevas responden «Esta operación aún no está disponible»
+  con reintento (o un error público en `propuestas` y `ticketAvisos`) hasta F-B6; `estadoVisible` y `creadaEn` ya
+  salen en las propuestas existentes. Mientras tanto, `solicitarOferta` sin documento responde
+  `DATOS_INSUFICIENTES`.
+- Afecta al frontend: sí. Web copia este esquema, borra `contrato/borrador-v0.17.graphql` y regenera tipos (F-F1). Los
+  enums de salida que crecen (`EstadoPropuesta`, `MotivoErrorFirma`) piden manejar los valores nuevos.
