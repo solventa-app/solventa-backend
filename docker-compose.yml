@@ -218,6 +218,30 @@ services:
       migrar-risk: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
 
+  migrar-claims:
+    <<: *tarea
+    image: solventa/claims:local
+    build: ./services/claims
+    command: ["python", "-m", "migrations"]
+    environment:
+      MONGO_URI: mongodb://mongo1:27017,mongo2:27017/?replicaSet=rs0
+      MONGO_DB: claims
+    depends_on:
+      mongo-init: { condition: service_completed_successfully }
+
+  claims:
+    <<: *servicio
+    image: solventa/claims:local
+    build: ./services/claims
+    ports: ["8011:8011"]
+    environment:
+      MONGO_URI: mongodb://mongo1:27017,mongo2:27017/?replicaSet=rs0
+      MONGO_DB: claims
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
+    depends_on:
+      mongo-init: { condition: service_completed_successfully }
+      migrar-claims: { condition: service_completed_successfully }
+
   rating:
     <<: *servicio
     build: ./services/rating

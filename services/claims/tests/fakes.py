@@ -1,0 +1,156 @@
+"""Dobles de prueba de CLAIMS: un repositorio en memoria con la interfaz de
+`RepositorioSiniestrosMongo`.
+
+Las pruebas del servicio y de la API no necesitan un replica set real; el repositorio de MongoDB se
+verifica en vivo con `docker compose` (ver README)."""
+
+import copy
+from datetime import UTC, datetime
+
+AHORA = datetime(2026, 10, 28, 15, 0, tzinfo=UTC)
+
+
+class RepositorioFalso:
+    def __init__(self) -> None:
+        self.siniestros: dict[str, dict] = {}
+        self.evidencias_por: dict[str, list[dict]] = {}
+        self.verificaciones_por: dict[str, list[dict]] = {}
+        self.asignaciones_por: dict[str, dict] = {}
+        self.resoluciones_por: dict[str, dict] = {}
+        self.peritos_por: dict[str, dict] = {}
+        self.lecturas_primaria = 0
+
+    # ---------- Lectura (misma firma que el repositorio real) ----------
+
+    def listar(self, estado=None):
+        todos = [copy.deepcopy(s) for s in self.siniestros.values()]
+        if estado:
+            todos = [s for s in todos if s["estado"] == estado]
+        return sorted(todos, key=lambda s: s["notificado_en"], reverse=True)
+
+    def obtener(self, siniestro_id, primaria=False):
+        self.lecturas_primaria += int(primaria)
+        s = self.siniestros.get(siniestro_id)
+        return copy.deepcopy(s) if s else None
+
+    def evidencias(self, ids, primaria=False):
+        return {i: copy.deepcopy(self.evidencias_por.get(i, [])) for i in ids}
+
+    def verificaciones(self, ids, primaria=False):
+        return {i: copy.deepcopy(self.verificaciones_por.get(i, [])) for i in ids}
+
+    def asignaciones(self, ids, primaria=False):
+        return {
+            i: copy.deepcopy(self.asignaciones_por[i]) for i in ids if i in self.asignaciones_por
+        }
+
+    def resoluciones(self, ids, primaria=False):
+        return {
+            i: copy.deepcopy(self.resoluciones_por[i]) for i in ids if i in self.resoluciones_por
+        }
+
+    def peritos(self, primaria=False):
+        return [copy.deepcopy(p) for p in self.peritos_por.values() if p["activo"]]
+
+    def perito(self, perito_id, primaria=False):
+        p = self.peritos_por.get(perito_id)
+        return copy.deepcopy(p) if p else None
+
+
+def siniestro(sid="sin-01", estado="PENDIENTE", notificado_en=AHORA, **extra) -> dict:
+    return {
+        "id": sid,
+        "radicado": f"SIN-2026-{sid[-2:]}",
+        "poliza_id": "pol-01",
+        "estado": estado,
+        "asegurado": {"nombre": "Camilo Rojas", "documento": "C.C. 79.845.210"},
+        "cobertura_aplicada": "Vida grupo deudor",
+        "entidad_acreedora": "Banco Aliado S.A.",
+        "ocurrido_en": notificado_en,
+        "notificado_en": notificado_en,
+        "ubicacion": {
+            "descripcion": "Calle 80",
+            "ciudad": "Bogotá",
+            "latitud": 4.72,
+            "longitud": -74.12,
+        },
+        "descripcion": "Choque leve",
+        "suma_reclamada": {"valor": "8650000", "moneda": "COP"},
+        "vence_dictamen_en": notificado_en,
+        **extra,
+    }
+
+
+def perito(pid="per-01", dias=4, activo=True) -> dict:
+    return {
+        "id": pid,
+        "nombre": f"Perito {pid}",
+        "ciudad": "Bogotá",
+        "red": "Red Centro",
+        "registro": f"RNPL-{pid}",
+        "tiempo_respuesta_dias": dias,
+        "activo": activo,
+        "creado_en": AHORA,
+    }
+
+
+def repositorio_con_datos() -> RepositorioFalso:
+    repo = RepositorioFalso()
+    repo.siniestros["sin-01"] = siniestro(
+        "sin-01", notificado_en=datetime(2026, 10, 19, tzinfo=UTC)
+    )
+    repo.siniestros["sin-02"] = siniestro(
+        "sin-02", "EN_REVISION", datetime(2026, 10, 20, tzinfo=UTC)
+    )
+    repo.siniestros["sin-03"] = siniestro("sin-03", "APROBADO", datetime(2026, 10, 18, tzinfo=UTC))
+    repo.peritos_por = {"per-01": perito("per-01", 4), "per-02": perito("per-02", 3, activo=False)}
+    repo.evidencias_por["sin-01"] = [
+        {
+            "id": "ev-1",
+            "siniestro_id": "sin-01",
+            "archivo_id": "arch-1",
+            "tipo": "FOTO",
+            "titulo": "Bumper",
+            "nombre_archivo": "sin-01-foto-1.jpg",
+            "registrada_en": AHORA,
+            "geoetiquetada": True,
+            "latitud": 4.72,
+            "longitud": -74.12,
+            "nota": "4.72, -74.12 · tomada en sitio",
+        }
+    ]
+    repo.verificaciones_por["sin-01"] = [
+        {
+            "id": "ver-1",
+            "siniestro_id": "sin-01",
+            "orden": 1,
+            "descripcion": "Póliza vigente",
+            "cumple": True,
+        }
+    ]
+    repo.asignaciones_por["sin-02"] = {
+        "id": "asig-1",
+        "siniestro_id": "sin-02",
+        "perito_id": "per-01",
+        "instrucciones": "Revisar el bumper",
+        "notificacion": "Correo certificado y expediente digital de siniestros",
+        "asignada_en": AHORA,
+        "vence_informe_en": AHORA,
+        "actor_usuario_id": None,
+    }
+    repo.resoluciones_por["sin-03"] = {
+        "id": "res-1",
+        "siniestro_id": "sin-03",
+        "tipo": "APROBACION",
+        "motivo": None,
+        "comentario": None,
+        "notificacion": "Enviada al asegurado y a la entidad acreedora",
+        "via_recurso": None,
+        "indemnizacion": {"valor": "8000000", "moneda": "COP"},
+        "metodo_transferencia": "ACH Colombia Interbancario",
+        "plazo_dispersion": "1 a 3 días hábiles",
+        "orden_pago_id": None,
+        "resuelta_en": AHORA,
+        "actor_usuario_id": None,
+    }
+    return repo

@@ -104,3 +104,33 @@ resource "google_secret_manager_secret_version" "mongo_uri_rating" {
 
   secret_data = "mongodb+srv://rating-service:${random_password.mongo_atlas_rating[0].result}@${replace(mongodbatlas_cluster.risk[0].srv_address, "mongodb+srv://", "")}/risk?retryWrites=false&w=majority"
 }
+
+# CLAIMS (HU-W04) es el escritor único de su propia base `claims` en el mismo cluster: su usuario solo tiene
+# `readWrite` sobre esa base, nunca sobre `risk` (regla 1: nadie lee ni escribe la base de otro). La URL no lleva
+# readPreference: claims la fija en el código (secundaria para la bandeja y el detalle, W04-2).
+resource "random_password" "mongo_atlas_claims" {
+  count   = var.crear_mongo_atlas ? 1 : 0
+  length  = 24
+  special = false
+}
+
+resource "mongodbatlas_database_user" "claims" {
+  count              = var.crear_mongo_atlas ? 1 : 0
+  username           = "claims-service"
+  password           = random_password.mongo_atlas_claims[0].result
+  project_id         = mongodbatlas_project.risk[0].id
+  auth_database_name = "admin"
+
+  roles {
+    role_name     = "readWrite"
+    database_name = "claims"
+  }
+}
+
+resource "google_secret_manager_secret_version" "mongo_uri_claims" {
+  count      = (var.crear_mongo_atlas && var.crear_servicios) ? 1 : 0
+  secret     = google_secret_manager_secret.secreto["mongo-uri-claims"].id
+  depends_on = [google_secret_manager_secret_version.marcador]
+
+  secret_data = "mongodb+srv://claims-service:${random_password.mongo_atlas_claims[0].result}@${replace(mongodbatlas_cluster.risk[0].srv_address, "mongodb+srv://", "")}/claims?retryWrites=true&w=majority"
+}
