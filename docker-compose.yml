@@ -135,6 +135,11 @@ services:
       POLICY_URL: http://policy:8007
       ALMACENAMIENTO_URL: http://almacenamiento:8009
       ONBOARDING_URL: http://onboarding:8010
+      # Tickets de un solo uso del stream de avisos (W03-37): misma base que POLICY, que publica allí.
+      REDIS_URL: redis://redis:6379/3
+      AVISOS_URL: http://localhost:8011/avisos/stream
+      # A donde regresa el titular desde la página de pago (debe estar en URLS_RETORNO_PERMITIDAS).
+      URL_FRONT: http://localhost:5173
       # Solo local: el repo es público. En Cloud Run llega de Secret Manager (clave-cliente-id).
       CLIENTE_ID_CLAVE: solo-local-no-secreta
       # Mismo valor que AUTH (firma HS256). Solo local; en Cloud Run llega de Secret Manager (clave-jwt).
@@ -146,6 +151,7 @@ services:
       acl-worker: { condition: service_healthy }
       risk: { condition: service_healthy }
       rating: { condition: service_healthy }
+      redis: { condition: service_healthy }
 
   migrar-auth:
     <<: *tarea

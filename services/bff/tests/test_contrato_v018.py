@@ -1,13 +1,13 @@
-"""Esqueleto de la v0.18 (HU-W03, bloque 9): las operaciones existen, nunca dan 5xx y, hasta F-B6,
-responden «aún no disponible» con reintento. Lo que ya funciona: el estado visible de la propuesta,
-el contacto opcional en `aceptarOferta` y la cédula aún obligatoria en `solicitarOferta`."""
+"""Contrato v0.18 (HU-W03, bloque 9): estado visible de la propuesta, contacto opcional en
+`aceptarOferta`, permisos por rol de las operaciones nuevas y documento en `crearUsuario`/`yo`.
+El comportamiento de la firma y el pago está en `test_firma_pago.py`."""
 
 import pytest
 from fakes import PolicyFalso, RatingFalso, clientes_falsos, token_de_prueba
 from fastapi.testclient import TestClient
 
 from app.configuracion import Configuracion
-from app.esquema import MENSAJE_OPERACION_NO_DISPONIBLE, EstadoVisible, estado_visible
+from app.esquema import EstadoVisible, estado_visible
 from app.main import create_app
 
 GUARDADA = {
@@ -84,80 +84,12 @@ def test_solicitar_oferta_sin_documento_responde_datos_insuficientes() -> None:
     }
 
 
-@pytest.mark.parametrize(
-    ("consulta", "campo", "rol"),
-    [
-        (
-            'mutation { enviarCodigoVerificacion(propuestaId: "p-1") '
-            "{ ... on ErrorCodigo { mensaje puedeReintentar } } }",
-            "enviarCodigoVerificacion",
-            "ASESOR",
-        ),
-        (
-            'mutation { verificarCodigo(propuestaId: "p-1", codigo: "123456") '
-            "{ ... on ErrorCodigo { mensaje puedeReintentar } } }",
-            "verificarCodigo",
-            "ASESOR",
-        ),
-        (
-            'mutation { emitirPropuesta(propuestaId: "p-1") '
-            "{ ... on ErrorEmision { mensaje puedeReintentar } } }",
-            "emitirPropuesta",
-            "CLIENTE",
-        ),
-        (
-            'mutation { reenviarEnlaceFirma(propuestaId: "p-1") '
-            "{ ... on ErrorEmision { mensaje puedeReintentar } } }",
-            "reenviarEnlaceFirma",
-            "ASESOR",
-        ),
-        (
-            'mutation { firmarPorEnlace(entrada: {versionDocumento: "v1", aceptaTerminos: true, '
-            'autorizaCobro: true, modo: NOMBRE, nombreFirma: "Ana"}) '
-            "{ ... on ErrorFirma { mensaje puedeReintentar } } }",
-            "firmarPorEnlace",
-            "CLIENTE",
-        ),
-        (
-            "mutation { iniciarPago { ... on ErrorPago { mensaje puedeReintentar } } }",
-            "iniciarPago",
-            "CLIENTE",
-        ),
-        (
-            'mutation { confirmarPago(sesionId: "s-1") '
-            "{ ... on ErrorPago { mensaje puedeReintentar } } }",
-            "confirmarPago",
-            "CLIENTE",
-        ),
-    ],
-)
-def test_las_operaciones_nuevas_responden_no_disponible_con_reintento(
-    consulta: str, campo: str, rol: str
-) -> None:
-    with _cliente() as client:
-        cuerpo = _post(client, consulta, rol=rol)
-    assert cuerpo["data"][campo] == {
-        "mensaje": MENSAJE_OPERACION_NO_DISPONIBLE,
-        "puedeReintentar": True,
-    }
-
-
 def test_el_codigo_de_verificacion_es_solo_del_asesor() -> None:
     consulta = 'mutation { enviarCodigoVerificacion(propuestaId: "p-1") { __typename } }'
     with _cliente() as client:
         cuerpo = _post(client, consulta, rol="CLIENTE")
     assert cuerpo["data"] is None
     assert cuerpo["errors"][0]["message"] == "No tienes permiso para esta operación."
-
-
-def test_propuestas_y_ticket_responden_error_publico_sin_5xx() -> None:
-    with _cliente() as client:
-        lista = _post(client, "{ propuestas { total } }", rol="BACKOFFICE")
-        ticket = _post(client, "mutation { ticketAvisos { ticket } }", rol="CLIENTE")
-        enlace = _post(client, "{ firmaPorEnlace { vigente } }", rol="CLIENTE")
-    assert lista["errors"][0]["message"] == MENSAJE_OPERACION_NO_DISPONIBLE
-    assert ticket["errors"][0]["message"] == MENSAJE_OPERACION_NO_DISPONIBLE
-    assert enlace["data"] == {"firmaPorEnlace": None}
 
 
 def test_crear_cliente_manda_el_documento_a_auth_y_yo_lo_trae_enmascarado() -> None:

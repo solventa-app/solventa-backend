@@ -66,11 +66,25 @@ Nunca se loguean (tampoco el documento).
 | `CLIENTE_ID_CLAVE` | `solo-local-no-secreta` | En la nube, secreto `clave-cliente-id`; el BFF no arranca con el valor local ni con el marcador de Terraform |
 | `AUTENTICACION_SERVICIOS` | `ninguna` | `id_token` en Cloud Run: token de identidad del servidor de metadatos, audience = nombre del servicio |
 | `JWT_SECRETO` | `solo-local-no-secreta-jwt-solventa-0001` | El mismo que AUTH (HS256). En la nube, secreto `clave-jwt`; no arranca con el valor local, el marcador ni uno de menos de 32 bytes |
+| `REDIS_URL` | `redis://localhost:6379/0` | Guarda 60 s el ticket del stream de avisos (`ticketAvisos`); debe ser la misma base que lee el servicio `avisos` (la de POLICY) |
+| `AVISOS_URL` | `http://localhost:8011/avisos/stream` | URL pública del stream SSE (fuera del API Gateway) que devuelve `ticketAvisos` |
+| `URL_FRONT` | `http://localhost:5173` | Origen del front: a `<URL_FRONT>/pago/retorno/<propuestaId>` regresa el titular desde la pasarela; debe estar en `URLS_RETORNO_PERMITIDAS` de la pasarela |
 | `AUTENTICACION_USUARIOS` | `opcional` | `opcional` u `obligatoria` (ver `docs/autenticacion-usuarios.md`) |
 
 ## Operación
 
 - Puerto local: `8000`. GraphQL: `POST /graphql/web` y `/graphql/app` (GraphiQL en el navegador). Salud: `GET /health`. Métricas: `GET /metrics`.
+- **Firma y pago (HU-W03, v0.18):** `servicio_firma_pago.py` autoriza y traduce; POLICY decide. Las operaciones de la página del
+  enlace (`firmaPorEnlace`, `solicitarSubidaFirma`, `firmarPorEnlace`, `iniciarPago`, `confirmarPago`) aceptan **el token del
+  enlace** en la cabecera `X-Enlace-Firma` (sin sesión; con él se ignora `propuestaId`) **o la sesión de un CLIENTE** con
+  `propuestaId`, y entonces el BFF toma el titular de AUTH (`GET /usuarios/{id}/identidad`) y se lo pasa a POLICY en
+  `X-Titular-Id`: el cliente nunca elige de quién es la propuesta. Sin acceso a la propuesta se responde como si no existiera.
+  El token no se loguea ni viaja en una URL (a POLICY va por cabecera o en el cuerpo de `/enlaces/resolver`).
+  `propuestas` se filtra por el rol del token (CLIENTE por su titular, ASESOR por lo que aceptó, BACKOFFICE todo) y los datos
+  personales (`nombreTitular`, `nombreAsesor`) salen solo para ASESOR y BACKOFFICE. `GET /propuestas/{id}/contrato.pdf` entrega
+  el contrato a firmar con la misma autorización doble. La cédula de un CLIENTE (W03-34) sale de AUTH en memoria si no la manda,
+  y si la manda debe ser la suya. Al revocar un consentimiento se avisa a POLICY (`/propuestas/consentimiento-revocado`) sin
+  que una falla suya haga fallar la revocación.
 - **PDF de la póliza (HU-W03):** `GET /polizas/{id}/documento` (REST, no GraphQL, porque entrega un archivo). Es el `documentoUrl` de
   `Poliza`. Es un documento con datos personales: exige sesión **siempre** (aunque la autenticación de GraphQL esté en `opcional`),
   solo para CLIENTE y ASESOR, y un CLIENTE solo descarga la suya. `401` sin token o con uno inválido, `403` para otro rol, `404` si

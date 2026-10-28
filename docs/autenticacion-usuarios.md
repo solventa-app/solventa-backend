@@ -53,6 +53,7 @@ Tabla `usuarios` en la base `auth`: `id`, `usuario` (alias único), `hash_clave`
 | `firmaPorEnlace`, `solicitarSubidaFirma`, `firmarPorEnlace`, `iniciarPago`, `confirmarPago` (v0.18, W03-33: token del enlace en `X-Enlace-Firma` **o** sesión del CLIENTE titular) | ✅ titular | ❌ | ❌ | ✅ solo con `X-Enlace-Firma` |
 | `propuestas` (v0.18, W03-35: filtrada por el rol del token) | ✅ las suyas | ✅ las que aceptó | ✅ todas | ❌ siempre exige token |
 | `ticketAvisos` (v0.18, W03-37: ticket de 60 s para el stream de `avisos`) | ✅ | ✅ | ✅ | ❌ siempre exige token |
+| `GET /propuestas/{id}/contrato.pdf` (v0.18, W03-31: contrato a firmar; REST; token del enlace en `X-Enlace-Firma` **o** sesión del CLIENTE titular; sin acceso, 404) | ✅ titular | ❌ (404) | ❌ (404) | ✅ solo con `X-Enlace-Firma` |
 | `GET /polizas/{id}/documento` (PDF de la póliza; REST, no GraphQL; un CLIENTE solo descarga la suya, una ajena da 404) | ✅ | ✅ | ❌ (403) | ❌ siempre exige token (401) |
 | `cobros`, `crearCobro`, `reintentarCobro` (KAN-28, datos de pagos) | ❌ | ❌ | ✅ | ❌ siempre exige token |
 | `usuarios`, `crearUsuario` (con `nombre`, `correo` y `telefono` para CLIENTE; desde la v0.18 un CLIENTE **exige `documentoIdentidad` y `correo`**, W03-27), `cambiarRolUsuario`, `suspenderUsuario` | ❌ | ❌ | ✅ | ❌ siempre exige token |
@@ -61,7 +62,8 @@ Tabla `usuarios` en la base `auth`: `id`, `usuario` (alias único), `hash_clave`
 | `iniciarSesion` | pública | pública | pública | pública |
 
 Un token **inválido o vencido** se rechaza en cualquier modo, aunque la operación no lo exija. En modo `obligatoria`,
-la última columna desaparece: todo exige token.
+la última columna desaparece: todo exige token, **salvo las operaciones de la página del enlace**, que entran con
+`X-Enlace-Firma` y sin sesión (el titular del enlace no tiene cuenta; una sesión vencida que viaje con el token se ignora).
 
 Cuando un ASESOR registra un consentimiento, AUTH guarda el **actor** (`{rol, usuario_id}`): queda constancia de que lo
 otorgó en nombre del cliente (CA-W01-02 y CA-W01-11).

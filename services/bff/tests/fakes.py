@@ -2,18 +2,22 @@
 
 import time
 import uuid
+from datetime import UTC, datetime
 
 import jwt
 
 from app.clientes import (
+    Acceso,
     ArchivoRechazado,
     Clientes,
     ErrorServicio,
     FirmaRechazada,
+    FlujoRechazado,
     PropuestaRechazada,
     SolicitudInvalida,
 )
-from app.configuracion import JWT_SECRETO_LOCAL
+from app.configuracion import CLAVE_CLIENTE_ID_LOCAL, JWT_SECRETO_LOCAL
+from app.identificadores import cliente_id_desde_documento
 
 CONSENTIMIENTO_VIGENTE = {
     "id": "c-1",
@@ -192,6 +196,18 @@ class AuthFalso:
         return {
             **_con_nombre(datos, self.nombres),
             "documento_enmascarado": f"•••• {documento[-4:]}" if documento else None,
+        }
+
+    async def obtener_identidad(self, usuario_id: str) -> dict | None:
+        """Como AUTH: el titular y el documento en claro de un CLIENTE verificado."""
+        if self.falla:
+            raise ErrorServicio("caido")
+        documento = self.documentos.get(usuario_id)
+        if documento is None or usuario_id not in self.usuarios:
+            return None
+        return {
+            "titular_id": cliente_id_desde_documento(documento, CLAVE_CLIENTE_ID_LOCAL),
+            "documento": documento,
         }
 
     async def listar_usuarios(self, rol: str | None) -> list[dict]:
@@ -487,8 +503,174 @@ class PolicyFalso:
         self.documentos_pedidos: list[tuple[str, str | None]] = []
         self.error_documento: Exception | None = None
         self.reconciliaciones: list[str] = []
+        self.contactos_recibidos: list[dict | None] = []
         self.error_reconciliar: Exception | None = None
         self.propuestas_conocidas: set[str] | None = None  # None = conoce cualquier id
+        # v0.18: lo que el BFF le pidió (operación, argumentos) y lo que responderá.
+        self.pedidos: list[tuple] = []
+        self.rechazos: dict[str, FlujoRechazado] = {}  # operación -> rechazo de negocio
+        self.caidas: set[str] = set()  # operaciones que dan ErrorServicio (5xx)
+        self.respuestas: dict[str, dict] = {}  # operación -> respuesta a medida
+        self.enlaces: dict[str, str] = {}  # token -> propuesta_id
+        self.revocaciones: list[tuple[str, str]] = []
+
+    # ---------- v0.18 (HU-W03, F-B6) ----------
+
+    def _flujo(self, operacion: str, *argumentos) -> dict | None:
+        self.pedidos.append((operacion, *argumentos))
+        if operacion in self.caidas:
+            raise ErrorServicio("HTTP 503")
+        if operacion in self.rechazos:
+            raise self.rechazos[operacion]
+        return self.respuestas.get(operacion)
+
+    async def listar_propuestas(self, cliente_id, actor_usuario_id, estado_visible, pagina, tamano):
+        canned = self._flujo("listar", cliente_id, actor_usuario_id, estado_visible, pagina, tamano)
+        return canned or {"propuestas": [], "total": 0, "pagina": pagina, "tamano": tamano}
+
+    async def enviar_codigo(self, propuesta_id: str, correo: str | None) -> dict:
+        canned = self._flujo("enviar_codigo", propuesta_id, correo)
+        return canned or {
+            "propuesta_id": propuesta_id,
+            "correo_enmascarado": "a•••@correo.com",
+            "vence_en": "2026-10-28T12:10:00+00:00",
+        }
+
+    async def verificar_codigo(self, propuesta_id: str, codigo: str) -> dict:
+        canned = self._flujo("verificar_codigo", propuesta_id, codigo)
+        return canned or self._propuesta_en(propuesta_id, "IDENTIDAD_VERIFICADA")
+
+    async def emitir(self, propuesta_id: str, rol: str, titular_id: str | None) -> dict:
+        canned = self._flujo("emitir", propuesta_id, rol, titular_id)
+        if canned:
+            return canned
+        if rol == "ASESOR":
+            return {
+                "propuesta": self._propuesta_en(propuesta_id, "EN_FIRMA"),
+                "enlace": {
+                    "correo_enmascarado": "a•••@correo.com",
+                    "vence_en": "2026-10-28T12:30:00+00:00",
+                },
+            }
+        return {"propuesta": self._propuesta_en(propuesta_id, "EN_FIRMA"), "enlace": None}
+
+    async def reenviar_enlace(self, propuesta_id: str) -> dict:
+        canned = self._flujo("reenviar_enlace", propuesta_id)
+        return canned or {
+            "propuesta": self._propuesta_en(propuesta_id, "EN_FIRMA"),
+            "enlace": {
+                "correo_enmascarado": "a•••@correo.com",
+                "vence_en": "2026-10-28T12:30:00+00:00",
+            },
+        }
+
+    async def resolver_enlace(self, token: str) -> dict | None:
+        self._flujo("resolver_enlace", token)
+        propuesta_id = self.enlaces.get(token)
+        if propuesta_id is None:
+            return None
+        return {
+            "propuesta_id": propuesta_id,
+            "vigente": True,
+            "vence_en": "2026-10-28T12:30:00+00:00",
+        }
+
+    async def estado_enlace(self, propuesta_id: str, acceso: Acceso) -> dict:
+        canned = self._flujo("estado_enlace", propuesta_id, acceso)
+        return canned or {
+            "propuesta": self._propuesta_en(propuesta_id, "EN_FIRMA"),
+            "vigente": True,
+            "vence_en": "2026-10-28T12:30:00+00:00",
+            "firma": None,
+        }
+
+    async def contrato(self, propuesta_id: str, acceso: Acceso) -> dict:
+        canned = self._flujo("contrato", propuesta_id, acceso)
+        return canned or {
+            "propuesta_id": propuesta_id,
+            "version": "v1",
+            "resumen": "Seguro de vida: prima de 185000 COP al mes durante 60 meses.",
+            "monto_mensual": {"valor": "185000", "moneda": "COP"},
+            "meses": 60,
+            "forma_cobro": "con la cuota de tu crédito",
+        }
+
+    async def contrato_pdf(self, propuesta_id: str, acceso: Acceso) -> bytes | None:
+        self._flujo("contrato_pdf", propuesta_id, acceso)
+        return b"%PDF-1.3 contrato falso"
+
+    async def subida_firma(
+        self, propuesta_id: str, acceso: Acceso, tipo_contenido: str, tamano_bytes: int
+    ) -> dict:
+        canned = self._flujo("subida_firma", propuesta_id, acceso, tipo_contenido, tamano_bytes)
+        return canned or {
+            "archivo": {
+                "id": "arch-1",
+                "tipo": "firma-imagen",
+                "estado": "PENDIENTE",
+                "tipo_contenido": tipo_contenido,
+                "tamano_bytes": tamano_bytes,
+                "creado_en": "2026-10-28T12:00:00+00:00",
+            },
+            "url": "https://almacen.example/subir/arch-1",
+            "metodo": "PUT",
+            "encabezados": {"Content-Type": tipo_contenido},
+            "vence_en": "2026-10-28T12:15:00+00:00",
+        }
+
+    async def firmar_enlace(self, propuesta_id: str, acceso: Acceso, entrada: dict) -> dict:
+        canned = self._flujo("firmar_enlace", propuesta_id, acceso, entrada)
+        return canned or {
+            "propuesta_id": propuesta_id,
+            "firmada_en": "2026-10-28T12:05:00+00:00",
+            "referencia": "ev-1",
+            "estado": "FIRMADA",
+        }
+
+    async def iniciar_pago(
+        self, propuesta_id: str, acceso: Acceso, url_retorno: str, idioma: str
+    ) -> dict:
+        canned = self._flujo("iniciar_pago", propuesta_id, acceso, url_retorno, idioma)
+        return canned or {
+            "sesion": {
+                "sesion_id": "s-1",
+                "estado": "abierta",
+                "url_pago": "https://pasarela.example/checkout/s-1",
+                "vence_en": "2026-10-28T12:15:00+00:00",
+                "motivo": None,
+                "fallos_seguidos": 0,
+            },
+            "poliza": None,
+        }
+
+    async def confirmar_pago(self, propuesta_id: str, acceso: Acceso, sesion_id: str) -> dict:
+        canned = self._flujo("confirmar_pago", propuesta_id, acceso, sesion_id)
+        return canned or {
+            "sesion": {"sesion_id": sesion_id, "estado": "cobrada", "fallos_seguidos": 0},
+            "poliza": {
+                "id": "pol-1",
+                "numero": "SOL-2026-0001",
+                "vigencia_desde": "2026-10-28T12:06:00+00:00",
+                "vigencia_hasta": "2031-10-28T12:06:00+00:00",
+            },
+        }
+
+    async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None:
+        self._flujo("consentimiento_revocado", titular_id, consentimiento_id)
+        self.revocaciones.append((titular_id, consentimiento_id))
+
+    @staticmethod
+    def _propuesta_en(propuesta_id: str, estado: str) -> dict:
+        return {
+            "id": propuesta_id,
+            "oferta_id": "o-1",
+            "estado": estado,
+            "prima": {"valor": "185000", "moneda": "COP"},
+            "cobertura": {"valor": "200000000", "moneda": "COP"},
+            "plazo_meses": 60,
+            "poliza_id": None,
+            "actualizado_en": "2026-10-28T12:00:00+00:00",
+        }
 
     async def reconciliar_cobro(self, propuesta_id: str) -> str | None:
         self.reconciliaciones.append(propuesta_id)
@@ -498,8 +680,15 @@ class PolicyFalso:
             return None  # un cobro que no es de W03
         return "EMITIDA"
 
-    async def crear_propuesta(self, oferta_id: str, actor_usuario_id: str | None) -> dict:
+    async def crear_propuesta(
+        self,
+        oferta_id: str,
+        actor_usuario_id: str | None,
+        actor_rol: str | None = None,
+        contacto: dict | None = None,
+    ) -> dict:
         self.llamadas.append((oferta_id, actor_usuario_id))
+        self.contactos_recibidos.append(contacto)
         if self.error is not None:
             raise self.error
         if self.rechazo is not None:
@@ -639,6 +828,20 @@ class AlmacenamientoFalso:
         }
 
 
+class TicketsFalso:
+    """Doble del ticket de avisos: guarda lo que se emitió (rol, usuario, titular)."""
+
+    def __init__(self, falla: bool = False) -> None:
+        self.falla = falla
+        self.emitidos: list[tuple[str, str, str | None]] = []
+
+    async def emitir(self, rol: str, usuario_id: str, titular_id: str | None):
+        if self.falla:
+            raise ConnectionError("redis caído")
+        self.emitidos.append((rol, usuario_id, titular_id))
+        return f"ticket-{len(self.emitidos)}", datetime(2026, 10, 28, 12, 1, tzinfo=UTC)
+
+
 def clientes_falsos(
     auth: AuthFalso | None = None,
     acl: AclFalso | None = None,
@@ -647,6 +850,7 @@ def clientes_falsos(
     payments: PaymentsFalso | None = None,
     policy: PolicyFalso | None = None,
     almacenamiento: AlmacenamientoFalso | None = None,
+    tickets: TicketsFalso | None = None,
 ) -> Clientes:
     return Clientes(
         auth=auth or AuthFalso(),
@@ -656,4 +860,5 @@ def clientes_falsos(
         payments=payments or PaymentsFalso(),
         policy=policy or PolicyFalso(),
         almacenamiento=almacenamiento or AlmacenamientoFalso(),
+        tickets=tickets or TicketsFalso(),
     )
