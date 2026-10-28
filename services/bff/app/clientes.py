@@ -13,6 +13,7 @@ import httpx
 
 from app.autenticacion_servicios import autenticacion_para
 from app.configuracion import Configuracion
+from app.ticket_avisos import PuertoTickets, TicketsRedis
 
 
 class ErrorServicio(Exception):
@@ -33,6 +34,16 @@ class FirmaRechazada(Exception):
     def __init__(self, motivo: str) -> None:
         super().__init__(motivo)
         self.motivo = motivo
+
+
+class FlujoRechazado(Exception):
+    """POLICY rechazó una operación de firma o pago con un motivo del contrato v0.18 (`detalle`:
+    datos para el mensaje, nunca personales, p. ej. `intentos_restantes`)."""
+
+    def __init__(self, motivo: str, **detalle: Any) -> None:
+        super().__init__(motivo)
+        self.motivo = motivo
+        self.detalle = detalle
 
 
 class SolicitudInvalida(Exception):
@@ -63,6 +74,8 @@ class PuertoAuth(Protocol):
     async def iniciar_sesion(self, usuario: str, clave: str) -> dict | None: ...
 
     async def obtener_usuario(self, usuario_id: str) -> dict | None: ...
+
+    async def obtener_identidad(self, usuario_id: str) -> dict | None: ...
 
     async def listar_usuarios(self, rol: str | None) -> list[dict]: ...
 
@@ -121,7 +134,13 @@ class PuertoRating(Protocol):
 
 
 class PuertoPolicy(Protocol):
-    async def crear_propuesta(self, oferta_id: str, actor_usuario_id: str | None) -> dict: ...
+    async def crear_propuesta(
+        self,
+        oferta_id: str,
+        actor_usuario_id: str | None,
+        actor_rol: str | None = None,
+        contacto: dict | None = None,
+    ) -> dict: ...
 
     async def obtener_propuesta(self, propuesta_id: str) -> dict | None: ...
 
@@ -136,6 +155,47 @@ class PuertoPolicy(Protocol):
     async def firmar_propuesta(
         self, propuesta_id: str, autoriza_cobro: bool, version_documento: str, firmante_id: str
     ) -> dict: ...
+
+    # v0.18 (HU-W03, F-B6). Las de la página del enlace llevan `acceso`: el token del enlace o el
+    # titular de la sesión (ver `Acceso`). Lanzan `FlujoRechazado` con el motivo del contrato.
+    async def listar_propuestas(
+        self,
+        cliente_id: str | None,
+        actor_usuario_id: str | None,
+        estado_visible: str | None,
+        pagina: int,
+        tamano: int,
+    ) -> dict: ...
+
+    async def enviar_codigo(self, propuesta_id: str, correo: str | None) -> dict: ...
+
+    async def verificar_codigo(self, propuesta_id: str, codigo: str) -> dict: ...
+
+    async def emitir(self, propuesta_id: str, rol: str, titular_id: str | None) -> dict: ...
+
+    async def reenviar_enlace(self, propuesta_id: str) -> dict: ...
+
+    async def estado_enlace(self, propuesta_id: str, acceso: "Acceso") -> dict: ...
+
+    async def contrato(self, propuesta_id: str, acceso: "Acceso") -> dict: ...
+
+    async def contrato_pdf(self, propuesta_id: str, acceso: "Acceso") -> bytes | None: ...
+
+    async def subida_firma(
+        self, propuesta_id: str, acceso: "Acceso", tipo_contenido: str, tamano_bytes: int
+    ) -> dict: ...
+
+    async def firmar_enlace(self, propuesta_id: str, acceso: "Acceso", entrada: dict) -> dict: ...
+
+    async def iniciar_pago(
+        self, propuesta_id: str, acceso: "Acceso", url_retorno: str, idioma: str
+    ) -> dict: ...
+
+    async def confirmar_pago(self, propuesta_id: str, acceso: "Acceso", sesion_id: str) -> dict: ...
+
+    async def resolver_enlace(self, token: str) -> dict | None: ...
+
+    async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None: ...
 
 
 class PuertoAlmacenamiento(Protocol):
@@ -165,6 +225,20 @@ class PuertoPayments(Protocol):
     async def crear_cobro(self, orden: dict) -> dict: ...
 
 
+@dataclass(frozen=True)
+class Acceso:
+    """Cómo se autoriza una operación de la página del enlace (W03-33): el token del enlace o el
+    titular de la sesión de un CLIENTE (que el BFF toma de AUTH, nunca del cliente)."""
+
+    enlace_token: str | None = None
+    titular_id: str | None = None
+
+    def cabeceras(self) -> dict[str, str]:
+        if self.enlace_token:
+            return {"X-Enlace-Firma": self.enlace_token}
+        return {"X-Titular-Id": self.titular_id} if self.titular_id else {}
+
+
 @dataclass
 class Clientes:
     auth: PuertoAuth
@@ -174,18 +248,35 @@ class Clientes:
     payments: PuertoPayments
     policy: PuertoPolicy
     almacenamiento: PuertoAlmacenamiento
+    # Tickets del stream de avisos (Redis). `None` si no hay Redis: `ticketAvisos` da error.
+    tickets: PuertoTickets | None = None
 
 
 async def _pedir(
-    cliente: httpx.AsyncClient, metodo: str, ruta: str, cuerpo: dict | None = None
+    cliente: httpx.AsyncClient,
+    metodo: str,
+    ruta: str,
+    cuerpo: dict | None = None,
+    cabeceras: dict[str, str] | None = None,
+    params: dict[str, Any] | None = None,
 ) -> httpx.Response:
     try:
-        respuesta = await cliente.request(metodo, ruta, json=cuerpo)
+        respuesta = await cliente.request(
+            metodo, ruta, json=cuerpo, headers=cabeceras, params=params
+        )
     except httpx.HTTPError as error:
         raise ErrorServicio(type(error).__name__) from error
     if respuesta.status_code >= 500:
         raise ErrorServicio(f"HTTP {respuesta.status_code}")
     return respuesta
+
+
+def _cuerpo_o_vacio(respuesta: httpx.Response) -> dict[str, Any]:
+    try:
+        cuerpo = respuesta.json()
+    except ValueError:
+        return {}
+    return dict(cuerpo) if isinstance(cuerpo, dict) else {}
 
 
 def _json_o_none(respuesta: httpx.Response) -> dict[str, Any] | None:
@@ -257,6 +348,12 @@ class ClienteAuthHttp:
         if respuesta.status_code == 401:
             return None
         return _json_o_error(respuesta)
+
+    async def obtener_identidad(self, usuario_id: str) -> dict | None:
+        """`titular_id` y documento en claro del CLIENTE verificado, o `None` si no hay. Dato
+        personal: se usa en memoria y no se loguea."""
+        ruta = f"/usuarios/{usuario_id}/identidad"
+        return _json_o_none(await _pedir(self._cliente, "GET", ruta))
 
     async def obtener_usuario(self, usuario_id: str) -> dict | None:
         return _json_o_none(await _pedir(self._cliente, "GET", f"/usuarios/{usuario_id}"))
@@ -459,14 +556,26 @@ class ClientePolicyHttp:
     def __init__(self, cliente: httpx.AsyncClient) -> None:
         self._cliente = cliente
 
-    async def crear_propuesta(self, oferta_id: str, actor_usuario_id: str | None) -> dict:
-        """404 y 422 son rechazos de negocio (`PropuestaRechazada` con el motivo del contrato);
+    async def crear_propuesta(
+        self,
+        oferta_id: str,
+        actor_usuario_id: str | None,
+        actor_rol: str | None = None,
+        contacto: dict | None = None,
+    ) -> dict:
+        """`contacto` (nombre y correo) solo lo manda el ASESOR y POLICY lo guarda cifrado.
+        404 y 422 son rechazos de negocio (`PropuestaRechazada` con el motivo del contrato);
         un 5xx o un 503 (RATING caído) llega como `ErrorServicio`, que se ofrece reintentar."""
         respuesta = await _pedir(
             self._cliente,
             "POST",
             "/propuestas",
-            {"oferta_id": oferta_id, "actor_usuario_id": actor_usuario_id},
+            {
+                "oferta_id": oferta_id,
+                "actor_usuario_id": actor_usuario_id,
+                "actor_rol": actor_rol,
+                "contacto": contacto,
+            },
         )
         if respuesta.status_code in (404, 422):
             raise PropuestaRechazada(_detalle(respuesta))
@@ -537,6 +646,127 @@ class ClientePolicyHttp:
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
+
+    # ---------- v0.18 (HU-W03, F-B6) ----------
+
+    async def _flujo(
+        self,
+        metodo: str,
+        ruta: str,
+        cuerpo: dict | None = None,
+        acceso: Acceso | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict:
+        """Una operación del flujo de firma y pago. Un 4xx es un rechazo de negocio
+        (`FlujoRechazado` con el motivo de `detail` y sus datos); un 5xx o la red caída llegan como
+        `ErrorServicio`, que el llamador convierte en un error con reintento."""
+        respuesta = await _pedir(
+            self._cliente,
+            metodo,
+            ruta,
+            cuerpo,
+            acceso.cabeceras() if acceso else None,
+            params,
+        )
+        if respuesta.is_error:
+            cuerpo_error = _cuerpo_o_vacio(respuesta)
+            detalle = cuerpo_error.pop("detail", None)
+            motivo = detalle if isinstance(detalle, str) else "SOLICITUD_INVALIDA"
+            raise FlujoRechazado(motivo, **cuerpo_error)
+        return respuesta.json()
+
+    async def listar_propuestas(
+        self,
+        cliente_id: str | None,
+        actor_usuario_id: str | None,
+        estado_visible: str | None,
+        pagina: int,
+        tamano: int,
+    ) -> dict:
+        params = {
+            "cliente_id": cliente_id,
+            "actor_usuario_id": actor_usuario_id,
+            "estado_visible": estado_visible,
+            "pagina": pagina,
+            "tamano": tamano,
+        }
+        return await self._flujo(
+            "GET", "/propuestas", params={k: v for k, v in params.items() if v is not None}
+        )
+
+    async def enviar_codigo(self, propuesta_id: str, correo: str | None) -> dict:
+        return await self._flujo("POST", f"/propuestas/{propuesta_id}/codigo", {"correo": correo})
+
+    async def verificar_codigo(self, propuesta_id: str, codigo: str) -> dict:
+        ruta = f"/propuestas/{propuesta_id}/codigo/verificar"
+        return await self._flujo("POST", ruta, {"codigo": codigo})
+
+    async def emitir(self, propuesta_id: str, rol: str, titular_id: str | None) -> dict:
+        cuerpo = {"rol": rol, "titular_id": titular_id}
+        return await self._flujo("POST", f"/propuestas/{propuesta_id}/emitir", cuerpo)
+
+    async def reenviar_enlace(self, propuesta_id: str) -> dict:
+        return await self._flujo("POST", f"/propuestas/{propuesta_id}/enlace")
+
+    async def resolver_enlace(self, token: str) -> dict | None:
+        """El token va en el cuerpo, nunca en la URL (regla 6). `None` si no existe."""
+        try:
+            return await self._flujo("POST", "/enlaces/resolver", {"token": token})
+        except FlujoRechazado as rechazo:
+            if rechazo.motivo == "PROPUESTA_NO_ENCONTRADA":
+                return None
+            raise
+
+    async def estado_enlace(self, propuesta_id: str, acceso: Acceso) -> dict:
+        return await self._flujo("GET", f"/propuestas/{propuesta_id}/enlace-estado", None, acceso)
+
+    async def contrato(self, propuesta_id: str, acceso: Acceso) -> dict:
+        return await self._flujo("GET", f"/propuestas/{propuesta_id}/contrato", None, acceso)
+
+    async def contrato_pdf(self, propuesta_id: str, acceso: Acceso) -> bytes | None:
+        """El contrato a firmar en PDF; `None` si la propuesta no es de quien lo pide (404)."""
+        respuesta = await _pedir(
+            self._cliente,
+            "GET",
+            f"/propuestas/{propuesta_id}/contrato.pdf",
+            cabeceras=acceso.cabeceras(),
+        )
+        if respuesta.status_code == 404:
+            return None
+        if respuesta.is_error:
+            raise FlujoRechazado(
+                str(_cuerpo_o_vacio(respuesta).get("detail", "SOLICITUD_INVALIDA"))
+            )
+        return respuesta.content
+
+    async def subida_firma(
+        self, propuesta_id: str, acceso: Acceso, tipo_contenido: str, tamano_bytes: int
+    ) -> dict:
+        cuerpo = {"tipo_contenido": tipo_contenido, "tamano_bytes": tamano_bytes}
+        return await self._flujo("POST", f"/propuestas/{propuesta_id}/firma-imagen", cuerpo, acceso)
+
+    async def firmar_enlace(self, propuesta_id: str, acceso: Acceso, entrada: dict) -> dict:
+        return await self._flujo(
+            "POST", f"/propuestas/{propuesta_id}/firma-enlace", entrada, acceso
+        )
+
+    async def iniciar_pago(
+        self, propuesta_id: str, acceso: Acceso, url_retorno: str, idioma: str
+    ) -> dict:
+        cuerpo = {"url_retorno": url_retorno, "idioma": idioma}
+        return await self._flujo("POST", f"/propuestas/{propuesta_id}/pago", cuerpo, acceso)
+
+    async def confirmar_pago(self, propuesta_id: str, acceso: Acceso, sesion_id: str) -> dict:
+        ruta = f"/propuestas/{propuesta_id}/pago/{sesion_id}/confirmar"
+        return await self._flujo("POST", ruta, None, acceso)
+
+    async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None:
+        cuerpo = {"titular_id": titular_id, "consentimiento_id": consentimiento_id}
+        respuesta = await _pedir(
+            self._cliente, "POST", "/propuestas/consentimiento-revocado", cuerpo
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
 
 
 class ClientePaymentsHttp:
@@ -644,8 +874,9 @@ class ClienteAlmacenamientoHttp:
         return (await self._pedir("GET", ruta, rol, actor_id)).json()
 
 
-def construir_clientes(config: Configuracion) -> tuple[Clientes, list[httpx.AsyncClient]]:
-    """Devuelve los clientes y los `httpx.AsyncClient` abiertos, para cerrarlos al apagar."""
+def construir_clientes(config: Configuracion) -> tuple[Clientes, list[Any]]:
+    """Devuelve los clientes y lo que quedó abierto (`httpx.AsyncClient` y Redis, ambos con
+    `aclose`), para cerrarlo al apagar."""
 
     def http(url: str, audiencia: str, timeout: float) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -663,6 +894,7 @@ def construir_clientes(config: Configuracion) -> tuple[Clientes, list[httpx.Asyn
     almacenamiento = http(
         config.almacenamiento_url, "almacenamiento", config.servicios_timeout_segundos
     )
+    tickets = TicketsRedis(config.redis_url)
     clientes = Clientes(
         auth=ClienteAuthHttp(auth),
         acl=ClienteAclHttp(acl),
@@ -671,5 +903,6 @@ def construir_clientes(config: Configuracion) -> tuple[Clientes, list[httpx.Asyn
         payments=ClientePaymentsHttp(payments),
         policy=ClientePolicyHttp(policy),
         almacenamiento=ClienteAlmacenamientoHttp(almacenamiento),
+        tickets=tickets,
     )
-    return clientes, [auth, acl, risk, rating, payments, policy, almacenamiento]
+    return clientes, [auth, acl, risk, rating, payments, policy, almacenamiento, tickets]

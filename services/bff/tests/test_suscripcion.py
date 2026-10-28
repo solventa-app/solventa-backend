@@ -403,3 +403,11 @@ def test_aceptar_una_oferta_no_trae_motivo_de_estado() -> None:
         propuesta = _post(client, consulta, {"id": "o-1"})["data"]["aceptarOferta"]
 
     assert propuesta == {"estado": "ACEPTADA", "motivoEstado": None, "accionSugerida": None}
+
+
+def test_una_propuesta_cancelada_no_lleva_mensaje_de_estado() -> None:
+    """El contrato lista solo cuatro estados con `mensajeEstado`; `CANCELADA` se ve como
+    «no emitida» pero no inventa una causa."""
+    from app.servicio_suscripcion import explicar_estado
+
+    assert explicar_estado({"estado": "CANCELADA"}) is None

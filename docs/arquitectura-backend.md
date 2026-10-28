@@ -153,7 +153,7 @@ consolidador, en lugar de la cola `rq`). En local y CI siguen los bucles y `rq`.
 
 | Servicio | Variables |
 |---|---|
-| `bff` | `AUTH_URL`, `ACL_URL`, `RISK_URL`, `RATING_URL`, `PAYMENTS_URL`, `CLIENTE_ID_CLAVE`, `FUENTES_CONFIG_PATH` |
+| `bff` | `AUTH_URL`, `ACL_URL`, `RISK_URL`, `RATING_URL`, `PAYMENTS_URL`, `POLICY_URL`, `REDIS_URL` (tickets de avisos), `AVISOS_URL`, `URL_FRONT`, `CLIENTE_ID_CLAVE`, `FUENTES_CONFIG_PATH` |
 | `auth` | `DATABASE_URL`, `CIFRADO_CLAVE`, `KMS_KEY_NAME`, `CIFRADO_CLAVE_ENVUELTA`, `CLIENTE_ID_CLAVE`, `CONSENTIMIENTO_VIGENCIA_DIAS` (30) |
 | `payments` | `DATABASE_URL`, `ACL_URL` |
 | `risk` | `MONGO_URI`, `REDIS_URL` (`ScoreCacheado`), `CIFRADO_CLAVE`, `KMS_KEY_NAME`, `CIFRADO_CLAVE_ENVUELTA`, `PUBSUB_TEMA_PERFIL_ACTUALIZADO`, `BATCH_TAMANO_LOTE` (500) |

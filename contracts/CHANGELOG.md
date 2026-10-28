@@ -250,9 +250,9 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `imagenArchivoId` (la imagen va al almacenamiento, W03-24 revisada) y `nombreFirma`, y suma `aceptaTerminos` y
   `propuestaId`; `EnlaceFirma.venceEn` es opcional (no aplica con sesión); `iniciarPago` y `confirmarPago` suman
   `propuestaId` opcional. Lo demás conserva los nombres del borrador.
-- **Estado en el BFF:** solo el esqueleto. Las operaciones nuevas responden «Esta operación aún no está disponible»
-  con reintento (o un error público en `propuestas` y `ticketAvisos`) hasta F-B6; `estadoVisible` y `creadaEn` ya
-  salen en las propuestas existentes. Mientras tanto, `solicitarOferta` sin documento responde
-  `DATOS_INSUFICIENTES`.
+- **Estado en el BFF:** implementado en F-B6 (PR #368): las operaciones del asesor, las de la página del enlace, `propuestas`
+  y `ticketAvisos` leen y escriben en POLICY y AUTH. `solicitarOferta` sin documento sigue dando `DATOS_INSUFICIENTES`
+  para el ASESOR; un CLIENTE cotiza con el documento de su cuenta (W03-34). `mensajeEstado` solo sale en los cuatro
+  estados que lista `Propuesta` (no en `CANCELADA`).
 - Afecta al frontend: sí. Web copia este esquema, borra `contrato/borrador-v0.17.graphql` y regenera tipos (F-F1). Los
   enums de salida que crecen (`EstadoPropuesta`, `MotivoErrorFirma`) piden manejar los valores nuevos.

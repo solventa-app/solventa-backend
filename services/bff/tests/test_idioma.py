@@ -4,7 +4,14 @@ import pytest
 from fakes import clientes_falsos
 from fastapi.testclient import TestClient
 
-from app import autenticacion_usuarios, esquema, monedas, servicio_oferta, servicio_suscripcion
+from app import (
+    autenticacion_usuarios,
+    esquema,
+    monedas,
+    servicio_firma_pago,
+    servicio_oferta,
+    servicio_suscripcion,
+)
 from app.configuracion import Configuracion
 from app.idioma import EN, idioma_de, traducir
 from app.main import create_app
@@ -48,6 +55,7 @@ def test_todos_los_mensajes_del_bff_tienen_traduccion() -> None:
             autenticacion_usuarios,
             esquema,
             monedas,
+            servicio_firma_pago,
             servicio_oferta,
             servicio_suscripcion,
         )
