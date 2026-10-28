@@ -10,6 +10,7 @@ PAYMENTS procesa el cobro de primas e indemnizaciones con **pasarela tokenizada*
 - **Idempotencia real a nivel de base de datos (CA-W05-04):** un mismo intento recibido dos veces (incluso en paralelo) se ejecuta una sola vez. `id_intento_cobro` es `UNIQUE` en PostgreSQL; el `INSERT ... ON CONFLICT (id_intento_cobro) DO NOTHING RETURNING ...` es correcto bajo concurrencia real (ver "Diseño" abajo), no solo un `SELECT` seguido de un `INSERT`.
 - Estados de cobro: `cobrando` → `cobrado` / `rechazado` / `pendiente` (PostgreSQL, base `payments`, única que escribe esta tabla — regla de escritor único).
 - `GET /polizas/{poliza_id}/balance`: suma los `monto` de los cobros en estado `cobrado` de esa póliza. No cubre balances de indemnización (Sprint 3, HU-W04/HU-M04).
+- `POST /indemnizaciones` (HU-W04, W04-6, migración `0009`): la **orden de pago** de la indemnización de un siniestro aprobado, que pide CLAIMS antes de guardar la aprobación. Queda `PENDIENTE_DISPERSION`; es idempotente por `siniestro_id` (otro monto para el mismo siniestro es 409). `GET /indemnizaciones/{id}` la consulta. La **dispersión** por la pasarela sigue en el Sprint 3 (CA-W05-07).
 - **Reintento del cobro pendiente (T-W05-4, CA-W05-05):** un bucle local reintenta los cobros `pendiente` reutilizando el MISMO `id_intento_cobro`, acotado a un número máximo de intentos. Ver huecos abajo (no es Cloud Tasks real).
 - **Back-office: listar y reintentar con conciliación (KAN-28, CA-W05-01/02):** `POST /cobros/buscar` (filtros `poliza_id` y
   `estado` en el cuerpo, nunca en la URL), `GET /cobros/{id}` y `POST /cobros/{id}/reintentar`. Antes de cobrar, se **concilia**: se pregunta a la
@@ -77,7 +78,7 @@ A diferencia de RISK, aquí **no se hashea `cobroId` ni `idIntentoCobro`** en el
 - **Cloud Tasks real:** el reintento (T-W05-4) es un bucle `asyncio` local, no una tarea programada de GCP. Ver "Diseño" arriba para qué cambia cuando exista un proyecto GCP.
 - **Cifrado de campo de `token_medio_pago`:** no aplica (regla de arquitectura #6: cero datos de tarjeta, solo token PCI-DSS) — no es el mismo caso que los datos personales de RISK, que sigue sin cifrado por falta de Cloud KMS (ver `services/risk/README.md`).
 - **Bus de eventos real:** `BusEventosLog` solo loguea; cuando `infra-engineer` levante Pub/Sub real, se sustituye sin tocar `ServicioCobros` ni `app.application.reintento`.
-- **Balance de órdenes de indemnización:** fuera de alcance (Sprint 3, HU-W04/HU-M04). `GET /polizas/{poliza_id}/balance` solo suma cobros `cobrado`.
+- **Dispersión y balance de las indemnizaciones:** fuera de alcance (Sprint 3, HU-W04/HU-M04). Desde HU-W04 existe la orden (`POST /indemnizaciones`), pero no se dispersa ni entra en `GET /polizas/{poliza_id}/balance`, que solo suma cobros `cobrado`.
 - **Reintentos de red hacia `acl-worker` desde el propio `ClienteAcl`:** si la llamada HTTP de PAYMENTS al ACL Worker falla (no la pasarela, sino el ACL Worker mismo inalcanzable), se trata igual que `pasarela_no_disponible` (`motivo=acl_no_disponible`, estado `pendiente`) — no hay un retry inmediato dentro de la misma petición, se apoya en el mismo bucle de reintento de pendientes.
 
 ## Operación

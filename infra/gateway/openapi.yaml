@@ -53,6 +53,36 @@ paths:
       responses:
         "200":
           description: Respuesta GraphQL
+  /v1/graphql/web:
+    post:
+      summary: Canal GraphQL Web, versión 1 (HA-MOD-003; /graphql/web es su alias)
+      operationId: graphqlWebV1
+      x-google-backend:
+        address: ${bff_url}/v1/graphql/web
+        deadline: 0.7
+      responses:
+        "200":
+          description: Respuesta GraphQL
+  /v1/graphql/movil:
+    post:
+      summary: Canal GraphQL Móvil, versión 1
+      operationId: graphqlMovilV1
+      x-google-backend:
+        address: ${bff_url}/v1/graphql/movil
+        deadline: 0.7
+      responses:
+        "200":
+          description: Respuesta GraphQL
+  /v1/graphql/app:
+    post:
+      summary: Alias del canal GraphQL de aplicación móvil, versión 1
+      operationId: graphqlAppV1
+      x-google-backend:
+        address: ${bff_url}/v1/graphql/app
+        deadline: 0.7
+      responses:
+        "200":
+          description: Respuesta GraphQL
   /polizas/{poliza_id}/documento:
     get:
       summary: PDF de la póliza emitida (CLIENTE y ASESOR; el BFF exige token siempre)

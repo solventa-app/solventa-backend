@@ -362,8 +362,8 @@ python scripts/probar_cobros.py --staging solventa-511815 --evidencia docs/evide
 
 ## 9. Fuera de alcance
 
-Cloud Tasks real, eventos a Pub/Sub, la orden
-de indemnización (CA-W05-07, Sprint 3) y el arranque frágil de Postgres en el primer `up` (un `fix(infra)` aparte).
+Cloud Tasks real, eventos a Pub/Sub, la dispersión
+de la indemnización (CA-W05-07, Sprint 3; la **orden** ya existe desde HU-W04: `POST /indemnizaciones`, W04-6) y el arranque frágil de Postgres en el primer `up` (un `fix(infra)` aparte).
 
 ## 10. Pendiente para el Sprint 2: el primer cobro al firmar (HU-W03, decisión D-03)
 

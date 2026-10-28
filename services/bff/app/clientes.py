@@ -271,6 +271,33 @@ class PuertoPayments(Protocol):
     async def crear_cobro(self, orden: dict) -> dict: ...
 
 
+class ResolucionRechazada(Exception):
+    """CLAIMS no pudo resolver el siniestro. `mensaje` está en lenguaje del operador: es un error
+    de negocio (409) o una dependencia caída con reintento (503); se muestra tal cual."""
+
+    def __init__(self, mensaje: str) -> None:
+        super().__init__(mensaje)
+        self.mensaje = mensaje
+
+
+class PuertoClaims(Protocol):
+    async def listar(self, estado: str | None) -> list[dict]: ...
+
+    async def obtener(self, siniestro_id: str) -> dict | None: ...
+
+    async def peritos(self, siniestro_id: str) -> list[dict]: ...
+
+    async def aprobar(self, siniestro_id: str, actor_usuario_id: str) -> dict: ...
+
+    async def rechazar(
+        self, siniestro_id: str, motivo: str, comentario: str | None, actor_usuario_id: str
+    ) -> dict: ...
+
+    async def derivar(
+        self, siniestro_id: str, perito_id: str, instrucciones: str | None, actor_usuario_id: str
+    ) -> dict: ...
+
+
 @dataclass(frozen=True)
 class Acceso:
     """Cómo se autoriza una operación de la página del enlace (W03-33): el token del enlace o el
@@ -297,6 +324,7 @@ class Clientes:
     onboarding: PuertoOnboarding
     # Tickets del stream de avisos (Redis). `None` si no hay Redis: `ticketAvisos` da error.
     tickets: PuertoTickets | None = None
+    claims: PuertoClaims | None = None
 
 
 async def _pedir(
@@ -1028,6 +1056,78 @@ class ClienteOnboardingHttp:
             raise
 
 
+MENSAJE_DATOS_INVALIDOS = "Revisa los datos enviados e intenta de nuevo."
+MENSAJE_RESOLUCION = "No pudimos completar la acción sobre el siniestro. Intenta de nuevo."
+
+
+class ClienteClaimsHttp:
+    """Mesa de siniestros (HU-W04). La autorización (solo BACKOFFICE) la hace el BFF antes de
+    llamar; CLAIMS es privado."""
+
+    def __init__(self, cliente: httpx.AsyncClient) -> None:
+        self._cliente = cliente
+
+    async def listar(self, estado: str | None) -> list[dict]:
+        ruta = f"/siniestros?estado={estado}" if estado else "/siniestros"
+        respuesta = await _pedir(self._cliente, "GET", ruta)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def obtener(self, siniestro_id: str) -> dict | None:
+        return _json_o_none(await _pedir(self._cliente, "GET", f"/siniestros/{siniestro_id}"))
+
+    async def peritos(self, siniestro_id: str) -> list[dict]:
+        respuesta = await _pedir(self._cliente, "GET", f"/siniestros/{siniestro_id}/peritos")
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def _resolver(self, siniestro_id: str, accion: str, cuerpo: dict) -> dict:
+        try:
+            respuesta = await self._cliente.post(
+                f"/siniestros/{siniestro_id}/{accion}", json=cuerpo
+            )
+        except httpx.HTTPError as error:
+            raise ErrorServicio(type(error).__name__) from error
+        if respuesta.status_code in (409, 503):
+            # El mensaje lo escribe CLAIMS para el operador (caso ya resuelto, orden de pago no
+            # registrada...). Un 503 deja el caso abierto: reintentar es seguro.
+            raise ResolucionRechazada(str(_detalle(respuesta) or MENSAJE_RESOLUCION))
+        if respuesta.status_code == 422:
+            raise ResolucionRechazada(MENSAJE_DATOS_INVALIDOS)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def aprobar(self, siniestro_id: str, actor_usuario_id: str) -> dict:
+        return await self._resolver(
+            siniestro_id, "aprobar", {"actor_usuario_id": actor_usuario_id}
+        )
+
+    async def rechazar(
+        self, siniestro_id: str, motivo: str, comentario: str | None, actor_usuario_id: str
+    ) -> dict:
+        return await self._resolver(
+            siniestro_id,
+            "rechazar",
+            {"motivo": motivo, "comentario": comentario, "actor_usuario_id": actor_usuario_id},
+        )
+
+    async def derivar(
+        self, siniestro_id: str, perito_id: str, instrucciones: str | None, actor_usuario_id: str
+    ) -> dict:
+        return await self._resolver(
+            siniestro_id,
+            "derivar",
+            {
+                "perito_id": perito_id,
+                "instrucciones": instrucciones,
+                "actor_usuario_id": actor_usuario_id,
+            },
+        )
+
+
 def construir_clientes(config: Configuracion) -> tuple[Clientes, list[Any]]:
     """Devuelve los clientes y lo que quedó abierto (`httpx.AsyncClient` y Redis, ambos con
     `aclose`), para cerrarlo al apagar."""
@@ -1050,6 +1150,7 @@ def construir_clientes(config: Configuracion) -> tuple[Clientes, list[Any]]:
     )
     tickets = TicketsRedis(config.redis_url)
     onboarding = http(config.onboarding_url, "onboarding", config.servicios_timeout_segundos)
+    claims = http(config.claims_url, "claims", config.servicios_timeout_segundos)
     clientes = Clientes(
         auth=ClienteAuthHttp(auth),
         acl=ClienteAclHttp(acl),
@@ -1060,6 +1161,7 @@ def construir_clientes(config: Configuracion) -> tuple[Clientes, list[Any]]:
         almacenamiento=ClienteAlmacenamientoHttp(almacenamiento),
         tickets=tickets,
         onboarding=ClienteOnboardingHttp(onboarding),
+        claims=ClienteClaimsHttp(claims),
     )
     return clientes, [
         auth,
@@ -1071,4 +1173,5 @@ def construir_clientes(config: Configuracion) -> tuple[Clientes, list[Any]]:
         almacenamiento,
         tickets,
         onboarding,
+        claims,
     ]

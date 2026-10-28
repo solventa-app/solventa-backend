@@ -15,6 +15,7 @@ from app.clientes import (
     FirmaRechazada,
     FlujoRechazado,
     PropuestaRechazada,
+    ResolucionRechazada,
     SolicitudInvalida,
     VerificacionPendiente,
 )
@@ -988,6 +989,126 @@ class OnboardingFalso:
             raise ErrorServicio("caido")
         filas = [s for s in self.sesiones.values() if s["usuario_id"] == usuario_id]
         return self._vista(filas[-1]) if filas else None
+class ClaimsFalso:
+    """CLAIMS en memoria (HU-W04): devuelve expedientes con la forma real y registra las
+    llamadas."""
+
+    def __init__(self) -> None:
+        self.siniestros: dict[str, dict] = {"sin-01": expediente_de_prueba()}
+        self.llamadas: list[tuple] = []
+        self.error: Exception | None = None
+        self.rechazo: str | None = None
+
+    def _revisar(self, *llamada) -> None:
+        self.llamadas.append(llamada)
+        if self.error is not None:
+            raise self.error
+        if self.rechazo is not None:
+            raise ResolucionRechazada(self.rechazo)
+
+    async def listar(self, estado: str | None) -> list[dict]:
+        self._revisar("listar", estado)
+        return [s for s in self.siniestros.values() if estado in (None, s["estado"])]
+
+    async def obtener(self, siniestro_id: str) -> dict | None:
+        self._revisar("obtener", siniestro_id)
+        return self.siniestros.get(siniestro_id)
+
+    async def peritos(self, siniestro_id: str) -> list[dict]:
+        self._revisar("peritos", siniestro_id)
+        return [{**PERITO_DE_PRUEBA, "vencimiento_informe": "2026-11-03T17:00:00-05:00"}]
+
+    async def aprobar(self, siniestro_id: str, actor_usuario_id: str) -> dict:
+        self._revisar("aprobar", siniestro_id, actor_usuario_id)
+        s = self.siniestros[siniestro_id]
+        s["estado"] = "APROBADO"
+        s["resolucion"] = {
+            "tipo": "APROBACION",
+            "resuelta_en": "2026-10-28T15:00:00+00:00",
+            "notificacion": "Enviada al asegurado y a la entidad acreedora",
+            "indemnizacion": {"valor": "8650000", "moneda": "COP"},
+            "metodo_transferencia": "ACH Colombia Interbancario",
+            "plazo_dispersion": "1 a 3 días hábiles",
+            "perito": None,
+        }
+        return s
+
+    async def rechazar(self, siniestro_id, motivo, comentario, actor_usuario_id) -> dict:
+        self._revisar("rechazar", siniestro_id, motivo, comentario, actor_usuario_id)
+        s = self.siniestros[siniestro_id]
+        s["estado"] = "RECHAZADO"
+        s["resolucion"] = {
+            "tipo": "RECHAZO",
+            "resuelta_en": "2026-10-28T15:00:00+00:00",
+            "notificacion": "Enviada vía correo certificado y Open Finance",
+            "motivo": motivo,
+            "comentario": comentario,
+            "via_recurso": "Disponible en los próximos 10 días hábiles",
+        }
+        return s
+
+    async def derivar(self, siniestro_id, perito_id, instrucciones, actor_usuario_id) -> dict:
+        self._revisar("derivar", siniestro_id, perito_id, instrucciones, actor_usuario_id)
+        s = self.siniestros[siniestro_id]
+        s["estado"] = "EN_REVISION"
+        s["resolucion"] = {
+            "tipo": "DERIVACION",
+            "resuelta_en": "2026-10-28T15:00:00+00:00",
+            "notificacion": "Correo certificado y expediente digital de siniestros",
+            "perito": PERITO_DE_PRUEBA,
+            "instrucciones": instrucciones,
+            "vencimiento_informe": "2026-11-03T17:00:00-05:00",
+        }
+        return s
+
+
+PERITO_DE_PRUEBA = {
+    "id": "per-01",
+    "nombre": "Peritajes Andes Ltda.",
+    "ciudad": "Bogotá",
+    "red": "Red Preferente Centro",
+    "registro": "RNPL-SFC 2024-0117",
+    "tiempo_respuesta_dias": 4,
+}
+
+
+def expediente_de_prueba(sid: str = "sin-01", poliza_id: str = "pol-01") -> dict:
+    return {
+        "id": sid,
+        "radicado": "SIN-2026-0141",
+        "poliza_id": poliza_id,
+        "estado": "PENDIENTE",
+        "asegurado": {"nombre": "Camilo Rojas", "documento": "C.C. 79.845.210"},
+        "cobertura_aplicada": "Vida grupo deudor",
+        "entidad_acreedora": "Banco Aliado S.A.",
+        "ocurrido_en": "2026-10-19T13:40:00+00:00",
+        "notificado_en": "2026-10-19T16:15:00+00:00",
+        "ubicacion": {
+            "descripcion": "Calle 80",
+            "ciudad": "Bogotá",
+            "latitud": 4.72,
+            "longitud": -74.12,
+        },
+        "descripcion": "Choque leve",
+        "suma_reclamada": {"valor": "8650000", "moneda": "COP"},
+        "vence_dictamen_en": "2026-10-29T15:00:00+00:00",
+        "evidencias": [
+            {
+                "id": "ev-01-1",
+                "archivo_id": "arch-1",
+                "tipo": "FOTO",
+                "titulo": "Daño frontal",
+                "archivo": "sin-01-foto-1.jpg",
+                "registrada_en": "2026-10-19T14:05:00+00:00",
+                "geoetiquetada": True,
+                "latitud": 4.72,
+                "longitud": -74.12,
+                "nota": "4.72, -74.12 · tomada en sitio",
+            }
+        ],
+        "verificaciones": [{"descripcion": "Póliza vigente", "cumple": True}],
+        "resolucion": None,
+    }
 
 
 def clientes_falsos(
@@ -1000,6 +1121,7 @@ def clientes_falsos(
     almacenamiento: AlmacenamientoFalso | None = None,
     tickets: TicketsFalso | None = None,
     onboarding: OnboardingFalso | None = None,
+    claims: ClaimsFalso | None = None,
 ) -> Clientes:
     return Clientes(
         auth=auth or AuthFalso(),
@@ -1011,4 +1133,5 @@ def clientes_falsos(
         almacenamiento=almacenamiento or AlmacenamientoFalso(),
         tickets=tickets or TicketsFalso(),
         onboarding=onboarding or OnboardingFalso(),
+        claims=claims or ClaimsFalso(),
     )

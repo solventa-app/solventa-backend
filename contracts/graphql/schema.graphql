@@ -353,6 +353,8 @@ type Poliza {
   prima: Monto!
   cobertura: Monto!
   documentoUrl: String! # ruta del BFF que entrega el PDF; solo el titular, su asesor o un BACKOFFICE
+  # v0.21 (HU-W04): ramo del producto. Hoy hay uno solo y lo pone el BFF por configuración (RAMO_POLIZA).
+  ramo: String!
 }
 
 # ---------- Firma y pago con el asesor o en la sesión del CLIENTE (v0.18, HU-W03 bloque 9) ----------
@@ -712,6 +714,118 @@ input CuentaOnboardingInput {
   correo: String! # con él inicia sesión; AUTH lo guarda cifrado
   clave: String!
 }
+# ---------- Siniestros (v0.21, HU-W04, servicio CLAIMS) ----------
+# Mesa de siniestros del BACKOFFICE: todas las operaciones exigen token de BACKOFFICE. Reemplaza al dummy
+# `siniestros.graphql` (mismos nombres, argumentos y campos). Derivar a perito deja el caso EN_REVISION: no hay
+# estado DERIVADO. Un caso derivado todavía se puede aprobar o rechazar; uno resuelto ya no admite cambios.
+enum EstadoSiniestro {
+  PENDIENTE
+  EN_REVISION
+  APROBADO
+  RECHAZADO
+}
+
+enum TipoEvidencia {
+  FOTO
+  DOCUMENTO
+}
+
+enum TipoResolucion {
+  APROBACION
+  RECHAZO
+  DERIVACION
+}
+
+enum MotivoRechazo {
+  EVIDENCIA_INSUFICIENTE
+  FUERA_DE_COBERTURA
+  POLIZA_NO_VIGENTE
+  INCONSISTENCIA_EN_RELATO
+  OTRO
+}
+
+type Asegurado {
+  nombre: String!
+  documento: String!
+}
+
+type Ubicacion {
+  descripcion: String!
+  ciudad: String!
+  latitud: Float!
+  longitud: Float!
+}
+
+type Evidencia {
+  id: ID!
+  tipo: TipoEvidencia!
+  titulo: String!
+  archivo: String!
+  # URL firmada de lectura del almacenamiento (vence en minutos); vacía si el archivo no está disponible.
+  url: String!
+  registradaEn: DateTime!
+  # La foto trae la ubicación donde se tomó (W04-14: saldrá del EXIF; hoy la fija la semilla).
+  geoetiquetada: Boolean!
+  nota: String
+}
+
+type Verificacion {
+  descripcion: String!
+  cumple: Boolean!
+}
+
+type Perito {
+  id: ID!
+  nombre: String!
+  ciudad: String!
+  red: String!
+  registro: String!
+  tiempoRespuestaDias: Int!
+  # Solo en `peritos(siniestroId)`: fecha límite del informe si se le deriva hoy.
+  vencimientoInforme: DateTime
+}
+
+type Resolucion {
+  tipo: TipoResolucion!
+  resueltaEn: DateTime!
+  notificacion: String!
+  motivo: MotivoRechazo
+  comentario: String
+  viaRecurso: String
+  indemnizacion: Monto
+  metodoTransferencia: String
+  plazoDispersion: String
+  perito: Perito
+  instrucciones: String
+  vencimientoInforme: DateTime
+}
+
+type Siniestro {
+  id: ID!
+  radicado: String!
+  estado: EstadoSiniestro!
+  asegurado: Asegurado!
+  poliza: Poliza!
+  coberturaAplicada: String!
+  entidadAcreedora: String!
+  ocurridoEn: DateTime!
+  notificadoEn: DateTime!
+  ubicacion: Ubicacion!
+  descripcion: String!
+  sumaReclamada: Monto!
+  venceDictamenEn: DateTime!
+  evidencias: [Evidencia!]!
+  verificaciones: [Verificacion!]!
+  resolucion: Resolucion
+}
+
+# Error de negocio en lenguaje del operador (caso ya resuelto, perito no disponible, texto de más de 500 caracteres,
+# orden de pago no registrada). Solo trae `mensaje`: la web distingue la union por la forma.
+type ErrorSiniestro {
+  mensaje: String!
+}
+
+union ResultadoResolucion = Siniestro | ErrorSiniestro
 
 type Query {
   # El archivo si existe y quien pregunta puede leerlo; si no, null.
@@ -736,6 +850,12 @@ type Query {
   onboarding(id: ID!): Onboarding
   # Con sesión de CLIENTE (también la del scope `verificacion-pendiente`): el recorrido más reciente de su cuenta.
   miVerificacion: Onboarding
+  # ---------- v0.21 (HU-W04) ----------
+  # Mesa de siniestros, solo BACKOFFICE. `estado` null = todos, del más reciente al más antiguo.
+  siniestros(estado: EstadoSiniestro = null): [Siniestro!]!
+  siniestro(id: ID!): Siniestro
+  # Peritos disponibles para derivar este caso, cada uno con su fecha límite de informe si se le deriva hoy.
+  peritos(siniestroId: ID!): [Perito!]!
 }
 
 type Mutation {
@@ -818,4 +938,10 @@ type Mutation {
   # Con sesión (cualquier rol o scope): un token nuevo con los permisos del estado actual de la cuenta y la misma
   # expiración. Tras VERIFICADA, el token deja de ser `verificacion-pendiente`.
   actualizarSesion: ResultadoSesion!
+  # ---------- v0.21 (HU-W04): mesa de siniestros, solo BACKOFFICE ----------
+  # Aprobar registra la orden de pago de la indemnización en PAYMENTS (sin
+  # dispersión); si no se puede registrar, responde ErrorSiniestro y el caso sigue abierto.
+  aprobarSiniestro(id: ID!): ResultadoResolucion!
+  rechazarSiniestro(id: ID!, motivo: MotivoRechazo!, comentario: String = null): ResultadoResolucion!
+  derivarSiniestro(id: ID!, peritoId: ID!, instrucciones: String = null): ResultadoResolucion!
 }

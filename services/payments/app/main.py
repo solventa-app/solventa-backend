@@ -27,6 +27,12 @@ from app.application.disparador import (
     PlanificadorNulo,
     PuertoPlanificador,
 )
+from app.application.indemnizaciones import (
+    OrdenEnConflicto,
+    OrdenInvalida,
+    RepositorioIndemnizacionesPostgres,
+    ServicioIndemnizaciones,
+)
 from app.application.reintento import ReintentoCobrosPendientes
 from app.application.repositorio_cobros import RepositorioCobrosPostgres, construir_pool
 from app.application.repositorio_sesiones import RepositorioSesionesPostgres
@@ -58,6 +64,26 @@ class OrdenCobroRequest(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: str
+
+
+class OrdenIndemnizacionRequest(BaseModel):
+    """HU-W04 (W04-6): CLAIMS la pide al aprobar un siniestro. Idempotente por `siniestro_id`."""
+
+    siniestro_id: str = Field(min_length=1)
+    poliza_id: str = Field(min_length=1)
+    monto: str  # texto decimal, nunca float
+    moneda: str
+
+
+class IndemnizacionResponse(BaseModel):
+    id: str
+    siniestro_id: str
+    poliza_id: str
+    monto: str
+    moneda: str
+    estado: str
+    metodo_transferencia: str
+    creado_en: datetime
 
 
 class MedioPagoResponse(BaseModel):
@@ -163,6 +189,7 @@ def create_app(
     reintento: ReintentoCobrosPendientes | None = None,
     servicio_sesiones: ServicioSesionesPago | None = None,
     medios=None,
+    servicio_indemnizaciones: ServicioIndemnizaciones | None = None,
 ) -> FastAPI:
     """`servicio_cobros`/`reintento` permiten inyectar dobles de prueba ya
     construidos sin levantar PostgreSQL ni el ACL Worker reales (ver
@@ -181,6 +208,7 @@ def create_app(
             app.state.reintento = reintento
             app.state.servicio_sesiones = servicio_sesiones
             app.state.medios = medios
+            app.state.servicio_indemnizaciones = servicio_indemnizaciones
         else:
             pool = construir_pool(config.database_url)
             repositorio = RepositorioCobrosPostgres(pool, cifrador_desde_entorno())
@@ -201,6 +229,9 @@ def create_app(
             app.state.medios = repositorio_sesiones.medios
             app.state.servicio_sesiones = ServicioSesionesPago(
                 repositorio_sesiones, cliente_acl, bus, repositorio.obtener
+            )
+            app.state.servicio_indemnizaciones = ServicioIndemnizaciones(
+                RepositorioIndemnizacionesPostgres(pool)
             )
             app.state.reintento = ReintentoCobrosPendientes(
                 repositorio,
@@ -361,6 +392,38 @@ def create_app(
     def balance(poliza_id: str) -> BalanceResponse:
         total = app.state.servicio_cobros.balance_poliza(poliza_id)
         return BalanceResponse(poliza_id=poliza_id, balance=total)
+
+    @app.post(
+        "/indemnizaciones",
+        tags=["indemnizaciones"],
+        response_model=IndemnizacionResponse,
+        responses={
+            409: {"model": ErrorResponse, "description": "ya hay otra orden para el siniestro"},
+            422: {"model": ErrorResponse, "description": "monto o moneda inválidos"},
+        },
+    )
+    def ordenar_indemnizacion(body: OrdenIndemnizacionRequest) -> IndemnizacionResponse:
+        """HU-W04 (W04-6): orden de pago de la indemnización, `PENDIENTE_DISPERSION`. Sin
+        dispersión todavía (Sprint 3, CA-W05-07). Repetirla devuelve la misma orden."""
+        try:
+            orden = app.state.servicio_indemnizaciones.ordenar(body.model_dump())
+        except OrdenInvalida as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except OrdenEnConflicto as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return IndemnizacionResponse(**orden)
+
+    @app.get(
+        "/indemnizaciones/{indemnizacion_id}",
+        tags=["indemnizaciones"],
+        response_model=IndemnizacionResponse,
+        responses={404: {"model": ErrorResponse}},
+    )
+    def obtener_indemnizacion(indemnizacion_id: str) -> IndemnizacionResponse:
+        orden = app.state.servicio_indemnizaciones.obtener(indemnizacion_id)
+        if orden is None:
+            raise HTTPException(status_code=404, detail="indemnización no encontrada")
+        return IndemnizacionResponse(**orden)
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app

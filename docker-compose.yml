@@ -135,6 +135,7 @@ services:
       POLICY_URL: http://policy:8007
       ALMACENAMIENTO_URL: http://almacenamiento:8009
       ONBOARDING_URL: http://onboarding:8010
+      CLAIMS_URL: http://claims:8012
       # Tickets de un solo uso del stream de avisos (W03-37): misma base que POLICY, que publica allí.
       REDIS_URL: redis://redis:6379/3
       AVISOS_URL: http://localhost:8011/avisos/stream
@@ -223,6 +224,77 @@ services:
       mongo-init: { condition: service_completed_successfully }
       migrar-risk: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
+
+  migrar-claims:
+    <<: *tarea
+    image: solventa/claims:local
+    build: ./services/claims
+    command: ["python", "-m", "migrations"]
+    environment:
+      MONGO_URI: mongodb://mongo1:27017,mongo2:27017/?replicaSet=rs0
+      MONGO_DB: claims
+    depends_on:
+      mongo-init: { condition: service_completed_successfully }
+
+  claims:
+    <<: *servicio
+    image: solventa/claims:local
+    build: ./services/claims
+    ports: ["8012:8012"]
+    environment:
+      MONGO_URI: mongodb://mongo1:27017,mongo2:27017/?replicaSet=rs0
+      MONGO_DB: claims
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
+      ALMACENAMIENTO_URL: http://almacenamiento:8009
+      ALMACEN_REESCRITURA_ORIGENES: http://localhost:4443/=http://fake-gcs:4443/
+      POLICY_URL: http://policy:8007
+      PAYMENTS_URL: http://payments:8004
+      # Solo local (W04-15): POST /_demo/reiniciar vuelve a la semilla para las E2E de la web.
+      DEMO_REINICIAR: "true"
+      SEMILLA_DIR: /semilla
+    # Los datos de la semilla son los del dummy, que se conserva (W04-13): se montan, no se copian.
+    volumes:
+      - ./stubs/siniestros/app/datos:/semilla:ro
+    depends_on:
+      mongo-init: { condition: service_completed_successfully }
+      migrar-claims: { condition: service_completed_successfully }
+
+  # Semillas de la mesa de siniestros (HU-W04, W04-3), solo local: primero las pólizas en POLICY
+  # (escritor único de sus tablas) y luego los siniestros, que apuntan a esas pólizas y suben sus
+  # evidencias al almacenamiento. Idempotentes. Van en su propio perfil para que `up --wait` (CI) no
+  # las arranque: `docker compose --profile servicios run --rm sembrar-siniestros`.
+  sembrar-polizas-demo:
+    <<: *tarea
+    profiles: ["semilla"]
+    image: solventa/policy:local
+    build: ./services/policy
+    command: ["python", "-m", "app.sembrar_demo"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/policy
+    depends_on:
+      migrar-policy: { condition: service_completed_successfully }
+
+  sembrar-siniestros:
+    <<: *tarea
+    profiles: ["semilla"]
+    image: solventa/claims:local
+    build: ./services/claims
+    command: ["python", "-m", "app.sembrar"]
+    environment:
+      MONGO_URI: mongodb://mongo1:27017,mongo2:27017/?replicaSet=rs0
+      MONGO_DB: claims
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
+      ALMACENAMIENTO_URL: http://almacenamiento:8009
+      ALMACEN_REESCRITURA_ORIGENES: http://localhost:4443/=http://fake-gcs:4443/
+      POLICY_URL: http://policy:8007
+      SEMILLA_DIR: /semilla
+    volumes:
+      - ./stubs/siniestros/app/datos:/semilla:ro
+    depends_on:
+      migrar-claims: { condition: service_completed_successfully }
+      sembrar-polizas-demo: { condition: service_completed_successfully }
+      almacenamiento: { condition: service_healthy }
+      policy: { condition: service_healthy }
 
   rating:
     <<: *servicio

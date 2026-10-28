@@ -4,7 +4,7 @@
     "ruta": "services/bff",
     "instancia_fija": true,
     "puerto": 8000,
-    "llama": ["auth", "acl-worker", "risk", "rating", "payments", "policy", "almacenamiento", "onboarding"],
+    "llama": ["auth", "acl-worker", "risk", "rating", "payments", "policy", "almacenamiento", "onboarding", "claims"],
     "entorno": {
       "AUTENTICACION_SERVICIOS": "id_token",
       "TRAZAS_GCP": "true",
@@ -131,6 +131,20 @@
       "DATABASE_URL": "database-url-onboarding",
       "CIFRADO_CLAVE": "clave-cifrado",
       "CLIENTE_ID_CLAVE": "clave-cliente-id"
+    }
+  },
+  {
+    "nombre": "claims",
+    "ruta": "services/claims",
+    "puerto": 8012,
+    "url_env": "CLAIMS_URL",
+    "migracion": ["python", "-m", "migrations"],
+    "llama": ["almacenamiento", "policy", "payments"],
+    "entorno": { "MONGO_DB": "claims", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
+    "secretos": {
+      "MONGO_URI": "mongo-uri-claims",
+      "CIFRADO_CLAVE": "clave-cifrado",
+      "CIFRADO_CLAVE_ENVUELTA": "clave-cifrado-envuelta"
     }
   },
   {

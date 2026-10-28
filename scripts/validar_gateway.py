@@ -21,6 +21,9 @@ RUTAS_ESPERADAS = {
     ("POST", "/graphql/web"),
     ("POST", "/graphql/movil"),
     ("POST", "/graphql/app"),
+    ("POST", "/v1/graphql/web"),
+    ("POST", "/v1/graphql/movil"),
+    ("POST", "/v1/graphql/app"),
     ("GET", "/polizas/{*}/documento"),
     ("GET", "/propuestas/{*}/contrato.pdf"),
 }

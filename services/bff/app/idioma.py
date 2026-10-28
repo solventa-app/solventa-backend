@@ -262,6 +262,28 @@ EN: dict[str, str] = {
         "That id_intento_cobro was already used with other data: "
         "generate a new one for a different order."
     ),
+    # Mesa de siniestros (HU-W04): mensajes del BFF y de CLAIMS, que llegan tal cual
+    "No pudimos consultar los siniestros. Intenta de nuevo.": (
+        "We couldn't load the claims. Please try again."
+    ),
+    "No pudimos consultar la póliza del siniestro. Intenta de nuevo.": (
+        "We couldn't load the claim's policy. Please try again."
+    ),
+    "No pudimos completar la acción sobre el siniestro. Intenta de nuevo.": (
+        "We couldn't complete the action on the claim. Please try again."
+    ),
+    "Revisa los datos enviados e intenta de nuevo.": "Check the data you sent and try again.",
+    "No encontramos el siniestro.": "We couldn't find the claim.",
+    "El siniestro ya fue resuelto y no admite cambios.": (
+        "The claim has already been resolved and can't be changed."
+    ),
+    "El siniestro ya tiene un perito asignado.": "The claim already has an assigned adjuster.",
+    "El perito seleccionado no está disponible.": "The selected adjuster isn't available.",
+    "El texto supera los 500 caracteres.": "The text exceeds 500 characters.",
+    "El motivo de rechazo no es válido.": "The rejection reason isn't valid.",
+    "No pudimos registrar la orden de pago de la indemnización. Intenta de nuevo.": (
+        "We couldn't register the indemnity payment order. Please try again."
+    ),
 }
 
 # Mensajes con un número dentro (PAYMENTS, `mensaje_reintentos_agotados`).

@@ -281,3 +281,22 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   onboarding) y el BFF pasa el canal al iniciar sesión.
 - Afecta al frontend: sí. El móvil (HU-M01) usa las operaciones nuevas. La web solo debe manejar los valores nuevos de
   `EstadoUsuario` y el `codigo` `VERIFICACION_PENDIENTE` en el login.
+## v0.21 — 2026-10-28
+
+- KAN-242 (HU-W04, mesa de siniestros del BACKOFFICE; plan `docs/plan-completar-hu-w04.md`). Toma la v0.21 porque la
+  v0.19 está reservada para HU-W07 y la v0.20 es del onboarding. Los tipos del dummy
+  `contracts/graphql/siniestros.graphql` pasan al contrato principal con **los mismos nombres, argumentos y campos**:
+  `Siniestro`, `Asegurado`, `Ubicacion`, `Evidencia`, `Verificacion`, `Perito`, `Resolucion`, `ErrorSiniestro`, la
+  union `ResultadoResolucion` y los enums `EstadoSiniestro`, `TipoEvidencia`, `TipoResolucion` y `MotivoRechazo`.
+  Consultas `siniestros(estado)`, `siniestro(id)` y `peritos(siniestroId)`; mutaciones `aprobarSiniestro`,
+  `rechazarSiniestro` y `derivarSiniestro`. Todas exigen token de BACKOFFICE. **Solo cambios aditivos.**
+  - Se reutilizan `Poliza`, `Monto` y `EstadoPoliza`. `Poliza` suma `ramo` (un solo producto hoy, lo pone el BFF).
+  - `Evidencia.url` es la URL firmada de lectura del almacenamiento (vence en minutos), ya no una ruta relativa.
+  - Eventos nuevos `siniestro.aprobado`, `siniestro.rechazado` y `siniestro.derivado` (`contracts/events/`), sin datos
+    personales.
+  - Tipos de archivo nuevos `siniestro-foto` y `siniestro-documento` (`contracts/tipos-archivo.json`).
+- **Estado en el BFF:** conectado al servicio `claims` (puerto 8012). También expone `/v1/graphql/{web,app,movil}`
+  con las rutas actuales como alias (W04-10).
+- Afecta al frontend: sí, cuando la web cambie del dummy al BFF. Pasos documentados en
+  `solventa-frontend-web/docs/plan-ejecucion-hu-w04-siniestros.md` («Conexión al backend real»). `siniestros.graphql`
+  se conserva para el dummy, que sigue funcionando sin cambios.
