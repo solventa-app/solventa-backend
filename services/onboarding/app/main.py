@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from app.application.autenticacion_servicios import autenticacion_para
 from app.application.bus_eventos import construir_bus
 from app.application.cifrado import construir_cifrador
-from app.application.clientes import ClienteAlmacenamiento, ClienteIdentidad
+from app.application.clientes import ClienteAlmacenamiento, ClienteCuentas, ClienteIdentidad
 from app.application.configuracion import Configuracion
 from app.application.planificador import (
     PlanificadorCloudTasks,
@@ -116,7 +116,10 @@ def create_app(
             identidad = ClienteIdentidad(
                 config.acl_url, config.timeout_s, autenticacion_para(modo, "acl-worker")
             )
-            cerrar += [storage, identidad]
+            cuentas = ClienteCuentas(
+                config.auth_url, config.timeout_s, autenticacion_para(modo, "auth")
+            )
+            cerrar += [storage, identidad, cuentas]
             if config.disparador == "externo":
                 planificador: Any = PlanificadorCloudTasks(
                     config.gcp_proyecto,
@@ -140,6 +143,7 @@ def create_app(
                     config.max_intentos,
                     config.vigencia_token_s,
                 ),
+                cuentas=cuentas,
             )
             if isinstance(planificador, PlanificadorLocal):
                 planificador.conectar(app.state.servicio.verificar)

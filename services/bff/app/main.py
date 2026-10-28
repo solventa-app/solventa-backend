@@ -90,6 +90,8 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
                 "idioma": idioma_de(request.headers.get("accept-language")),
                 "modo_autenticacion": config.autenticacion_usuarios,
                 "cliente_id_clave": config.cliente_id_clave,
+                # Token del recorrido de onboarding (HU-M01): no es una sesión de usuario.
+                "token_onboarding": request.headers.get("x-onboarding-token"),
             }
 
         return contexto

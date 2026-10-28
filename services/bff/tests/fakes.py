@@ -10,11 +10,13 @@ from app.clientes import (
     Acceso,
     ArchivoRechazado,
     Clientes,
+    ErrorOnboardingServicio,
     ErrorServicio,
     FirmaRechazada,
     FlujoRechazado,
     PropuestaRechazada,
     SolicitudInvalida,
+    VerificacionPendiente,
 )
 from app.configuracion import CLAVE_CLIENTE_ID_LOCAL, JWT_SECRETO_LOCAL
 from app.identificadores import cliente_id_desde_documento
@@ -80,11 +82,18 @@ def token_de_prueba(
     usuario_id: str = "u-1",
     secreto: str = JWT_SECRETO_LOCAL,
     segundos: int = 3600,
+    scopes: list[str] | None = None,
 ) -> str:
     """JWT firmado como lo firma AUTH (`services/auth/app/sesiones.py`)."""
     ahora = int(time.time())
     return jwt.encode(
-        {"sub": usuario_id, "rol": rol, "scopes": [], "iat": ahora, "exp": ahora + segundos},
+        {
+            "sub": usuario_id,
+            "rol": rol,
+            "scopes": scopes or [],
+            "iat": ahora,
+            "exp": ahora + segundos,
+        },
         secreto,
         algorithm="HS256",
     )
@@ -128,6 +137,30 @@ class AuthFalso:
             "u-bo": _usuario_publico("u-bo", "admin.solventa", "BACKOFFICE"),
         }
         self.claves = {"asesor.uno": "clave-segura-1", "admin.solventa": "clave-segura-1"}
+        self.canales: list[str | None] = []
+        self.renovaciones: list[tuple[str, str]] = []
+
+    async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
+        """Como AUTH (HU-M01): el doble usa el correo como alias para poder iniciar sesión."""
+        if self.falla:
+            raise ErrorServicio("caido")
+        if correo in self.claves:
+            raise ErrorOnboardingServicio("CORREO_YA_REGISTRADO")
+        usuario_id = f"u-onb-{len(self.usuarios)}"
+        self.usuarios[usuario_id] = _usuario_publico(
+            usuario_id, correo, "CLIENTE", "PENDIENTE_VERIFICACION"
+        )
+        self.claves[correo] = clave
+        return self.usuarios[usuario_id]
+
+    async def renovar_sesion(self, usuario_id: str, expira_en: str) -> dict | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        self.renovaciones.append((usuario_id, expira_en))
+        datos = self.usuarios.get(usuario_id)
+        if datos is None or datos["estado"] == "SUSPENDIDO":
+            return None
+        return {**self._sesion(datos), "expira_en": expira_en}
 
     async def registrar_consentimiento(
         self,
@@ -176,14 +209,30 @@ class AuthFalso:
         self.consentimientos[consentimiento_id] = revocado
         return revocado
 
-    async def iniciar_sesion(self, usuario: str, clave: str) -> dict | None:
+    async def iniciar_sesion(
+        self, usuario: str, clave: str, canal: str | None = None
+    ) -> dict | None:
         if self.falla:
             raise ErrorServicio("caido")
+        self.canales.append(canal)
         datos = next((u for u in self.usuarios.values() if u["usuario"] == usuario), None)
-        if datos is None or self.claves.get(usuario) != clave or datos["estado"] != "ACTIVO":
+        if datos is None or self.claves.get(usuario) != clave:
             return None
+        if datos["estado"] in ("PENDIENTE_VERIFICACION", "RECHAZADA"):
+            if canal != "app":
+                raise VerificacionPendiente()
+        elif datos["estado"] != "ACTIVO":
+            return None
+        return self._sesion(datos)
+
+    def _sesion(self, datos: dict) -> dict:
+        pendiente = datos["estado"] != "ACTIVO"
         return {
-            "token": token_de_prueba(datos["rol"], datos["id"]),
+            "token": token_de_prueba(
+                datos["rol"],
+                datos["id"],
+                scopes=["verificacion-pendiente"] if pendiente else ["sesion"],
+            ),
             "expira_en": "2026-10-14T13:00:00+00:00",
             "usuario": _con_nombre(datos, self.nombres),
         }
@@ -842,6 +891,105 @@ class TicketsFalso:
         return f"ticket-{len(self.emitidos)}", datetime(2026, 10, 28, 12, 1, tzinfo=UTC)
 
 
+class OnboardingFalso:
+    """El servicio ONBOARDING en memoria (HU-M01). Un solo token válido por recorrido."""
+
+    def __init__(self) -> None:
+        self.sesiones: dict[str, dict] = {}
+        self.tokens: dict[str, str] = {}
+        self.falla = False
+
+    def _revisar(self, onboarding_id: str, token: str | None) -> dict:
+        if self.falla:
+            raise ErrorServicio("caido")
+        if self.tokens.get(onboarding_id) != token:
+            raise ErrorOnboardingServicio("TOKEN_INVALIDO")
+        return self.sesiones[onboarding_id]
+
+    def _vista(self, sesion: dict) -> dict:
+        return {k: sesion[k] for k in ("id", "estado", "motivo", "intento", "intentos_restantes")}
+
+    async def iniciar(self, jurisdiccion: str, tipo_documento: str) -> dict:
+        if self.falla:
+            raise ErrorServicio("caido")
+        if jurisdiccion != "CO":
+            raise ErrorOnboardingServicio("JURISDICCION_NO_SOPORTADA")
+        onboarding_id = f"onb-{len(self.sesiones) + 1}"
+        self.sesiones[onboarding_id] = {
+            "id": onboarding_id,
+            "estado": "INICIADO",
+            "motivo": None,
+            "intento": 1,
+            "intentos_restantes": 2,
+            "consentimiento_id": None,
+            "usuario_id": None,
+            "piezas": {},
+        }
+        self.tokens[onboarding_id] = f"tok-{onboarding_id}"
+        return {
+            "onboarding_id": onboarding_id,
+            "token": self.tokens[onboarding_id],
+            "token_vence_en": "2026-10-28T12:30:00+00:00",
+        }
+
+    async def consultar(self, onboarding_id: str, token: str) -> dict:
+        return self._vista(self._revisar(onboarding_id, token))
+
+    async def registrar_consentimiento(self, onboarding_id, token, consentimiento_id) -> dict:
+        sesion = self._revisar(onboarding_id, token)
+        sesion["consentimiento_id"] = consentimiento_id
+        return self._vista(sesion)
+
+    async def solicitar_subida(self, onboarding_id, token, paso, tipo_contenido, tamano) -> dict:
+        sesion = self._revisar(onboarding_id, token)
+        if sesion["consentimiento_id"] is None:
+            raise ErrorOnboardingServicio("SIN_CONSENTIMIENTO")
+        archivo_id = f"a-{paso.lower()}"
+        sesion["piezas"][archivo_id] = "PENDIENTE"
+        return {
+            "archivo_id": archivo_id,
+            "url": f"http://gcs/{archivo_id}",
+            "metodo": "PUT",
+            "encabezados": {"Content-Type": tipo_contenido},
+            "vence_en": "2026-10-28T12:15:00+00:00",
+        }
+
+    async def confirmar_subida(self, onboarding_id, token, archivo_id) -> dict:
+        sesion = self._revisar(onboarding_id, token)
+        if archivo_id not in sesion["piezas"]:
+            raise ErrorOnboardingServicio("ARCHIVO_NO_ENCONTRADO")
+        sesion["piezas"][archivo_id] = "DISPONIBLE"
+        return {"archivo_id": archivo_id, "estado": "DISPONIBLE"}
+
+    async def vincular_cuenta(self, onboarding_id, token, usuario_id) -> dict:
+        sesion = self._revisar(onboarding_id, token)
+        if sesion["usuario_id"] not in (None, usuario_id):
+            raise ErrorOnboardingServicio("SESION_CON_CUENTA")
+        sesion["usuario_id"] = usuario_id
+        return self._vista(sesion)
+
+    async def enviar(self, onboarding_id, token) -> dict:
+        sesion = self._revisar(onboarding_id, token)
+        if len([e for e in sesion["piezas"].values() if e == "DISPONIBLE"]) < 4:
+            raise ErrorOnboardingServicio("PIEZAS_INCOMPLETAS")
+        sesion["estado"] = "EN_VERIFICACION"
+        return self._vista(sesion)
+
+    async def reintentar(self, onboarding_id, token) -> dict:
+        sesion = self._revisar(onboarding_id, token)
+        if sesion["estado"] != "RECHAZADA" or sesion["intentos_restantes"] == 0:
+            raise ErrorOnboardingServicio("SIN_INTENTOS")
+        sesion.update(estado="INICIADO", motivo=None, piezas={}, intento=sesion["intento"] + 1)
+        sesion["intentos_restantes"] -= 1
+        return self._vista(sesion)
+
+    async def de_usuario(self, usuario_id: str) -> dict | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        filas = [s for s in self.sesiones.values() if s["usuario_id"] == usuario_id]
+        return self._vista(filas[-1]) if filas else None
+
+
 def clientes_falsos(
     auth: AuthFalso | None = None,
     acl: AclFalso | None = None,
@@ -851,6 +999,7 @@ def clientes_falsos(
     policy: PolicyFalso | None = None,
     almacenamiento: AlmacenamientoFalso | None = None,
     tickets: TicketsFalso | None = None,
+    onboarding: OnboardingFalso | None = None,
 ) -> Clientes:
     return Clientes(
         auth=auth or AuthFalso(),
@@ -861,4 +1010,5 @@ def clientes_falsos(
         policy=policy or PolicyFalso(),
         almacenamiento=almacenamiento or AlmacenamientoFalso(),
         tickets=tickets or TicketsFalso(),
+        onboarding=onboarding or OnboardingFalso(),
     )

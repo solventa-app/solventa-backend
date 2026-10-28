@@ -13,7 +13,7 @@ from psycopg_pool import ConnectionPool
 _COLUMNAS = (
     "id, estado, intento, token_hash, token_vence_en, jurisdiccion, tipo_documento, "
     "consentimiento_id, usuario_id, titular_id, anverso_id, reverso_id, rostro_id, video_id, "
-    "motivo, creado_en, actualizado_en"
+    "motivo, cuenta_notificada_en, creado_en, actualizado_en"
 )
 _ACTUALIZABLES = frozenset(
     {
@@ -27,6 +27,7 @@ _ACTUALIZABLES = frozenset(
         "rostro_id",
         "video_id",
         "motivo",
+        "cuenta_notificada_en",
     }
 )
 
@@ -118,6 +119,14 @@ class RepositorioPostgres:
                 """,
                 {"sesion_id": sesion_id, **datos},
             )
+
+    def obtener_datos(self, sesion_id: str) -> dict[str, Any] | None:
+        """Los datos cifrados que leyó el proveedor (solo existen en sesiones aprobadas)."""
+        with self._pool.connection() as conexion:
+            return conexion.execute(
+                "SELECT nombres, apellidos, numero FROM datos_extraidos WHERE sesion_id = %(s)s",
+                {"s": sesion_id},
+            ).fetchone()
 
     def registrar_verificacion(self, fila: dict[str, Any]) -> None:
         with self._pool.connection() as conexion:

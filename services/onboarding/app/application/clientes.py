@@ -1,4 +1,4 @@
-"""Clientes HTTP hacia ALMACENAMIENTO y el ACL Worker (servicios privados).
+"""Clientes HTTP hacia ALMACENAMIENTO, el ACL Worker y AUTH (servicios privados).
 
 ONBOARDING actúa ante el storage como `SERVICIO onboarding` (`X-Actor-Rol`/`X-Actor-Id`): el
 catálogo (`contracts/tipos-archivo.json`) solo deja a este servicio subir y leer los tipos
@@ -38,6 +38,20 @@ class PuertoAlmacenamiento(Protocol):
     def url_descarga(self, archivo_id: str) -> str: ...
 
     def fijar_retencion(self, archivo_id: str) -> None: ...
+
+
+class DocumentoEnOtraCuenta(Exception):
+    """AUTH respondió 409: el documento ya es de otra cuenta (p. ej. una que creó un asesor)."""
+
+
+class CuentaNoPendiente(Exception):
+    """AUTH respondió 404: la cuenta no existe o ya no espera la verificación."""
+
+
+class PuertoCuentas(Protocol):
+    def cerrar_verificacion(
+        self, usuario_id: str, aprobada: bool, nombre: str | None, documento: str | None
+    ) -> None: ...
 
 
 class PuertoIdentidad(Protocol):
@@ -125,6 +139,34 @@ class ClienteIdentidad:
             return respuesta.json()
         except (httpx.HTTPError, ValueError) as error:
             raise ServicioNoDisponible(type(error).__name__) from error
+
+    def cerrar(self) -> None:
+        self._cliente.close()
+
+
+class ClienteCuentas:
+    """`POST {AUTH_URL}/usuarios/{id}/verificacion` (HU-M01): cierra la cuenta
+    PENDIENTE_VERIFICACION como ACTIVO (con nombre y documento) o RECHAZADA. Es idempotente."""
+
+    def __init__(self, url: str, timeout_s: float, auth: httpx.Auth | None = None) -> None:
+        self._cliente = httpx.Client(base_url=url, timeout=timeout_s, auth=auth)
+
+    def cerrar_verificacion(
+        self, usuario_id: str, aprobada: bool, nombre: str | None, documento: str | None
+    ) -> None:
+        try:
+            respuesta = self._cliente.post(
+                f"/usuarios/{usuario_id}/verificacion",
+                json={"aprobada": aprobada, "nombre": nombre, "documento": documento},
+            )
+        except httpx.HTTPError as error:
+            raise ServicioNoDisponible(type(error).__name__) from error
+        if respuesta.status_code == 409:
+            raise DocumentoEnOtraCuenta()
+        if respuesta.status_code == 404:
+            raise CuentaNoPendiente()
+        if respuesta.status_code >= 400:
+            raise ServicioNoDisponible(f"HTTP {respuesta.status_code}")
 
     def cerrar(self) -> None:
         self._cliente.close()

@@ -10,7 +10,13 @@ PostgreSQL + Alembic, puerto **8010**. Plan: `plan-almacenamiento-y-hu-m01.md` (
 - Pide al servicio `almacenamiento` una URL firmada por pieza (anverso, reverso, rostro, video), a nombre de
   `SERVICIO onboarding` y con el consentimiento `onboarding-biometrico`. Los bytes van directo de la app al bucket.
 - Manda las imágenes al ACL Worker (`POST /identidad/verificar`, Didit detrás) y aplica las reglas de aprobación.
-- Publica `onboarding.verificado` y `onboarding.rechazado` (ids opacos y códigos). Sin tema de Pub/Sub, se loguean.
+- Publica `onboarding.verificado` y `onboarding.rechazado` (ids opacos y códigos; esquemas en
+  `contracts/events/onboarding.*.schema.json`). Sin tema de Pub/Sub, se loguean.
+- Lleva el resultado a la cuenta de AUTH (`POST /usuarios/{id}/verificacion`): VERIFICADA la activa con el nombre y el
+  documento leídos (AUTH fija el `titular_id`); RECHAZADA sin intentos la rechaza. Un rechazo con intentos no toca la
+  cuenta. Se hace al cerrar, al ligar la cuenta (si ya cerró) y cuando la app consulta `miVerificacion`, hasta que
+  `cuenta_notificada_en` queda puesta (migración `0002`). Si AUTH responde que el documento ya es de otra cuenta (p. ej.
+  una que creó un asesor), la sesión pasa a RECHAZADA `DOCUMENTO_YA_REGISTRADO` y la cuenta a RECHAZADA.
 
 ## Reglas de aprobación
 
@@ -49,16 +55,17 @@ Las operaciones de la app llevan `X-Onboarding-Token` (30 min, solo se guarda su
 
 ## Variables
 
-`DATABASE_URL`, `ALMACENAMIENTO_URL`, `ACL_URL`, `AUTENTICACION_SERVICIOS` (`ninguna` | `id_token`), `CLIENTE_ID_CLAVE`
+`DATABASE_URL`, `ALMACENAMIENTO_URL`, `ACL_URL`, `AUTH_URL`, `AUTENTICACION_SERVICIOS` (`ninguna` | `id_token`), `CLIENTE_ID_CLAVE`
 (secreto `clave-cliente-id`), `CIFRADO_CLAVE` (secreto `clave-cifrado`; o `KMS_KEY_NAME` + `CIFRADO_CLAVE_ENVUELTA`),
 `EDAD_MINIMA` (18), `MAX_INTENTOS` (3), `TOKEN_VIGENCIA_SEGUNDOS` (1800), `TIMEOUT_SEGUNDOS` (20), `DISPARADOR`
 (`bucle` por omisión; Terraform pone `externo` con `crear_tareas`, junto con `GCP_PROYECTO`, `TAREAS_CUENTA`, `URL_PROPIA`, `TAREAS_COLA` =
 `verificacion-onboarding`), `PUBSUB_TEMA_ONBOARDING_VERIFICADO` y `PUBSUB_TEMA_ONBOARDING_RECHAZADO` (vacíos = log).
 
-## Pendiente (siguientes PR de M01)
+## Desde la app
 
-- Avisar a AUTH al cerrar (cuenta ACTIVA o RECHAZADA): llega con la migración `m01_0001` de AUTH.
-- Esquema de los eventos en `contracts/events/` y las operaciones GraphQL del BFF: contrato v0.20.
+La app no llama a este servicio: va por el BFF (contrato v0.20, `iniciarOnboarding`, `registrarConsentimientoOnboarding`,
+`solicitarSubidaOnboarding`, `confirmarSubidaOnboarding`, `crearCuentaOnboarding`, `enviarVerificacion`,
+`reintentarOnboarding`, `onboarding`, `miVerificacion` y `actualizarSesion`).
 
 ## Correr
 

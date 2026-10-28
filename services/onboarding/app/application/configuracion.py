@@ -23,6 +23,7 @@ class Configuracion:
     database_url: str
     almacenamiento_url: str = "http://localhost:8009"
     acl_url: str = "http://localhost:8005"
+    auth_url: str = "http://localhost:8001"
     # "ninguna" en local; "id_token" en Cloud Run (servicios privados).
     autenticacion_servicios: str = "ninguna"
     # Clave del HMAC del `titular_id`: la misma de AUTH y el BFF (secreto `clave-cliente-id`).
@@ -66,6 +67,7 @@ class Configuracion:
             database_url=os.getenv("DATABASE_URL", ""),
             almacenamiento_url=os.getenv("ALMACENAMIENTO_URL", "http://localhost:8009"),
             acl_url=os.getenv("ACL_URL", "http://localhost:8005"),
+            auth_url=os.getenv("AUTH_URL", "http://localhost:8001"),
             autenticacion_servicios=os.getenv("AUTENTICACION_SERVICIOS", "ninguna"),
             cliente_id_clave=clave_hmac,
             cifrado_clave=os.getenv("CIFRADO_CLAVE", ""),
