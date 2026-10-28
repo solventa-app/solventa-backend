@@ -76,7 +76,7 @@
     "puerto": 8007,
     "url_env": "POLICY_URL",
     "migracion": ["alembic", "upgrade", "head"],
-    "llama": ["rating", "acl-worker", "under", "payments", "auth"],
+    "llama": ["rating", "acl-worker", "under", "payments", "auth", "almacenamiento"],
     "disparador_externo": true,
     "entorno": {
       "AUTENTICACION_SERVICIOS": "id_token",

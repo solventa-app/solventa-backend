@@ -55,6 +55,21 @@ class Configuracion:
     reconciliacion_dias: int = 30
     # El PDF avisa que la firma y el cobro son simulados. Apagarlo solo con un proveedor real.
     documento_ambiente_pruebas: bool = True
+    # Bloque 9 (W03-19 a W03-37).
+    # La imagen de la firma: ALMACENAMIENTO, y la reescritura de las URLs firmadas en local
+    # (`http://localhost:4443/=http://fake-gcs:4443/`).
+    almacenamiento_url: str = "http://localhost:8009"
+    almacenamiento_timeout_segundos: float = 3.0
+    almacenamiento_reescritura: str = ""
+    # Avisos en vivo para `avisos` (SSE, W03-37). Vacío = no se publican.
+    redis_url: str = ""
+    # Dónde vive la página del enlace: el token va en `<url_front>/firma#t=...` (W03-23).
+    url_front: str = "http://localhost:5173"
+    codigo_vigencia_minutos: int = 10
+    codigo_max_intentos: int = 5
+    enlace_vigencia_minutos: int = 30
+    # Cuántas propuestas revisa por pasada la purga diaria de contactos (W03-26).
+    purga_lote_max: int = 200
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -103,4 +118,15 @@ class Configuracion:
             reconciliacion_dias=_entero_positivo("RECONCILIACION_DIAS", "30"),
             documento_ambiente_pruebas=os.getenv("DOCUMENTO_AMBIENTE_PRUEBAS", "true").lower()
             in ("1", "true", "yes", "si"),
+            almacenamiento_url=os.getenv("ALMACENAMIENTO_URL", "http://localhost:8009"),
+            almacenamiento_timeout_segundos=float(
+                os.getenv("POLICY_ALMACENAMIENTO_TIMEOUT_SEGUNDOS", "3.0")
+            ),
+            almacenamiento_reescritura=os.getenv("ALMACEN_REESCRITURA_ORIGENES", ""),
+            redis_url=os.getenv("REDIS_URL", ""),
+            url_front=os.getenv("URL_FRONT", "http://localhost:5173").rstrip("/"),
+            codigo_vigencia_minutos=_entero_positivo("CODIGO_VIGENCIA_MINUTOS", "10"),
+            codigo_max_intentos=_entero_positivo("CODIGO_MAX_INTENTOS", "5"),
+            enlace_vigencia_minutos=_entero_positivo("ENLACE_VIGENCIA_MINUTOS", "30"),
+            purga_lote_max=_entero_positivo("PURGA_LOTE_MAX", "200"),
         )

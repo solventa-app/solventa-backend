@@ -33,6 +33,17 @@ class PuertoRepositorioPropuestas(Protocol):
 
     def crear_o_obtener(self, propuesta_id: str, datos: dict[str, Any]) -> tuple[dict, bool]: ...
 
+    def listar(
+        self,
+        cliente_id: str | None,
+        actor_usuario_id: str | None,
+        estado_visible: str | None,
+        pagina: int,
+        tamano: int,
+    ) -> tuple[list[dict[str, Any]], int]: ...
+
+    def polizas_resumen(self, ids: list[str]) -> dict[str, dict[str, Any]]: ...
+
 
 class ServicioPropuestas:
     def __init__(self, repositorio: PuertoRepositorioPropuestas, rating: PuertoRating) -> None:
@@ -42,7 +53,35 @@ class ServicioPropuestas:
     def obtener(self, propuesta_id: str) -> dict[str, Any] | None:
         return self._repositorio.obtener(propuesta_id)
 
-    def aceptar(self, oferta_id: str, actor_usuario_id: str | None) -> dict[str, Any]:
+    def listar(
+        self,
+        cliente_id: str | None,
+        actor_usuario_id: str | None,
+        estado_visible: str | None,
+        pagina: int,
+        tamano: int,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """W03-35: las propuestas con su póliza (número y vigencia) cuando existe."""
+        propuestas, total = self._repositorio.listar(
+            cliente_id, actor_usuario_id, estado_visible, pagina, tamano
+        )
+        polizas = self._repositorio.polizas_resumen(
+            [p["poliza_id"] for p in propuestas if p.get("poliza_id")]
+        )
+        for propuesta in propuestas:
+            propuesta["poliza"] = polizas.get(propuesta.get("poliza_id") or "")
+        return propuestas, total
+
+    def aceptar(
+        self,
+        oferta_id: str,
+        actor_usuario_id: str | None,
+        actor_rol: str | None = None,
+        contacto: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """`contacto` (nombre y correo) lo da el ASESOR y se guarda cifrado en la propuesta; sin él,
+        el contacto del titular se lee de AUTH al usarlo (W03-25). Que el ASESOR lo mande lo exige
+        el BFF."""
         existente = self._repositorio.obtener_por_oferta(oferta_id)
         if existente is not None:
             return existente
@@ -66,6 +105,9 @@ class ServicioPropuestas:
                 # antes de que RATING la incluyera no la trae y queda en nulo.
                 "version_reglas": oferta.get("versionReglas"),
                 "actor_usuario_id": actor_usuario_id,
+                "actor_rol": actor_rol,
+                "contacto": contacto,
+                "origen_contacto": "PROPUESTA" if contacto else ("AUTH" if actor_rol else None),
                 "tipo": oferta["tipo"],
                 "prima": oferta["prima"],
                 "cobertura": oferta["cobertura"],

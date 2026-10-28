@@ -85,6 +85,39 @@ EN_EMISION ──UNDER──► RECHAZADA        ─► NO_EMITIDA
     se toca.
   Sin `AUTH_URL` configurada el aviso sale como antes (solo con el enlace).
 
+## Firma y pago con el asesor o en la sesión del CLIENTE (bloque 9, W03-19 a W03-37)
+
+Migración `0007`. El flujo anterior (`/propuestas/{id}/firma` → `EN_EMISION` → cobro con token) sigue funcionando.
+
+```
+ASESOR:  ACEPTADA ─código─► IDENTIDAD_VERIFICADA ─«Emitir» (UNDER)─► EN_FIRMA + enlace de 30 min (correo)
+CLIENTE: ACEPTADA ─────────────────────────────── «Firmar» (UNDER)─► EN_FIRMA (en su sesión)
+los dos: EN_FIRMA ─firma (trazo, imagen o nombre)─► FIRMADA ─pago en la pasarela─► EMITIDA (misma respuesta)
+```
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| `POST` | `/propuestas` `{…, actor_rol, contacto?}` | El ASESOR manda `contacto` (nombre y correo, cifrados aquí: `origen_contacto = PROPUESTA`); un CLIENTE no (`AUTH`) (W03-25) |
+| `GET` | `/propuestas?cliente_id=…&actor_usuario_id=…&estado_visible=…&pagina=&tamano=` | Lista por rol con la póliza si existe (W03-35); quién ve qué lo decide el BFF |
+| `POST` | `/propuestas/{id}/codigo` `{correo?}` | Código de 6 dígitos al correo del titular (plantilla `codigo-verificacion`); vence a los 10 min, 5 intentos, pedir otro anula el anterior. `correo` corrige el capturado (W03-20) |
+| `POST` | `/propuestas/{id}/codigo/verificar` `{codigo}` | `IDENTIDAD_VERIFICADA`, o `422` con `CODIGO_INVALIDO` (e `intentos_restantes`), `CODIGO_VENCIDO` o `INTENTOS_AGOTADOS` |
+| `POST` | `/propuestas/{id}/emitir` `{rol, titular_id?}` | «Emitir» del ASESOR (identidad verificada) o «Firmar» del CLIENTE titular: UNDER y KYC deciden. Al ASESOR le envía el enlace (plantilla `enlace-firma`, `URL_FRONT/firma#t=<token>`) y responde solo el correo enmascarado y el vencimiento, **nunca la URL** |
+| `POST` | `/propuestas/{id}/enlace` | Enlace nuevo que anula el anterior (W03-22) |
+| `POST` | `/enlaces/resolver` `{token}` | De qué propuesta es el token y si sigue vigente (el token va en el cuerpo) |
+| `GET` | `/propuestas/{id}/enlace-estado`, `/contrato`, `/contrato.pdf` | Estado para la página, el documento a firmar y su PDF borrador (W03-31) |
+| `POST` | `/propuestas/{id}/firma-imagen` `{tipo_contenido, tamano_bytes}` | URL firmada de ALMACENAMIENTO para subir la imagen (`firma-imagen`, propietario `poliza/<propuesta>`); los bytes no pasan por POLICY |
+| `POST` | `/propuestas/{id}/firma-enlace` `{version_documento, acepta_terminos, autoriza_cobro, modo, imagen_archivo_id?, nombre_firma?}` | Firma (W03-24): con `TRAZO`/`IMAGEN` confirma el archivo en ALMACENAMIENTO, lo baja y valida 100×40 a 1200×600 px y fondo blanco o transparente (Pillow); si no pasa, `422 IMAGEN_INVALIDA` y la imagen se marca para borrar. `NOMBRE` guarda el texto cifrado en la propuesta. Firmante = el titular |
+| `POST` | `/propuestas/{id}/pago` `{url_retorno, idioma}` | Abre o reabre la sesión de pago en PAYMENTS (W03-28) |
+| `POST` | `/propuestas/{id}/pago/{sesion_id}/confirmar` | Confirma con la pasarela y, si se cobró, **emite la póliza en la misma respuesta** (W03-29). Un rechazo deja la propuesta `FIRMADA` (`motivo_estado = PAGO_RECHAZADO`): otra tarjeta sin perder la firma |
+| `POST` | `/propuestas/consentimiento-revocado` `{titular_id, consentimiento_id}` | 204 idempotente: CANCELADA, borra nombre, correo y texto de la firma, anula enlaces y pide la retención de la imagen (W03-26) |
+| `POST` | `/_purgar-contactos` | Pasada diaria (Cloud Scheduler): pregunta a AUTH por el consentimiento de cada propuesta sin emitir con datos y purga las vencidas. Sin respuesta de AUTH no borra nada |
+
+- **Autorización doble (W03-33):** las rutas de la página del enlace reciben `X-Enlace-Firma` (el token; POLICY guarda solo su HMAC) o `X-Titular-Id` (el titular de la sesión del CLIENTE, que pone el BFF desde AUTH). Ajena, sin cabecera o con un token que no existe: `404`. Enlace vencido o anulado: `409 ENLACE_VENCIDO`, salvo al confirmar un pago (la sesión pudo abrirse antes).
+- **Huellas:** el código y el token se guardan como HMAC-SHA256 con una clave derivada de `CIFRADO_CLAVE`.
+- **Emisión y avisos:** confirmar el pago emite (desde `FIRMADA`) y deja a una tarea (`_emitir`) el correo con el PDF y el aviso al asesor (`poliza-emitida-asesor`, sin datos del titular). El PDF estampa la firma: la imagen se baja de ALMACENAMIENTO al generarlo (URL de minutos, nunca se guarda ni se registra) o el nombre con letra cursiva.
+- **Avisos en vivo (W03-37):** cada cambio de estado del flujo nuevo publica en Redis (`avisos:asesor:<usuario>`, `avisos:titular:<hmac>`, `avisos:todos`) `{tipo, propuestaId, estado, estadoVisible, polizaId, numero}`, sin datos personales. Sin `REDIS_URL` no se publica (mejor esfuerzo).
+- **La imagen de la firma y la purga:** `evidencias_firma` es append-only, así que la purga no borra `imagen_firma_archivo_id`; pide la retención del archivo y el bucket lo borra en un día.
+
 ## Diseño
 
 - **Capas simples** (sin puertos y adaptadores): hexagonal es solo para `acl-worker` (regla #3). POLICY no llama a
@@ -129,6 +162,12 @@ EN_EMISION ──UNDER──► RECHAZADA        ─► NO_EMITIDA
 | `DOCUMENTO_AMBIENTE_PRUEBAS` | `true` | Pie del PDF que avisa que la firma y el cobro son simulados |
 | `COBRO_PENDIENTE_DEMORA_SEGUNDOS`, `EMISION_MAX_INTENTOS` | `10`, `12` | Cada cuánto se vuelve a consultar un cobro pendiente y cuántas veces |
 | `RECONCILIACION_LOTE_MAX`, `RECONCILIACION_DIAS` | `100`, `30` | Cuántas propuestas revisa el barrido por pasada y hasta cuántos días atrás mira un pago rechazado o pendiente |
+| `ALMACENAMIENTO_URL`, `POLICY_ALMACENAMIENTO_TIMEOUT_SEGUNDOS` | `http://localhost:8009`, `3.0` | La imagen de la firma (bloque 9) |
+| `ALMACEN_REESCRITURA_ORIGENES` | — | Solo local: `http://localhost:4443/=http://fake-gcs:4443/` para bajar las URLs firmadas del emulador |
+| `REDIS_URL` | — | Avisos en vivo para `avisos` (W03-37); vacío = no se publican |
+| `URL_FRONT` | `http://localhost:5173` | Dónde vive la página del enlace (`/firma#t=…`) |
+| `CODIGO_VIGENCIA_MINUTOS`, `CODIGO_MAX_INTENTOS`, `ENLACE_VIGENCIA_MINUTOS` | `10`, `5`, `30` | Código (W03-20) y enlace (W03-22) |
+| `PURGA_LOTE_MAX` | `200` | Propuestas que revisa la purga diaria por pasada |
 | `AUTENTICACION_SERVICIOS` | `ninguna` | `id_token` en Cloud Run (RATING, el ACL, UNDER y PAYMENTS son privados) |
 
 ## Migraciones y pruebas

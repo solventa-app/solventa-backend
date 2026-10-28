@@ -20,6 +20,12 @@ las consultas y la pasarela lo cobró más tarde) reabre la propuesta, pero solo
 `reconciliar_cobro`: la llaman el back-office y el barrido de reconciliación, nunca el cliente
 (decisión W03-14). Un `PAGO_RECHAZADO` no se emite por la emisión normal.
 
+Bloque 9 (W03-29): en el flujo nuevo la póliza se emite **al confirmar el pago**, en la misma
+respuesta (`emitir_pagada`, desde FIRMADA); el correo con el PDF y el aviso al asesor van después,
+por una tarea (la misma `_emitir`, que con la póliza ya emitida solo completa los avisos). El
+contacto sale de donde lo guardó la propuesta (W03-25): cifrado en la propuesta si lo dio el ASESOR,
+o de AUTH si el titular es un CLIENTE con cuenta.
+
 Si UNDER o PAYMENTS no responden se lanza `EmisionPendiente` y la propuesta no cambia: no se decide
 a ciegas ni se da el cobro por hecho. Un primer cobro pendiente se vuelve a consultar con una tarea,
 acotado por `max_intentos` para no reprogramarse para siempre."""
@@ -33,6 +39,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from app.application.avisos import AvisosNulos, PuertoAvisos
 from app.application.bus_eventos import PuertoBusEventos, construir_evento_poliza_emitida
 from app.application.cliente_acl import AdjuntoAviso, PuertoNotificador, SolicitudNotificacion
 from app.application.cliente_auth import AuthNoDisponible, PuertoContactos
@@ -59,6 +66,8 @@ DESDE_EMISION = ("EN_EMISION",)
 DESDE_COBRO = ("EN_EMISION", "PENDIENTE_PAGO")
 # Lo que la reconciliación puede reabrir: un pago rechazado o un pendiente que dejó de consultarse.
 DESDE_RECONCILIACION = ("PAGO_RECHAZADO", "PENDIENTE_PAGO")
+# Flujo del bloque 9: la póliza se emite al confirmar el pago de una propuesta firmada.
+DESDE_FIRMADA = ("FIRMADA",)
 
 # Por qué no se le avisó al cliente de su póliza (W03-18): la póliza se emite igual y el aviso no se
 # reintenta para siempre; el cliente la descarga desde la web.
@@ -98,6 +107,8 @@ class PuertoRepositorioEmision(Protocol):
     def marcar_notificada(self, poliza_id: str) -> None: ...
 
     def marcar_aviso_omitido(self, poliza_id: str, motivo: str) -> None: ...
+
+    def contacto(self, propuesta_id: str) -> dict[str, str | None] | None: ...
 
 
 class PropuestaNoEncontradaParaEmitir(Exception):
@@ -147,6 +158,7 @@ class ServicioEmision:
         *,
         contactos: PuertoContactos | None = None,
         generador_documento: Callable[[str, str | None], bytes | None] | None = None,
+        avisos: PuertoAvisos | None = None,
     ) -> None:
         if contactos is not None and generador_documento is None:
             raise ValueError("Avisar con el PDF exige un generador de documentos")
@@ -164,6 +176,7 @@ class ServicioEmision:
         # Sin `contactos` el aviso sale como antes: solo con la plantilla y el enlace.
         self._contactos = contactos
         self._generador_documento = generador_documento
+        self._avisos = avisos or AvisosNulos()
 
     def emitir(self, propuesta_id: str) -> str:
         """Avanza la emisión y devuelve el estado de la propuesta. Idempotente."""
@@ -374,6 +387,45 @@ class ServicioEmision:
         self._avisar(poliza, propuesta["id"], numero)
         return "EMITIDA"
 
+    def emitir_pagada(self, propuesta_id: str) -> dict[str, Any] | None:
+        """W03-29: emite la póliza de una propuesta FIRMADA cuyo pago ya se confirmó, en la misma
+        respuesta, y deja a una tarea el correo con el PDF y el aviso al asesor. Idempotente: con la
+        póliza ya emitida la devuelve. `None` si la propuesta no está en un estado emisible."""
+        propuesta = self._repositorio.obtener(propuesta_id)
+        if propuesta is None:
+            raise PropuestaNoEncontradaParaEmitir(propuesta_id)
+        ahora = datetime.now(UTC)
+        poliza, creada = self._repositorio.emitir_poliza(
+            propuesta_id,
+            propuesta["cliente_id"],
+            ahora,
+            sumar_meses(ahora, int(propuesta["plazo_meses"])),
+            DESDE_FIRMADA,
+        )
+        if poliza is None:
+            return None
+        numero = numero_de_poliza(poliza["numero"], poliza["vigencia_desde"])
+        resumen = {**poliza, "numero_formateado": numero}
+        if creada:
+            self._bus.publicar(
+                construir_evento_poliza_emitida(
+                    poliza["id"],
+                    numero,
+                    propuesta_id,
+                    propuesta["cliente_id"],
+                    poliza["vigencia_desde"],
+                    poliza["vigencia_hasta"],
+                )
+            )
+            logger.info("póliza emitida al confirmar el pago propuesta=%s", id_opaco(propuesta_id))
+            self._avisos.publicar(propuesta, "EMITIDA", resumen)
+            try:
+                self._planificador.encolar(propuesta_id)  # el correo con el PDF, en segundo plano
+            except Exception as error:
+                # La póliza ya está emitida; el barrido o la próxima consulta reintentan el aviso.
+                logger.warning("no se pudo encolar el aviso error=%s", type(error).__name__)
+        return resumen
+
     def _completar_aviso(self, propuesta: dict[str, Any]) -> None:
         """Una póliza ya emitida a la que no se le pudo avisar: se reintenta el aviso."""
         poliza = self._repositorio.obtener_poliza(propuesta["poliza_id"])
@@ -396,7 +448,15 @@ class ServicioEmision:
         if poliza.get("aviso_omitido_motivo") is not None:
             return
         evidencia = self._repositorio.obtener_evidencia(propuesta_id)
-        destino = self._destino_del_aviso(poliza, evidencia["firmante_id"], numero)
+        propuesta = self._repositorio.obtener(propuesta_id)
+        self._avisar_al_asesor(poliza, propuesta, numero)
+        if propuesta.get("origen_contacto") == "PROPUESTA":
+            destino = self._destino_desde_la_propuesta(poliza, propuesta_id, numero)
+        elif propuesta.get("origen_contacto") == "AUTH" and propuesta.get("actor_usuario_id"):
+            # El titular es un CLIENTE con cuenta: su contacto vive en AUTH (W03-25).
+            destino = self._destino_del_aviso(poliza, propuesta["actor_usuario_id"], numero)
+        else:
+            destino = self._destino_del_aviso(poliza, evidencia["firmante_id"], numero)
         if destino is None:
             return  # sin contacto: ya quedó marcado como omitido
         resultado = self._notificador.notificar(
@@ -445,12 +505,52 @@ class ServicioEmision:
             correo=contacto.correo, adjuntos=[self._adjunto_de_la_poliza(poliza, nombre, numero)]
         )
 
+    def _destino_desde_la_propuesta(
+        self, poliza: dict[str, Any], propuesta_id: str, numero: str
+    ) -> DestinoDelAviso | None:
+        """El contacto que dio el ASESOR, cifrado en la propuesta (W03-25). Se conserva con la
+        póliza emitida; si ya se borró (no debería con una póliza), el aviso se omite."""
+        contacto = self._repositorio.contacto(propuesta_id) or {}
+        if not contacto.get("correo"):
+            self._omitir_aviso(poliza["id"], MOTIVO_SIN_CONTACTO)
+            return None
+        if self._generador_documento is None:
+            return DestinoDelAviso(correo=contacto["correo"])
+        return DestinoDelAviso(
+            correo=contacto["correo"],
+            adjuntos=[self._adjunto_de_la_poliza(poliza, contacto.get("nombre"), numero)],
+        )
+
+    def _avisar_al_asesor(
+        self, poliza: dict[str, Any], propuesta: dict[str, Any], numero: str
+    ) -> None:
+        """W03-37: el correo al asesor que vendió la póliza, para cuando no tiene la app abierta.
+        Sin el PDF ni datos del titular. AUTH no guarda el contacto del ASESOR: el proveedor lo
+        resuelve por su id. Idempotente por `poliza-emitida-asesor-<id>`; si no sale, se reintenta
+        con el aviso del titular."""
+        if propuesta.get("actor_rol") != "ASESOR" or not propuesta.get("actor_usuario_id"):
+            return
+        resultado = self._notificador.notificar(
+            SolicitudNotificacion(
+                id_notificacion=f"poliza-emitida-asesor-{poliza['id']}",
+                plantilla="poliza-emitida-asesor",
+                destinatario_id=propuesta["actor_usuario_id"],
+                datos={"numero_poliza": numero, "propuesta_id": propuesta["id"]},
+            )
+        )
+        if resultado.estado not in ("enviada", "rechazada"):
+            raise EmisionPendiente("notificaciones no disponibles")
+
     def _adjunto_de_la_poliza(
         self, poliza: dict[str, Any], nombre_asegurado: str | None, numero: str
     ) -> AdjuntoAviso:
         """El PDF de la póliza, generado con el nombre que AUTH acaba de dar. El nombre vive solo
         en memoria: ni el PDF ni el nombre se guardan (W03-9)."""
-        pdf = self._generador_documento(poliza["id"], nombre_asegurado)
+        try:
+            pdf = self._generador_documento(poliza["id"], nombre_asegurado)
+        except Exception as error:
+            # P. ej. la imagen de la firma no se pudo bajar: se reintenta el aviso.
+            raise EmisionPendiente("no se pudo generar el documento de la póliza") from error
         if pdf is None:
             raise EmisionPendiente("no se pudo generar el documento de la póliza")
         return AdjuntoAviso(

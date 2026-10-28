@@ -14,3 +14,5 @@ opentelemetry-instrumentation-httpx==0.66b1
 opentelemetry-instrumentation-psycopg==0.66b1
 cryptography==50.0.2
 fpdf2==2.8.9
+pillow==13.0.0
+redis==8.1.0
