@@ -34,7 +34,10 @@ la regla de escritor único.
    originales ni datos personales en metadatos ni logs (regla 6).
 7. **Retención:** cuando el trámite cierra, el dueño pide `POST /archivos/{id}/retencion`; el servicio fija
    `customTime` y la regla de ciclo de vida del bucket borra el objeto N días después (30 para onboarding). El aviso
-   `OBJECT_DELETE` marca la fila `ELIMINADO`. Las subidas nunca confirmadas se borran a los 90 días.
+   `OBJECT_DELETE` marca la fila `ELIMINADO`. Las subidas nunca confirmadas (`PENDIENTE`) las borra a los 90 días la
+   purga del servicio (`POST /archivos/_purgar-vencidos`, Cloud Scheduler diario), **no** una regla `age` del bucket:
+   esa regla no distingue estados y borraría también lo `DISPONIBLE` sin retención, como la firma de una póliza emitida
+   (HU-W03, 2026-10-27).
 
 ## Consecuencias
 
