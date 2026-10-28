@@ -882,9 +882,9 @@ starlette==1.8.0 \
     # via
     #   fastapi
     #   prometheus-fastapi-instrumentator
-strawberry-graphql==0.337.0 \
-    --hash=sha256:568a3197148057732739a3cd85ffb5323640fc6d3e39e973d6275f07c0eb889e \
-    --hash=sha256:ac6f8f9c2e2c9fb88a0a8912d3ab6c4788040c8d60420ccdb5b37cb8bc0b8923
+strawberry-graphql==0.337.2 \
+    --hash=sha256:5d8fd1836efc1cd15721298c62fe6ae6e4ff7861046e407761f6fed24c0bdd22 \
+    --hash=sha256:d19a21d16804c9e4344a309bb628282ae7c8a63501ae461c4aa9cd42d716f1df
     # via -r requirements.in
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
