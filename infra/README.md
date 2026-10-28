@@ -353,6 +353,23 @@ mismo corte de 700 ms. Durante sesiones de medición con k6 se puede activar `ca
 `min_instance_count = 1` en los servicios del camino crítico de HU-W01 y evitar arranques en frío; al terminar la sesión
 se vuelve a poner en `false`.
 
+### Firma, pago y avisos de HU-W03 (F-B8)
+
+- **Ingreso directo, fuera del gateway.** `avisos` (stream SSE: un stream largo no cabe en el corte de 700 ms) y `stub-pasarela`
+  (la página de pago que abre el titular) llevan `ingreso_directo` en `.github/servicios.json`: Terraform les da `allUsers`
+  como invocador, igual que haría con `publico`. Si la organización bloquea `allUsers`, esos dos recursos fallan (es
+  esperable, como con el gateway). El resto de servicios sigue privado.
+- **`url_front`** (variable, sin barra final) es el origen del front web (Vercel). De ella salen `ORIGENES_PERMITIDOS` de
+  `avisos`, `URLS_RETORNO_PERMITIDAS` de la pasarela y `URL_FRONT` de POLICY y del BFF (a `<url_front>/pago/retorno/<id>`
+  regresa el titular). **Sin fijarla en `staging.tfvars` vale `http://localhost:5173`, y el stream de avisos y el regreso
+  de la pasarela no sirven en staging.** El mismo origen va en `almacenamiento_origenes_cors` al encender el almacenamiento.
+- **Redis base 3 (`redis-url-w03`)**: tickets del BFF, avisos que publica POLICY y lectura de `avisos`. Con Memorystore apagado,
+  la URL marcador no resuelve: los avisos se pierden (de mejor esfuerzo) y `ticketAvisos` responde error con reintento.
+- **Cloud Scheduler `purgar-contactos-policy`** (`purgar_contactos_cron`, diario 03:00 Bogotá): `POST /_purgar-contactos` de
+  POLICY. Con el almacenamiento encendido, `purga-almacenamiento` (F-B0) borra las subidas abandonadas.
+- **Gateway:** `GET /propuestas/{id}/contrato.pdf` en `openapi.yaml` y `envoy.yaml` (`scripts/validar_gateway.py` las compara).
+  La cabecera `X-Enlace-Firma` del token del enlace pasa tal cual hasta el BFF.
+
 ### Pub/Sub (`crear_pubsub`) y Batch nocturno (`crear_batch`)
 
 - **`crear_pubsub = true` (`pubsub.tf`):** crea el tema `perfil-actualizado` y la suscripción `rating-perfil-actualizado`
