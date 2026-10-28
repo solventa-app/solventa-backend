@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from pymongo import MongoClient
 
 from app.application.autenticacion_servicios import autenticacion_para
+from app.application.bus_eventos import BusEventosLog
 from app.application.cifrado import CifradorAesGcm
 from app.application.clientes import ClientePayments, ClientePolicy
 from app.application.configuracion import Configuracion
@@ -98,7 +99,9 @@ def create_app(
                 config.servicios_timeout_segundos,
                 autenticacion_para(modo, "payments"),
             )
-            app.state.servicio = ServicioSiniestros(repositorio, policy=policy, payments=payments)
+            app.state.servicio = ServicioSiniestros(
+                repositorio, policy=policy, payments=payments, bus=BusEventosLog()
+            )
             if app.state.reiniciar is None:
                 datos = Path(config.semilla_dir)
                 app.state.reiniciar = lambda: sembrar(repositorio, datos)

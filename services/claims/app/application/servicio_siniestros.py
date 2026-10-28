@@ -16,6 +16,12 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Protocol
 
+from app.application.bus_eventos import (
+    PuertoBusEventos,
+    evento_aprobado,
+    evento_derivado,
+    evento_rechazado,
+)
 from app.application.clientes import ServicioNoDisponible, SolicitudRechazada
 from app.application.dias_habiles import sumar_dias_habiles
 from app.application.identificadores import id_opaco
@@ -132,11 +138,13 @@ class ServicioSiniestros:
         reloj: Callable[[], datetime] = lambda: datetime.now(UTC),
         policy: PuertoPolicy | None = None,
         payments: PuertoPayments | None = None,
+        bus: PuertoBusEventos | None = None,
     ) -> None:
         self._repo = repositorio
         self._reloj = reloj
         self._policy = policy
         self._payments = payments
+        self._bus = bus
 
     # ---------- Lectura ----------
 
@@ -185,7 +193,7 @@ class ServicioSiniestros:
     def derivar(
         self, siniestro_id: str, perito_id: str, instrucciones: str | None, actor: str | None
     ) -> dict:
-        self._abierto(siniestro_id)
+        siniestro = self._abierto(siniestro_id)
         if self._repo.asignaciones([siniestro_id], primaria=True):
             raise ErrorNegocio(MENSAJE_YA_DERIVADO)
         perito = self._repo.perito(perito_id, primaria=True)
@@ -207,12 +215,13 @@ class ServicioSiniestros:
             # Otro operador lo derivó o lo resolvió entre la validación y la escritura.
             raise ErrorNegocio(self._motivo_conflicto(siniestro_id, MENSAJE_YA_DERIVADO))
         logger.info("siniestro=%s derivado perito=%s", id_opaco(siniestro_id), perito_id)
+        self._publicar(evento_derivado(siniestro, asignacion, actor))
         return self.obtener(siniestro_id, primaria=True)
 
     def rechazar(
         self, siniestro_id: str, motivo: str, comentario: str | None, actor: str | None
     ) -> dict:
-        self._abierto(siniestro_id)
+        siniestro = self._abierto(siniestro_id)
         if motivo not in MOTIVOS:
             raise ErrorNegocio(MENSAJE_MOTIVO)
         comentario = self._texto(comentario)
@@ -231,6 +240,7 @@ class ServicioSiniestros:
         if not self._repo.registrar_resolucion(siniestro_id, resolucion, "RECHAZADO", ahora):
             raise ErrorNegocio(MENSAJE_YA_RESUELTO)
         logger.info("siniestro=%s rechazado motivo=%s", id_opaco(siniestro_id), motivo)
+        self._publicar(evento_rechazado(siniestro, resolucion, actor))
         return self.obtener(siniestro_id, primaria=True)
 
     def aprobar(self, siniestro_id: str, actor: str | None) -> dict:
@@ -267,7 +277,14 @@ class ServicioSiniestros:
         if not self._repo.registrar_resolucion(siniestro_id, resolucion, "APROBADO", ahora):
             raise ErrorNegocio(MENSAJE_YA_RESUELTO)
         logger.info("siniestro=%s aprobado orden=%s", id_opaco(siniestro_id), id_opaco(orden["id"]))
+        self._publicar(evento_aprobado(siniestro, resolucion, actor))
         return self.obtener(siniestro_id, primaria=True)
+
+    def _publicar(self, evento: dict) -> None:
+        """Después de guardar: si el bus falla o el evento no cumple su esquema, la resolución ya
+        quedó guardada y no se revierte (W04-9)."""
+        if self._bus is not None:
+            self._bus.publicar(evento)
 
     def _indemnizacion(self, siniestro: dict) -> dict:
         """W04-8: la suma reclamada, acotada a la cobertura de la póliza (en la misma moneda)."""

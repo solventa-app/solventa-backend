@@ -55,6 +55,8 @@ jobs:
               - 'scripts/sincronizar_tipos_archivo.py'
               - 'services/*/app/fuentes.json'
               - 'services/*/app/tipos-archivo.json'
+              - 'scripts/sincronizar_eventos_siniestros.py'
+              - 'services/claims/app/eventos/**'
               - 'requirements-dev.txt'
             infra:
               - 'infra/**'
@@ -308,6 +310,8 @@ jobs:
         run: python scripts/sincronizar_fuentes.py --verificar
       - name: La copia de tipos-archivo.json de almacenamiento sigue igual al contrato
         run: python scripts/sincronizar_tipos_archivo.py --verificar
+      - name: Las copias de los esquemas siniestro.* de claims siguen iguales al contrato
+        run: python scripts/sincronizar_eventos_siniestros.py --verificar
 
   manifiesto:
     needs: cambios

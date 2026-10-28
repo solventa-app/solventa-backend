@@ -11,3 +11,4 @@ requests==2.34.2
 opentelemetry-instrumentation-httpx==0.66b1
 opentelemetry-instrumentation-pymongo==0.66b1
 google-cloud-kms==3.18.0
+jsonschema==4.23.0
