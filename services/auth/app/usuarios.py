@@ -25,6 +25,8 @@ Datos personales: el alias de acceso **no puede ser un correo ni un documento**
 
 La clave se guarda solo como hash argon2id y nunca sale de este servicio."""
 
+import hashlib
+import hmac
 import logging
 import re
 import unicodedata
@@ -69,8 +71,11 @@ MONEDAS: tuple[str, ...] = ("COP", "MXN", "BRL", "CLP", "PEN", "USD", "EUR")
 _PUBLICAS = "id, usuario, rol, estado, creado_en, idioma, moneda"
 _TODAS = (
     f"{_PUBLICAS}, hash_clave, intentos_fallidos, bloqueado_hasta, nombre_cifrado, "
-    "correo_cifrado, telefono_cifrado, titular_id, documento_cifrado"
+    "correo_cifrado, telefono_cifrado, titular_id, documento_cifrado, correo_hmac"
 )
+# Estados de una cuenta creada en el onboarding del móvil (HU-M01, migración `0009`).
+PENDIENTE_VERIFICACION = "PENDIENTE_VERIFICACION"
+RECHAZADA = "RECHAZADA"
 
 
 class DatoInvalido(Exception):
@@ -166,6 +171,14 @@ def contexto_documento(usuario_id: str) -> str:
     return f"documento:{usuario_id}"
 
 
+def correo_hmac(correo_normalizado: str, clave: str) -> str:
+    """HMAC-SHA256 del correo ya normalizado: busca la cuenta al iniciar sesión sin guardar el
+    correo en claro. El prefijo separa este uso de la clave de otros HMAC (p. ej. `titular_id`)."""
+    return hmac.new(
+        clave.encode("utf-8"), f"correo:{correo_normalizado}".encode(), hashlib.sha256
+    ).hexdigest()
+
+
 def contexto_correo(usuario_id: str) -> str:
     return f"correo:{usuario_id}"
 
@@ -227,6 +240,21 @@ class RepositorioUsuarios(Protocol):
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int: ...
 
     def registrar_exito(self, usuario_id: str) -> None: ...
+
+    def crear_pendiente(
+        self, usuario_id: str, alias: str, hash_clave: str, correo_cifrado: str, correo_hmac: str
+    ) -> dict | None: ...
+
+    def obtener_por_correo_hmac(self, correo_hmac: str) -> dict | None: ...
+
+    def cerrar_verificacion(
+        self,
+        usuario_id: str,
+        estado: str,
+        nombre_cifrado: str | None,
+        titular_id: str | None = None,
+        documento_cifrado: str | None = None,
+    ) -> dict | None: ...
 
 
 class RepositorioUsuariosPostgres:
@@ -383,6 +411,66 @@ class RepositorioUsuariosPostgres:
             """,
             {"id": usuario_id},
         )
+
+    def crear_pendiente(
+        self, usuario_id: str, alias: str, hash_clave: str, correo_cifrado: str, correo_hmac: str
+    ) -> dict | None:
+        """CLIENTE en PENDIENTE_VERIFICACION. `None` si el correo ya tiene cuenta."""
+        return self._una(
+            f"""
+            INSERT INTO usuarios (id, usuario, hash_clave, rol, estado, correo_cifrado,
+                                  correo_hmac)
+            VALUES (%(id)s, %(usuario)s, %(hash_clave)s, 'CLIENTE', 'PENDIENTE_VERIFICACION',
+                    %(correo_cifrado)s, %(correo_hmac)s)
+            ON CONFLICT DO NOTHING
+            RETURNING {_TODAS}
+            """,
+            {
+                "id": usuario_id,
+                "usuario": alias,
+                "hash_clave": hash_clave,
+                "correo_cifrado": correo_cifrado,
+                "correo_hmac": correo_hmac,
+            },
+        )
+
+    def obtener_por_correo_hmac(self, correo_hmac: str) -> dict | None:
+        return self._una(
+            f"SELECT {_TODAS} FROM usuarios WHERE correo_hmac = %(h)s", {"h": correo_hmac}
+        )
+
+    def cerrar_verificacion(
+        self,
+        usuario_id: str,
+        estado: str,
+        nombre_cifrado: str | None,
+        titular_id: str | None = None,
+        documento_cifrado: str | None = None,
+    ) -> dict | None:
+        """Solo desde PENDIENTE_VERIFICACION; idempotente si ya está en `estado`. `None` si no
+        aplica (no existe, o está en otro estado). `UsuarioDuplicado` si el titular ya es de otra
+        cuenta (índice único de la `0008`)."""
+        try:
+            return self._una(
+                f"""
+                UPDATE usuarios SET estado = %(estado)s,
+                    nombre_cifrado = COALESCE(%(nombre)s, nombre_cifrado),
+                    titular_id = COALESCE(%(titular)s, titular_id),
+                    documento_cifrado = COALESCE(%(documento)s, documento_cifrado),
+                    actualizado_en = now()
+                WHERE id = %(id)s AND estado IN ('PENDIENTE_VERIFICACION', %(estado)s)
+                RETURNING {_TODAS}
+                """,
+                {
+                    "id": usuario_id,
+                    "estado": estado,
+                    "nombre": nombre_cifrado,
+                    "titular": titular_id,
+                    "documento": documento_cifrado,
+                },
+            )
+        except UniqueViolation as error:
+            raise UsuarioDuplicado(MENSAJE_DOCUMENTO_DUPLICADO) from error
 
 
 def construir_pool(database_url: str) -> ConnectionPool:
@@ -618,6 +706,56 @@ class ServicioUsuarios:
     def suspender(self, usuario_id: str) -> dict | None:
         """Baja lógica: el usuario se conserva, pero ya no puede iniciar sesión."""
         fila = self._repositorio.suspender(usuario_id)
+        return publico(fila) if fila else None
+
+    def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
+        """Cuenta CLIENTE del onboarding del móvil (M01-05b): correo y clave, en
+        PENDIENTE_VERIFICACION hasta que el servicio `onboarding` verifique la identidad. El alias
+        es opaco (el cliente entra con su correo); el nombre llega después, del documento."""
+        if self._cifrador is None or not self._clave_titular:
+            raise DatoInvalido("Este servicio no está configurado para cuentas del onboarding.")
+        limpio = normalizar_correo(correo)
+        validar_clave(clave)
+        usuario_id = str(uuid.uuid4())
+        creado = self._repositorio.crear_pendiente(
+            usuario_id,
+            f"c-{uuid.uuid4().hex[:24]}",
+            self._hasher.hash(clave),
+            self._cifrador.cifrar(limpio, contexto_correo(usuario_id)),
+            correo_hmac(limpio, self._clave_titular),
+        )
+        if creado is None:
+            raise UsuarioDuplicado("Ya existe una cuenta con ese correo.")
+        return publico(creado)
+
+    def cerrar_verificacion(
+        self,
+        usuario_id: str,
+        aprobada: bool,
+        nombre: str | None = None,
+        documento: str | None = None,
+    ) -> dict | None:
+        """Lo llama el servicio `onboarding` al cerrar: ACTIVO o RECHAZADA. Con la identidad
+        verificada se fijan el nombre (cifrado) y el titular y documento del CLIENTE (W03-36): así
+        «Mis pólizas» liga las que le vendieron antes. Idempotente. `None` si la cuenta no existe o
+        no está pendiente; `UsuarioDuplicado` si el documento ya es de otra cuenta."""
+        nombre_cifrado = titular_id = documento_cifrado = None
+        if aprobada and nombre:
+            if self._cifrador is None:
+                raise DatoInvalido("Este servicio no está configurado para guardar nombres.")
+            nombre_cifrado = self._cifrador.cifrar(normalizar_nombre(nombre), usuario_id)
+        if aprobada and documento:
+            titular_id, documento_cifrado = self._titular(usuario_id, "CLIENTE", documento)
+            otro = self._repositorio.obtener_por_titular(titular_id)
+            if otro is not None and otro["id"] != usuario_id:
+                raise UsuarioDuplicado(MENSAJE_DOCUMENTO_DUPLICADO)
+        fila = self._repositorio.cerrar_verificacion(
+            usuario_id,
+            "ACTIVO" if aprobada else RECHAZADA,
+            nombre_cifrado,
+            titular_id,
+            documento_cifrado,
+        )
         return publico(fila) if fila else None
 
     def actualizar_preferencias(self, usuario_id: str, idioma: str, moneda: str) -> dict | None:
