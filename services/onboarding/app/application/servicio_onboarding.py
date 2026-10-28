@@ -11,6 +11,10 @@ Capa simple (regla 3). El flujo:
    reglas: documento auténtico, rostro y prueba de vida (el proveedor), edad mínima y un documento
    por cuenta (`titular_id`). Con el proveedor caído la sesión queda EN_REVISION (EC010).
 
+5. Con la sesión cerrada y ligada a una cuenta, AUTH la activa (con nombre y documento) o la
+   rechaza (solo sin intentos). Mejor esfuerzo: si AUTH no responde, se reintenta al ligar la cuenta
+   o cuando la app consulta `miVerificacion`, hasta que quede `cuenta_notificada_en`.
+
 Hasta 3 intentos por sesión (P-7). Nada de datos personales en logs, eventos ni métricas: lo que
 leyó el proveedor se guarda cifrado por campo y solo en sesiones VERIFICADAS."""
 
@@ -26,8 +30,11 @@ from typing import Any, Protocol
 from app.application.bus_eventos import PuertoBusEventos, construir_evento
 from app.application.cifrado import CifradorCampos
 from app.application.clientes import (
+    CuentaNoPendiente,
+    DocumentoEnOtraCuenta,
     ErrorAlmacenamiento,
     PuertoAlmacenamiento,
+    PuertoCuentas,
     PuertoIdentidad,
     ServicioNoDisponible,
 )
@@ -99,6 +106,7 @@ class ServicioOnboarding:
         bus: PuertoBusEventos,
         reglas: Reglas,
         reloj: Callable[[], datetime] = lambda: datetime.now(UTC),
+        cuentas: PuertoCuentas | None = None,
     ) -> None:
         self._repo = repo
         self._storage = almacenamiento
@@ -108,6 +116,7 @@ class ServicioOnboarding:
         self._bus = bus
         self._reglas = reglas
         self._reloj = reloj
+        self._cuentas = cuentas
 
     # --- Sesión y token -------------------------------------------------------------------
 
@@ -153,7 +162,7 @@ class ServicioOnboarding:
         sesion = self._repo.obtener_por_usuario(usuario_id)
         if sesion is None:
             raise ErrorOnboarding("SESION_NO_ENCONTRADA", 404)
-        return sesion
+        return self._notificar_cuenta(sesion)
 
     def vista(self, sesion: dict[str, Any]) -> dict[str, Any]:
         restantes = self._reglas.max_intentos - sesion["intento"]
@@ -195,7 +204,7 @@ class ServicioOnboarding:
             ("INICIADO", "EN_VERIFICACION", "VERIFICADA", "RECHAZADA", "EN_REVISION"),
         )
         self._repo.registrar_evento(sesion["id"], "CUENTA_VINCULADA")
-        return nueva
+        return self._notificar_cuenta(nueva)
 
     def solicitar_subida(
         self, sesion: dict[str, Any], paso: str, tipo_contenido: str, tamano_bytes: int
@@ -356,7 +365,58 @@ class ServicioOnboarding:
         elif estado == "RECHAZADA":
             self._bus.publicar(construir_evento("onboarding.rechazado", nueva))
         self._fijar_retencion(nueva)
-        return nueva
+        return self._notificar_cuenta(nueva)
+
+    # --- Cuenta en AUTH -------------------------------------------------------------------
+
+    def _notificar_cuenta(self, sesion: dict[str, Any]) -> dict[str, Any]:
+        """Lleva el resultado a la cuenta de AUTH, una vez. Aplica con la sesión VERIFICADA, o
+        RECHAZADA sin intentos (antes la persona aún puede reintentar). Si AUTH dice que el
+        documento ya es de otra cuenta, la sesión pasa a RECHAZADA DOCUMENTO_YA_REGISTRADO."""
+        if self._cuentas is None or not sesion["usuario_id"] or sesion["cuenta_notificada_en"]:
+            return sesion
+        aprobada = sesion["estado"] == "VERIFICADA"
+        if not aprobada and not (
+            sesion["estado"] == "RECHAZADA" and self.vista(sesion)["intentos_restantes"] == 0
+        ):
+            return sesion
+        nombre, documento = self._datos_para_cuenta(sesion) if aprobada else (None, None)
+        try:
+            self._cuentas.cerrar_verificacion(sesion["usuario_id"], aprobada, nombre, documento)
+        except DocumentoEnOtraCuenta:
+            rechazada = self._repo.actualizar(
+                sesion["id"],
+                {"estado": "RECHAZADA", "motivo": "DOCUMENTO_YA_REGISTRADO"},
+                ("VERIFICADA",),
+            )
+            if rechazada is None:
+                return self.obtener(sesion["id"])
+            self._repo.registrar_evento(sesion["id"], "RECHAZADA", "DOCUMENTO_YA_REGISTRADO")
+            self._bus.publicar(construir_evento("onboarding.rechazado", rechazada))
+            return self._notificar_cuenta(rechazada)
+        except CuentaNoPendiente:
+            logger.warning("sesion=%s cuenta no pendiente en AUTH", id_opaco(sesion["id"]))
+        except ServicioNoDisponible as error:
+            logger.warning(
+                "sesion=%s AUTH no respondió (%s): se reintenta luego",
+                id_opaco(sesion["id"]),
+                error,
+            )
+            return sesion
+        nueva = self._repo.actualizar(
+            sesion["id"], {"cuenta_notificada_en": self._reloj()}, (sesion["estado"],)
+        )
+        self._repo.registrar_evento(sesion["id"], "CUENTA_NOTIFICADA", sesion["estado"])
+        return nueva or sesion
+
+    def _datos_para_cuenta(self, sesion: dict[str, Any]) -> tuple[str | None, str | None]:
+        datos = self._repo.obtener_datos(sesion["id"]) or {}
+        claro = {
+            campo: self._cifrador.descifrar(datos[campo], sesion["id"]) if datos.get(campo) else ""
+            for campo in ("nombres", "apellidos", "numero")
+        }
+        nombre = " ".join(p for p in (claro["nombres"], claro["apellidos"]) if p).strip()
+        return nombre or None, claro["numero"] or None
 
     def _fijar_retencion(self, sesion: dict[str, Any]) -> None:
         """Desde el cierre corren los 30 días de retención de cada pieza. Mejor esfuerzo: si el

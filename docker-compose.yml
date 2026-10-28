@@ -341,12 +341,14 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/onboarding
       ALMACENAMIENTO_URL: http://almacenamiento:8009
       ACL_URL: http://acl-worker:8005
+      AUTH_URL: http://auth:8001  # cierra la cuenta PENDIENTE_VERIFICACION al terminar (HU-M01)
       # Solo local: el repo es público. En Cloud Run llegan de Secret Manager (clave-cliente-id, clave-cifrado).
       CLIENTE_ID_CLAVE: solo-local-no-secreta
       CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
     depends_on:
       almacenamiento: { condition: service_healthy }
       acl-worker: { condition: service_healthy }
+      auth: { condition: service_healthy }
       migrar-onboarding: { condition: service_completed_successfully }
 
   under:

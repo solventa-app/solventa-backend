@@ -108,7 +108,7 @@
     "puerto": 8010,
     "url_env": "ONBOARDING_URL",
     "migracion": ["alembic", "upgrade", "head"],
-    "llama": ["almacenamiento", "acl-worker"],
+    "llama": ["almacenamiento", "acl-worker", "auth"],
     "disparador_externo": true,
     "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": {

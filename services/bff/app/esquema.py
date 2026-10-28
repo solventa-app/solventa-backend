@@ -22,7 +22,7 @@ matriz completa está en `docs/autenticacion-usuarios.md`."""
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Annotated
 
@@ -31,8 +31,19 @@ from graphql import GraphQLError
 from strawberry.extensions import MaskErrors
 from strawberry.types import Info
 
-from app.autenticacion_usuarios import MENSAJE_SIN_PERMISO, MENSAJE_SIN_SESION, UsuarioActual
-from app.clientes import ArchivoRechazado, ErrorServicio, SolicitudInvalida
+from app.autenticacion_usuarios import (
+    MENSAJE_SIN_PERMISO,
+    MENSAJE_SIN_SESION,
+    MENSAJE_VERIFICACION_PENDIENTE,
+    UsuarioActual,
+)
+from app.clientes import (
+    ArchivoRechazado,
+    ErrorOnboardingServicio,
+    ErrorServicio,
+    SolicitudInvalida,
+    VerificacionPendiente,
+)
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.idioma import TraducirMensajes
 from app.monedas import (
@@ -77,13 +88,17 @@ def _mostrar_solo_errores_publicos(error: GraphQLError) -> bool:
     return error.original_error is not None and not isinstance(error.original_error, ErrorPublico)
 
 
-def exigir_rol(info: Info, *roles: str, siempre: bool = False) -> UsuarioActual | None:
+def exigir_rol(
+    info: Info, *roles: str, siempre: bool = False, admite_pendiente: bool = False
+) -> UsuarioActual | None:
     """Aplica la autorización de una operación y devuelve el usuario (o `None`).
 
     - Token presente pero inválido o vencido: error, en cualquier modo.
     - Sin token: error si `siempre` o si la bandera está en `obligatoria`; si no
       (modo `opcional`), se permite como antes y devuelve `None`.
-    - Con token: el rol debe estar en `roles`."""
+    - Con token: el rol debe estar en `roles`.
+    - Un token con el scope `verificacion-pendiente` (HU-M01) solo entra a las operaciones con
+      `admite_pendiente` (`yo`, `miVerificacion`, `actualizarSesion`)."""
     contexto = info.context
     if contexto["error_token"]:
         raise ErrorPublico(contexto["error_token"])
@@ -94,6 +109,8 @@ def exigir_rol(info: Info, *roles: str, siempre: bool = False) -> UsuarioActual 
         return None
     if usuario.rol not in roles:
         raise ErrorPublico(MENSAJE_SIN_PERMISO)
+    if usuario.verificacion_pendiente and not admite_pendiente:
+        raise ErrorPublico(MENSAJE_VERIFICACION_PENDIENTE)
     return usuario
 
 
@@ -619,6 +636,9 @@ class RolUsuario(Enum):
 class EstadoUsuario(Enum):
     ACTIVO = "ACTIVO"
     SUSPENDIDO = "SUSPENDIDO"
+    # v0.20 (HU-M01): cuentas del onboarding del móvil.
+    PENDIENTE_VERIFICACION = "PENDIENTE_VERIFICACION"
+    RECHAZADA = "RECHAZADA"
 
 
 @strawberry.type
@@ -651,6 +671,8 @@ class Sesion:
 @strawberry.type
 class ErrorAutenticacion:
     mensaje: str
+    # v0.20 (HU-M01): VERIFICACION_PENDIENTE fuera de la app; null en credenciales incorrectas.
+    codigo: str | None = None
 
 
 ResultadoSesion = Annotated[Sesion | ErrorAutenticacion, strawberry.union("ResultadoSesion")]
@@ -994,6 +1016,166 @@ def _almacenamiento(info: Info):
     return info.context["clientes"].almacenamiento
 
 
+# ---------- Onboarding de identidad (HU-M01, v0.20) ----------
+
+
+@strawberry.enum
+class EstadoOnboarding(Enum):
+    INICIADO = "INICIADO"
+    EN_VERIFICACION = "EN_VERIFICACION"
+    VERIFICADA = "VERIFICADA"
+    RECHAZADA = "RECHAZADA"
+    EN_REVISION = "EN_REVISION"
+
+
+@strawberry.enum
+class MotivoOnboarding(Enum):
+    ILEGIBLE = "ILEGIBLE"
+    SUPLANTACION = "SUPLANTACION"
+    ROSTRO_NO_COINCIDE = "ROSTRO_NO_COINCIDE"
+    MENOR_DE_EDAD = "MENOR_DE_EDAD"
+    DOCUMENTO_YA_REGISTRADO = "DOCUMENTO_YA_REGISTRADO"
+    PROVEEDOR_NO_DISPONIBLE = "PROVEEDOR_NO_DISPONIBLE"
+    IMAGEN_NO_DISPONIBLE = "IMAGEN_NO_DISPONIBLE"
+
+
+@strawberry.enum
+class PasoOnboarding(Enum):
+    ANVERSO = "ANVERSO"
+    REVERSO = "REVERSO"
+    ROSTRO = "ROSTRO"
+    VIDEO = "VIDEO"
+
+
+@strawberry.enum
+class TipoDocumentoOnboarding(Enum):
+    CC = "CC"
+    CE = "CE"
+
+
+@strawberry.type
+class Onboarding:
+    id: strawberry.ID
+    estado: EstadoOnboarding
+    motivo: MotivoOnboarding | None
+    intento: int
+    intentos_restantes: int
+
+
+@strawberry.type
+class InicioOnboarding:
+    onboarding: Onboarding
+    token: str
+    token_vence_en: datetime
+
+
+@strawberry.type
+class CuentaOnboarding:
+    sesion: Sesion
+    onboarding: Onboarding
+
+
+@strawberry.type
+class ErrorOnboarding:
+    codigo: str
+    mensaje: str
+
+
+ResultadoInicioOnboarding = Annotated[
+    InicioOnboarding | ErrorOnboarding, strawberry.union("ResultadoInicioOnboarding")
+]
+ResultadoOnboarding = Annotated[
+    Onboarding | ErrorOnboarding, strawberry.union("ResultadoOnboarding")
+]
+ResultadoSubidaOnboarding = Annotated[
+    SubidaArchivo | ErrorOnboarding, strawberry.union("ResultadoSubidaOnboarding")
+]
+ResultadoCuentaOnboarding = Annotated[
+    CuentaOnboarding | ErrorOnboarding, strawberry.union("ResultadoCuentaOnboarding")
+]
+
+
+@strawberry.input
+class IniciarOnboardingInput:
+    tipo_documento: TipoDocumentoOnboarding
+    jurisdiccion: str = "CO"
+
+
+@strawberry.input
+class CuentaOnboardingInput:
+    correo: str  # dato personal: solo en el cuerpo hacia AUTH, nunca se loguea
+    clave: str
+
+
+# Finalidad del consentimiento de la biometría (regla 7): se registra en AUTH antes de capturar.
+FINALIDAD_ONBOARDING = "onboarding-biometrico"
+CANAL_APP = "app"
+MENSAJES_ONBOARDING = {
+    "TOKEN_INVALIDO": "Tu verificación venció o no es válida. Empieza de nuevo.",
+    "SESION_NO_ENCONTRADA": "Tu verificación venció o no es válida. Empieza de nuevo.",
+    "SIN_CONSENTIMIENTO": "Primero acepta el tratamiento de tus datos biométricos.",
+    "ESTADO_INVALIDO": "Este paso ya no aplica a tu verificación.",
+    "PIEZAS_INCOMPLETAS": "Faltan fotos o el video. Complétalos e intenta de nuevo.",
+    "SIN_INTENTOS": "Ya no quedan intentos de verificación.",
+    "SESION_CON_CUENTA": "Esta verificación ya tiene una cuenta.",
+    "CORREO_YA_REGISTRADO": "Ya existe una cuenta con ese correo.",
+    "DATO_INVALIDO": "Revisa los datos e intenta de nuevo.",
+    "JURISDICCION_NO_SOPORTADA": "Aún no verificamos documentos de ese país.",
+    "TIPO_DOCUMENTO_NO_SOPORTADO": "Ese tipo de documento no se admite.",
+    "PASO_INVALIDO": "Ese paso no existe.",
+    "ARCHIVO_NO_ENCONTRADO": "No encontramos ese archivo. Súbelo de nuevo.",
+    "NO_DISPONIBLE": "No pudimos continuar tu verificación. Intenta de nuevo.",
+}
+
+
+def _error_onboarding(codigo: str) -> ErrorOnboarding:
+    mensaje = MENSAJES_ONBOARDING.get(codigo) or MENSAJES_ARCHIVO.get(
+        codigo, MENSAJES_ONBOARDING["NO_DISPONIBLE"]
+    )
+    return ErrorOnboarding(codigo=codigo, mensaje=mensaje)
+
+
+def _onboarding_de(datos: dict) -> Onboarding:
+    motivo = datos.get("motivo")
+    return Onboarding(
+        id=strawberry.ID(datos["id"]),
+        estado=EstadoOnboarding(datos["estado"]),
+        motivo=MotivoOnboarding(motivo) if motivo in MotivoOnboarding._value2member_map_ else None,
+        intento=datos["intento"],
+        intentos_restantes=datos["intentos_restantes"],
+    )
+
+
+def _onboarding(info: Info):
+    return info.context["clientes"].onboarding
+
+
+def _token_onboarding(info: Info) -> str:
+    """El token del recorrido; sin él responde el mismo TOKEN_INVALIDO que un token ajeno."""
+    token = info.context.get("token_onboarding")
+    if not token:
+        raise ErrorOnboardingServicio("TOKEN_INVALIDO")
+    return token
+
+
+async def _paso_onboarding(llamada) -> Onboarding | ErrorOnboarding:
+    """Ejecuta una llamada al servicio y traduce su resultado o su rechazo (nunca un 5xx)."""
+    try:
+        return _onboarding_de(await llamada())
+    except ErrorOnboardingServicio as error:
+        return _error_onboarding(error.codigo)
+    except ErrorServicio:
+        return _error_onboarding("NO_DISPONIBLE")
+
+
+def _sesion(datos: dict) -> Sesion:
+    return Sesion(
+        token=datos["token"],
+        expira_en=datetime.fromisoformat(datos["expira_en"]),
+        usuario=_usuario(datos["usuario"]),
+    )
+
+
 # ---------- Operaciones ----------
 
 
@@ -1277,8 +1459,33 @@ class Query:
         return [_cobro(c, nombres) for c in datos]
 
     @strawberry.field
+    async def onboarding(self, info: Info, id: strawberry.ID) -> Onboarding | None:
+        """v0.20 (HU-M01): con `X-Onboarding-Token`; null si el token no es de ese recorrido."""
+        token = info.context.get("token_onboarding")
+        if not token:
+            return None
+        try:
+            return _onboarding_de(await _onboarding(info).consultar(str(id), token))
+        except ErrorOnboardingServicio:
+            return None
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJES_ONBOARDING["NO_DISPONIBLE"]) from error
+
+    @strawberry.field
+    async def mi_verificacion(self, info: Info) -> Onboarding | None:
+        """v0.20 (HU-M01): el recorrido más reciente de la cuenta del token."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True, admite_pendiente=True)
+        try:
+            datos = await _onboarding(info).de_usuario(usuario.id)
+        except (ErrorServicio, ErrorOnboardingServicio) as error:
+            raise ErrorPublico(MENSAJES_ONBOARDING["NO_DISPONIBLE"]) from error
+        return _onboarding_de(datos) if datos else None
+
+    @strawberry.field
     async def yo(self, info: Info) -> Usuario | None:
-        usuario = exigir_rol(info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True)
+        usuario = exigir_rol(
+            info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True, admite_pendiente=True
+        )
         try:
             datos = await _auth(info).obtener_usuario(usuario.id)
         except ErrorServicio as error:
@@ -1514,17 +1721,22 @@ class Mutation:
     @strawberry.mutation
     async def iniciar_sesion(self, info: Info, entrada: CredencialesInput) -> ResultadoSesion:
         """Pública: es la única operación que no exige rol. La clave nunca se loguea."""
+        # El canal decide qué recibe una cuenta del onboarding sin verificar (HU-M01): en la app,
+        # un token `verificacion-pendiente`; en la web, VERIFICACION_PENDIENTE.
         try:
-            sesion = await _auth(info).iniciar_sesion(entrada.usuario, entrada.clave)
+            sesion = await _auth(info).iniciar_sesion(
+                entrada.usuario, entrada.clave, info.context.get("canal")
+            )
+        except VerificacionPendiente:
+            return ErrorAutenticacion(
+                mensaje="Tu identidad aún no está verificada. Ingresa desde la app Solventa.",
+                codigo="VERIFICACION_PENDIENTE",
+            )
         except ErrorServicio as error:
             raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
         if sesion is None:
             return ErrorAutenticacion(mensaje="Usuario o clave incorrectos.")
-        return Sesion(
-            token=sesion["token"],
-            expira_en=datetime.fromisoformat(sesion["expira_en"]),
-            usuario=_usuario(sesion["usuario"]),
-        )
+        return _sesion(sesion)
 
     @strawberry.mutation
     async def crear_usuario(self, info: Info, entrada: CrearUsuarioInput) -> ResultadoUsuario:
@@ -1819,6 +2031,154 @@ class Mutation:
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_AVISOS_NO_DISPONIBLES) from error
         return TicketAvisos(ticket=datos["ticket"], url=datos["url"], vence_en=datos["vence_en"])
+
+    # ---------- v0.20 (HU-M01): onboarding del móvil ----------
+
+    @strawberry.mutation
+    async def iniciar_onboarding(
+        self, info: Info, entrada: IniciarOnboardingInput
+    ) -> ResultadoInicioOnboarding:
+        """Pública, como `iniciarSesion`: aún no hay cuenta."""
+        try:
+            datos = await _onboarding(info).iniciar(
+                entrada.jurisdiccion.upper(), entrada.tipo_documento.value
+            )
+            estado = await _onboarding(info).consultar(datos["onboarding_id"], datos["token"])
+        except ErrorOnboardingServicio as error:
+            return _error_onboarding(error.codigo)
+        except ErrorServicio:
+            return _error_onboarding("NO_DISPONIBLE")
+        return InicioOnboarding(
+            onboarding=_onboarding_de(estado),
+            token=datos["token"],
+            token_vence_en=datetime.fromisoformat(datos["token_vence_en"]),
+        )
+
+    @strawberry.mutation
+    async def registrar_consentimiento_onboarding(
+        self, info: Info, onboarding_id: strawberry.ID, version_texto: str
+    ) -> ResultadoOnboarding:
+        """El consentimiento se registra en AUTH (append-only) antes de cualquier captura, y el
+        recorrido guarda su id; el storage lo exige en cada subida (regla 7)."""
+
+        async def llamada() -> dict:
+            token = _token_onboarding(info)
+            servicio = _onboarding(info)
+            await servicio.consultar(str(onboarding_id), token)  # el token es de este recorrido
+            consentimiento = await _auth(info).registrar_consentimiento(
+                FINALIDAD_ONBOARDING, version_texto, None, canal=CANAL_APP.upper()
+            )
+            return await servicio.registrar_consentimiento(
+                str(onboarding_id), token, consentimiento["id"]
+            )
+
+        return await _paso_onboarding(llamada)
+
+    @strawberry.mutation
+    async def solicitar_subida_onboarding(
+        self,
+        info: Info,
+        onboarding_id: strawberry.ID,
+        paso: PasoOnboarding,
+        tipo_contenido: str,
+        tamano_bytes: int,
+    ) -> ResultadoSubidaOnboarding:
+        try:
+            datos = await _onboarding(info).solicitar_subida(
+                str(onboarding_id),
+                _token_onboarding(info),
+                paso.value,
+                tipo_contenido,
+                tamano_bytes,
+            )
+        except ErrorOnboardingServicio as error:
+            return _error_onboarding(error.codigo)
+        except ErrorServicio:
+            return _error_onboarding("NO_DISPONIBLE")
+        return SubidaArchivo(
+            archivo=Archivo(
+                id=strawberry.ID(datos["archivo_id"]),
+                tipo=f"onboarding-{paso.value.lower()}",
+                estado=EstadoArchivo.PENDIENTE,
+                tipo_contenido=tipo_contenido,
+                tamano_bytes=tamano_bytes,
+                motivo=None,
+                creado_en=datetime.now(UTC),
+            ),
+            url=datos["url"],
+            metodo=datos["metodo"],
+            encabezados=[
+                EncabezadoSubida(nombre=k, valor=v) for k, v in datos["encabezados"].items()
+            ],
+            vence_en=datetime.fromisoformat(datos["vence_en"]),
+        )
+
+    @strawberry.mutation
+    async def confirmar_subida_onboarding(
+        self, info: Info, onboarding_id: strawberry.ID, archivo_id: strawberry.ID
+    ) -> ResultadoOnboarding:
+        async def llamada() -> dict:
+            token = _token_onboarding(info)
+            servicio = _onboarding(info)
+            await servicio.confirmar_subida(str(onboarding_id), token, str(archivo_id))
+            return await servicio.consultar(str(onboarding_id), token)
+
+        return await _paso_onboarding(llamada)
+
+    @strawberry.mutation
+    async def crear_cuenta_onboarding(
+        self, info: Info, onboarding_id: strawberry.ID, entrada: CuentaOnboardingInput
+    ) -> ResultadoCuentaOnboarding:
+        """M01-05b: cuenta CLIENTE en PENDIENTE_VERIFICACION ligada al recorrido, y su sesión
+        (scope `verificacion-pendiente`). El correo y la clave no se loguean."""
+        try:
+            token = _token_onboarding(info)
+            servicio = _onboarding(info)
+            # Valida el token antes de crear nada en AUTH.
+            await servicio.consultar(str(onboarding_id), token)
+            cuenta = await _auth(info).crear_cuenta_onboarding(entrada.correo, entrada.clave)
+            ligada = await servicio.vincular_cuenta(str(onboarding_id), token, cuenta["id"])
+            sesion = await _auth(info).iniciar_sesion(entrada.correo, entrada.clave, CANAL_APP)
+        except ErrorOnboardingServicio as error:
+            return _error_onboarding(error.codigo)
+        except (ErrorServicio, SolicitudInvalida, VerificacionPendiente):
+            return _error_onboarding("NO_DISPONIBLE")
+        if sesion is None:
+            return _error_onboarding("NO_DISPONIBLE")
+        logger.info("cuenta de onboarding creada usuario=%s", id_opaco(cuenta["id"]))
+        return CuentaOnboarding(sesion=_sesion(sesion), onboarding=_onboarding_de(ligada))
+
+    @strawberry.mutation
+    async def enviar_verificacion(
+        self, info: Info, onboarding_id: strawberry.ID
+    ) -> ResultadoOnboarding:
+        async def llamada() -> dict:
+            return await _onboarding(info).enviar(str(onboarding_id), _token_onboarding(info))
+
+        return await _paso_onboarding(llamada)
+
+    @strawberry.mutation
+    async def reintentar_onboarding(
+        self, info: Info, onboarding_id: strawberry.ID
+    ) -> ResultadoOnboarding:
+        async def llamada() -> dict:
+            return await _onboarding(info).reintentar(str(onboarding_id), _token_onboarding(info))
+
+        return await _paso_onboarding(llamada)
+
+    @strawberry.mutation
+    async def actualizar_sesion(self, info: Info) -> ResultadoSesion:
+        """Un token con los permisos del estado actual (p. ej. tras VERIFICADA) y la misma
+        expiración del que llega: no alarga la sesión."""
+        usuario = exigir_rol(info, *TODOS_LOS_ROLES, siempre=True, admite_pendiente=True)
+        expira = datetime.fromtimestamp(usuario.expira or 0, UTC).isoformat()
+        try:
+            sesion = await _auth(info).renovar_sesion(usuario.id, expira)
+        except (ErrorServicio, SolicitudInvalida) as error:
+            raise ErrorPublico("No pudimos actualizar tu sesión. Intenta de nuevo.") from error
+        if sesion is None:
+            return ErrorAutenticacion(mensaje="Tu sesión ya no es válida. Inicia sesión de nuevo.")
+        return _sesion(sesion)
 
 
 schema = strawberry.Schema(

@@ -28,6 +28,8 @@ MODOS = ("opcional", "obligatoria")
 MENSAJE_SIN_SESION = "Debes iniciar sesión."
 MENSAJE_TOKEN_INVALIDO = "Tu sesión no es válida o venció. Inicia sesión de nuevo."
 MENSAJE_SIN_PERMISO = "No tienes permiso para esta operación."
+MENSAJE_VERIFICACION_PENDIENTE = "Estamos verificando tu identidad. Podrás usar esto al terminar."
+SCOPE_VERIFICACION_PENDIENTE = "verificacion-pendiente"
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,13 @@ class UsuarioActual:
     id: str
     rol: str
     scopes: tuple[str, ...]
+    # `exp` del token (segundos Unix): `actualizarSesion` conserva la misma expiración (HU-M01).
+    expira: int | None = None
+
+    @property
+    def verificacion_pendiente(self) -> bool:
+        """Cuenta del onboarding sin identidad verificada (HU-M01): solo entra a su verificación."""
+        return SCOPE_VERIFICACION_PENDIENTE in self.scopes
 
 
 class TokenInvalido(Exception):
@@ -70,5 +79,8 @@ def leer_usuario(autorizacion: str | None, secreto: str) -> UsuarioActual | None
     if claims.get("rol") not in ("CLIENTE", "ASESOR", "BACKOFFICE"):
         raise TokenInvalido(MENSAJE_TOKEN_INVALIDO)
     return UsuarioActual(
-        id=claims["sub"], rol=claims["rol"], scopes=tuple(claims.get("scopes", []))
+        id=claims["sub"],
+        rol=claims["rol"],
+        scopes=tuple(claims.get("scopes", [])),
+        expira=int(claims["exp"]),
     )

@@ -256,3 +256,28 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   estados que lista `Propuesta` (no en `CANCELADA`).
 - Afecta al frontend: sí. Web copia este esquema, borra `contrato/borrador-v0.17.graphql` y regenera tipos (F-F1). Los
   enums de salida que crecen (`EstadoPropuesta`, `MotivoErrorFirma`) piden manejar los valores nuevos.
+
+## v0.20 — 2026-10-28
+
+- KAN-31 (HU-M01): onboarding de identidad del móvil. La v0.19 queda reservada para HU-W07. **Solo cambios aditivos.**
+  - **Recorrido:** mutaciones `iniciarOnboarding` (pública), `registrarConsentimientoOnboarding`,
+    `solicitarSubidaOnboarding`, `confirmarSubidaOnboarding`, `crearCuentaOnboarding`, `enviarVerificacion` y
+    `reintentarOnboarding`; consulta `onboarding(id)`. Llevan el token del recorrido en la cabecera
+    `X-Onboarding-Token` (30 min; no es una sesión). Tipos `Onboarding`, `InicioOnboarding`, `CuentaOnboarding`,
+    `ErrorOnboarding` (con `codigo` estable), los enums `EstadoOnboarding`, `MotivoOnboarding`, `PasoOnboarding` y
+    `TipoDocumentoOnboarding`, los inputs `IniciarOnboardingInput` y `CuentaOnboardingInput` y las uniones
+    `ResultadoInicioOnboarding`, `ResultadoOnboarding`, `ResultadoSubidaOnboarding` (reusa `SubidaArchivo` de la v0.17)
+    y `ResultadoCuentaOnboarding`.
+  - **Consentimiento:** `registrarConsentimientoOnboarding` registra en AUTH la finalidad `onboarding-biometrico`
+    (canal `APP`) antes de cualquier captura (regla 7).
+  - **Cuenta y sesión:** `crearCuentaOnboarding` crea un CLIENTE en `PENDIENTE_VERIFICACION` (inicia sesión con su
+    correo) y devuelve una sesión con el único scope `verificacion-pendiente`, que solo entra a `yo`, `miVerificacion`
+    y `actualizarSesion`. Consulta nueva `miVerificacion` y mutación nueva `actualizarSesion` (token con los permisos
+    del estado actual y la misma expiración).
+  - **Usuarios:** `EstadoUsuario` suma `PENDIENTE_VERIFICACION` y `RECHAZADA`; `ErrorAutenticacion` suma `codigo`
+    (`VERIFICACION_PENDIENTE` cuando una cuenta sin verificar entra por la web).
+  - **Eventos:** `onboarding.verificado` y `onboarding.rechazado` (`contracts/events/`), solo ids opacos y códigos.
+- Detrás: el servicio `onboarding` lleva el resultado a AUTH (`POST /usuarios/{id}/verificacion`, migración `0002` del
+  onboarding) y el BFF pasa el canal al iniciar sesión.
+- Afecta al frontend: sí. El móvil (HU-M01) usa las operaciones nuevas. La web solo debe manejar los valores nuevos de
+  `EstadoUsuario` y el `codigo` `VERIFICACION_PENDIENTE` en el login.

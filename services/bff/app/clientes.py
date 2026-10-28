@@ -1,4 +1,4 @@
-"""Clientes HTTP del BFF hacia AUTH, ACL Worker, RISK y RATING.
+"""Clientes HTTP del BFF hacia AUTH, ACL Worker, RISK, RATING y los demás servicios internos.
 
 Cada `Protocol` permite probar el BFF con dobles (ver `tests/fakes.py`) sin
 levantar los servicios. Las fallas de red, timeouts y 5xx se convierten en
@@ -55,6 +55,19 @@ class DatosInsuficientes(Exception):
     puede arreglarlo cuando el proveedor se recupere."""
 
 
+class VerificacionPendiente(Exception):
+    """AUTH respondió 403 VERIFICACION_PENDIENTE: clave correcta, identidad sin verificar y el
+    canal no es la app (HU-M01)."""
+
+
+class ErrorOnboardingServicio(Exception):
+    """ONBOARDING (o AUTH al crear la cuenta) rechazó la solicitud con un código estable."""
+
+    def __init__(self, codigo: str) -> None:
+        super().__init__(codigo)
+        self.codigo = codigo
+
+
 class PuertoAuth(Protocol):
     async def registrar_consentimiento(
         self,
@@ -71,7 +84,13 @@ class PuertoAuth(Protocol):
 
     async def revocar_consentimiento(self, consentimiento_id: str) -> dict | None: ...
 
-    async def iniciar_sesion(self, usuario: str, clave: str) -> dict | None: ...
+    async def iniciar_sesion(
+        self, usuario: str, clave: str, canal: str | None = None
+    ) -> dict | None: ...
+
+    async def renovar_sesion(self, usuario_id: str, expira_en: str) -> dict | None: ...
+
+    async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict: ...
 
     async def obtener_usuario(self, usuario_id: str) -> dict | None: ...
 
@@ -211,6 +230,33 @@ class PuertoAlmacenamiento(Protocol):
     async def descarga(self, rol: str, actor_id: str, archivo_id: str) -> dict: ...
 
 
+class PuertoOnboarding(Protocol):
+    """HU-M01. `token` es el del recorrido (`X-Onboarding-Token`); un rechazo llega como
+    `ErrorOnboardingServicio` con el código del servicio."""
+
+    async def iniciar(self, jurisdiccion: str, tipo_documento: str) -> dict: ...
+
+    async def consultar(self, onboarding_id: str, token: str) -> dict: ...
+
+    async def registrar_consentimiento(
+        self, onboarding_id: str, token: str, consentimiento_id: str
+    ) -> dict: ...
+
+    async def solicitar_subida(
+        self, onboarding_id: str, token: str, paso: str, tipo_contenido: str, tamano: int
+    ) -> dict: ...
+
+    async def confirmar_subida(self, onboarding_id: str, token: str, archivo_id: str) -> dict: ...
+
+    async def vincular_cuenta(self, onboarding_id: str, token: str, usuario_id: str) -> dict: ...
+
+    async def enviar(self, onboarding_id: str, token: str) -> dict: ...
+
+    async def reintentar(self, onboarding_id: str, token: str) -> dict: ...
+
+    async def de_usuario(self, usuario_id: str) -> dict | None: ...
+
+
 class PuertoPayments(Protocol):
     async def listar_cobros(
         self,
@@ -248,6 +294,7 @@ class Clientes:
     payments: PuertoPayments
     policy: PuertoPolicy
     almacenamiento: PuertoAlmacenamiento
+    onboarding: PuertoOnboarding
     # Tickets del stream de avisos (Redis). `None` si no hay Redis: `ticketAvisos` da error.
     tickets: PuertoTickets | None = None
 
@@ -340,13 +387,44 @@ class ClienteAuthHttp:
     # La clave viaja solo en el cuerpo de `POST /sesiones` y `POST /usuarios`: httpx
     # loguea la URL, nunca el cuerpo.
 
-    async def iniciar_sesion(self, usuario: str, clave: str) -> dict | None:
-        """`None` si AUTH rechaza las credenciales (401)."""
+    async def iniciar_sesion(
+        self, usuario: str, clave: str, canal: str | None = None
+    ) -> dict | None:
+        """`None` si AUTH rechaza las credenciales (401); `VerificacionPendiente` con el 403 de
+        una cuenta del onboarding fuera de la app (HU-M01)."""
         respuesta = await _pedir(
-            self._cliente, "POST", "/sesiones", {"usuario": usuario, "clave": clave}
+            self._cliente,
+            "POST",
+            "/sesiones",
+            {"usuario": usuario, "clave": clave, "canal": canal},
         )
         if respuesta.status_code == 401:
             return None
+        if respuesta.status_code == 403:
+            raise VerificacionPendiente()
+        return _json_o_error(respuesta)
+
+    async def renovar_sesion(self, usuario_id: str, expira_en: str) -> dict | None:
+        """`actualizarSesion` (HU-M01). `None` si la cuenta ya no puede tener sesión (401)."""
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            "/sesiones/renovar",
+            {"usuario_id": usuario_id, "expira_en": expira_en},
+        )
+        if respuesta.status_code == 401:
+            return None
+        return _json_o_error(respuesta)
+
+    async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
+        """CLIENTE en PENDIENTE_VERIFICACION (HU-M01). Correo y clave van solo en el cuerpo."""
+        respuesta = await _pedir(
+            self._cliente, "POST", "/usuarios/onboarding", {"correo": correo, "clave": clave}
+        )
+        if respuesta.status_code == 409:
+            raise ErrorOnboardingServicio("CORREO_YA_REGISTRADO")
+        if respuesta.status_code in (400, 422):
+            raise ErrorOnboardingServicio("DATO_INVALIDO")
         return _json_o_error(respuesta)
 
     async def obtener_identidad(self, usuario_id: str) -> dict | None:
@@ -874,6 +952,82 @@ class ClienteAlmacenamientoHttp:
         return (await self._pedir("GET", ruta, rol, actor_id)).json()
 
 
+class ClienteOnboardingHttp:
+    """Onboarding del móvil (HU-M01). El token del recorrido viaja en `X-Onboarding-Token`; nunca
+    se loguea (httpx registra solo la URL)."""
+
+    def __init__(self, cliente: httpx.AsyncClient) -> None:
+        self._cliente = cliente
+
+    async def _pedir(
+        self,
+        metodo: str,
+        ruta: str,
+        token: str | None = None,
+        cuerpo: dict | None = None,
+    ) -> dict:
+        try:
+            respuesta = await self._cliente.request(
+                metodo,
+                ruta,
+                json=cuerpo,
+                headers={"X-Onboarding-Token": token} if token else None,
+            )
+        except httpx.HTTPError as error:
+            raise ErrorServicio(type(error).__name__) from error
+        if respuesta.status_code >= 500:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        if respuesta.is_error:
+            try:
+                codigo = respuesta.json().get("detail")
+            except (ValueError, AttributeError):
+                codigo = None
+            # El 422 de validación de FastAPI trae una lista, no un código.
+            raise ErrorOnboardingServicio(codigo if isinstance(codigo, str) else "DATO_INVALIDO")
+        return respuesta.json()
+
+    async def iniciar(self, jurisdiccion: str, tipo_documento: str) -> dict:
+        cuerpo = {"jurisdiccion": jurisdiccion, "tipo_documento": tipo_documento}
+        return await self._pedir("POST", "/onboarding", cuerpo=cuerpo)
+
+    async def consultar(self, onboarding_id: str, token: str) -> dict:
+        return await self._pedir("GET", f"/onboarding/{onboarding_id}", token)
+
+    async def registrar_consentimiento(
+        self, onboarding_id: str, token: str, consentimiento_id: str
+    ) -> dict:
+        ruta = f"/onboarding/{onboarding_id}/consentimiento"
+        return await self._pedir("POST", ruta, token, {"consentimiento_id": consentimiento_id})
+
+    async def solicitar_subida(
+        self, onboarding_id: str, token: str, paso: str, tipo_contenido: str, tamano: int
+    ) -> dict:
+        cuerpo = {"paso": paso, "tipo_contenido": tipo_contenido, "tamano_bytes": tamano}
+        return await self._pedir("POST", f"/onboarding/{onboarding_id}/subidas", token, cuerpo)
+
+    async def confirmar_subida(self, onboarding_id: str, token: str, archivo_id: str) -> dict:
+        ruta = f"/onboarding/{onboarding_id}/subidas/{archivo_id}/confirmar"
+        return await self._pedir("POST", ruta, token)
+
+    async def vincular_cuenta(self, onboarding_id: str, token: str, usuario_id: str) -> dict:
+        ruta = f"/onboarding/{onboarding_id}/cuenta"
+        return await self._pedir("POST", ruta, token, {"usuario_id": usuario_id})
+
+    async def enviar(self, onboarding_id: str, token: str) -> dict:
+        return await self._pedir("POST", f"/onboarding/{onboarding_id}/enviar", token)
+
+    async def reintentar(self, onboarding_id: str, token: str) -> dict:
+        return await self._pedir("POST", f"/onboarding/{onboarding_id}/reintentar", token)
+
+    async def de_usuario(self, usuario_id: str) -> dict | None:
+        try:
+            return await self._pedir("GET", f"/usuarios/{usuario_id}/onboarding")
+        except ErrorOnboardingServicio as error:
+            if error.codigo == "SESION_NO_ENCONTRADA":
+                return None
+            raise
+
+
 def construir_clientes(config: Configuracion) -> tuple[Clientes, list[Any]]:
     """Devuelve los clientes y lo que quedó abierto (`httpx.AsyncClient` y Redis, ambos con
     `aclose`), para cerrarlo al apagar."""
@@ -895,6 +1049,7 @@ def construir_clientes(config: Configuracion) -> tuple[Clientes, list[Any]]:
         config.almacenamiento_url, "almacenamiento", config.servicios_timeout_segundos
     )
     tickets = TicketsRedis(config.redis_url)
+    onboarding = http(config.onboarding_url, "onboarding", config.servicios_timeout_segundos)
     clientes = Clientes(
         auth=ClienteAuthHttp(auth),
         acl=ClienteAclHttp(acl),
@@ -904,5 +1059,16 @@ def construir_clientes(config: Configuracion) -> tuple[Clientes, list[Any]]:
         policy=ClientePolicyHttp(policy),
         almacenamiento=ClienteAlmacenamientoHttp(almacenamiento),
         tickets=tickets,
+        onboarding=ClienteOnboardingHttp(onboarding),
     )
-    return clientes, [auth, acl, risk, rating, payments, policy, almacenamiento, tickets]
+    return clientes, [
+        auth,
+        acl,
+        risk,
+        rating,
+        payments,
+        policy,
+        almacenamiento,
+        tickets,
+        onboarding,
+    ]

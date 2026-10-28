@@ -3,8 +3,8 @@
 Punto de extensión del aviso del resultado: un consumidor futuro (la push) se suscribe sin tocar
 este servicio. Mismo patrón que `services/almacenamiento/app/application/bus_eventos.py`: Pub/Sub
 por su API REST si hay tema configurado; si no, el evento se loguea. Publicar nunca tumba la
-verificación (regla 4). Solo llevan identificadores opacos y códigos (regla 6). El esquema entra a
-`contracts/events/` con la v0.20 del contrato."""
+verificación (regla 4). Solo llevan identificadores opacos y códigos (regla 6). Esquemas en
+`contracts/events/onboarding.*.schema.json` (contrato v0.20)."""
 
 import base64
 import json

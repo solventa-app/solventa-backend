@@ -6,7 +6,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.application.cifrado import CifradorAesGcm
-from app.application.clientes import ErrorAlmacenamiento, ServicioNoDisponible
+from app.application.clientes import (
+    CuentaNoPendiente,
+    DocumentoEnOtraCuenta,
+    ErrorAlmacenamiento,
+    ServicioNoDisponible,
+)
 from app.application.repositorio import TitularYaVerificado
 from app.application.servicio_onboarding import Reglas, ServicioOnboarding
 
@@ -50,6 +55,7 @@ class RepositorioFalso:
             "rostro_id": None,
             "video_id": None,
             "motivo": None,
+            "cuenta_notificada_en": None,
             "creado_en": next(self._reloj),
             **sesion,
         }
@@ -86,6 +92,9 @@ class RepositorioFalso:
 
     def guardar_datos(self, sesion_id, datos) -> None:
         self.datos[sesion_id] = dict(datos)
+
+    def obtener_datos(self, sesion_id):
+        return copy.deepcopy(self.datos.get(sesion_id))
 
     def registrar_verificacion(self, fila) -> None:
         self.verificaciones.append(dict(fila))
@@ -176,6 +185,24 @@ class BusFalso:
         self.eventos.append(evento)
 
 
+class CuentasFalsas:
+    """AUTH: `respuesta` = "ok" | "duplicado" | "no_pendiente"; `caido` simula la red."""
+
+    def __init__(self) -> None:
+        self.llamadas: list[tuple] = []
+        self.respuesta = "ok"
+        self.caido = False
+
+    def cerrar_verificacion(self, usuario_id, aprobada, nombre, documento) -> None:
+        if self.caido:
+            raise ServicioNoDisponible("ConnectError")
+        self.llamadas.append((usuario_id, aprobada, nombre, documento))
+        if self.respuesta == "duplicado" and aprobada:
+            raise DocumentoEnOtraCuenta()
+        if self.respuesta == "no_pendiente":
+            raise CuentaNoPendiente()
+
+
 class Pila:
     def __init__(self, respuesta: dict[str, Any] | None = None, reloj=lambda: AHORA) -> None:
         self.repo = RepositorioFalso()
@@ -184,6 +211,7 @@ class Pila:
         self.planificador = PlanificadorFalso()
         self.bus = BusFalso()
         self.cifrador = CifradorAesGcm(b"k" * 32)
+        self.cuentas = CuentasFalsas()
         self.servicio = ServicioOnboarding(
             self.repo,
             self.storage,
@@ -193,6 +221,7 @@ class Pila:
             self.bus,
             Reglas(CLAVE_HMAC),
             reloj=reloj,
+            cuentas=self.cuentas,
         )
 
     def sesion_lista(self) -> tuple[dict[str, Any], str]:

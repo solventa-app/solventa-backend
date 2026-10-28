@@ -20,6 +20,45 @@ from strawberry.extensions import SchemaExtension
 Idioma = Literal["es", "en"]
 
 EN: dict[str, str] = {
+    # Onboarding del móvil (HU-M01, contrato v0.20)
+    "Estamos verificando tu identidad. Podrás usar esto al terminar.": (
+        "We are verifying your identity. You can use this once it is done."
+    ),
+    "Tu identidad aún no está verificada. Ingresa desde la app Solventa.": (
+        "Your identity is not verified yet. Sign in from the Solventa app."
+    ),
+    "No pudimos actualizar tu sesión. Intenta de nuevo.": (
+        "We could not refresh your session. Please try again."
+    ),
+    "Tu sesión ya no es válida. Inicia sesión de nuevo.": (
+        "Your session is no longer valid. Please sign in again."
+    ),
+    "Tu verificación venció o no es válida. Empieza de nuevo.": (
+        "Your verification expired or is not valid. Please start again."
+    ),
+    "Primero acepta el tratamiento de tus datos biométricos.": (
+        "First accept the processing of your biometric data."
+    ),
+    "Este paso ya no aplica a tu verificación.": (
+        "This step no longer applies to your verification."
+    ),
+    "Faltan fotos o el video. Complétalos e intenta de nuevo.": (
+        "Some photos or the video are missing. Complete them and try again."
+    ),
+    "Ya no quedan intentos de verificación.": ("There are no verification attempts left."),
+    "Esta verificación ya tiene una cuenta.": ("This verification already has an account."),
+    "Ya existe una cuenta con ese correo.": ("An account with that email already exists."),
+    "Aún no verificamos documentos de ese país.": (
+        "We do not verify documents from that country yet."
+    ),
+    "Ese tipo de documento no se admite.": ("That document type is not supported."),
+    "Ese paso no existe.": ("That step does not exist."),
+    "No encontramos ese archivo. Súbelo de nuevo.": (
+        "We could not find that file. Upload it again."
+    ),
+    "No pudimos continuar tu verificación. Intenta de nuevo.": (
+        "We could not continue your verification. Please try again."
+    ),
     # Sesión y permisos (app/autenticacion_usuarios.py)
     "Debes iniciar sesión.": "You must sign in.",
     "Tu sesión no es válida o venció. Inicia sesión de nuevo.": (
