@@ -74,14 +74,20 @@ def test_un_presupuesto_de_firma_mayor_que_el_techo_se_acota(monkeypatch) -> Non
 
 
 def test_los_proveedores_en_segundo_plano_no_se_acotan(monkeypatch) -> None:
-    # El cobro, el KYC y el aviso corren tras responderle al usuario: conservan su presupuesto.
+    # El KYC y el aviso corren tras responderle al usuario: conservan su presupuesto.
     _entorno_limpio(monkeypatch)
 
     cfg = Configuracion.desde_entorno()
 
-    assert cfg.presupuesto_proveedor_s("pasarela") == 0.7
     assert cfg.presupuesto_proveedor_s("kyc") == 0.7
     assert cfg.presupuesto_proveedor_s("notificaciones") == 0.7
+
+
+def test_la_pasarela_esta_en_la_ruta_sincrona_por_defecto(monkeypatch) -> None:
+    # W03-29: crear la sesión de pago y confirmarla al regresar las espera el titular.
+    _entorno_limpio(monkeypatch)
+
+    assert Configuracion.desde_entorno().presupuesto_proveedor_s("pasarela") == 0.45
 
 
 def test_el_techo_se_mueve_con_el_plazo_y_la_reserva(monkeypatch) -> None:

@@ -395,6 +395,10 @@ services:
     <<: *servicio
     build: ./stubs/pasarela
     ports: ["8103:8103"]
+    environment:
+      # Página de pago alojada (W03-28): el navegador la abre en localhost:8103 y vuelve al front.
+      PASARELA_URL_PUBLICA: http://localhost:8103
+      URLS_RETORNO_PERMITIDAS: http://localhost:5173,http://localhost:8080
 
   stub-firma:
     <<: *servicio

@@ -65,6 +65,7 @@ from app.domain.puertos import (
     SolicitudFirma,
     SolicitudKyc,
     SolicitudNotificacion,
+    SolicitudSesionPago,
 )
 from app.observabilidad import configurar_trazas
 
@@ -206,6 +207,47 @@ class ResultadoNotificacionResponse(BaseModel):
     estado: str
     referencia: str | None
     motivo: str | None
+
+
+class SolicitudSesionPagoRequest(BaseModel):
+    id_intento_cobro: str
+    monto: str
+    moneda: str
+    descripcion: str
+    url_retorno: str
+    idioma: str = "es"
+
+
+class MedioPagoResponse(BaseModel):
+    token: str  # token del proveedor PCI-DSS; nunca el número ni los últimos dígitos
+    marca: str
+    tipo: str
+
+
+class SesionPagoResponse(BaseModel):
+    estado: str
+    sesion_id: str | None = None
+    url_pago: str | None = None
+    vence_en: str | None = None
+    motivo: str | None = None
+    medio: MedioPagoResponse | None = None
+    referencia: str | None = None
+
+
+class ResultadoSesionResponse(BaseModel):
+    """`creada` (con la sesión; puede venir `rechazada` si la pasarela no aceptó la solicitud) o
+    `no_disponible` (con el motivo)."""
+
+    resultado: str
+    sesion: SesionPagoResponse | None = None
+    motivo: str | None = None
+
+
+class ConsultaSesionResponse(BaseModel):
+    """`encontrado` (con la sesión), `no_encontrado` o `desconocido`."""
+
+    resultado: str
+    sesion: SesionPagoResponse | None = None
 
 
 class ConsultaCobroResponse(BaseModel):
@@ -574,6 +616,49 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             estado=cobro.estado if cobro else None,
             referencia=cobro.referencia if cobro else None,
             motivo=cobro.motivo if cobro else None,
+        )
+
+    def _sesion_response(sesion) -> SesionPagoResponse | None:
+        if sesion is None:
+            return None
+        medio = sesion.medio
+        return SesionPagoResponse(
+            estado=sesion.estado,
+            sesion_id=sesion.sesion_id,
+            url_pago=sesion.url_pago,
+            vence_en=sesion.vence_en,
+            motivo=sesion.motivo,
+            medio=MedioPagoResponse(token=medio.token, marca=medio.marca, tipo=medio.tipo)
+            if medio
+            else None,
+            referencia=sesion.referencia,
+        )
+
+    @app.post("/pagos/sesiones", tags=["pagos"], response_model=ResultadoSesionResponse)
+    def crear_sesion_pago(body: SolicitudSesionPagoRequest) -> ResultadoSesionResponse:
+        """Sesión de la página de pago alojada (HU-W03, W03-28). Siempre 200 (regla #4)."""
+        resultado = app.state.servicio_cobro.crear_sesion(
+            SolicitudSesionPago(
+                id_intento_cobro=body.id_intento_cobro,
+                monto=body.monto,
+                moneda=body.moneda,
+                descripcion=body.descripcion,
+                url_retorno=body.url_retorno,
+                idioma=body.idioma,
+            )
+        )
+        return ResultadoSesionResponse(
+            resultado=resultado.resultado,
+            sesion=_sesion_response(resultado.sesion),
+            motivo=resultado.motivo,
+        )
+
+    @app.get("/pagos/sesiones/{sesion_id}", tags=["pagos"], response_model=ConsultaSesionResponse)
+    def consultar_sesion_pago(sesion_id: str) -> ConsultaSesionResponse:
+        """Confirmación de servidor a servidor al regresar de la pasarela (W03-28). Siempre 200."""
+        consulta = app.state.servicio_cobro.consultar_sesion(sesion_id)
+        return ConsultaSesionResponse(
+            resultado=consulta.resultado, sesion=_sesion_response(consulta.sesion)
         )
 
     @app.post("/firma/firmar", tags=["firma"], response_model=ResultadoFirmaResponse)

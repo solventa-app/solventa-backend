@@ -82,8 +82,54 @@ class ConsultaCobro:
     cobro: ResultadoCobro | None = None
 
 
+EstadoSesionPago = Literal["abierta", "procesando", "cobrada", "rechazada", "fallida", "vencida"]
+TipoMedioPago = Literal["CREDITO", "DEBITO"]
+
+
+@dataclass
+class SolicitudSesionPago:
+    """Sesión de pago en la página alojada de la pasarela (HU-W03, W03-28). El titular captura la
+    tarjeta allí; Solventa nunca la ve."""
+
+    id_intento_cobro: str  # idempotente: el mismo intento devuelve la misma sesión
+    monto: str  # decimal como texto, nunca float
+    moneda: str
+    descripcion: str
+    url_retorno: str  # adonde vuelve el navegador; la pasarela la valida contra su lista blanca
+    idioma: str = "es"
+
+
+@dataclass
+class MedioPagoTokenizado:
+    """Lo único que Solventa recibe del medio de pago: el token, la marca y el tipo. Nunca el
+    número ni los últimos dígitos (regla #6, W05-A2)."""
+
+    token: str
+    marca: str
+    tipo: TipoMedioPago
+
+
+@dataclass
+class SesionPago:
+    estado: EstadoSesionPago
+    sesion_id: str | None = None  # None si la pasarela rechazó la solicitud (p. ej. el retorno)
+    url_pago: str | None = None
+    vence_en: str | None = None  # ISO 8601
+    motivo: str | None = None
+    medio: MedioPagoTokenizado | None = None  # solo con `cobrada`
+    referencia: str | None = None  # referencia del cobro en la pasarela, solo con `cobrada`
+
+
 class PuertoPasarelaPagos(Protocol):
     def cobrar(self, orden: OrdenCobro) -> ResultadoCobro: ...
+
+    def crear_sesion_pago(self, solicitud: SolicitudSesionPago) -> SesionPago:
+        """Abre (o devuelve, si el intento ya existe) la sesión de la página de pago."""
+        ...
+
+    def consultar_sesion_pago(self, sesion_id: str) -> SesionPago | None:
+        """Confirmación de servidor a servidor al regresar del navegador. `None` si no existe."""
+        ...
 
     def consultar(self, referencia_comercio: str) -> ResultadoCobro | None:
         """Busca un cobro por la **referencia del comercio**, que es la

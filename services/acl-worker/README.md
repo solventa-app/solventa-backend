@@ -109,12 +109,19 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
   - `POST /pagos/cobrar` `{id_intento_cobro, poliza_id, monto, moneda, token_medio_pago}` → `{estado, referencia, motivo, detalle}`.
   - `POST /sonda/ejecutar` → una pasada de la sonda; la llama Cloud Scheduler con `DISPARADOR=externo` (en Cloud Run no hay bucle fiable). Devuelve el estado de cada circuito. El estado de los circuitos vive en la memoria de cada instancia.
   - `GET /pagos/cobros/{referencia_comercio}` → siempre 200 con `{resultado: encontrado|no_encontrado|desconocido, estado, referencia, motivo}`.
-- **Cambiar de pasarela (EC031, CA-W05-06):** `PROVEEDOR_PASARELA=estandar|alterna` elige el adaptador. Para sumar un proveedor: una clase en `app/adapters/` que cumpla `PuertoPasarelaPagos` (`cobrar`, `consultar`, `sondear`, `cerrar`), una línea en la elección de `app/main.py` y su prueba de contrato en `tests/test_ec031_pasarela.py`. `AdaptadorPasarelaAlterna` es el ejemplo (otra API, otros campos y estados). PAYMENTS y el BFF no cambian.
+  - `POST /pagos/sesiones` `{id_intento_cobro, monto, moneda, descripcion, url_retorno, idioma}` → siempre 200 con
+    `{resultado: creada|no_disponible, sesion, motivo}`: la sesión de la **página de pago alojada** de la pasarela
+    (HU-W03, W03-28), idempotente por intento. Un retorno fuera de la lista blanca de la pasarela llega como sesión
+    `rechazada` y no abre el circuito.
+  - `GET /pagos/sesiones/{sesion_id}` → siempre 200 con `{resultado: encontrado|no_encontrado|desconocido, sesion}`. Es la
+    confirmación de servidor a servidor al regresar del navegador; con `cobrada` trae el medio tokenizado (`token`,
+    `marca`, `tipo`), **nunca el número ni los últimos dígitos**. Mismo circuito y presupuesto que el cobro.
+- **Cambiar de pasarela (EC031, CA-W05-06):** `PROVEEDOR_PASARELA=estandar|alterna` elige el adaptador. Para sumar un proveedor: una clase en `app/adapters/` que cumpla `PuertoPasarelaPagos` (`cobrar`, `consultar`, `crear_sesion_pago`, `consultar_sesion_pago`, `sondear`, `cerrar`), una línea en la elección de `app/main.py` y su prueba de contrato en `tests/test_ec031_pasarela.py` y `tests/test_ec031_sesiones_pago.py`. `AdaptadorPasarelaAlterna` es el ejemplo (otra API, otros campos y estados). PAYMENTS y el BFF no cambian.
 - Con `DISPARADOR=externo` la reconciliación diferida va por Cloud Tasks (`app/application/cola_tareas.py`) hacia `POST /reconciliar` del consolidador, y exige `GCP_PROYECTO`, `GCP_REGION`, `TAREAS_CUENTA` y `CONSOLIDADOR_URL` (los pone Terraform; opcional `TAREAS_COLA_RECONCILIACION`).
 - Variables de entorno: `DISPARADOR` (`bucle`; `externo` desactiva el bucle de la sonda y cambia `rq` por Cloud Tasks), `PROVEEDOR_PASARELA` (`estandar`), `REDIS_URL`, `OPEN_FINANCE_URL`, `OPEN_DATA_URL`, `PASARELA_URL`,
   `TIMEOUT_MS` (700), `PRESUPUESTO_MS_<PROVEEDOR>` (cualquier proveedor: `OPEN_FINANCE`, `OPEN_DATA`, `PASARELA`,
   `FIRMA`, `KYC`, `NOTIFICACIONES`… ; sin variable vale `TIMEOUT_MS`; p. ej. 120 para EC008 en Open Finance),
-  `PLAZO_RUTA_SINCRONA_MS` (700), `RESERVA_SALTOS_MS` (250) y `PROVEEDORES_RUTA_SINCRONA` (`firma`; ver abajo),
+  `PLAZO_RUTA_SINCRONA_MS` (700), `RESERVA_SALTOS_MS` (250) y `PROVEEDORES_RUTA_SINCRONA` (`firma,pasarela`; ver abajo),
   `PRESUPUESTO_CON_CACHE_MS` (300, EC010 ≤ 500 ms), `CACHE_SERVIR_EN_TTL` (`false`; `true` en Cloud Run),
   `FUENTES_CONFIG_PATH` (`contracts/fuentes.json`), `BREAKER_UMBRAL_FALLOS` (3),
   `BREAKER_TTL_SEGUNDOS` (5), `SONDA_INTERVALO_SEGUNDOS` (2), `CACHE_TTL_SEGUNDOS` (300),
@@ -160,7 +167,7 @@ curl -s localhost:8005/circuitos   # -> open-finance: "closed"
 - EC031 / CA-W03-10: dos adaptadores (`app/adapters/firma.py` y `firma_alterna.py`), elegidos con `PROVEEDOR_FIRMA`
   (`estandar` | `alterna`). Variables nuevas: `FIRMA_URL` (`http://localhost:8104`), `PRESUPUESTO_MS_FIRMA`.
 
-**Ruta síncrona del usuario (CA-W03-05).** La firma es lo único de W03 que el usuario espera: si el proveedor tarda, el corte de 700 ms
+**Ruta síncrona del usuario (CA-W03-05 y W03-29).** La firma y las dos llamadas de pago (crear la sesión y confirmarla al regresar) son lo que el usuario de W03 espera: si el proveedor tarda, el corte de 700 ms
 del gateway (HA-LAT-004) llegaba antes que el del ACL y el cliente veía un 504. Los proveedores de `PROVEEDORES_RUTA_SINCRONA` quedan
 acotados a `PLAZO_RUTA_SINCRONA_MS − RESERVA_SALTOS_MS` (700 − 250 = **450 ms** por defecto) aunque su `PRESUPUESTO_MS_*` sea mayor; así
 la respuesta es un `ErrorFirma` con reintento y no un 5xx. El cobro, el KYC y el aviso corren en segundo plano y conservan su presupuesto.
