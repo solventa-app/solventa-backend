@@ -256,3 +256,22 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `DATOS_INSUFICIENTES`.
 - Afecta al frontend: sí. Web copia este esquema, borra `contrato/borrador-v0.17.graphql` y regenera tipos (F-F1). Los
   enums de salida que crecen (`EstadoPropuesta`, `MotivoErrorFirma`) piden manejar los valores nuevos.
+
+## v0.19 — 2026-10-28
+
+- KAN-242 (HU-W04, mesa de siniestros del BACKOFFICE; plan `docs/plan-completar-hu-w04.md`). Los tipos del dummy
+  `contracts/graphql/siniestros.graphql` pasan al contrato principal con **los mismos nombres, argumentos y campos**:
+  `Siniestro`, `Asegurado`, `Ubicacion`, `Evidencia`, `Verificacion`, `Perito`, `Resolucion`, `ErrorSiniestro`, la
+  union `ResultadoResolucion` y los enums `EstadoSiniestro`, `TipoEvidencia`, `TipoResolucion` y `MotivoRechazo`.
+  Consultas `siniestros(estado)`, `siniestro(id)` y `peritos(siniestroId)`; mutaciones `aprobarSiniestro`,
+  `rechazarSiniestro` y `derivarSiniestro`. Todas exigen token de BACKOFFICE. **Solo cambios aditivos.**
+  - Se reutilizan `Poliza`, `Monto` y `EstadoPoliza`. `Poliza` suma `ramo` (un solo producto hoy, lo pone el BFF).
+  - `Evidencia.url` es la URL firmada de lectura del almacenamiento (vence en minutos), ya no una ruta relativa.
+  - Eventos nuevos `siniestro.aprobado`, `siniestro.rechazado` y `siniestro.derivado` (`contracts/events/`), sin datos
+    personales.
+  - Tipos de archivo nuevos `siniestro-foto` y `siniestro-documento` (`contracts/tipos-archivo.json`).
+- **Estado en el BFF:** solo el esqueleto. Las consultas responden «Esta operación aún no está disponible» y las
+  mutaciones un `ErrorSiniestro` con ese mensaje, hasta que el servicio `claims` esté conectado.
+- Afecta al frontend: sí, cuando la web cambie del dummy al BFF. Pasos documentados en
+  `solventa-frontend-web/docs/plan-ejecucion-hu-w04-siniestros.md` («Conexión al backend real»). `siniestros.graphql`
+  se conserva para el dummy, que sigue funcionando sin cambios.

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/siniestro.aprobado/v1",
+  "title": "siniestro.aprobado",
+  "description": "CLAIMS aprobó un siniestro y PAYMENTS registró la orden de pago de la indemnización (pendiente de dispersión). Sin datos personales: ni nombre, ni documento, ni ubicación; el actor va como id opaco.",
+  "type": "object",
+  "required": [
+    "eventId",
+    "tipo",
+    "version",
+    "ocurridoEn",
+    "datos"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tipo": {
+      "const": "siniestro.aprobado"
+    },
+    "version": {
+      "const": 1
+    },
+    "ocurridoEn": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "datos": {
+      "type": "object",
+      "required": [
+        "siniestroId",
+        "radicado",
+        "polizaId",
+        "resueltaEn",
+        "actorUsuarioId",
+        "indemnizacion",
+        "ordenPagoId"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "siniestroId": {
+          "type": "string"
+        },
+        "radicado": {
+          "type": "string"
+        },
+        "polizaId": {
+          "type": "string"
+        },
+        "resueltaEn": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "actorUsuarioId": {
+          "type": "string"
+        },
+        "indemnizacion": {
+          "type": "object",
+          "required": [
+            "valor",
+            "moneda"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "valor": {
+              "type": "string",
+              "pattern": "^[0-9]+(\\.[0-9]+)?$"
+            },
+            "moneda": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 3
+            }
+          }
+        },
+        "ordenPagoId": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

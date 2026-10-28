@@ -22,6 +22,7 @@ Permisos (HU-M02): cada resolutor llama a `exigir_rol` con los roles que admite.
 matriz completa está en `docs/autenticacion-usuarios.md`."""
 
 import logging
+import os
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Annotated
@@ -53,6 +54,8 @@ from app.servicio_suscripcion import (
 from app.trazas_graphql import TrazaGraphQL
 
 logger = logging.getLogger("bff.cobros")
+# POLICY no tiene producto: hay uno solo y su ramo lo pone el BFF (W04-4, HU-W04).
+RAMO_POLIZA = os.getenv("RAMO_POLIZA", "Vida grupo deudor con amparo de daños al bien financiado")
 TAMANO_LOTE_NOMBRES = 200  # el máximo de ids por llamada que admite AUTH
 
 
@@ -391,6 +394,7 @@ class Poliza:
     prima: Monto
     cobertura: Monto
     documento_url: str  # ruta del BFF que entrega el PDF
+    ramo: str  # v0.19 (HU-W04): un solo producto hoy, por configuración (RAMO_POLIZA)
 
 
 @strawberry.type
@@ -759,6 +763,7 @@ def _poliza(datos: dict) -> Poliza:
         cobertura=Monto(valor=datos["cobertura"]["valor"], moneda=datos["cobertura"]["moneda"]),
         # El PDF lo entrega el BFF en esta ruta (bloque 5); hasta entonces responde 404.
         documento_url=f"/polizas/{datos['id']}/documento",
+        ramo=RAMO_POLIZA,
     )
 
 
@@ -963,6 +968,131 @@ def _almacenamiento(info: Info):
     return info.context["clientes"].almacenamiento
 
 
+# ---------- Siniestros (v0.19, HU-W04, servicio CLAIMS) ----------
+
+
+@strawberry.enum
+class EstadoSiniestro(Enum):
+    PENDIENTE = "PENDIENTE"
+    EN_REVISION = "EN_REVISION"  # también un siniestro derivado a perito
+    APROBADO = "APROBADO"
+    RECHAZADO = "RECHAZADO"
+
+
+@strawberry.enum
+class TipoEvidencia(Enum):
+    FOTO = "FOTO"
+    DOCUMENTO = "DOCUMENTO"
+
+
+@strawberry.enum
+class TipoResolucion(Enum):
+    APROBACION = "APROBACION"
+    RECHAZO = "RECHAZO"
+    DERIVACION = "DERIVACION"
+
+
+@strawberry.enum
+class MotivoRechazo(Enum):
+    EVIDENCIA_INSUFICIENTE = "EVIDENCIA_INSUFICIENTE"
+    FUERA_DE_COBERTURA = "FUERA_DE_COBERTURA"
+    POLIZA_NO_VIGENTE = "POLIZA_NO_VIGENTE"
+    INCONSISTENCIA_EN_RELATO = "INCONSISTENCIA_EN_RELATO"
+    OTRO = "OTRO"
+
+
+@strawberry.type
+class Asegurado:
+    nombre: str
+    documento: str
+
+
+@strawberry.type
+class Ubicacion:
+    descripcion: str
+    ciudad: str
+    latitud: float
+    longitud: float
+
+
+@strawberry.type
+class Evidencia:
+    id: strawberry.ID
+    tipo: TipoEvidencia
+    titulo: str
+    archivo: str
+    url: str  # URL firmada de lectura del almacenamiento; vacía si no está disponible
+    registrada_en: datetime
+    geoetiquetada: bool
+    nota: str | None
+
+
+@strawberry.type
+class Verificacion:
+    descripcion: str
+    cumple: bool
+
+
+@strawberry.type
+class Perito:
+    id: strawberry.ID
+    nombre: str
+    ciudad: str
+    red: str
+    registro: str
+    tiempo_respuesta_dias: int
+    vencimiento_informe: datetime | None  # solo en `peritos(siniestroId)`
+
+
+@strawberry.type
+class Resolucion:
+    tipo: TipoResolucion
+    resuelta_en: datetime
+    notificacion: str
+    motivo: MotivoRechazo | None
+    comentario: str | None
+    via_recurso: str | None
+    indemnizacion: Monto | None
+    metodo_transferencia: str | None
+    plazo_dispersion: str | None
+    perito: Perito | None
+    instrucciones: str | None
+    vencimiento_informe: datetime | None
+
+
+@strawberry.type
+class Siniestro:
+    id: strawberry.ID
+    radicado: str
+    estado: EstadoSiniestro
+    asegurado: Asegurado
+    poliza: Poliza
+    cobertura_aplicada: str
+    entidad_acreedora: str
+    ocurrido_en: datetime
+    notificado_en: datetime
+    ubicacion: Ubicacion
+    descripcion: str
+    suma_reclamada: Monto
+    vence_dictamen_en: datetime
+    evidencias: list[Evidencia]
+    verificaciones: list[Verificacion]
+    resolucion: Resolucion | None
+
+
+@strawberry.type
+class ErrorSiniestro:
+    """Error de negocio en lenguaje del operador.
+
+    Solo `mensaje`: la web distingue la union por la forma de la respuesta.
+    """
+
+    mensaje: str
+
+
+ResultadoResolucion = Annotated[Siniestro | ErrorSiniestro, strawberry.union("ResultadoResolucion")]
+
+
 # ---------- Operaciones ----------
 
 
@@ -1093,6 +1223,24 @@ class Query:
     ) -> EnlaceFirma | None:
         """W03-33: token del enlace o sesión de CLIENTE. Esqueleto de la v0.18 hasta F-B6."""
         return None
+
+    @strawberry.field
+    async def siniestros(
+        self, info: Info, estado: EstadoSiniestro | None = None
+    ) -> list[Siniestro]:
+        """HU-W04: bandeja de la mesa de siniestros. Esqueleto de la v0.19 hasta el bloque 7."""
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        raise ErrorPublico(MENSAJE_OPERACION_NO_DISPONIBLE)
+
+    @strawberry.field
+    async def siniestro(self, info: Info, id: strawberry.ID) -> Siniestro | None:
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        raise ErrorPublico(MENSAJE_OPERACION_NO_DISPONIBLE)
+
+    @strawberry.field
+    async def peritos(self, info: Info, siniestro_id: strawberry.ID) -> list[Perito]:
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        raise ErrorPublico(MENSAJE_OPERACION_NO_DISPONIBLE)
 
     @strawberry.field
     async def cobros(
@@ -1541,6 +1689,34 @@ class Mutation:
     async def ticket_avisos(self, info: Info) -> TicketAvisos:
         exigir_rol(info, *TODOS_LOS_ROLES, siempre=True)
         raise ErrorPublico(MENSAJE_OPERACION_NO_DISPONIBLE)
+
+    @strawberry.mutation
+    async def aprobar_siniestro(self, info: Info, id: strawberry.ID) -> ResultadoResolucion:
+        """HU-W04. Esqueleto de la v0.19 hasta el bloque 7."""
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        return ErrorSiniestro(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE)
+
+    @strawberry.mutation
+    async def rechazar_siniestro(
+        self,
+        info: Info,
+        id: strawberry.ID,
+        motivo: MotivoRechazo,
+        comentario: str | None = None,
+    ) -> ResultadoResolucion:
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        return ErrorSiniestro(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE)
+
+    @strawberry.mutation
+    async def derivar_siniestro(
+        self,
+        info: Info,
+        id: strawberry.ID,
+        perito_id: strawberry.ID,
+        instrucciones: str | None = None,
+    ) -> ResultadoResolucion:
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        return ErrorSiniestro(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE)
 
 
 schema = strawberry.Schema(
