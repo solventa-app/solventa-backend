@@ -22,8 +22,8 @@ from app.observabilidad import configurar_trazas
 from app.sembrar import sembrar
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-# httpx registra cada URL pedida en INFO, y las URLs firmadas del almacenamiento no deben quedar en los
-# logs (como en POLICY).
+# httpx registra cada URL pedida en INFO, y las URLs firmadas del almacenamiento no deben quedar en
+# los logs (como en POLICY).
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 configurar_trazas("claims", instrumentos=("httpx", "pymongo"))
