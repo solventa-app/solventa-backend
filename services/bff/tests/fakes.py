@@ -114,6 +114,7 @@ class AuthFalso:
         self.registros_consentimiento: list[dict] = []
         # Nombres de CLIENTE por id y las consultas hechas (para probar el lote).
         self.nombres: dict[str, str] = {}
+        self.documentos: dict[str, str] = {}  # W03-27: el documento que recibió AUTH
         self.consultas_de_nombres: list[list[str]] = []
         # Contacto (correo, teléfono) que AUTH recibió por usuario, para comprobar qué le llegó.
         self.contactos: dict[str, dict] = {}
@@ -185,7 +186,13 @@ class AuthFalso:
 
     async def obtener_usuario(self, usuario_id: str) -> dict | None:
         datos = self.usuarios.get(usuario_id)
-        return _con_nombre(datos, self.nombres) if datos else None
+        if not datos:
+            return None
+        documento = self.documentos.get(usuario_id)
+        return {
+            **_con_nombre(datos, self.nombres),
+            "documento_enmascarado": f"•••• {documento[-4:]}" if documento else None,
+        }
 
     async def listar_usuarios(self, rol: str | None) -> list[dict]:
         return [u for u in self.usuarios.values() if rol is None or u["rol"] == rol]
@@ -204,6 +211,7 @@ class AuthFalso:
         nombre: str | None = None,
         correo: str | None = None,
         telefono: str | None = None,
+        documento_identidad: str | None = None,
     ) -> dict:
         if "@" in usuario:
             raise SolicitudInvalida("El usuario no puede ser un correo ni un número de documento.")
@@ -218,6 +226,8 @@ class AuthFalso:
         self.claves[usuario] = clave
         if nombre is not None:
             self.nombres[nuevo["id"]] = nombre
+        if documento_identidad is not None:
+            self.documentos[nuevo["id"]] = documento_identidad
         return nuevo
 
     @staticmethod

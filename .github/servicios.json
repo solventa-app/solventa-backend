@@ -25,7 +25,8 @@
       "CIFRADO_CLAVE_ENVUELTA": "clave-cifrado-envuelta",
       "DATABASE_URL": "database-url-auth",
       "JWT_SECRETO": "clave-jwt",
-      "CIFRADO_CLAVE": "clave-cifrado"
+      "CIFRADO_CLAVE": "clave-cifrado",
+      "CLIENTE_ID_CLAVE": "clave-cliente-id"
     }
   },
   {

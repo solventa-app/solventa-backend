@@ -25,6 +25,7 @@ Uso (con `docker compose --profile servicios up -d`):
     SUFIJO=ronda2 python3 scripts/sembrar_cobros.py   # cinco cobros nuevos
 """
 
+import hashlib
 import json
 import os
 import subprocess
@@ -93,13 +94,27 @@ def _modo_pasarela(modo: str) -> None:
     _http(f"{STUB_PASARELA}/control/modo", {"modo": modo}, _token_pasarela())
 
 
+def _documento_de(alias: str) -> str:
+    return str(int(hashlib.sha256(alias.encode()).hexdigest(), 16))[:10]
+
+
 def _cliente(alias: str, nombre: str, token: str, existentes: dict[str, str]) -> str:
     if alias in existentes:
         return existentes[alias]
     creado = _graphql(
         """mutation($e: CrearUsuarioInput!) { crearUsuario(entrada: $e) {
           __typename ... on Usuario { id } ... on ErrorUsuario { mensaje } } }""",
-        {"e": {"usuario": alias, "clave": CLAVE_CLIENTES, "rol": "CLIENTE", "nombre": nombre}},
+        {
+            "e": {
+                "usuario": alias,
+                "clave": CLAVE_CLIENTES,
+                "rol": "CLIENTE",
+                "nombre": nombre,
+                # W03-27: documento y correo obligatorios; un documento estable por alias.
+                "documentoIdentidad": _documento_de(alias),
+                "correo": f"{alias}@ejemplo.co",
+            }
+        },
         token,
     )["crearUsuario"]
     if creado["__typename"] != "Usuario":

@@ -1,14 +1,22 @@
 """Reglas de alta y administración de usuarios, con el repositorio en memoria."""
 
 import pytest
-from fakes import HASHER_RAPIDO, RepositorioUsuariosMemoria
+from fakes import (
+    CIFRADOR_PRUEBAS,
+    CLAVE_TITULAR_PRUEBAS,
+    HASHER_RAPIDO,
+    RepositorioUsuariosMemoria,
+    extras_cliente,
+)
 
 from app.usuarios import DatoInvalido, ServicioUsuarios, UsuarioDuplicado
 
 
 def _servicio() -> tuple[ServicioUsuarios, RepositorioUsuariosMemoria]:
     repositorio = RepositorioUsuariosMemoria()
-    return ServicioUsuarios(repositorio, HASHER_RAPIDO), repositorio
+    return ServicioUsuarios(
+        repositorio, HASHER_RAPIDO, CIFRADOR_PRUEBAS, CLAVE_TITULAR_PRUEBAS
+    ), repositorio
 
 
 def test_crear_devuelve_solo_datos_publicos() -> None:
@@ -80,13 +88,13 @@ def test_alias_duplicado() -> None:
     servicio.crear("asesor.017", "clave-segura-1", "ASESOR")
 
     with pytest.raises(UsuarioDuplicado):
-        servicio.crear("asesor.017", "otra-clave-123", "CLIENTE")
+        servicio.crear("asesor.017", "otra-clave-123", "CLIENTE", **extras_cliente("asesor.017"))
 
 
 def test_listar_filtra_por_rol() -> None:
     servicio, _ = _servicio()
     servicio.crear("asesor.017", "clave-segura-1", "ASESOR")
-    servicio.crear("cliente.a", "clave-segura-1", "CLIENTE")
+    servicio.crear("cliente.a", "clave-segura-1", "CLIENTE", **extras_cliente("cliente.a"))
 
     assert [u["usuario"] for u in servicio.listar("CLIENTE")] == ["cliente.a"]
     assert len(servicio.listar(None)) == 2
@@ -94,7 +102,9 @@ def test_listar_filtra_por_rol() -> None:
 
 def test_cambiar_rol_y_suspender() -> None:
     servicio, _ = _servicio()
-    usuario = servicio.crear("cliente.a", "clave-segura-1", "CLIENTE")
+    usuario = servicio.crear(
+        "cliente.a", "clave-segura-1", "CLIENTE", **extras_cliente("cliente.a")
+    )
 
     assert servicio.cambiar_rol(usuario["id"], "ASESOR")["rol"] == "ASESOR"
     assert servicio.suspender(usuario["id"])["estado"] == "SUSPENDIDO"

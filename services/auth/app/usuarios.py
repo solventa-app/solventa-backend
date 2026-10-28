@@ -13,7 +13,12 @@ Datos personales: el alias de acceso **no puede ser un correo ni un documento**
 - El **nombre** (KAN-28), de cualquier rol. Solo sale por dos caminos: `nombre_de` (el propio
   usuario, al iniciar sesión o consultar `yo`) y `nombres` (los CLIENTE de una lista, para el
   BACKOFFICE).
-- El **correo y el teléfono** (HU-W03, bloque 8), solo de los CLIENTE y opcionales. Solo salen por
+- El **documento de identidad** (HU-W03, W03-27), solo de los CLIENTE y obligatorio para ellos junto
+  con el correo. Se guarda cifrado y, aparte, como `titular_id` (el HMAC del consentimiento): el
+  BACKOFFICE que crea al CLIENTE da por verificada su identidad (W03-36). Sale enmascarado al propio
+  usuario (`documento_enmascarado_de`) y en claro solo hacia el BFF (`identidad_de`), que lo usa en
+  memoria para que W01 no se lo pida (W03-34).
+- El **correo y el teléfono** (HU-W03, bloque 8), solo de los CLIENTE. Solo salen por
   `contacto_de`, que lo llama POLICY (servicio a servicio) para enviar el PDF de la póliza; nunca
   vuelven al cliente por GraphQL. Cada campo se cifra con su propio contexto, así que un cifrado
   movido de una columna a otra no se descifra.
@@ -28,11 +33,12 @@ from datetime import datetime
 from typing import Any, Literal, Protocol
 
 from argon2 import PasswordHasher
+from psycopg.errors import UniqueViolation
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from app.cifrado import CifradorCampos, ErrorDeCifrado
-from app.identificadores import id_opaco
+from app.identificadores import cliente_id_desde_documento, id_opaco
 
 logger = logging.getLogger("auth.usuarios")
 
@@ -52,6 +58,8 @@ MAXIMO_IDS_POR_CONSULTA = 200
 CORREO_LONGITUD_MAXIMA = 254
 CORREO_VALIDO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 TELEFONO_VALIDO = re.compile(r"^\+?\d{7,15}$")
+# Documento de identidad (W03-27): cédula, cédula de extranjería o pasaporte, sin separadores.
+DOCUMENTO_VALIDO = re.compile(r"^[0-9A-Z]{5,20}$")
 SEPARADORES_DE_TELEFONO = " -().\t"
 # Preferencias de la interfaz (KAN-209): las mismas que ofrecen los selectores del header de la web.
 IDIOMAS: tuple[str, ...] = ("ES", "EN")
@@ -61,7 +69,7 @@ MONEDAS: tuple[str, ...] = ("COP", "MXN", "BRL", "CLP", "PEN", "USD", "EUR")
 _PUBLICAS = "id, usuario, rol, estado, creado_en, idioma, moneda"
 _TODAS = (
     f"{_PUBLICAS}, hash_clave, intentos_fallidos, bloqueado_hasta, nombre_cifrado, "
-    "correo_cifrado, telefono_cifrado"
+    "correo_cifrado, telefono_cifrado, titular_id, documento_cifrado"
 )
 
 
@@ -70,7 +78,10 @@ class DatoInvalido(Exception):
 
 
 class UsuarioDuplicado(Exception):
-    """Ya existe un usuario con ese alias."""
+    """Ya existe un usuario con ese alias, o un CLIENTE con ese documento."""
+
+
+MENSAJE_DOCUMENTO_DUPLICADO = "Ya existe un cliente con ese documento."
 
 
 def validar_alias(alias: str) -> None:
@@ -134,6 +145,27 @@ def normalizar_telefono(telefono: str) -> str:
     return limpio
 
 
+def normalizar_documento(documento: str) -> str:
+    """El documento sin espacios a los lados y en mayúsculas: así el HMAC coincide con el que
+    calcula el BFF para el consentimiento (`strip().upper()`). Sin puntos, guiones ni espacios."""
+    limpio = documento.strip().upper()
+    if not DOCUMENTO_VALIDO.match(limpio):
+        raise DatoInvalido(
+            "El documento de identidad no es válido: usa de 5 a 20 letras o números, sin puntos "
+            "ni espacios."
+        )
+    return limpio
+
+
+def enmascarar_documento(documento: str) -> str:
+    """Solo los últimos 4 caracteres (W03-34): `•••• 5678`."""
+    return f"•••• {documento[-4:]}"
+
+
+def contexto_documento(usuario_id: str) -> str:
+    return f"documento:{usuario_id}"
+
+
 def contexto_correo(usuario_id: str) -> str:
     return f"correo:{usuario_id}"
 
@@ -168,7 +200,11 @@ class RepositorioUsuarios(Protocol):
         nombre_cifrado: str | None = None,
         correo_cifrado: str | None = None,
         telefono_cifrado: str | None = None,
+        titular_id: str | None = None,
+        documento_cifrado: str | None = None,
     ) -> dict | None: ...
+
+    def obtener_por_titular(self, titular_id: str) -> dict | None: ...
 
     def nombres_cifrados(self, ids: list[str]) -> dict[str, str]: ...
 
@@ -213,26 +249,41 @@ class RepositorioUsuariosPostgres:
         nombre_cifrado: str | None = None,
         correo_cifrado: str | None = None,
         telefono_cifrado: str | None = None,
+        titular_id: str | None = None,
+        documento_cifrado: str | None = None,
     ) -> dict | None:
-        """`None` si el alias ya existe (índice único: correcto también bajo concurrencia)."""
+        """`None` si el alias ya existe (índice único: correcto también bajo concurrencia). Un
+        documento repetido choca con `usuarios_titular_unico` y lanza `UsuarioDuplicado`."""
+        try:
+            return self._una(
+                f"""
+                INSERT INTO usuarios (id, usuario, hash_clave, rol, nombre_cifrado,
+                                      correo_cifrado, telefono_cifrado, titular_id,
+                                      documento_cifrado)
+                VALUES (%(id)s, %(usuario)s, %(hash_clave)s, %(rol)s, %(nombre_cifrado)s,
+                        %(correo_cifrado)s, %(telefono_cifrado)s, %(titular_id)s,
+                        %(documento_cifrado)s)
+                ON CONFLICT (usuario) DO NOTHING
+                RETURNING {_TODAS}
+                """,
+                {
+                    "id": usuario_id,
+                    "usuario": alias,
+                    "hash_clave": hash_clave,
+                    "rol": rol,
+                    "nombre_cifrado": nombre_cifrado,
+                    "correo_cifrado": correo_cifrado,
+                    "telefono_cifrado": telefono_cifrado,
+                    "titular_id": titular_id,
+                    "documento_cifrado": documento_cifrado,
+                },
+            )
+        except UniqueViolation as error:
+            raise UsuarioDuplicado(MENSAJE_DOCUMENTO_DUPLICADO) from error
+
+    def obtener_por_titular(self, titular_id: str) -> dict | None:
         return self._una(
-            f"""
-            INSERT INTO usuarios (id, usuario, hash_clave, rol, nombre_cifrado,
-                                  correo_cifrado, telefono_cifrado)
-            VALUES (%(id)s, %(usuario)s, %(hash_clave)s, %(rol)s, %(nombre_cifrado)s,
-                    %(correo_cifrado)s, %(telefono_cifrado)s)
-            ON CONFLICT (usuario) DO NOTHING
-            RETURNING {_TODAS}
-            """,
-            {
-                "id": usuario_id,
-                "usuario": alias,
-                "hash_clave": hash_clave,
-                "rol": rol,
-                "nombre_cifrado": nombre_cifrado,
-                "correo_cifrado": correo_cifrado,
-                "telefono_cifrado": telefono_cifrado,
-            },
+            f"SELECT {_TODAS} FROM usuarios WHERE titular_id = %(t)s", {"t": titular_id}
         )
 
     def nombres_cifrados(self, ids: list[str]) -> dict[str, str]:
@@ -357,10 +408,13 @@ class ServicioUsuarios:
         repositorio: RepositorioUsuarios,
         hasher: PasswordHasher,
         cifrador: CifradorCampos | None = None,
+        clave_titular: str | None = None,
     ) -> None:
         self._repositorio = repositorio
         self._hasher = hasher
         self._cifrador = cifrador
+        # `CLIENTE_ID_CLAVE`: la misma del BFF, para que el titular coincida con el consentimiento.
+        self._clave_titular = clave_titular
 
     def crear(
         self,
@@ -370,10 +424,13 @@ class ServicioUsuarios:
         nombre: str | None = None,
         correo: str | None = None,
         telefono: str | None = None,
+        documento: str | None = None,
     ) -> dict:
         validar_alias(alias)
         validar_clave(clave)
         validar_rol(rol)
+        if rol == "CLIENTE" and (documento is None or correo is None):
+            raise DatoInvalido("Un cliente necesita su documento de identidad y su correo.")
         usuario_id = str(uuid.uuid4())
         nombre_cifrado = None
         if nombre is not None:
@@ -382,6 +439,14 @@ class ServicioUsuarios:
                 raise DatoInvalido("Este servicio no está configurado para guardar nombres.")
             nombre_cifrado = self._cifrador.cifrar(limpio, usuario_id)
         correo_cifrado, telefono_cifrado = self._cifrar_contacto(usuario_id, rol, correo, telefono)
+        titular_id, documento_cifrado = self._titular(usuario_id, rol, documento)
+        if titular_id is not None:
+            # El alias primero: repetir el alta de un usuario que ya existe dice eso, no que el
+            # documento está tomado (los scripts de prueba son idempotentes por alias).
+            if self._repositorio.obtener_por_alias(alias):
+                raise UsuarioDuplicado("Ya existe un usuario con ese alias.")
+            if self._repositorio.obtener_por_titular(titular_id):
+                raise UsuarioDuplicado(MENSAJE_DOCUMENTO_DUPLICADO)
         creado = self._repositorio.crear(
             usuario_id,
             alias,
@@ -390,6 +455,8 @@ class ServicioUsuarios:
             nombre_cifrado,
             correo_cifrado,
             telefono_cifrado,
+            titular_id,
+            documento_cifrado,
         )
         if creado is None:
             raise UsuarioDuplicado("Ya existe un usuario con ese alias.")
@@ -425,6 +492,52 @@ class ServicioUsuarios:
             except ErrorDeCifrado:
                 continue
         return resultado
+
+    def _titular(
+        self, usuario_id: str, rol: str, documento: str | None
+    ) -> tuple[str | None, str | None]:
+        """El `titular_id` (HMAC) y el documento cifrado de un CLIENTE. Quien crea el usuario es un
+        BACKOFFICE, que verifica la identidad: por eso aquí sí se fija el titular (W03-36)."""
+        if documento is None:
+            return None, None
+        if rol != "CLIENTE":
+            raise DatoInvalido("El documento solo se guarda para clientes.")
+        limpio = normalizar_documento(documento)
+        if self._cifrador is None or not self._clave_titular:
+            raise DatoInvalido("Este servicio no está configurado para guardar el documento.")
+        return (
+            cliente_id_desde_documento(limpio, self._clave_titular),
+            self._cifrador.cifrar(limpio, contexto_documento(usuario_id)),
+        )
+
+    def _documento(self, fila: dict) -> str | None:
+        if self._cifrador is None or not fila.get("documento_cifrado"):
+            return None
+        try:
+            return self._cifrador.descifrar(
+                fila["documento_cifrado"], contexto_documento(fila["id"])
+            )
+        except ErrorDeCifrado:
+            logger.warning("documento no descifrable id=%s", id_opaco(fila["id"]))
+            return None
+
+    def documento_enmascarado_de(self, usuario_id: str) -> str | None:
+        """El documento del propio usuario enmascarado (`yo`, W03-34). `None` si no tiene."""
+        fila = self._repositorio.obtener(usuario_id)
+        documento = self._documento(fila) if fila else None
+        return enmascarar_documento(documento) if documento else None
+
+    def identidad_de(self, usuario_id: str) -> dict[str, str] | None:
+        """El titular y el documento en claro de un CLIENTE con identidad verificada, o `None`. Dato
+        personal: solo lo pide el BFF con el id del token, para cotizar sin pedirle la cédula
+        (W03-34) y para autorizar por titular (W03-33). Nunca se loguea."""
+        fila = self._repositorio.obtener(usuario_id)
+        if fila is None or fila["rol"] != "CLIENTE" or not fila.get("titular_id"):
+            return None
+        documento = self._documento(fila)
+        if documento is None:
+            return None
+        return {"titular_id": fila["titular_id"], "documento": documento}
 
     def _cifrar_contacto(
         self, usuario_id: str, rol: str, correo: str | None, telefono: str | None

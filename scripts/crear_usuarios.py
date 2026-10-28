@@ -90,9 +90,18 @@ def iniciar_sesion(bff: str, usuario: str, clave: str) -> str:
     return sesion["token"]
 
 
-def crear_usuario(bff: str, token: str, alias: str, clave: str, rol: str, nombre: str | None):
-    """`True` si lo creó, `False` si ya existía. Otro rechazo (alias inválido...) es un `Fallo`."""
-    entrada = {"usuario": alias, "clave": clave, "rol": rol}
+def crear_usuario(
+    bff: str,
+    token: str,
+    alias: str,
+    clave: str,
+    rol: str,
+    nombre: str | None,
+    extra: dict | None = None,
+):
+    """`True` si lo creó, `False` si ya existía. Otro rechazo (alias inválido...) es un `Fallo`.
+    `extra` lleva el correo y el documento que un CLIENTE necesita (W03-27)."""
+    entrada = {"usuario": alias, "clave": clave, "rol": rol, **(extra or {})}
     if nombre:
         entrada["nombre"] = nombre
     resultado = _graphql(bff, CREAR_USUARIO, {"entrada": entrada}, token)["crearUsuario"]
@@ -121,8 +130,11 @@ def token_de_identidad(auth: str) -> str | None:
     return salida.stdout.strip()
 
 
-def crear_usuario_en_auth(auth: str, token: str | None, alias: str, clave: str, rol: str, nombre):
-    """Igual que `crear_usuario`, pero llamando a `POST /usuarios` de AUTH."""
+def crear_usuario_en_auth(
+    auth: str, token: str | None, alias: str, clave: str, rol: str, nombre, extra=None
+):
+    """Igual que `crear_usuario`, pero llamando a `POST /usuarios` de AUTH. Solo crea el primer
+    BACKOFFICE, así que no usa `extra` (lo de un CLIENTE)."""
     entrada = {"usuario": alias, "clave": clave, "rol": rol}
     if nombre:
         entrada["nombre"] = nombre
@@ -195,6 +207,14 @@ def main(argumentos: list[str] | None = None) -> int:
         "--operador", default="operador.demo", help="alias del operador (BACKOFFICE)"
     )
     parser.add_argument("--nombre-cliente", default="Cliente Demo", help="nombre del CLIENTE")
+    # W03-27: un CLIENTE necesita su documento y su correo. El documento queda como su titular, así
+    # que debe ser el mismo con el que luego consienta y cotice.
+    parser.add_argument(
+        "--documento-cliente", default="1000000001", help="documento de identidad del CLIENTE"
+    )
+    parser.add_argument(
+        "--correo-cliente", default="cliente.demo@ejemplo.co", help="correo del CLIENTE"
+    )
     parser.add_argument(
         "--vault",
         metavar="PROYECTO",
@@ -219,22 +239,27 @@ def main(argumentos: list[str] | None = None) -> int:
         print(f"FALLO: {error}", file=sys.stderr)
         return 1
 
-    # (alias, rol, nombre, variable con la clave); solo el CLIENTE lleva nombre.
+    # (alias, rol, nombre, variable con la clave, extra); solo el CLIENTE lleva nombre, documento y
+    # correo.
+    extra_cliente = {
+        "documentoIdentidad": opciones.documento_cliente,
+        "correo": opciones.correo_cliente,
+    }
     pedidos = [
-        (opciones.cliente, "CLIENTE", opciones.nombre_cliente, "CLAVE_CLIENTE"),
-        (opciones.asesor, "ASESOR", None, "CLAVE_ASESOR"),
-        (opciones.operador, "BACKOFFICE", None, "CLAVE_OPERADOR"),
+        (opciones.cliente, "CLIENTE", opciones.nombre_cliente, "CLAVE_CLIENTE", extra_cliente),
+        (opciones.asesor, "ASESOR", None, "CLAVE_ASESOR", None),
+        (opciones.operador, "BACKOFFICE", None, "CLAVE_OPERADOR", None),
     ]
     if opciones.auth:
         # Saltarse el BFF es solo para arrancar: el resto se crea por el BFF, con su control de rol.
         pedidos = pedidos[2:]
         print("  (solo el primer BACKOFFICE; el CLIENTE y el ASESOR se crean por el BFF)")
     errores = 0
-    for alias, rol, nombre, variable in pedidos:
+    for alias, rol, nombre, variable, extra in pedidos:
         propia = os.getenv(variable)
         clave = propia or generar_clave()
         try:
-            creado = crear(destino, token, alias, clave, rol, nombre)
+            creado = crear(destino, token, alias, clave, rol, nombre, extra)
         except SinConexion as error:
             print(f"FALLO: {error}", file=sys.stderr)
             return 1

@@ -671,7 +671,7 @@ class CrearUsuarioInput:
     # Solo CLIENTE (HU-W03, bloque 8); AUTH los guarda cifrados y no los devuelve.
     correo: str | None = None
     telefono: str | None = None
-    # v0.18 (W03-27): obligatorio para un CLIENTE desde AUTH 0008 (F-B3).
+    # v0.18 (W03-27): obligatorio para un CLIENTE, junto con el correo (lo exige AUTH).
     documento_identidad: str | None = None
 
 
@@ -1356,6 +1356,7 @@ class Mutation:
                 entrada.nombre,
                 entrada.correo,
                 entrada.telefono,
+                entrada.documento_identidad,
             )
         except SolicitudInvalida as error:
             return ErrorUsuario(mensaje=str(error))

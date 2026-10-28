@@ -182,6 +182,9 @@ services:
       # Cifrado por campo del nombre del cliente. Sin valor, usa la llave local (no secreta);
       # en Cloud Run llega de Secret Manager (clave-cifrado) y no arranca con la local.
       CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
+      # El mismo valor que el BFF: el titular del CLIENTE debe coincidir con el del consentimiento
+      # (W03-27). Solo local; en Cloud Run llega de Secret Manager (clave-cliente-id).
+      CLIENTE_ID_CLAVE: solo-local-no-secreta
     depends_on:
       postgres: { condition: service_healthy }
       migrar-auth: { condition: service_completed_successfully }
