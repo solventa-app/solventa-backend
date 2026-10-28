@@ -362,7 +362,7 @@ python scripts/probar_cobros.py --staging solventa-511815 --evidencia docs/evide
 
 ## 9. Fuera de alcance
 
-Que el CLIENTE pague su prima (ver la sección 10, Sprint 2) y la captura de tarjeta (CA-W05-03: el prototipo no la tiene), Cloud Tasks real, eventos a Pub/Sub, la orden
+Cloud Tasks real, eventos a Pub/Sub, la orden
 de indemnización (CA-W05-07, Sprint 3) y el arranque frágil de Postgres en el primer `up` (un `fix(infra)` aparte).
 
 ## 10. Pendiente para el Sprint 2: el primer cobro al firmar (HU-W03, decisión D-03)
@@ -376,6 +376,13 @@ Revisado el 2026-10-17 contra el prototipo (Figma `Solventa-web-Final`, sección
   resultado del cobro** (cobrado, pendiente o rechazado) ni de error de pago.
 - **No se pide tarjeta**: la prima va con la cuota del crédito, así que el medio de pago lo pone el banco del crédito.
   Por eso no se construye la captura tokenizada de CA-W05-03; hay que ajustar su redacción en Jira.
+
+> **Actualización (2026-10-27, HU-W03 bloque 9 y W05-A4): CA-W05-03 queda cubierto.** La decisión W03-28 cambió lo de
+> arriba: el titular paga en la **página alojada de la pasarela** (`stubs/pasarela`, `GET /checkout/{id}`), que captura
+> la tarjeta y la **tokeniza**; Solventa solo recibe el token, la marca y el tipo. PAYMENTS abre la sesión y la confirma
+> de servidor a servidor (`POST /sesiones-pago` y `/sesiones-pago/{id}/confirmar`, migración `0008`; ver
+> `services/payments/README.md`). El cobro queda `INTERACTIVO` y el reintento de fondo no lo toca (W05-A3). Falta
+> ajustar la nota de CA-W05-03 en Jira.
 
 Lo que ya existe y sirve tal cual: `crearCobro` (recibe un `tokenMedioPago` opaco, sea de tarjeta o del banco),
 idempotencia por `idIntentoCobro`, estados `cobrando/cobrado/rechazado/pendiente`, reintento automático de pendientes y

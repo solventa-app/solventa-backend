@@ -29,7 +29,7 @@ from app.application.cifrado import CifradorCampos
 _COLUMNAS = (
     "id, id_intento_cobro, poliza_id, cliente_id, monto, moneda, token_medio_pago, "
     "estado, referencia, motivo, intentos, reintentos_rechazo, referencia_pasarela, "
-    "creado_en, actualizado_en"
+    "origen, medio_pago_id, creado_en, actualizado_en"
 )
 
 
@@ -133,11 +133,15 @@ class RepositorioCobrosPostgres:
             return self._a_cobro(fila) if fila is not None else None
 
     def listar_pendientes(self, max_intentos: int) -> list[dict]:
+        """Los `pendiente` que el reintento de fondo debe volver a cobrar. Nunca los
+        `INTERACTIVO` (W05-A3): esos los paga el titular en la página de la pasarela y solo se
+        concilian al confirmar la sesión."""
         with self._pool.connection() as conexion:
             filas = conexion.execute(
                 f"""
                 SELECT {_COLUMNAS} FROM cobros
                 WHERE estado = 'pendiente' AND intentos < %(max_intentos)s
+                  AND origen <> 'INTERACTIVO'
                 ORDER BY creado_en ASC
                 """,
                 {"max_intentos": max_intentos},
@@ -151,7 +155,7 @@ class RepositorioCobrosPostgres:
             filas = conexion.execute(
                 f"""
                 SELECT {_COLUMNAS} FROM cobros
-                WHERE estado = 'cobrando'
+                WHERE estado = 'cobrando' AND origen <> 'INTERACTIVO'
                   AND actualizado_en < now() - make_interval(secs => %(segundos)s)
                 ORDER BY creado_en ASC
                 """,
