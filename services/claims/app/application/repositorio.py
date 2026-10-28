@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from pymongo import MongoClient
+from pymongo.errors import DuplicateKeyError
 from pymongo.read_preferences import SecondaryPreferred
 
 from app.application.cifrado import CifradorCampos
@@ -149,6 +150,45 @@ class RepositorioSiniestrosMongo:
     def perito(self, perito_id: str, primaria: bool = False) -> dict | None:
         docs = self._buscar(PERITOS, {"_id": perito_id}, primaria)
         return self._sin_id(docs[0]) if docs else None
+
+    # ---------- Resolución (HU-W04, KAN-244) ----------
+    # Cada operación es una transacción: el documento nuevo (asignación o resolución) y el estado
+    # del caso cambian juntos o no cambian. Los índices únicos por `siniestro_id` impiden derivar o
+    # resolver dos veces aunque dos operadores lo intenten a la vez.
+
+    def registrar_derivacion(self, siniestro_id: str, asignacion: dict, ahora: datetime) -> bool:
+        """Guarda la asignación y deja el caso EN_REVISION. False si ya tenía perito o ya no está
+        abierto."""
+        return self._en_transaccion(
+            ASIGNACIONES, self._doc_asignacion(asignacion), siniestro_id, "EN_REVISION", ahora
+        )
+
+    def registrar_resolucion(
+        self, siniestro_id: str, resolucion: dict, estado: str, ahora: datetime
+    ) -> bool:
+        """Guarda la aprobación o el rechazo y cambia el estado. False si el caso ya se resolvió."""
+        return self._en_transaccion(
+            RESOLUCIONES, self._doc_resolucion(resolucion), siniestro_id, estado, ahora
+        )
+
+    def _en_transaccion(
+        self, coleccion: str, doc: dict, siniestro_id: str, estado: str, ahora: datetime
+    ) -> bool:
+        with self._cliente.start_session() as sesion:
+            try:
+                with sesion.start_transaction():
+                    self._db[coleccion].insert_one(doc, session=sesion)
+                    cambio = self._db[SINIESTROS].update_one(
+                        {"_id": siniestro_id, "estado": {"$in": ["PENDIENTE", "EN_REVISION"]}},
+                        {"$set": {"estado": estado, "actualizado_en": ahora}},
+                        session=sesion,
+                    )
+                    if cambio.matched_count != 1:
+                        sesion.abort_transaction()
+                        return False
+            except DuplicateKeyError:
+                return False
+        return True
 
     # ---------- Semilla de demostración (W04-3, W04-15) ----------
     # Idempotente por `_id`. Solo la usan `app/sembrar.py` y `/_demo/reiniciar`: la API normal no

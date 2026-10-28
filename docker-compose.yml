@@ -241,6 +241,7 @@ services:
       ALMACENAMIENTO_URL: http://almacenamiento:8009
       ALMACEN_REESCRITURA_ORIGENES: http://localhost:4443/=http://fake-gcs:4443/
       POLICY_URL: http://policy:8007
+      PAYMENTS_URL: http://payments:8004
       # Solo local (W04-15): POST /_demo/reiniciar vuelve a la semilla para las E2E de la web.
       DEMO_REINICIAR: "true"
       SEMILLA_DIR: /semilla

@@ -18,6 +18,8 @@ class Configuracion:
     cifrado_clave_envuelta: str = ""
     almacenamiento_url: str = "http://localhost:8009"
     policy_url: str = "http://localhost:8007"
+    payments_url: str = "http://localhost:8004"
+    autenticacion_servicios: str = "ninguna"
     servicios_timeout_segundos: float = 5.0
     # En local la URL firmada apunta a `localhost:4443`; desde el contenedor es `fake-gcs:4443`.
     almacen_reescritura_origenes: str = ""
@@ -38,6 +40,8 @@ class Configuracion:
             cifrado_clave_envuelta=os.getenv("CIFRADO_CLAVE_ENVUELTA", "").strip(),
             almacenamiento_url=os.getenv("ALMACENAMIENTO_URL", "http://localhost:8009"),
             policy_url=os.getenv("POLICY_URL", "http://localhost:8007"),
+            payments_url=os.getenv("PAYMENTS_URL", "http://localhost:8004"),
+            autenticacion_servicios=os.getenv("AUTENTICACION_SERVICIOS", "ninguna"),
             servicios_timeout_segundos=float(os.getenv("SERVICIOS_TIMEOUT_SEGUNDOS", "5")),
             almacen_reescritura_origenes=os.getenv("ALMACEN_REESCRITURA_ORIGENES", ""),
             demo_reiniciar=os.getenv("DEMO_REINICIAR", "false").strip().lower() == "true",

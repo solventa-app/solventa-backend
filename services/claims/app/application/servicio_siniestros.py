@@ -9,11 +9,66 @@ La `resolucion` del contrato sale de dos colecciones: la aprobación o el rechaz
 deja el caso EN_REVISION.
 """
 
+import logging
+import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Protocol
+from decimal import Decimal
+from typing import Any, Protocol
 
+from app.application.clientes import ServicioNoDisponible, SolicitudRechazada
 from app.application.dias_habiles import sumar_dias_habiles
+from app.application.identificadores import id_opaco
+
+logger = logging.getLogger(__name__)
+
+MAX_TEXTO = 500
+ABIERTOS = ("PENDIENTE", "EN_REVISION")
+MOTIVOS = (
+    "EVIDENCIA_INSUFICIENTE",
+    "FUERA_DE_COBERTURA",
+    "POLIZA_NO_VIGENTE",
+    "INCONSISTENCIA_EN_RELATO",
+    "OTRO",
+)
+
+# Mensajes de negocio en lenguaje del operador: los mismos del dummy, que la web ya muestra.
+MENSAJE_NO_EXISTE = "No encontramos el siniestro."
+MENSAJE_YA_RESUELTO = "El siniestro ya fue resuelto y no admite cambios."
+MENSAJE_YA_DERIVADO = "El siniestro ya tiene un perito asignado."
+MENSAJE_PERITO = "El perito seleccionado no está disponible."
+MENSAJE_TEXTO_LARGO = f"El texto supera los {MAX_TEXTO} caracteres."
+MENSAJE_MOTIVO = "El motivo de rechazo no es válido."
+MENSAJE_POLIZA = "No pudimos consultar la póliza del siniestro. Intenta de nuevo."
+MENSAJE_ORDEN_PAGO = "No pudimos registrar la orden de pago de la indemnización. Intenta de nuevo."
+
+METODO_TRANSFERENCIA = "ACH Colombia Interbancario"
+PLAZO_DISPERSION = "1 a 3 días hábiles"
+NOTIFICACION_APROBACION = "Enviada al asegurado y a la entidad acreedora"
+NOTIFICACION_RECHAZO = "Enviada vía correo certificado y Open Finance"
+NOTIFICACION_DERIVACION = "Correo certificado y expediente digital de siniestros"
+VIA_RECURSO = (
+    "Disponible en los próximos 10 días hábiles conforme al Código de Comercio y Circular "
+    "Básica Jurídica de la SFC."
+)
+
+
+class ErrorNegocio(Exception):
+    """Regla de negocio incumplida: el mensaje es seguro para mostrar al operador."""
+
+
+class DependenciaNoDisponible(Exception):
+    """POLICY o PAYMENTS no respondieron: el caso sigue abierto y el operador puede reintentar."""
+
+
+class PuertoPolicy(Protocol):
+    def obtener_poliza(self, poliza_id: str) -> dict[str, Any]: ...
+
+
+class PuertoPayments(Protocol):
+    def ordenar_indemnizacion(
+        self, siniestro_id: str, poliza_id: str, monto: str, moneda: str
+    ) -> dict[str, Any]: ...
 
 
 class PuertoRepositorio(Protocol):
@@ -32,6 +87,14 @@ class PuertoRepositorio(Protocol):
     def peritos(self, primaria: bool = False) -> list[dict]: ...
 
     def perito(self, perito_id: str, primaria: bool = False) -> dict | None: ...
+
+    def registrar_derivacion(
+        self, siniestro_id: str, asignacion: dict, ahora: datetime
+    ) -> bool: ...
+
+    def registrar_resolucion(
+        self, siniestro_id: str, resolucion: dict, estado: str, ahora: datetime
+    ) -> bool: ...
 
 
 def _perito(perito: dict | None) -> dict | None:
@@ -67,9 +130,13 @@ class ServicioSiniestros:
         self,
         repositorio: PuertoRepositorio,
         reloj: Callable[[], datetime] = lambda: datetime.now(UTC),
+        policy: PuertoPolicy | None = None,
+        payments: PuertoPayments | None = None,
     ) -> None:
         self._repo = repositorio
         self._reloj = reloj
+        self._policy = policy
+        self._payments = payments
 
     # ---------- Lectura ----------
 
@@ -95,6 +162,132 @@ class ServicioSiniestros:
             }
             for p in self._repo.peritos()
         ]
+
+    # ---------- Resolución (KAN-244) ----------
+    # Cada acción devuelve el expediente leído de la primaria: el operador ve lo que acaba de hacer
+    # aunque la réplica vaya atrasada.
+
+    def _abierto(self, siniestro_id: str) -> dict:
+        siniestro = self._repo.obtener(siniestro_id, primaria=True)
+        if siniestro is None:
+            raise ErrorNegocio(MENSAJE_NO_EXISTE)
+        if siniestro["estado"] not in ABIERTOS:
+            raise ErrorNegocio(MENSAJE_YA_RESUELTO)
+        return siniestro
+
+    @staticmethod
+    def _texto(texto: str | None) -> str | None:
+        texto = (texto or "").strip() or None
+        if texto and len(texto) > MAX_TEXTO:
+            raise ErrorNegocio(MENSAJE_TEXTO_LARGO)
+        return texto
+
+    def derivar(
+        self, siniestro_id: str, perito_id: str, instrucciones: str | None, actor: str | None
+    ) -> dict:
+        self._abierto(siniestro_id)
+        if self._repo.asignaciones([siniestro_id], primaria=True):
+            raise ErrorNegocio(MENSAJE_YA_DERIVADO)
+        perito = self._repo.perito(perito_id, primaria=True)
+        if perito is None or not perito["activo"]:
+            raise ErrorNegocio(MENSAJE_PERITO)
+        instrucciones = self._texto(instrucciones)
+        ahora = self._reloj()
+        asignacion = {
+            "id": str(uuid.uuid4()),
+            "siniestro_id": siniestro_id,
+            "perito_id": perito_id,
+            "instrucciones": instrucciones,
+            "notificacion": NOTIFICACION_DERIVACION,
+            "asignada_en": ahora,
+            "vence_informe_en": sumar_dias_habiles(ahora, perito["tiempo_respuesta_dias"]),
+            "actor_usuario_id": actor,
+        }
+        if not self._repo.registrar_derivacion(siniestro_id, asignacion, ahora):
+            # Otro operador lo derivó o lo resolvió entre la validación y la escritura.
+            raise ErrorNegocio(self._motivo_conflicto(siniestro_id, MENSAJE_YA_DERIVADO))
+        logger.info("siniestro=%s derivado perito=%s", id_opaco(siniestro_id), perito_id)
+        return self.obtener(siniestro_id, primaria=True)
+
+    def rechazar(
+        self, siniestro_id: str, motivo: str, comentario: str | None, actor: str | None
+    ) -> dict:
+        self._abierto(siniestro_id)
+        if motivo not in MOTIVOS:
+            raise ErrorNegocio(MENSAJE_MOTIVO)
+        comentario = self._texto(comentario)
+        ahora = self._reloj()
+        resolucion = {
+            "id": str(uuid.uuid4()),
+            "siniestro_id": siniestro_id,
+            "tipo": "RECHAZO",
+            "motivo": motivo,
+            "comentario": comentario,
+            "notificacion": NOTIFICACION_RECHAZO,
+            "via_recurso": VIA_RECURSO,
+            "resuelta_en": ahora,
+            "actor_usuario_id": actor,
+        }
+        if not self._repo.registrar_resolucion(siniestro_id, resolucion, "RECHAZADO", ahora):
+            raise ErrorNegocio(MENSAJE_YA_RESUELTO)
+        logger.info("siniestro=%s rechazado motivo=%s", id_opaco(siniestro_id), motivo)
+        return self.obtener(siniestro_id, primaria=True)
+
+    def aprobar(self, siniestro_id: str, actor: str | None) -> dict:
+        """W04-6: primero la orden de pago en PAYMENTS (idempotente por siniestro) y después la
+        aprobación. Si PAYMENTS o POLICY no responden, el caso sigue abierto y nada queda a medias:
+        reintentar devuelve la misma orden."""
+        siniestro = self._abierto(siniestro_id)
+        indemnizacion = self._indemnizacion(siniestro)
+        try:
+            orden = self._payments.ordenar_indemnizacion(
+                siniestro_id,
+                siniestro["poliza_id"],
+                indemnizacion["valor"],
+                indemnizacion["moneda"],
+            )
+        except (ServicioNoDisponible, SolicitudRechazada) as error:
+            logger.warning(
+                "siniestro=%s orden de pago no registrada: %s", id_opaco(siniestro_id), error
+            )
+            raise DependenciaNoDisponible(MENSAJE_ORDEN_PAGO) from error
+        ahora = self._reloj()
+        resolucion = {
+            "id": str(uuid.uuid4()),
+            "siniestro_id": siniestro_id,
+            "tipo": "APROBACION",
+            "notificacion": NOTIFICACION_APROBACION,
+            "indemnizacion": indemnizacion,
+            "metodo_transferencia": orden.get("metodo_transferencia", METODO_TRANSFERENCIA),
+            "plazo_dispersion": PLAZO_DISPERSION,
+            "orden_pago_id": orden["id"],
+            "resuelta_en": ahora,
+            "actor_usuario_id": actor,
+        }
+        if not self._repo.registrar_resolucion(siniestro_id, resolucion, "APROBADO", ahora):
+            raise ErrorNegocio(MENSAJE_YA_RESUELTO)
+        logger.info("siniestro=%s aprobado orden=%s", id_opaco(siniestro_id), id_opaco(orden["id"]))
+        return self.obtener(siniestro_id, primaria=True)
+
+    def _indemnizacion(self, siniestro: dict) -> dict:
+        """W04-8: la suma reclamada, acotada a la cobertura de la póliza (en la misma moneda)."""
+        try:
+            poliza = self._policy.obtener_poliza(siniestro["poliza_id"])
+        except (ServicioNoDisponible, SolicitudRechazada) as error:
+            raise DependenciaNoDisponible(MENSAJE_POLIZA) from error
+        reclamada = siniestro["suma_reclamada"]
+        cobertura = poliza["cobertura"]
+        if cobertura["moneda"] == reclamada["moneda"] and Decimal(cobertura["valor"]) < Decimal(
+            reclamada["valor"]
+        ):
+            return {"valor": cobertura["valor"], "moneda": cobertura["moneda"]}
+        return {"valor": reclamada["valor"], "moneda": reclamada["moneda"]}
+
+    def _motivo_conflicto(self, siniestro_id: str, por_defecto: str) -> str:
+        actual = self._repo.obtener(siniestro_id, primaria=True)
+        if actual is not None and actual["estado"] not in ABIERTOS:
+            return MENSAJE_YA_RESUELTO
+        return por_defecto
 
     def _armar(self, siniestros: list[dict], primaria: bool) -> list[dict]:
         ids = [s["id"] for s in siniestros]

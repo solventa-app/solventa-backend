@@ -8,6 +8,7 @@ import copy
 from datetime import UTC, datetime
 
 AHORA = datetime(2026, 10, 28, 15, 0, tzinfo=UTC)
+ABIERTOS = ("PENDIENTE", "EN_REVISION")
 
 
 class RepositorioFalso:
@@ -55,6 +56,24 @@ class RepositorioFalso:
     def perito(self, perito_id, primaria=False):
         p = self.peritos_por.get(perito_id)
         return copy.deepcopy(p) if p else None
+
+    # ---------- Resolución (misma regla que la transacción real) ----------
+
+    def registrar_derivacion(self, siniestro_id, asignacion, ahora):
+        s = self.siniestros.get(siniestro_id)
+        if siniestro_id in self.asignaciones_por or s is None or s["estado"] not in ABIERTOS:
+            return False
+        self.asignaciones_por[siniestro_id] = copy.deepcopy(asignacion)
+        s["estado"] = "EN_REVISION"
+        return True
+
+    def registrar_resolucion(self, siniestro_id, resolucion, estado, ahora):
+        s = self.siniestros.get(siniestro_id)
+        if siniestro_id in self.resoluciones_por or s is None or s["estado"] not in ABIERTOS:
+            return False
+        self.resoluciones_por[siniestro_id] = copy.deepcopy(resolucion)
+        s["estado"] = estado
+        return True
 
     # ---------- Escritura de la semilla ----------
 
@@ -220,3 +239,33 @@ def repositorio_con_datos() -> RepositorioFalso:
         "actor_usuario_id": None,
     }
     return repo
+
+
+class PolicyPolizas:
+    def __init__(self, cobertura="52000000", falla=None):
+        self.cobertura = cobertura
+        self.falla = falla
+
+    def obtener_poliza(self, poliza_id):
+        if self.falla:
+            raise self.falla
+        return {"id": poliza_id, "cobertura": {"valor": self.cobertura, "moneda": "COP"}}
+
+
+class PaymentsFalso:
+    def __init__(self, falla=None):
+        self.ordenes = {}
+        self.falla = falla
+
+    def ordenar_indemnizacion(self, siniestro_id, poliza_id, monto, moneda):
+        if self.falla:
+            raise self.falla
+        self.ordenes.setdefault(
+            siniestro_id,
+            {
+                "id": f"ind-{siniestro_id}",
+                "monto": monto,
+                "metodo_transferencia": "ACH Colombia Interbancario",
+            },
+        )
+        return self.ordenes[siniestro_id]

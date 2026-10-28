@@ -133,3 +133,29 @@ class ClientePolicy:
 
     def cerrar(self) -> None:
         self._cliente.close()
+
+
+class ClientePayments:
+    """PAYMENTS, escritor único de los pagos: la orden de la indemnización al aprobar (W04-6)."""
+
+    def __init__(self, url: str, timeout_s: float, auth: httpx.Auth | None = None) -> None:
+        self._cliente = httpx.Client(base_url=url, timeout=timeout_s, auth=auth)
+
+    def ordenar_indemnizacion(
+        self, siniestro_id: str, poliza_id: str, monto: str, moneda: str
+    ) -> dict[str, Any]:
+        """Idempotente por siniestro: pedirla otra vez devuelve la misma orden."""
+        return _pedir(
+            self._cliente,
+            "POST",
+            "/indemnizaciones",
+            json={
+                "siniestro_id": siniestro_id,
+                "poliza_id": poliza_id,
+                "monto": monto,
+                "moneda": moneda,
+            },
+        )
+
+    def cerrar(self) -> None:
+        self._cliente.close()

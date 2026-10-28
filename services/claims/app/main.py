@@ -11,13 +11,21 @@ from enum import StrEnum
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
+from pydantic import BaseModel, Field
 from pymongo import MongoClient
 
+from app.application.autenticacion_servicios import autenticacion_para
 from app.application.cifrado import CifradorAesGcm
+from app.application.clientes import ClientePayments, ClientePolicy
 from app.application.configuracion import Configuracion
 from app.application.repositorio import RepositorioSiniestrosMongo
-from app.application.servicio_siniestros import ServicioSiniestros
+from app.application.servicio_siniestros import (
+    DependenciaNoDisponible,
+    ErrorNegocio,
+    ServicioSiniestros,
+)
 from app.observabilidad import configurar_trazas
 from app.sembrar import sembrar
 
@@ -36,6 +44,22 @@ class EstadoSiniestro(StrEnum):
     RECHAZADO = "RECHAZADO"
 
 
+class AprobarRequest(BaseModel):
+    actor_usuario_id: str | None = None  # el BACKOFFICE que resuelve (id opaco de AUTH)
+
+
+class RechazarRequest(BaseModel):
+    motivo: str
+    comentario: str | None = Field(default=None, max_length=2000)
+    actor_usuario_id: str | None = None
+
+
+class DerivarRequest(BaseModel):
+    perito_id: str = Field(min_length=1)
+    instrucciones: str | None = Field(default=None, max_length=2000)
+    actor_usuario_id: str | None = None
+
+
 def create_app(
     config: Configuracion | None = None,
     servicio: ServicioSiniestros | None = None,
@@ -48,6 +72,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         cliente_mongo: MongoClient | None = None
+        policy: ClientePolicy | None = None
+        payments: ClientePayments | None = None
         app.state.reiniciar = reiniciar
         if servicio is not None:
             app.state.servicio = servicio
@@ -61,13 +87,27 @@ def create_app(
             repositorio = RepositorioSiniestrosMongo(
                 cliente_mongo, cifrador, config.mongo_db, config.lectura_max_ms
             )
-            app.state.servicio = ServicioSiniestros(repositorio)
+            modo = config.autenticacion_servicios
+            policy = ClientePolicy(
+                config.policy_url,
+                config.servicios_timeout_segundos,
+                autenticacion_para(modo, "policy"),
+            )
+            payments = ClientePayments(
+                config.payments_url,
+                config.servicios_timeout_segundos,
+                autenticacion_para(modo, "payments"),
+            )
+            app.state.servicio = ServicioSiniestros(repositorio, policy=policy, payments=payments)
             if app.state.reiniciar is None:
                 datos = Path(config.semilla_dir)
                 app.state.reiniciar = lambda: sembrar(repositorio, datos)
         try:
             yield
         finally:
+            for cliente in (policy, payments):
+                if cliente is not None:
+                    cliente.cerrar()
             if cliente_mongo is not None:
                 cliente_mongo.close()
 
@@ -92,6 +132,37 @@ def create_app(
     @app.get("/siniestros/{siniestro_id}/peritos", tags=["siniestros"])
     def peritos(siniestro_id: str) -> list[dict]:
         return app.state.servicio.peritos_para(siniestro_id)
+
+    def _accion(accion) -> dict | JSONResponse:
+        """Un error de negocio es 409 y una dependencia caída 503, siempre con un `detail` en
+        lenguaje del operador que el BFF muestra tal cual (nunca un 5xx crudo al cliente)."""
+        try:
+            return accion()
+        except ErrorNegocio as error:
+            return JSONResponse(status_code=409, content={"detail": str(error)})
+        except DependenciaNoDisponible as error:
+            return JSONResponse(status_code=503, content={"detail": str(error)})
+
+    @app.post("/siniestros/{siniestro_id}/aprobar", tags=["resolucion"])
+    def aprobar(siniestro_id: str, body: AprobarRequest) -> dict:
+        """Registra la orden de pago en PAYMENTS y aprueba (W04-6)."""
+        return _accion(lambda: app.state.servicio.aprobar(siniestro_id, body.actor_usuario_id))
+
+    @app.post("/siniestros/{siniestro_id}/rechazar", tags=["resolucion"])
+    def rechazar(siniestro_id: str, body: RechazarRequest) -> dict:
+        return _accion(
+            lambda: app.state.servicio.rechazar(
+                siniestro_id, body.motivo, body.comentario, body.actor_usuario_id
+            )
+        )
+
+    @app.post("/siniestros/{siniestro_id}/derivar", tags=["resolucion"])
+    def derivar(siniestro_id: str, body: DerivarRequest) -> dict:
+        return _accion(
+            lambda: app.state.servicio.derivar(
+                siniestro_id, body.perito_id, body.instrucciones, body.actor_usuario_id
+            )
+        )
 
     if config.demo_reiniciar:
 

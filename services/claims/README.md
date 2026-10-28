@@ -36,6 +36,16 @@ por campo con AES-GCM (regla 6) y nunca van a los logs.
 | GET | `/siniestros?estado=` | Bandeja, del más reciente al más antiguo |
 | GET | `/siniestros/{id}` | Expediente completo; 404 si no existe |
 | GET | `/siniestros/{id}/peritos` | Peritos activos con la fecha límite del informe si se le deriva hoy |
+| POST | `/siniestros/{id}/derivar` | `{perito_id, instrucciones, actor_usuario_id}`: deja el caso EN_REVISION con su perito y la fecha límite del informe (días hábiles, W04-7). Una sola derivación por caso |
+| POST | `/siniestros/{id}/rechazar` | `{motivo, comentario, actor_usuario_id}`: RECHAZADO con la vía de recurso |
+| POST | `/siniestros/{id}/aprobar` | `{actor_usuario_id}`: pide primero la orden de pago a PAYMENTS (`POST /indemnizaciones`, idempotente por siniestro) y luego aprueba. Indemnización = suma reclamada acotada a la cobertura de la póliza (W04-8, la pide a POLICY) |
+| POST | `/_demo/reiniciar` | Solo con `DEMO_REINICIAR=true` (local): vuelve a la semilla. No toca las órdenes de PAYMENTS |
+
+**Errores:** un error de negocio es `409 {"detail": mensaje}` (caso inexistente o ya resuelto, perito no disponible,
+texto de más de 500 caracteres) y una dependencia caída (POLICY o PAYMENTS) es `503 {"detail": mensaje}`; en los dos
+casos el mensaje es para el operador y el caso sigue abierto. La derivación y la resolución se guardan en una
+transacción de MongoDB junto con el estado del caso, y los índices únicos impiden resolver dos veces aunque lleguen
+peticiones simultáneas (verificado: 8 aprobaciones a la vez dejan una resolución y una orden).
 
 ## Variables de entorno
 

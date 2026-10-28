@@ -123,7 +123,7 @@
     "puerto": 8011,
     "url_env": "CLAIMS_URL",
     "migracion": ["python", "-m", "migrations"],
-    "llama": ["almacenamiento", "policy"],
+    "llama": ["almacenamiento", "policy", "payments"],
     "entorno": { "MONGO_DB": "claims", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": {
       "MONGO_URI": "mongo-uri-claims",
