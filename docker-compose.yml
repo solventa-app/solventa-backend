@@ -273,10 +273,16 @@ services:
       PAYMENTS_URL: http://payments:8004
       # El contacto y el nombre del cliente para el aviso con PDF (bloque 8, W03-16).
       AUTH_URL: http://auth:8001
+      # Bloque 9 (HU-W03): la imagen de la firma, los avisos en vivo y la página del enlace.
+      ALMACENAMIENTO_URL: http://almacenamiento:8009
+      ALMACEN_REESCRITURA_ORIGENES: http://localhost:4443/=http://fake-gcs:4443/
+      REDIS_URL: redis://redis:6379/3
+      URL_FRONT: http://localhost:5173
     depends_on:
       postgres: { condition: service_healthy }
       migrar-policy: { condition: service_completed_successfully }
       auth: { condition: service_healthy }
+      almacenamiento: { condition: service_healthy }
 
   migrar-almacenamiento:
     <<: *tarea
