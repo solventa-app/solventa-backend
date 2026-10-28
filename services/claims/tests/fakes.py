@@ -56,6 +56,72 @@ class RepositorioFalso:
         p = self.peritos_por.get(perito_id)
         return copy.deepcopy(p) if p else None
 
+    # ---------- Escritura de la semilla ----------
+
+    def guardar_perito(self, perito):
+        self.peritos_por[perito["id"]] = copy.deepcopy(perito)
+
+    def guardar_siniestro(self, siniestro, ahora):
+        campos = (
+            "id",
+            "radicado",
+            "poliza_id",
+            "estado",
+            "asegurado",
+            "cobertura_aplicada",
+            "entidad_acreedora",
+            "ocurrido_en",
+            "notificado_en",
+            "ubicacion",
+            "descripcion",
+            "suma_reclamada",
+            "vence_dictamen_en",
+        )
+        self.siniestros[siniestro["id"]] = {k: copy.deepcopy(siniestro[k]) for k in campos}
+
+    def evidencia(self, evidencia_id):
+        for lista in self.evidencias_por.values():
+            for e in lista:
+                if e["id"] == evidencia_id:
+                    return copy.deepcopy(e)
+        return None
+
+    def guardar_evidencia(self, evidencia):
+        lista = self.evidencias_por.setdefault(evidencia["siniestro_id"], [])
+        lista[:] = [e for e in lista if e["id"] != evidencia["id"]] + [copy.deepcopy(evidencia)]
+
+    def guardar_verificacion(self, verificacion):
+        lista = self.verificaciones_por.setdefault(verificacion["siniestro_id"], [])
+        lista[:] = [v for v in lista if v["id"] != verificacion["id"]] + [
+            copy.deepcopy(verificacion)
+        ]
+
+    def reiniciar_resolucion(self, siniestro_id, asignacion, resolucion):
+        self.asignaciones_por.pop(siniestro_id, None)
+        self.resoluciones_por.pop(siniestro_id, None)
+        if asignacion is not None:
+            self.asignaciones_por[siniestro_id] = copy.deepcopy(asignacion)
+        if resolucion is not None:
+            self.resoluciones_por[siniestro_id] = copy.deepcopy(resolucion)
+
+
+class AlmacenamientoFalso:
+    def __init__(self):
+        self.subidas = []
+
+    def subir(self, tipo, tipo_contenido, contenido, propietario_id):
+        self.subidas.append((tipo, tipo_contenido, len(contenido), propietario_id))
+        return f"arch-{len(self.subidas)}"
+
+
+class PolicyFalso:
+    def __init__(self):
+        self.consultas = []
+
+    def poliza_de_propuesta(self, propuesta_id):
+        self.consultas.append(propuesta_id)
+        return "poliza-de-" + propuesta_id
+
 
 def siniestro(sid="sin-01", estado="PENDIENTE", notificado_en=AHORA, **extra) -> dict:
     return {

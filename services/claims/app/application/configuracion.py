@@ -16,6 +16,14 @@ class Configuracion:
     cifrado_clave: str = CIFRADO_CLAVE_LOCAL
     kms_key_name: str = ""
     cifrado_clave_envuelta: str = ""
+    almacenamiento_url: str = "http://localhost:8009"
+    policy_url: str = "http://localhost:8007"
+    servicios_timeout_segundos: float = 5.0
+    # En local la URL firmada apunta a `localhost:4443`; desde el contenedor es `fake-gcs:4443`.
+    almacen_reescritura_origenes: str = ""
+    # Solo local (W04-15): `POST /_demo/reiniciar` vuelve a la semilla de `SEMILLA_DIR`.
+    demo_reiniciar: bool = False
+    semilla_dir: str = "/semilla"
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -28,4 +36,10 @@ class Configuracion:
             cifrado_clave=os.getenv("CIFRADO_CLAVE", CIFRADO_CLAVE_LOCAL),
             kms_key_name=os.getenv("KMS_KEY_NAME", "").strip(),
             cifrado_clave_envuelta=os.getenv("CIFRADO_CLAVE_ENVUELTA", "").strip(),
+            almacenamiento_url=os.getenv("ALMACENAMIENTO_URL", "http://localhost:8009"),
+            policy_url=os.getenv("POLICY_URL", "http://localhost:8007"),
+            servicios_timeout_segundos=float(os.getenv("SERVICIOS_TIMEOUT_SEGUNDOS", "5")),
+            almacen_reescritura_origenes=os.getenv("ALMACEN_REESCRITURA_ORIGENES", ""),
+            demo_reiniciar=os.getenv("DEMO_REINICIAR", "false").strip().lower() == "true",
+            semilla_dir=os.getenv("SEMILLA_DIR", "/semilla"),
         )

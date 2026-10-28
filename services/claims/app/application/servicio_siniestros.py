@@ -1,12 +1,12 @@
 """Mesa de siniestros (HU-W04): arma el expediente que consume el BFF.
 
-Capas simples (regla #3): el servicio aplica las reglas y el repositorio guarda. La forma de salida es
-la del contrato (`contracts/graphql/schema.graphql`, v0.19) en snake_case; el BFF solo resuelve la
-póliza con POLICY y la URL firmada de cada evidencia con el almacenamiento.
+Capas simples (regla #3): el servicio aplica las reglas y el repositorio guarda. La forma de salida
+es la del contrato (`contracts/graphql/schema.graphql`, v0.19) en snake_case; el BFF solo resuelve
+la póliza con POLICY y la URL firmada de cada evidencia con el almacenamiento.
 
 La `resolucion` del contrato sale de dos colecciones: la aprobación o el rechazo
-(`resoluciones_siniestro`) si existe; si no, la derivación a perito (`asignaciones_perito`), que deja
-el caso EN_REVISION.
+(`resoluciones_siniestro`) si existe; si no, la derivación a perito (`asignaciones_perito`), que
+deja el caso EN_REVISION.
 """
 
 from collections.abc import Callable

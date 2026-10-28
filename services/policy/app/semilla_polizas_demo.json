@@ -1,0 +1,152 @@
+[
+  {
+    "propuesta_id": "demo-siniestros-prop-01",
+    "oferta_id": "demo-siniestros-oferta-01",
+    "cliente_id": "demo-siniestros-cli-01",
+    "vigencia_desde": "2026-02-10T00:00:00-05:00",
+    "vigencia_hasta": "2027-02-10T00:00:00-05:00",
+    "prima": {
+      "valor": "1560000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "52000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-02",
+    "oferta_id": "demo-siniestros-oferta-02",
+    "cliente_id": "demo-siniestros-cli-02",
+    "vigencia_desde": "2026-01-15T00:00:00-05:00",
+    "vigencia_hasta": "2027-01-15T00:00:00-05:00",
+    "prima": {
+      "valor": "1904000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "68000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-03",
+    "oferta_id": "demo-siniestros-oferta-03",
+    "cliente_id": "demo-siniestros-cli-03",
+    "vigencia_desde": "2026-04-02T00:00:00-05:00",
+    "vigencia_hasta": "2027-04-02T00:00:00-05:00",
+    "prima": {
+      "valor": "3072000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "96000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-04",
+    "oferta_id": "demo-siniestros-oferta-04",
+    "cliente_id": "demo-siniestros-cli-04",
+    "vigencia_desde": "2026-05-20T00:00:00-05:00",
+    "vigencia_hasta": "2027-05-20T00:00:00-05:00",
+    "prima": {
+      "valor": "3780000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "135000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-05",
+    "oferta_id": "demo-siniestros-oferta-05",
+    "cliente_id": "demo-siniestros-cli-05",
+    "vigencia_desde": "2026-03-08T00:00:00-05:00",
+    "vigencia_hasta": "2027-03-08T00:00:00-05:00",
+    "prima": {
+      "valor": "4144000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "148000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-06",
+    "oferta_id": "demo-siniestros-oferta-06",
+    "cliente_id": "demo-siniestros-cli-06",
+    "vigencia_desde": "2026-06-12T00:00:00-05:00",
+    "vigencia_hasta": "2027-06-12T00:00:00-05:00",
+    "prima": {
+      "valor": "1316000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "47000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-07",
+    "oferta_id": "demo-siniestros-oferta-07",
+    "cliente_id": "demo-siniestros-cli-07",
+    "vigencia_desde": "2026-07-01T00:00:00-05:00",
+    "vigencia_hasta": "2027-07-01T00:00:00-05:00",
+    "prima": {
+      "valor": "3080000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "110000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-08",
+    "oferta_id": "demo-siniestros-oferta-08",
+    "cliente_id": "demo-siniestros-cli-08",
+    "vigencia_desde": "2026-02-25T00:00:00-05:00",
+    "vigencia_hasta": "2027-02-25T00:00:00-05:00",
+    "prima": {
+      "valor": "4480000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "160000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-09",
+    "oferta_id": "demo-siniestros-oferta-09",
+    "cliente_id": "demo-siniestros-cli-09",
+    "vigencia_desde": "2025-09-28T00:00:00-05:00",
+    "vigencia_hasta": "2026-09-28T00:00:00-05:00",
+    "prima": {
+      "valor": "1260000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "45000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-10",
+    "oferta_id": "demo-siniestros-oferta-10",
+    "cliente_id": "demo-siniestros-cli-10",
+    "vigencia_desde": "2026-08-05T00:00:00-05:00",
+    "vigencia_hasta": "2027-08-05T00:00:00-05:00",
+    "prima": {
+      "valor": "2464000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "88000000",
+      "moneda": "COP"
+    }
+  }
+]
