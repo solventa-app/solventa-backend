@@ -106,6 +106,26 @@ static_resources:
                           route:
                             cluster: bff_cluster
                             timeout: 0.7s
+                        # Dummy de siniestros (HU-W04): GraphQL y evidencias, igual que en OpenAPI.
+                        - match:
+                            path: "/graphql/siniestros"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: siniestros_cluster
+                            timeout: 0.7s
+                        - match:
+                            safe_regex:
+                              regex: "/graphql/siniestros/medios/[^/]+"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: siniestros_cluster
+                            timeout: 0.7s
                 http_filters:
                   - name: envoy.filters.http.router
                     typed_config:
@@ -124,3 +144,16 @@ static_resources:
                     socket_address:
                       address: bff
                       port_value: 8000
+    - name: siniestros_cluster
+      connect_timeout: 0.25s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: siniestros_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: stub-siniestros
+                      port_value: 8107

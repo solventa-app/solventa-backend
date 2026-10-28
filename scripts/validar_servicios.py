@@ -62,9 +62,8 @@ def validar() -> list[str]:
                 f"{nombre}: ningún servicio de Cloud Run debe ser público; "
                 "la única puerta pública es el API Gateway delante del BFF"
             )
-        # Un servicio `dummy` (p. ej. stub-siniestros) lo consume el front directamente en local:
-        # no lo llama ningún otro servicio. Sigue sin poder ser `publico` y no se despliega (ver
-        # seleccionar_servicios.py e infra/servicios.tf).
+        # Un servicio `dummy` (p. ej. stub-siniestros) lo consume el front: no lo llama ningún otro
+        # servicio. Sigue sin poder ser `publico`; en staging lo invoca el API Gateway (gateway.tf).
         if (
             nombre not in ("bff", "consolidador-fuentes")
             and not s.get("dummy")
