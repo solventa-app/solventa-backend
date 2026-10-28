@@ -14,7 +14,13 @@ from fakes import (
     catalogo_de_prueba,
 )
 
-from app.application.servicio_archivos import Actor, ErrorArchivo, ServicioArchivos, Vigencias
+from app.application.servicio_archivos import (
+    DIAS_SUBIDA_ABANDONADA,
+    Actor,
+    ErrorArchivo,
+    ServicioArchivos,
+    Vigencias,
+)
 
 CLIENTE = Actor("CLIENTE", "u-1")
 OTRO_CLIENTE = Actor("CLIENTE", "u-2")
@@ -309,6 +315,36 @@ def test_purgar_borra_solo_lo_vencido(entorno: Entorno) -> None:
     assert entorno.repo.obtener(video["id"])["estado"] == "ELIMINADO"
     assert video["objeto"] in entorno.almacen.borrados
     assert entorno.servicio.purgar_vencidos() == 0
+
+
+def test_purgar_borra_las_subidas_abandonadas_a_los_90_dias(entorno: Entorno) -> None:
+    abandonada = entorno.subir_foto()  # subida pero nunca confirmada: sigue PENDIENTE
+    disponible = entorno.servicio.confirmar(entorno.subir_foto()["id"])
+
+    entorno.ahora = AHORA + timedelta(days=DIAS_SUBIDA_ABANDONADA) - timedelta(seconds=1)
+    assert entorno.servicio.purgar_vencidos() == 0
+    entorno.ahora = AHORA + timedelta(days=DIAS_SUBIDA_ABANDONADA, seconds=1)
+    assert entorno.servicio.purgar_vencidos() == 1
+
+    assert entorno.repo.obtener(abandonada["id"])["estado"] == "ELIMINADO"
+    assert abandonada["objeto"] in entorno.almacen.borrados
+    # Lo DISPONIBLE sin retención se conserva (la firma de una póliza emitida, HU-W03).
+    assert entorno.repo.obtener(disponible["id"])["estado"] == "DISPONIBLE"
+    assert disponible["objeto"] not in entorno.almacen.borrados
+    assert entorno.servicio.purgar_vencidos() == 0
+
+
+def test_purgar_no_toca_lo_rechazado_y_respeta_el_limite(entorno: Entorno) -> None:
+    rechazada = entorno.subir_foto(contenido=PNG)  # dice JPEG, pero los bytes son PNG
+    assert entorno.servicio.confirmar(rechazada["id"])["estado"] == "RECHAZADO"
+    abandonadas = [entorno.subir_foto() for _ in range(3)]
+
+    entorno.ahora = AHORA + timedelta(days=DIAS_SUBIDA_ABANDONADA + 1)
+    assert entorno.servicio.purgar_vencidos(limite=2) == 2
+    assert entorno.servicio.purgar_vencidos(limite=2) == 1
+
+    assert entorno.repo.obtener(rechazada["id"])["estado"] == "RECHAZADO"
+    assert all(entorno.repo.obtener(a["id"])["estado"] == "ELIMINADO" for a in abandonadas)
 
 
 def test_el_actor_debe_ser_coherente() -> None:

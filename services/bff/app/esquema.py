@@ -10,6 +10,10 @@ Operaciones sin backend todavía (alcance del Sprint 1, KAN-24):
   leen y escriben en POLICY (bloques 1, 2 y 4). `Poliza.documentoUrl` apunta a una ruta del BFF que
   entrega el PDF y que llega con el bloque 5. `oferta(id)` lee la oferta que RATING guardó, con la
   misma validación de dueño que `aceptarOferta`.
+- HU-W03 bloque 9 (contrato v0.18): las operaciones del asesor, de la página del enlace,
+  `propuestas` y `ticketAvisos` son solo el esqueleto: responden «aún no disponible» con
+  reintento hasta F-B6 (`docs/plan-hu-w03-frans.md`). `aceptarOferta` recibe el contacto pero
+  aún no lo guarda.
 `cobros` y `reintentarCobro` (KAN-28) leen y reintentan en PAYMENTS, que concilia
 con la pasarela antes de cobrar (ver `docs/cobros-conciliacion.md`).
 Ninguna produce un 5xx: los errores de GraphQL viajan con HTTP 200.
@@ -224,16 +228,35 @@ ResultadoOferta = Annotated[Oferta | ErrorOferta, strawberry.union("ResultadoOfe
 @strawberry.input
 class SolicitudOfertaInput:
     consentimiento_id: strawberry.ID
-    documento_identidad: str
     valor_credito: str
     plazo_meses: int
     direccion_inmueble: str
+    # Obligatorio para un ASESOR; un CLIENTE con documento en AUTH no lo manda (v0.18, W03-34).
+    documento_identidad: str | None = None
 
 
 @strawberry.type
 class ConfirmacionContacto:
     canal: CanalContacto
     resumen: str
+
+
+@strawberry.enum
+class OrigenCobro(Enum):
+    INTERACTIVO = "INTERACTIVO"
+    RECURRENTE = "RECURRENTE"
+
+
+@strawberry.enum
+class TipoMedioPago(Enum):
+    CREDITO = "CREDITO"
+    DEBITO = "DEBITO"
+
+
+@strawberry.type
+class MedioPago:
+    marca: str
+    tipo: TipoMedioPago
 
 
 @strawberry.type
@@ -254,6 +277,8 @@ class Cobro:
     reintentos_restantes: int | None  # reintentos manuales de un rechazado (CA-W05-02)
     id_transaccion: str | None  # referencia de la pasarela (columna de W05-01)
     cliente: ClienteCobro | None
+    origen: OrigenCobro | None = None  # v0.18 (W05-A3)
+    medio: MedioPago | None = None  # v0.18 (W05-A5): marca y tipo, nunca el número
 
 
 @strawberry.input
@@ -294,6 +319,28 @@ class EstadoPropuesta(Enum):
     PAGO_RECHAZADO = "PAGO_RECHAZADO"
     NO_EMITIDA = "NO_EMITIDA"
     EMITIDA = "EMITIDA"
+    # v0.18 (HU-W03, bloque 9)
+    IDENTIDAD_VERIFICADA = "IDENTIDAD_VERIFICADA"
+    EN_FIRMA = "EN_FIRMA"
+    FIRMADA = "FIRMADA"
+    CANCELADA = "CANCELADA"
+
+
+@strawberry.enum
+class EstadoVisible(Enum):
+    """Los tres estados de la tabla «Mis pólizas» / «Pólizas emitidas» (W03-35)."""
+
+    EMITIENDO = "EMITIENDO"
+    EMITIDA = "EMITIDA"
+    NO_EMITIDA = "NO_EMITIDA"
+
+
+def estado_visible(estado: str) -> EstadoVisible:
+    if estado == "EMITIDA":
+        return EstadoVisible.EMITIDA
+    if estado in ("NO_EMITIDA", "CANCELADA"):
+        return EstadoVisible.NO_EMITIDA
+    return EstadoVisible.EMITIENDO
 
 
 @strawberry.enum
@@ -310,6 +357,8 @@ class MotivoErrorFirma(Enum):
     VERSION_DOCUMENTO_DESACTUALIZADA = "VERSION_DOCUMENTO_DESACTUALIZADA"
     PROPUESTA_NO_FIRMABLE = "PROPUESTA_NO_FIRMABLE"
     SERVICIO_FIRMA_NO_DISPONIBLE = "SERVICIO_FIRMA_NO_DISPONIBLE"
+    ENLACE_VENCIDO = "ENLACE_VENCIDO"
+    IMAGEN_INVALIDA = "IMAGEN_INVALIDA"
 
 
 @strawberry.enum
@@ -333,6 +382,18 @@ class EstadoPoliza(Enum):
 
 
 @strawberry.type
+class Poliza:
+    id: strawberry.ID
+    numero: str
+    estado: EstadoPoliza
+    vigencia_desde: datetime
+    vigencia_hasta: datetime
+    prima: Monto
+    cobertura: Monto
+    documento_url: str  # ruta del BFF que entrega el PDF
+
+
+@strawberry.type
 class Propuesta:
     id: strawberry.ID
     oferta_id: strawberry.ID
@@ -346,6 +407,21 @@ class Propuesta:
     motivo_estado: MotivoEstadoPropuesta | None = None
     mensaje_estado: str | None = None
     accion_sugerida: AccionSugerida | None = None
+    # v0.18 (W03-35)
+    estado_visible: EstadoVisible | None = None
+    creada_en: datetime | None = None
+    poliza: Poliza | None = None  # presente en EMITIDA
+    # Datos personales: solo para el ASESOR que la aceptó y el BACKOFFICE.
+    nombre_titular: str | None = None
+    nombre_asesor: str | None = None  # solo para el BACKOFFICE
+
+
+@strawberry.type
+class PaginaPropuestas:
+    propuestas: list[Propuesta]
+    total: int
+    pagina: int
+    tamano: int
 
 
 @strawberry.type
@@ -395,16 +471,130 @@ class ErrorFirma:
 ResultadoFirma = Annotated[FirmaRegistrada | ErrorFirma, strawberry.union("ResultadoFirma")]
 
 
+# ---------- Firma y pago con el asesor o en la sesión del CLIENTE (v0.18, bloque 9) ----------
+
+
+@strawberry.input
+class ContactoTitularInput:
+    nombre: str  # 2 a 100 caracteres
+    correo: str  # se guarda cifrado y en minúsculas
+
+
+@strawberry.enum
+class MotivoErrorCodigo(Enum):
+    CODIGO_INVALIDO = "CODIGO_INVALIDO"
+    CODIGO_VENCIDO = "CODIGO_VENCIDO"
+    INTENTOS_AGOTADOS = "INTENTOS_AGOTADOS"
+    PROPUESTA_NO_VALIDA = "PROPUESTA_NO_VALIDA"
+
+
 @strawberry.type
-class Poliza:
-    id: strawberry.ID
-    numero: str
-    estado: EstadoPoliza
-    vigencia_desde: datetime
-    vigencia_hasta: datetime
-    prima: Monto
-    cobertura: Monto
-    documento_url: str  # ruta del BFF que entrega el PDF
+class CodigoEnviado:
+    propuesta_id: strawberry.ID
+    correo_enmascarado: str  # nunca el correo completo
+    vence_en: datetime
+
+
+@strawberry.type
+class ErrorCodigo:
+    mensaje: str
+    puede_reintentar: bool
+    motivo: MotivoErrorCodigo | None = None
+    intentos_restantes: int | None = None
+
+
+ResultadoEnvioCodigo = Annotated[
+    CodigoEnviado | ErrorCodigo, strawberry.union("ResultadoEnvioCodigo")
+]
+ResultadoVerificacion = Annotated[
+    Propuesta | ErrorCodigo, strawberry.union("ResultadoVerificacion")
+]
+
+
+@strawberry.type
+class EnlaceEnviado:
+    propuesta: Propuesta
+    correo_enmascarado: str
+    vence_en: datetime  # la URL nunca vuelve al asesor
+
+
+@strawberry.type
+class ErrorEmision:
+    mensaje: str
+    puede_reintentar: bool
+
+
+ResultadoEmision = Annotated[
+    EnlaceEnviado | Propuesta | ErrorEmision, strawberry.union("ResultadoEmision")
+]
+
+
+@strawberry.enum
+class ModoFirma(Enum):
+    TRAZO = "TRAZO"
+    IMAGEN = "IMAGEN"
+    NOMBRE = "NOMBRE"
+
+
+@strawberry.type
+class EnlaceFirma:
+    vigente: bool
+    propuesta: Propuesta
+    vence_en: datetime | None = None  # null con sesión de CLIENTE
+    documento: DocumentoFirma | None = None
+    documento_url: str | None = None
+    firma: FirmaRegistrada | None = None
+    poliza: Poliza | None = None
+
+
+@strawberry.input
+class FirmarPorEnlaceInput:
+    version_documento: str
+    acepta_terminos: bool
+    autoriza_cobro: bool
+    modo: ModoFirma
+    propuesta_id: strawberry.ID | None = None  # obligatorio solo con sesión de CLIENTE
+    imagen_archivo_id: strawberry.ID | None = None  # TRAZO e IMAGEN
+    nombre_firma: str | None = None  # NOMBRE
+
+
+@strawberry.type
+class SesionPago:
+    sesion_id: strawberry.ID
+    url_pago: str  # página de la pasarela, fuera de Solventa
+    vence_en: datetime
+
+
+@strawberry.enum
+class MotivoErrorPago(Enum):
+    PAGO_RECHAZADO = "PAGO_RECHAZADO"
+    FONDOS_INSUFICIENTES = "FONDOS_INSUFICIENTES"
+    TARJETA_VENCIDA = "TARJETA_VENCIDA"
+    PASARELA_NO_DISPONIBLE = "PASARELA_NO_DISPONIBLE"
+    REQUIERE_OTRA_TARJETA = "REQUIERE_OTRA_TARJETA"
+    SESION_VENCIDA = "SESION_VENCIDA"
+    ENLACE_VENCIDO = "ENLACE_VENCIDO"
+
+
+@strawberry.type
+class ErrorPago:
+    mensaje: str
+    puede_reintentar: bool
+    motivo: MotivoErrorPago | None = None
+    fallos_seguidos: int | None = None
+
+
+ResultadoInicioPago = Annotated[SesionPago | ErrorPago, strawberry.union("ResultadoInicioPago")]
+ResultadoPago = Annotated[Poliza | ErrorPago, strawberry.union("ResultadoPago")]
+
+
+@strawberry.type
+class TicketAvisos:
+    """Ticket de un solo uso (60 s) para abrir el stream SSE de `avisos` (W03-37)."""
+
+    ticket: str
+    url: str
+    vence_en: datetime
 
 
 # ---------- Usuarios y sesión (HU-M02) ----------
@@ -439,6 +629,8 @@ class Usuario:
     # Solo dice si ya dejó un contacto (correo o teléfono) para el aviso de su póliza (HU-W03,
     # bloque 8); nunca cuál es: el contacto se escribe y no vuelve por GraphQL.
     tiene_contacto: bool = False
+    # v0.18 (W03-34): solo en `iniciarSesion` y `yo`; nunca el documento completo.
+    documento_enmascarado: str | None = None
 
 
 @strawberry.type
@@ -479,6 +671,8 @@ class CrearUsuarioInput:
     # Solo CLIENTE (HU-W03, bloque 8); AUTH los guarda cifrados y no los devuelve.
     correo: str | None = None
     telefono: str | None = None
+    # v0.18 (W03-27): obligatorio para un CLIENTE desde AUTH 0008 (F-B3).
+    documento_identidad: str | None = None
 
 
 @strawberry.input
@@ -549,6 +743,8 @@ def _propuesta(datos: dict) -> Propuesta:
         motivo_estado=MotivoEstadoPropuesta(explicacion.motivo) if explicacion else None,
         mensaje_estado=explicacion.mensaje if explicacion else None,
         accion_sugerida=AccionSugerida(explicacion.accion) if explicacion else None,
+        estado_visible=estado_visible(datos["estado"]),
+        creada_en=_fecha(datos.get("creado_en")),
     )
 
 
@@ -638,6 +834,12 @@ def _cobro(datos: dict, nombres: dict[str, str] | None = None) -> Cobro:
             if cliente_id
             else None
         ),
+        origen=OrigenCobro(datos["origen"].upper()) if datos.get("origen") else None,
+        medio=(
+            MedioPago(marca=datos["medio"]["marca"], tipo=TipoMedioPago(datos["medio"]["tipo"]))
+            if datos.get("medio")
+            else None
+        ),
     )
 
 
@@ -652,6 +854,7 @@ def _usuario(datos: dict) -> Usuario:
         idioma=datos.get("idioma", "ES"),
         moneda=datos.get("moneda", "COP"),
         tiene_contacto=bool(datos.get("tiene_contacto", False)),
+        documento_enmascarado=datos.get("documento_enmascarado"),
     )
 
 
@@ -769,6 +972,10 @@ SOLO_CLIENTE = ("CLIENTE",)
 MENSAJE_AUTH_NO_DISPONIBLE = "No pudimos procesar la solicitud. Intenta de nuevo."
 MENSAJE_USUARIO_NO_ENCONTRADO = "Usuario no encontrado."
 MENSAJE_COBROS_NO_DISPONIBLES = "No pudimos consultar los cobros. Intenta de nuevo."
+# Esqueleto de la v0.18 (HU-W03, bloque 9): se reemplaza al construir cada operación (F-B6).
+MENSAJE_OPERACION_NO_DISPONIBLE = "Esta operación aún no está disponible. Intenta más tarde."
+MENSAJE_DOCUMENTO_REQUERIDO = "Indica el documento de identidad del titular."
+TODOS_LOS_ROLES = ("CLIENTE", "ASESOR", "BACKOFFICE")
 
 
 def _auth(info: Info):
@@ -867,6 +1074,25 @@ class Query:
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_SUSCRIPCION_NO_DISPONIBLE) from error
         return _poliza(datos) if datos else None
+
+    @strawberry.field
+    async def propuestas(
+        self,
+        info: Info,
+        estado: EstadoVisible | None = strawberry.UNSET,
+        pagina: int | None = 1,
+        tamano: int | None = 10,
+    ) -> PaginaPropuestas:
+        """W03-35: filtradas por el rol del token. Esqueleto de la v0.18 hasta F-B6."""
+        exigir_rol(info, *TODOS_LOS_ROLES, siempre=True)
+        raise ErrorPublico(MENSAJE_OPERACION_NO_DISPONIBLE)
+
+    @strawberry.field
+    async def firma_por_enlace(
+        self, info: Info, propuesta_id: strawberry.ID | None = None
+    ) -> EnlaceFirma | None:
+        """W03-33: token del enlace o sesión de CLIENTE. Esqueleto de la v0.18 hasta F-B6."""
+        return None
 
     @strawberry.field
     async def cobros(
@@ -985,6 +1211,13 @@ class Mutation:
     @strawberry.mutation
     async def solicitar_oferta(self, info: Info, entrada: SolicitudOfertaInput) -> ResultadoOferta:
         exigir_rol(info, *CLIENTE_O_ASESOR)
+        if not entrada.documento_identidad:
+            # Hasta F-B6 el BFF no lo toma de AUTH para el CLIENTE: sigue siendo obligatorio.
+            return ErrorOferta(
+                mensaje=MENSAJE_DOCUMENTO_REQUERIDO,
+                puede_reintentar=False,
+                motivo=MotivoErrorOferta.DATOS_INSUFICIENTES,
+            )
         resultado = await info.context["servicio_oferta"].solicitar(
             str(entrada.consentimiento_id),
             entrada.documento_identidad,
@@ -1015,7 +1248,12 @@ class Mutation:
         )
 
     @strawberry.mutation
-    async def aceptar_oferta(self, info: Info, oferta_id: strawberry.ID) -> ResultadoAceptacion:
+    async def aceptar_oferta(
+        self,
+        info: Info,
+        oferta_id: strawberry.ID,
+        contacto: ContactoTitularInput | None = None,  # v0.18: se guarda desde F-B5/F-B6
+    ) -> ResultadoAceptacion:
         usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
         resultado = await ServicioSuscripcion(info.context["clientes"]).aceptar(
             str(oferta_id), usuario
@@ -1243,6 +1481,65 @@ class Mutation:
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_ARCHIVOS_NO_DISPONIBLES) from error
         return DescargaArchivo(url=datos["url"], vence_en=datetime.fromisoformat(datos["vence_en"]))
+
+    # ---------- v0.18 (HU-W03, bloque 9): esqueleto hasta F-B6 ----------
+
+    @strawberry.mutation
+    async def enviar_codigo_verificacion(
+        self, info: Info, propuesta_id: strawberry.ID, correo: str | None = None
+    ) -> ResultadoEnvioCodigo:
+        exigir_rol(info, "ASESOR", siempre=True)
+        return ErrorCodigo(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE, puede_reintentar=True)
+
+    @strawberry.mutation
+    async def verificar_codigo(
+        self, info: Info, propuesta_id: strawberry.ID, codigo: str
+    ) -> ResultadoVerificacion:
+        exigir_rol(info, "ASESOR", siempre=True)
+        return ErrorCodigo(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE, puede_reintentar=True)
+
+    @strawberry.mutation
+    async def emitir_propuesta(self, info: Info, propuesta_id: strawberry.ID) -> ResultadoEmision:
+        exigir_rol(info, *CLIENTE_O_ASESOR, siempre=True)
+        return ErrorEmision(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE, puede_reintentar=True)
+
+    @strawberry.mutation
+    async def reenviar_enlace_firma(
+        self, info: Info, propuesta_id: strawberry.ID
+    ) -> ResultadoEmision:
+        exigir_rol(info, "ASESOR", siempre=True)
+        return ErrorEmision(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE, puede_reintentar=True)
+
+    @strawberry.mutation
+    async def solicitar_subida_firma(
+        self,
+        info: Info,
+        tipo_contenido: str,
+        tamano_bytes: int,
+        propuesta_id: strawberry.ID | None = None,
+    ) -> ResultadoSubidaArchivo:
+        return ErrorArchivo(codigo="NO_DISPONIBLE", mensaje=MENSAJE_OPERACION_NO_DISPONIBLE)
+
+    @strawberry.mutation
+    async def firmar_por_enlace(self, info: Info, entrada: FirmarPorEnlaceInput) -> ResultadoFirma:
+        return ErrorFirma(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE, puede_reintentar=True)
+
+    @strawberry.mutation
+    async def iniciar_pago(
+        self, info: Info, propuesta_id: strawberry.ID | None = None
+    ) -> ResultadoInicioPago:
+        return ErrorPago(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE, puede_reintentar=True)
+
+    @strawberry.mutation
+    async def confirmar_pago(
+        self, info: Info, sesion_id: strawberry.ID, propuesta_id: strawberry.ID | None = None
+    ) -> ResultadoPago:
+        return ErrorPago(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE, puede_reintentar=True)
+
+    @strawberry.mutation
+    async def ticket_avisos(self, info: Info) -> TicketAvisos:
+        exigir_rol(info, *TODOS_LOS_ROLES, siempre=True)
+        raise ErrorPublico(MENSAJE_OPERACION_NO_DISPONIBLE)
 
 
 schema = strawberry.Schema(

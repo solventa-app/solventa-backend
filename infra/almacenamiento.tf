@@ -5,6 +5,8 @@
 #   - Contenido cifrado con CMEK (llave `archivos` de kms.tf) cuando `crear_kms`; si no, la llave de Google.
 #   - Retención por tipo: la regla de ciclo de vida borra `<tipo>/...` N días después de `customTime`, que el
 #     servicio fija al cerrar el trámite (`POST /archivos/{id}/retencion`). N sale de contracts/tipos-archivo.json.
+#   - Subidas nunca confirmadas (PENDIENTE): las borra `POST /archivos/_purgar-vencidos` a los 90 días, disparado a
+#     diario por Cloud Scheduler (`purga_almacenamiento`, requiere también `crear_tareas`).
 #   - Cada objeto creado o borrado avisa a ALMACENAMIENTO por Pub/Sub (push con OIDC a `/eventos/gcs`), que lo
 #     valida y publica `archivo-disponible` o `archivo-rechazado` para la historia que lo pidió.
 #
@@ -76,15 +78,8 @@ resource "google_storage_bucket" "archivos" {
     }
   }
 
-  # Una subida que nunca se confirmó (PENDIENTE sin `customTime`) no se queda para siempre.
-  lifecycle_rule {
-    condition {
-      age = 90
-    }
-    action {
-      type = "Delete"
-    }
-  }
+  # Sin regla por edad: una regla `age` no distingue estados y borraría también lo DISPONIBLE sin retención (la firma
+  # de una póliza emitida, HU-W03). Las subidas nunca confirmadas las borra la purga diaria (`purga_almacenamiento`).
 
   depends_on = [google_kms_crypto_key_iam_member.cmek_archivos]
 }
@@ -184,4 +179,45 @@ resource "google_pubsub_topic_iam_member" "almacenamiento_publica" {
   topic    = each.value.name
   role     = "roles/pubsub.publisher"
   member   = "serviceAccount:${google_service_account.runtime["almacenamiento"].email}"
+}
+
+# --------------------------------------------------------------------------- purga diaria (Cloud Scheduler)
+# Borra las subidas PENDIENTE de más de 90 días (y, de respaldo, lo que ya venció por retención). Reutiliza la cuenta
+# `programador` de tareas.tf, que solo necesita invocar a ALMACENAMIENTO (privado). Idempotente: lo que no alcance un
+# lote lo toma la pasada siguiente. Costo: un trabajo más de Cloud Scheduler (los 3 primeros por cuenta son gratis;
+# del cuarto en adelante, USD 0,10 al mes cada uno).
+resource "google_cloud_run_v2_service_iam_member" "programador_invoca_almacenamiento" {
+  count    = (local.almacenamiento_activo && local.hay_tareas) ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.servicio["almacenamiento"].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.programador[0].email}"
+}
+
+resource "google_cloud_scheduler_job" "purga_almacenamiento" {
+  count       = (local.almacenamiento_activo && local.hay_tareas) ? 1 : 0
+  depends_on  = [google_project_service.tareas_apis]
+  project     = var.project_id
+  region      = var.region
+  name        = "purga-almacenamiento"
+  description = "Una pasada de la purga de ALMACENAMIENTO: subidas nunca confirmadas de más de 90 días y retenciones vencidas"
+  schedule    = "30 3 * * *"
+  time_zone   = "America/Bogota"
+
+  attempt_deadline = "300s"
+
+  retry_config {
+    retry_count = 0
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.url["almacenamiento"]}/archivos/_purgar-vencidos?limite=1000"
+
+    oidc_token {
+      service_account_email = google_service_account.programador[0].email
+      audience              = local.url["almacenamiento"]
+    }
+  }
 }

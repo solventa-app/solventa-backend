@@ -49,6 +49,12 @@ EN: dict[str, str] = {
     "No pudimos procesar el archivo. Intenta de nuevo.": (
         "We couldn't process the file. Please try again."
     ),
+    "Esta operación aún no está disponible. Intenta más tarde.": (
+        "This operation isn't available yet. Please try again later."
+    ),
+    "Indica el documento de identidad del titular.": (
+        "Enter the policyholder's identity document."
+    ),
     "No pudimos consultar los cobros. Intenta de nuevo.": (
         "We couldn't load the payments. Please try again."
     ),

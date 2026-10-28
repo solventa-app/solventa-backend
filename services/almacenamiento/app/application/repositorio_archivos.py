@@ -91,16 +91,18 @@ class RepositorioArchivosPostgres:
                 {"id": archivo_id, "motivo": motivo},
             ).fetchone()
 
-    def marcar_eliminado(self, archivo_id: str) -> dict[str, Any] | None:
+    def marcar_eliminado(self, archivo_id: str, desde: str = "DISPONIBLE") -> dict[str, Any] | None:
+        """`desde` es DISPONIBLE (retención vencida o borrado del bucket) o PENDIENTE (subida
+        abandonada): si otra llamada ya cambió el estado, no hace nada."""
         with self._pool.connection() as conexion:
             return conexion.execute(
                 f"""
                 UPDATE archivos
                 SET estado = 'ELIMINADO', eliminado_en = now(), actualizado_en = now()
-                WHERE id = %(id)s AND estado = 'DISPONIBLE'
+                WHERE id = %(id)s AND estado = %(desde)s
                 RETURNING {_COLUMNAS}
                 """,
-                {"id": archivo_id},
+                {"id": archivo_id, "desde": desde},
             ).fetchone()
 
     def fijar_retencion(self, archivo_id: str, desde: datetime) -> dict[str, Any] | None:
@@ -135,6 +137,20 @@ class RepositorioArchivosPostgres:
                     "ahora": ahora,
                     "limite": limite,
                 },
+            ).fetchall()
+
+    def pendientes_antes_de(self, antes: datetime, limite: int) -> list[dict]:
+        """Las subidas que siguen PENDIENTE desde antes de `antes` (nunca se confirmaron)."""
+        if limite <= 0:
+            return []
+        with self._pool.connection() as conexion:
+            return conexion.execute(
+                f"""
+                SELECT {_COLUMNAS} FROM archivos
+                WHERE estado = 'PENDIENTE' AND creado_en < %(antes)s
+                ORDER BY creado_en LIMIT %(limite)s
+                """,
+                {"antes": antes, "limite": limite},
             ).fetchall()
 
     def registrar_acceso(

@@ -116,7 +116,9 @@ union ResultadoOferta = Oferta | ErrorOferta # nunca un 5xx crudo al cliente (CA
 
 input SolicitudOfertaInput {
   consentimientoId: ID!
-  documentoIdentidad: String!
+  # Obligatorio para un ASESOR. Un CLIENTE con documento en su cuenta no lo manda: el BFF lo toma de AUTH y valida que
+  # coincida con el titular del consentimiento (v0.18, W03-34).
+  documentoIdentidad: String = null
   valorCredito: String!
   plazoMeses: Int!
   direccionInmueble: String!
@@ -164,6 +166,24 @@ type Cobro {
   # En 0, `reintentarCobro` responde error: requiere otro medio de pago.
   reintentosRestantes: Int
   cliente: ClienteCobro # null en cobros creados sin clienteId
+  origen: OrigenCobro # v0.18 (W05-A3): null en cobros anteriores
+  medio: MedioPago # v0.18 (W05-A5): marca y tipo del medio tokenizado; null si el cobro no tiene uno guardado
+}
+
+enum OrigenCobro {
+  INTERACTIVO # lo pagó el titular en la página de la pasarela (HU-W03)
+  RECURRENTE # cobro programado con el token guardado
+}
+
+enum TipoMedioPago {
+  CREDITO
+  DEBITO
+}
+
+# Nunca el número ni los últimos dígitos de la tarjeta: solo la marca (p. ej. VISA) y el tipo.
+type MedioPago {
+  marca: String!
+  tipo: TipoMedioPago!
 }
 
 input MontoInput {
@@ -202,6 +222,20 @@ enum EstadoPropuesta {
   # el back-office o la reconciliación la reabren y pasa a EMITIDA (el cliente no la reabre)
   NO_EMITIDA # la suscripción rechazó la propuesta
   EMITIDA # hay póliza (ver Propuesta.polizaId)
+  # v0.18 (HU-W03, bloque 9):
+  IDENTIDAD_VERIFICADA # el asesor digitó el código válido; falta «Emitir»
+  EN_FIRMA # la suscripción aprobó: el titular puede firmar (por el enlace o en su sesión)
+  FIRMADA # el titular firmó; falta pagar
+  CANCELADA # el consentimiento venció o se revocó antes de emitir; el contacto se borró
+}
+
+# Los tres estados de la tabla «Mis pólizas» / «Pólizas emitidas» (W03-35). EMITIENDO agrupa ACEPTADA,
+# IDENTIDAD_VERIFICADA, EN_FIRMA, FIRMADA, EN_EMISION, PENDIENTE_PAGO, PAGO_RECHAZADO y EN_REVISION; EMITIDA es
+# EMITIDA; NO_EMITIDA agrupa NO_EMITIDA y CANCELADA. El detalle sigue en `Propuesta.mensajeEstado`.
+enum EstadoVisible {
+  EMITIENDO
+  EMITIDA
+  NO_EMITIDA
 }
 
 # OFERTA_PRELIMINAR (D-11): una oferta preliminar no se acepta, se recalcula. `ErrorAceptacion.puedeReintentar` es true
@@ -218,6 +252,8 @@ enum MotivoErrorFirma {
   VERSION_DOCUMENTO_DESACTUALIZADA
   PROPUESTA_NO_FIRMABLE
   SERVICIO_FIRMA_NO_DISPONIBLE
+  ENLACE_VENCIDO # v0.18: el enlace venció o se anuló; el asesor puede reenviarlo
+  IMAGEN_INVALIDA # v0.18: la imagen no pasó la validación (tipo, tamaño, dimensiones o fondo); se puede subir otra
 }
 
 # Por qué una propuesta no avanza (CA-W03-06). Son categorías para el cliente: nunca el código interno de la
@@ -249,6 +285,20 @@ type Propuesta {
   motivoEstado: MotivoEstadoPropuesta
   mensajeEstado: String # qué pasa y qué hacer, en el idioma del usuario
   accionSugerida: AccionSugerida
+  # v0.18 (W03-35):
+  estadoVisible: EstadoVisible
+  creadaEn: DateTime
+  poliza: Poliza # presente en EMITIDA
+  # Datos personales: solo para el ASESOR que la aceptó y el BACKOFFICE; null para el CLIENTE.
+  nombreTitular: String # el nombre que capturó el asesor, o el de AUTH si el titular tiene cuenta
+  nombreAsesor: String # solo para el BACKOFFICE; null si la aceptó el propio CLIENTE
+}
+
+type PaginaPropuestas {
+  propuestas: [Propuesta!]! # de la más reciente a la más antigua
+  total: Int! # cuántas hay con ese filtro, para «Mostrando N de M»
+  pagina: Int!
+  tamano: Int!
 }
 
 type ErrorAceptacion {
@@ -305,6 +355,129 @@ type Poliza {
   documentoUrl: String! # ruta del BFF que entrega el PDF; solo el titular, su asesor o un BACKOFFICE
 }
 
+# ---------- Firma y pago con el asesor o en la sesión del CLIENTE (v0.18, HU-W03 bloque 9) ----------
+# Flujo del ASESOR (W03-32): aceptarOferta(contacto) -> enviarCodigoVerificacion -> verificarCodigo ->
+# emitirPropuesta (UNDER decide; si aprueba, envía el enlace de 30 min) -> el titular, SIN sesión, sigue en la
+# página del enlace: firmaPorEnlace -> solicitarSubidaFirma (modos TRAZO e IMAGEN) -> firmarPorEnlace -> iniciarPago
+# -> (página de la pasarela, fuera de Solventa) -> confirmarPago -> póliza EMITIDA en la misma respuesta.
+# Flujo del CLIENTE registrado (W03-32 y W03-33): aceptarOferta -> emitirPropuesta («Firmar»: UNDER decide y la
+# propuesta pasa a EN_FIRMA, sin código ni enlace) -> las mismas operaciones de la página del enlace, en su sesión.
+#
+# Autorización de las operaciones de la página del enlace (W03-33): **o** el token del enlace en la cabecera
+# `X-Enlace-Firma` (viaja en el fragmento de la URL `/firma#t=…`, W03-23; con él se ignora `propuestaId`), **o** el
+# token de sesión de un CLIENTE cuyo titular sea el de la propuesta, y entonces `propuestaId` es obligatorio. Una
+# propuesta ajena responde igual que una inexistente.
+
+input ContactoTitularInput {
+  nombre: String! # 2 a 100 caracteres
+  correo: String! # se guarda cifrado y en minúsculas
+}
+
+enum MotivoErrorCodigo {
+  CODIGO_INVALIDO
+  CODIGO_VENCIDO
+  INTENTOS_AGOTADOS
+  PROPUESTA_NO_VALIDA
+}
+
+type CodigoEnviado {
+  propuestaId: ID!
+  correoEnmascarado: String! # p. ej. c•••@correo.com; nunca el correo completo
+  venceEn: DateTime! # 10 min (W03-20)
+}
+
+type ErrorCodigo {
+  mensaje: String!
+  puedeReintentar: Boolean!
+  motivo: MotivoErrorCodigo
+  intentosRestantes: Int
+}
+
+union ResultadoEnvioCodigo = CodigoEnviado | ErrorCodigo
+union ResultadoVerificacion = Propuesta | ErrorCodigo
+
+type EnlaceEnviado {
+  propuesta: Propuesta!
+  correoEnmascarado: String!
+  venceEn: DateTime! # 30 min (W03-22); la URL nunca vuelve al asesor
+}
+
+type ErrorEmision {
+  mensaje: String!
+  puedeReintentar: Boolean!
+}
+
+# ASESOR: EnlaceEnviado si UNDER aprueba. CLIENTE: Propuesta en EN_FIRMA si aprueba. Para los dos, Propuesta en
+# EN_REVISION o NO_EMITIDA (con mensajeEstado) si UNDER no aprueba.
+union ResultadoEmision = EnlaceEnviado | Propuesta | ErrorEmision
+
+enum ModoFirma {
+  TRAZO # dibujada en el lienzo; llega como PNG por el almacenamiento
+  IMAGEN # PNG o JPG cargado, por el almacenamiento
+  NOMBRE # nombre estilizado: se guarda el texto y el PDF lo dibuja con una fuente
+}
+
+type EnlaceFirma {
+  vigente: Boolean! # false si el enlace venció o se anuló (con sesión de CLIENTE, siempre true)
+  venceEn: DateTime # null con sesión de CLIENTE
+  propuesta: Propuesta!
+  documento: DocumentoFirma # lo que se firma; presente mientras se puede firmar
+  documentoUrl: String # ruta del BFF con el PDF del contrato a firmar
+  firma: FirmaRegistrada # presente desde FIRMADA
+  poliza: Poliza # presente en EMITIDA
+}
+
+input FirmarPorEnlaceInput {
+  propuestaId: ID = null # obligatorio solo con sesión de CLIENTE
+  versionDocumento: String!
+  aceptaTerminos: Boolean! # debe ser true
+  autorizaCobro: Boolean! # debe ser true: la firma autoriza el cobro recurrente
+  modo: ModoFirma!
+  # TRAZO e IMAGEN: el id del archivo `firma-imagen` que devolvió `solicitarSubidaFirma`, ya subido con el PUT.
+  imagenArchivoId: ID = null
+  nombreFirma: String = null # NOMBRE: el nombre que se estiliza (2 a 100 caracteres)
+}
+
+type SesionPago {
+  sesionId: ID!
+  urlPago: String! # página de la pasarela, fuera de Solventa (W03-28)
+  venceEn: DateTime! # 10 min
+}
+
+enum MotivoErrorPago {
+  PAGO_RECHAZADO
+  FONDOS_INSUFICIENTES
+  TARJETA_VENCIDA
+  PASARELA_NO_DISPONIBLE # reintentar concilia antes de cobrar (W03-30)
+  REQUIERE_OTRA_TARJETA # 3.er fallo seguido
+  SESION_VENCIDA
+  ENLACE_VENCIDO
+}
+
+type ErrorPago {
+  mensaje: String!
+  puedeReintentar: Boolean!
+  motivo: MotivoErrorPago
+  fallosSeguidos: Int
+}
+
+union ResultadoInicioPago = SesionPago | ErrorPago
+union ResultadoPago = Poliza | ErrorPago
+
+# ---------- Avisos en vivo (v0.18, W03-37) ----------
+# `EventSource` no manda cabeceras: el front pide un ticket y abre `GET <url>?ticket=<ticket>` (servicio `avisos`,
+# fuera del API Gateway). El ticket sirve una sola vez y vence a los 60 s; nunca va el JWT en la URL.
+# Cada evento SSE trae `event: <tipo>` y `data` en JSON, sin datos personales:
+#   propuesta -> {"propuestaId", "estado", "estadoVisible", "polizaId", "numero"} (polizaId y numero desde EMITIDA)
+#   cobro     -> {"cobroId", "polizaId", "estado"} (lo usa W05-01, W05-A6)
+# El CLIENTE recibe los de sus propuestas, el ASESOR los de las que aceptó y el BACKOFFICE todos.
+
+type TicketAvisos {
+  ticket: String!
+  url: String! # URL del stream de `avisos`, sin el ticket
+  venceEn: DateTime!
+}
+
 # ---------- Usuarios y sesión (HU-M02, CA-W01-11) ----------
 # El token de `Sesion` viaja en la cabecera `Authorization: Bearer <token>` de las demás operaciones.
 
@@ -334,6 +507,9 @@ type Usuario {
   # Solo dice si el usuario ya dejó un contacto (correo o teléfono) para el aviso de su póliza (HU-W03, bloque 8);
   # nunca cuál es: el contacto se escribe con `crearUsuario` o `actualizarContacto` y no vuelve por GraphQL.
   tieneContacto: Boolean!
+  # v0.18 (W03-34): el documento del CLIENTE enmascarado (p. ej. •••• 5678), solo en `iniciarSesion` y `yo`; null si
+  # no tiene documento o no es CLIENTE. El documento completo nunca vuelve por GraphQL.
+  documentoEnmascarado: String
 }
 
 type Sesion {
@@ -367,6 +543,9 @@ input CrearUsuarioInput {
   # Solo CLIENTE (HU-W03, bloque 8); se guardan cifrados y `crearUsuario` no los devuelve.
   correo: String = null # con forma de correo; se guarda en minúsculas
   telefono: String = null # 7 a 15 dígitos, con un + opcional al inicio
+  # v0.18 (W03-27): obligatorio para un CLIENTE, junto con el correo. Se guarda cifrado y como titular (el mismo HMAC
+  # del consentimiento): el BACKOFFICE da por verificada la identidad al crearlo.
+  documentoIdentidad: String = null
 }
 
 input PreferenciasInput {
@@ -455,6 +634,11 @@ type Query {
   propuesta(id: ID!): Propuesta
   documentoFirma(propuestaId: ID!): DocumentoFirma
   poliza(id: ID!): Poliza
+  # v0.18 (W03-35). Filtradas por el rol del token, nunca por un argumento: CLIENTE, las de su titular (sin importar
+  # quién las vendió); ASESOR, las que él aceptó; BACKOFFICE, todas. `estado` null = todas.
+  propuestas(estado: EstadoVisible, pagina: Int = 1, tamano: Int = 10): PaginaPropuestas!
+  # v0.18: página del enlace o sesión de CLIENTE (ver «Autorización» arriba). null si no existe o no es suya.
+  firmaPorEnlace(propuestaId: ID = null): EnlaceFirma
 }
 
 type Mutation {
@@ -476,7 +660,8 @@ type Mutation {
   # Se guardan cifrados y no se devuelven; el usuario responde `tieneContacto`.
   actualizarContacto(entrada: ContactoInput!): ResultadoUsuario!
   # Solo una oferta COMPLETA y vigente. Aceptar dos veces la misma oferta devuelve la misma propuesta.
-  aceptarOferta(ofertaId: ID!): ResultadoAceptacion!
+  # v0.18 (W03-25): el ASESOR manda el contacto del titular (obligatorio para él); un CLIENTE no lo manda.
+  aceptarOferta(ofertaId: ID!, contacto: ContactoTitularInput = null): ResultadoAceptacion!
   # Solo el CLIENTE titular firma (no repudio). Firmar dos veces devuelve la misma evidencia.
   firmarPropuesta(entrada: FirmarPropuestaInput!): ResultadoFirma!
   # KAN-250: URL firmada para subir un archivo directo al almacén (exige token).
@@ -485,4 +670,30 @@ type Mutation {
   confirmarSubidaArchivo(id: ID!): ResultadoArchivo!
   # URL firmada de corta vida para leer un archivo DISPONIBLE; cada una queda auditada.
   descargarArchivo(id: ID!): ResultadoDescargaArchivo!
+  # ---------- v0.18 (HU-W03, bloque 9) ----------
+  # Solo ASESOR. Envía un código de 6 dígitos al correo del titular; `correo` corrige el que se capturó.
+  # Pedir otro anula el anterior.
+  enviarCodigoVerificacion(propuestaId: ID!, correo: String = null): ResultadoEnvioCodigo!
+  # Solo ASESOR: el código que le dicta el titular. Vence a los 10 min y admite 5 intentos.
+  verificarCodigo(propuestaId: ID!, codigo: String!): ResultadoVerificacion!
+  # ASESOR («Emitir», con la identidad verificada) o CLIENTE titular («Firmar»): UNDER y KYC deciden aquí.
+  emitirPropuesta(propuestaId: ID!): ResultadoEmision!
+  # Solo ASESOR: un enlace nuevo de 30 min que anula el anterior; el titular retoma donde iba.
+  reenviarEnlaceFirma(propuestaId: ID!): ResultadoEmision!
+  # Página del enlace o sesión de CLIENTE. URL firmada para subir la imagen de la firma (tipo `firma-imagen`, PNG o
+  # JPG, hasta 512000 bytes) con un PUT directo al almacén; luego `firmarPorEnlace` con el id del archivo.
+  solicitarSubidaFirma(
+    tipoContenido: String!
+    tamanoBytes: Int!
+    propuestaId: ID = null
+  ): ResultadoSubidaArchivo!
+  # Página del enlace o sesión de CLIENTE. Firma siempre el titular (W03-8). Firmar dos veces devuelve la misma firma.
+  firmarPorEnlace(entrada: FirmarPorEnlaceInput!): ResultadoFirma!
+  # Página del enlace o sesión de CLIENTE, con la propuesta FIRMADA: abre (o reabre) la sesión de pago.
+  iniciarPago(propuestaId: ID = null): ResultadoInicioPago!
+  # Al regresar de la pasarela: Solventa confirma el pago con la pasarela de servidor a servidor y, si se cobró, emite
+  # la póliza en la misma respuesta (W03-29). Repetirlo no cobra dos veces.
+  confirmarPago(sesionId: ID!, propuestaId: ID = null): ResultadoPago!
+  # Ticket de un solo uso (60 s) para abrir el stream de avisos. Exige sesión de cualquier rol.
+  ticketAvisos: TicketAvisos!
 }

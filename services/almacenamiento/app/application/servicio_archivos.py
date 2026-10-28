@@ -7,6 +7,8 @@ El ciclo de un archivo:
                                     tamaño, tipo y firma OK ───┼─► DISPONIBLE ─retención─► ELIMINADO
                                                                └─► RECHAZADO (borra el objeto)
 
+    PENDIENTE sin confirmar por más de `DIAS_SUBIDA_ABANDONADA` ─(purga)─► ELIMINADO
+
 Quién llama: solo servicios internos (BFF, `onboarding`...), autenticados por IAM de Cloud Run.
 Cada llamada declara **a nombre de quién actúa** (`Actor`): el usuario del token, que el BFF ya
 validó, o el propio servicio. El catálogo decide qué rol puede subir y leer cada tipo; un CLIENTE,
@@ -29,6 +31,11 @@ from app.application.identificadores import id_opaco
 from app.application.repositorio_archivos import RepositorioArchivosPostgres
 
 logger = logging.getLogger("almacenamiento.archivos")
+
+# Una subida nunca confirmada se borra pasado este plazo. Lo hace la purga y no una regla `age` del
+# bucket, porque esa regla no distingue estados: borraría también lo DISPONIBLE sin retención (la
+# firma de una póliza emitida, HU-W03).
+DIAS_SUBIDA_ABANDONADA = 90
 
 # Primeros bytes de cada tipo de contenido admitido (MP4: `ftyp` en el byte 4).
 _BYTES_FIRMA = 16
@@ -295,15 +302,30 @@ class ServicioArchivos:
         return self._repo.fijar_retencion(archivo_id, desde) or archivo
 
     def purgar_vencidos(self, limite: int = 100) -> int:
-        """Borra los objetos cuya retención venció. En la nube lo hace la regla de ciclo de vida
-        del bucket (y la notificación marca ELIMINADO); esto es el respaldo y lo que corre en local,
-        donde el emulador no tiene ciclo de vida."""
+        """Borra los objetos cuya retención venció y las subidas que nunca se confirmaron.
+
+        La retención la aplica en la nube la regla de ciclo de vida del bucket (y la notificación
+        marca ELIMINADO); para ella esto es el respaldo y lo que corre en local, donde el emulador
+        no tiene ciclo de vida. Las subidas abandonadas (PENDIENTE de más de
+        `DIAS_SUBIDA_ABANDONADA` días) solo las borra esta pasada, que Cloud Scheduler dispara a
+        diario (`infra/almacenamiento.tf`)."""
+        ahora = self._reloj()
         dias = {t.tipo: t.retencion_dias for t in self._catalogo.con_retencion()}
         borrados = 0
-        for archivo in self._repo.vencidos(dias, self._reloj(), limite):
+        for archivo in self._repo.vencidos(dias, ahora, limite):
             self._almacen.borrar(archivo["objeto"])
             if self._repo.marcar_eliminado(archivo["id"]) is not None:
                 borrados += 1
-        if borrados:
-            logger.info("retención: %s archivos eliminados", borrados)
-        return borrados
+        abandonadas = 0
+        antes = ahora - timedelta(days=DIAS_SUBIDA_ABANDONADA)
+        for archivo in self._repo.pendientes_antes_de(antes, max(0, limite - borrados)):
+            self._almacen.borrar(archivo["objeto"])
+            if self._repo.marcar_eliminado(archivo["id"], desde="PENDIENTE") is not None:
+                abandonadas += 1
+        if borrados or abandonadas:
+            logger.info(
+                "purga: %s archivos vencidos y %s subidas abandonadas eliminados",
+                borrados,
+                abandonadas,
+            )
+        return borrados + abandonadas
