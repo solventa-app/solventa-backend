@@ -89,7 +89,7 @@ Mesa de siniestros por el gateway (KAN-27, KAN-248): 26 peticiones y 52 asercion
 | 6. Autorización y versión | ASESOR sin permiso, sin token pide sesión, `/v1/graphql/web` igual que `/graphql/web`, mensajes en inglés |
 | 7. Cierre | Vuelve a la semilla |
 
-Requiere la semilla (`docker compose run --rm sembrar-siniestros`) y CLAIMS con `DEMO_REINICIAR=true` (así está en
+Requiere la semilla (`docker compose --profile servicios run --rm sembrar-siniestros`) y CLAIMS con `DEMO_REINICIAR=true` (así está en
 compose). Variables propias de la colección: `claims_url` (`http://localhost:8012`).
 
 ```bash

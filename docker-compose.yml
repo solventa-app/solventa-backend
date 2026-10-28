@@ -261,9 +261,11 @@ services:
 
   # Semillas de la mesa de siniestros (HU-W04, W04-3), solo local: primero las pólizas en POLICY
   # (escritor único de sus tablas) y luego los siniestros, que apuntan a esas pólizas y suben sus
-  # evidencias al almacenamiento. Idempotentes: `docker compose run --rm sembrar-siniestros`.
+  # evidencias al almacenamiento. Idempotentes. Van en su propio perfil para que `up --wait` (CI) no
+  # las arranque: `docker compose --profile servicios run --rm sembrar-siniestros`.
   sembrar-polizas-demo:
     <<: *tarea
+    profiles: ["semilla"]
     image: solventa/policy:local
     build: ./services/policy
     command: ["python", "-m", "app.sembrar_demo"]
@@ -274,6 +276,7 @@ services:
 
   sembrar-siniestros:
     <<: *tarea
+    profiles: ["semilla"]
     image: solventa/claims:local
     build: ./services/claims
     command: ["python", "-m", "app.sembrar"]
