@@ -488,6 +488,9 @@ def _sesion(estado: str, motivo: str | None = None, fallos: int = 1) -> dict:
         (_sesion("no_disponible", "pasarela_no_disponible"), "PASARELA_NO_DISPONIBLE"),
         (_sesion("no_disponible", "requiere_otra_tarjeta", 3), "REQUIERE_OTRA_TARJETA"),
         (_sesion("fallida"), "PASARELA_NO_DISPONIBLE"),
+        # Sin respuesta al confirmar: la sesión sigue abierta, pero el titular debe saber por qué.
+        (_sesion("abierta", "pasarela_no_disponible", 1), "PASARELA_NO_DISPONIBLE"),
+        (_sesion("abierta", "requiere_otra_tarjeta", 3), "REQUIERE_OTRA_TARJETA"),
         (_sesion("vencida", "sesion_vencida", 0), "SESION_VENCIDA"),
     ],
 )
