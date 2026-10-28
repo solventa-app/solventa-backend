@@ -37,6 +37,8 @@ class Configuracion:
     jwt_secreto: str
     # "opcional" | "obligatoria": ver app/autenticacion_usuarios.py.
     autenticacion_usuarios: str
+    # Mesa de siniestros (HU-W04): `siniestros`, `aprobarSiniestro`...
+    claims_url: str = "http://localhost:8011"
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -67,6 +69,7 @@ class Configuracion:
             payments_url=os.getenv("PAYMENTS_URL", "http://localhost:8004"),
             policy_url=os.getenv("POLICY_URL", "http://localhost:8007"),
             almacenamiento_url=os.getenv("ALMACENAMIENTO_URL", "http://localhost:8009"),
+            claims_url=os.getenv("CLAIMS_URL", "http://localhost:8011"),
             # El ACL Worker corta a los 700 ms (EC009/EC010) y degrada; el margen
             # cubre la red y su propia respuesta degradada.
             acl_timeout_segundos=float(os.getenv("ACL_TIMEOUT_SEGUNDOS", "1.0")),

@@ -21,6 +21,7 @@ Ninguna produce un 5xx: los errores de GraphQL viajan con HTTP 200.
 Permisos (HU-M02): cada resolutor llama a `exigir_rol` con los roles que admite. La
 matriz completa está en `docs/autenticacion-usuarios.md`."""
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timedelta
@@ -33,7 +34,12 @@ from strawberry.extensions import MaskErrors
 from strawberry.types import Info
 
 from app.autenticacion_usuarios import MENSAJE_SIN_PERMISO, MENSAJE_SIN_SESION, UsuarioActual
-from app.clientes import ArchivoRechazado, ErrorServicio, SolicitudInvalida
+from app.clientes import (
+    ArchivoRechazado,
+    ErrorServicio,
+    ResolucionRechazada,
+    SolicitudInvalida,
+)
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.idioma import TraducirMensajes
 from app.monedas import (
@@ -1021,10 +1027,26 @@ class Evidencia:
     tipo: TipoEvidencia
     titulo: str
     archivo: str
-    url: str  # URL firmada de lectura del almacenamiento; vacía si no está disponible
     registrada_en: datetime
     geoetiquetada: bool
     nota: str | None
+    archivo_id: strawberry.Private[str]
+
+    @strawberry.field
+    async def url(self, info: Info) -> str:
+        """W04-5: URL firmada de lectura (minutos) que se pide al almacenamiento **como el
+        BACKOFFICE que consulta**, para que cada acceso quede auditado. Solo se firma si la consulta
+        pide el campo. Si el archivo no está disponible, vacía: la web muestra «Imagen no
+        disponible» y nunca un error técnico."""
+        usuario = info.context.get("usuario")
+        try:
+            descarga = await _almacenamiento(info).descarga(
+                usuario.rol, usuario.id, self.archivo_id
+            )
+        except (ErrorServicio, ArchivoRechazado):
+            logger.warning("evidencia=%s sin URL de lectura", id_opaco(str(self.id)))
+            return ""
+        return descarga["url"]
 
 
 @strawberry.type
@@ -1066,7 +1088,7 @@ class Siniestro:
     radicado: str
     estado: EstadoSiniestro
     asegurado: Asegurado
-    poliza: Poliza
+    poliza_id: strawberry.Private[str]
     cobertura_aplicada: str
     entidad_acreedora: str
     ocurrido_en: datetime
@@ -1078,6 +1100,12 @@ class Siniestro:
     evidencias: list[Evidencia]
     verificaciones: list[Verificacion]
     resolucion: Resolucion | None
+
+    @strawberry.field
+    async def poliza(self, info: Info) -> Poliza:
+        """La póliza la escribe POLICY (W04-4): se pide solo si la consulta la usa, una vez por
+        póliza y por petición."""
+        return _poliza(await _poliza_del_siniestro(info, self.poliza_id))
 
 
 @strawberry.type
@@ -1091,6 +1119,120 @@ class ErrorSiniestro:
 
 
 ResultadoResolucion = Annotated[Siniestro | ErrorSiniestro, strawberry.union("ResultadoResolucion")]
+
+MENSAJE_SINIESTROS = "No pudimos consultar los siniestros. Intenta de nuevo."
+MENSAJE_POLIZA_SINIESTRO = "No pudimos consultar la póliza del siniestro. Intenta de nuevo."
+MENSAJE_ACCION_SINIESTRO = "No pudimos completar la acción sobre el siniestro. Intenta de nuevo."
+
+
+def _claims(info: Info):
+    return info.context["clientes"].claims
+
+
+async def _poliza_del_siniestro(info: Info, poliza_id: str) -> dict:
+    """Una sola llamada a POLICY por póliza y por petición, aunque varios siniestros la
+    compartan."""
+    cache = info.context.setdefault("_polizas_siniestros", {})
+    if poliza_id not in cache:
+        policy = info.context["clientes"].policy
+        cache[poliza_id] = asyncio.ensure_future(policy.obtener_poliza(poliza_id))
+    try:
+        datos = await cache[poliza_id]
+    except ErrorServicio as error:
+        raise ErrorPublico(MENSAJE_POLIZA_SINIESTRO) from error
+    if datos is None:
+        raise ErrorPublico(MENSAJE_POLIZA_SINIESTRO)
+    return datos
+
+
+def _monto_siniestro(datos: dict | None) -> Monto | None:
+    return Monto(valor=str(datos["valor"]), moneda=datos["moneda"]) if datos else None
+
+
+def _perito(datos: dict | None) -> Perito | None:
+    if not datos:
+        return None
+    return Perito(
+        id=strawberry.ID(datos["id"]),
+        nombre=datos["nombre"],
+        ciudad=datos["ciudad"],
+        red=datos["red"],
+        registro=datos["registro"],
+        tiempo_respuesta_dias=datos["tiempo_respuesta_dias"],
+        vencimiento_informe=_fecha(datos.get("vencimiento_informe")),
+    )
+
+
+def _resolucion(datos: dict | None) -> Resolucion | None:
+    if not datos:
+        return None
+    return Resolucion(
+        tipo=TipoResolucion(datos["tipo"]),
+        resuelta_en=_fecha(datos["resuelta_en"]),
+        notificacion=datos["notificacion"],
+        motivo=MotivoRechazo(datos["motivo"]) if datos.get("motivo") else None,
+        comentario=datos.get("comentario"),
+        via_recurso=datos.get("via_recurso"),
+        indemnizacion=_monto_siniestro(datos.get("indemnizacion")),
+        metodo_transferencia=datos.get("metodo_transferencia"),
+        plazo_dispersion=datos.get("plazo_dispersion"),
+        perito=_perito(datos.get("perito")),
+        instrucciones=datos.get("instrucciones"),
+        vencimiento_informe=_fecha(datos.get("vencimiento_informe")),
+    )
+
+
+def _siniestro(datos: dict) -> Siniestro:
+    """El expediente que arma CLAIMS (snake_case) en los tipos del contrato v0.19."""
+    return Siniestro(
+        id=strawberry.ID(datos["id"]),
+        radicado=datos["radicado"],
+        estado=EstadoSiniestro(datos["estado"]),
+        asegurado=Asegurado(
+            nombre=datos["asegurado"]["nombre"], documento=datos["asegurado"]["documento"]
+        ),
+        poliza_id=datos["poliza_id"],
+        cobertura_aplicada=datos["cobertura_aplicada"],
+        entidad_acreedora=datos["entidad_acreedora"],
+        ocurrido_en=_fecha(datos["ocurrido_en"]),
+        notificado_en=_fecha(datos["notificado_en"]),
+        ubicacion=Ubicacion(
+            descripcion=datos["ubicacion"]["descripcion"],
+            ciudad=datos["ubicacion"]["ciudad"],
+            latitud=float(datos["ubicacion"]["latitud"]),
+            longitud=float(datos["ubicacion"]["longitud"]),
+        ),
+        descripcion=datos["descripcion"],
+        suma_reclamada=_monto_siniestro(datos["suma_reclamada"]),
+        vence_dictamen_en=_fecha(datos["vence_dictamen_en"]),
+        evidencias=[
+            Evidencia(
+                id=strawberry.ID(e["id"]),
+                tipo=TipoEvidencia(e["tipo"]),
+                titulo=e["titulo"],
+                archivo=e["archivo"],
+                registrada_en=_fecha(e["registrada_en"]),
+                geoetiquetada=e["geoetiquetada"],
+                nota=e.get("nota"),
+                archivo_id=e["archivo_id"],
+            )
+            for e in datos["evidencias"]
+        ],
+        verificaciones=[
+            Verificacion(descripcion=v["descripcion"], cumple=v["cumple"])
+            for v in datos["verificaciones"]
+        ],
+        resolucion=_resolucion(datos.get("resolucion")),
+    )
+
+
+async def _resolver_siniestro(accion) -> ResultadoResolucion:
+    try:
+        return _siniestro(await accion())
+    except ResolucionRechazada as error:
+        return ErrorSiniestro(mensaje=error.mensaje)
+    except ErrorServicio:
+        return ErrorSiniestro(mensaje=MENSAJE_ACCION_SINIESTRO)
 
 
 # ---------- Operaciones ----------
@@ -1228,19 +1370,32 @@ class Query:
     async def siniestros(
         self, info: Info, estado: EstadoSiniestro | None = None
     ) -> list[Siniestro]:
-        """HU-W04: bandeja de la mesa de siniestros. Esqueleto de la v0.19 hasta el bloque 7."""
+        """HU-W04: bandeja de la mesa de siniestros (solo BACKOFFICE, W04-11). CLAIMS la lee de
+        la réplica (HA-LAT-003)."""
         exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
-        raise ErrorPublico(MENSAJE_OPERACION_NO_DISPONIBLE)
+        try:
+            datos = await _claims(info).listar(estado.value if estado else None)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_SINIESTROS) from error
+        return [_siniestro(d) for d in datos]
 
     @strawberry.field
     async def siniestro(self, info: Info, id: strawberry.ID) -> Siniestro | None:
         exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
-        raise ErrorPublico(MENSAJE_OPERACION_NO_DISPONIBLE)
+        try:
+            datos = await _claims(info).obtener(str(id))
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_SINIESTROS) from error
+        return _siniestro(datos) if datos else None
 
     @strawberry.field
     async def peritos(self, info: Info, siniestro_id: strawberry.ID) -> list[Perito]:
         exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
-        raise ErrorPublico(MENSAJE_OPERACION_NO_DISPONIBLE)
+        try:
+            datos = await _claims(info).peritos(str(siniestro_id))
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_SINIESTROS) from error
+        return [_perito(p) for p in datos]
 
     @strawberry.field
     async def cobros(
@@ -1692,9 +1847,9 @@ class Mutation:
 
     @strawberry.mutation
     async def aprobar_siniestro(self, info: Info, id: strawberry.ID) -> ResultadoResolucion:
-        """HU-W04. Esqueleto de la v0.19 hasta el bloque 7."""
-        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
-        return ErrorSiniestro(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE)
+        """HU-W04 (W04-6): CLAIMS registra primero la orden de pago en PAYMENTS y luego aprueba."""
+        usuario = exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        return await _resolver_siniestro(lambda: _claims(info).aprobar(str(id), usuario.id))
 
     @strawberry.mutation
     async def rechazar_siniestro(
@@ -1704,8 +1859,10 @@ class Mutation:
         motivo: MotivoRechazo,
         comentario: str | None = None,
     ) -> ResultadoResolucion:
-        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
-        return ErrorSiniestro(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE)
+        usuario = exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        return await _resolver_siniestro(
+            lambda: _claims(info).rechazar(str(id), motivo.value, comentario, usuario.id)
+        )
 
     @strawberry.mutation
     async def derivar_siniestro(
@@ -1715,8 +1872,10 @@ class Mutation:
         perito_id: strawberry.ID,
         instrucciones: str | None = None,
     ) -> ResultadoResolucion:
-        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
-        return ErrorSiniestro(mensaje=MENSAJE_OPERACION_NO_DISPONIBLE)
+        usuario = exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        return await _resolver_siniestro(
+            lambda: _claims(info).derivar(str(id), str(perito_id), instrucciones, usuario.id)
+        )
 
 
 schema = strawberry.Schema(

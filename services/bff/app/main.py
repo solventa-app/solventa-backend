@@ -92,6 +92,12 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
         app.include_router(
             GraphQLRouter(schema, context_getter=contexto_para(canal)), prefix=f"/graphql/{canal}"
         )
+        # Versión explícita de la API (HA-MOD-003, W04-10): `/v1/graphql/{canal}` sirve el mismo
+        # esquema y la ruta sin versión queda como alias de v1 (EC030: versiones que conviven).
+        app.include_router(
+            GraphQLRouter(schema, context_getter=contexto_para(canal)),
+            prefix=f"/v1/graphql/{canal}",
+        )
 
     @app.get("/polizas/{poliza_id}/documento", tags=["polizas"], response_class=Response)
     async def documento_poliza(poliza_id: str, request: Request) -> Response:

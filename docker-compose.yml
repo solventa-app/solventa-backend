@@ -135,6 +135,7 @@ services:
       POLICY_URL: http://policy:8007
       ALMACENAMIENTO_URL: http://almacenamiento:8009
       ONBOARDING_URL: http://onboarding:8010
+      CLAIMS_URL: http://claims:8011
       # Solo local: el repo es público. En Cloud Run llega de Secret Manager (clave-cliente-id).
       CLIENTE_ID_CLAVE: solo-local-no-secreta
       # Mismo valor que AUTH (firma HS256). Solo local; en Cloud Run llega de Secret Manager (clave-jwt).
