@@ -349,6 +349,18 @@ services:
       acl-worker: { condition: service_healthy }
       migrar-onboarding: { condition: service_completed_successfully }
 
+  # Avisos en vivo (SSE, HU-W03 W03-37). Lo abre el navegador directamente (fuera del gateway): por eso el puerto
+  # 8011 y el `Origin` permitido. Lee los tickets que guarda el BFF y los avisos que publica POLICY (Redis, base 3).
+  avisos:
+    <<: *servicio
+    build: ./services/avisos
+    ports: ["8011:8011"]
+    environment:
+      REDIS_URL: redis://redis:6379/3
+      ORIGENES_PERMITIDOS: http://localhost:5173,http://localhost:8080
+    depends_on:
+      redis: { condition: service_healthy }
+
   under:
     <<: *servicio
     build: ./services/under
