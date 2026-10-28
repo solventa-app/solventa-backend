@@ -14,14 +14,22 @@ ACL Worker no guarda estado de cobros.
 """
 
 import logging
-from typing import Protocol
+from dataclasses import dataclass
+from typing import Literal, Protocol
 
 import purgatory
 
 from app.application.circuitos import CircuitoAbiertoError
 from app.application.identificadores import id_opaco
 from app.application.reintento import con_reintento
-from app.domain.puertos import ConsultaCobro, OrdenCobro, ResultadoCobro
+from app.domain.puertos import (
+    ConsultaCobro,
+    OrdenCobro,
+    ResultadoCobro,
+    ResultadoConciliacion,
+    SesionPago,
+    SolicitudSesionPago,
+)
 
 logger = logging.getLogger("acl_worker.pagos")
 
@@ -36,6 +44,32 @@ class PuertoPasarelaConTimeout(Protocol):
     def consultar(
         self, referencia_comercio: str, timeout_s: float | None = None
     ) -> ResultadoCobro | None: ...
+
+    def crear_sesion_pago(
+        self, solicitud: SolicitudSesionPago, timeout_s: float | None = None
+    ) -> SesionPago: ...
+
+    def consultar_sesion_pago(
+        self, sesion_id: str, timeout_s: float | None = None
+    ) -> SesionPago | None: ...
+
+
+@dataclass
+class ResultadoSesion:
+    """Crear la sesión de pago (W03-28). `no_disponible` = la pasarela no respondió o el circuito
+    está abierto (`motivo` lo distingue): PAYMENTS ofrece reintentar, nunca un 5xx."""
+
+    resultado: Literal["creada", "no_disponible"]
+    sesion: SesionPago | None = None
+    motivo: str | None = None
+
+
+@dataclass
+class ConsultaSesion:
+    """Confirmación al regresar de la pasarela: `desconocido` = no se le pudo preguntar."""
+
+    resultado: ResultadoConciliacion
+    sesion: SesionPago | None = None
 
 
 class ServicioCobro:
@@ -99,3 +133,48 @@ class ServicioCobro:
         if cobro is None:
             return ConsultaCobro(resultado="no_encontrado")
         return ConsultaCobro(resultado="encontrado", cobro=cobro)
+
+    def crear_sesion(self, solicitud: SolicitudSesionPago) -> ResultadoSesion:
+        """Mismo circuito y presupuesto que el cobro (W03-29: una de las dos llamadas de pago del
+        camino del usuario). Reintentar es seguro: la pasarela es idempotente por intento."""
+        try:
+            with self._fabrica.get_breaker(self._nombre_circuito):
+                sesion = con_reintento(
+                    lambda t: self._adaptador.crear_sesion_pago(solicitud, timeout_s=t),
+                    self._presupuesto_s,
+                )
+        except CircuitoAbiertoError:
+            logger.warning("circuito=%s abierto, sesión de pago sin crear", self._nombre_circuito)
+            return ResultadoSesion(resultado="no_disponible", motivo=MOTIVO_CIRCUITO_ABIERTO)
+        except Exception as error:
+            logger.warning(
+                "fallo creando sesión de pago circuito=%s intento=%s error=%s",
+                self._nombre_circuito,
+                id_opaco(solicitud.id_intento_cobro),
+                type(error).__name__,
+            )
+            return ResultadoSesion(resultado="no_disponible", motivo=MOTIVO_PASARELA_NO_DISPONIBLE)
+        return ResultadoSesion(resultado="creada", sesion=sesion)
+
+    def consultar_sesion(self, sesion_id: str) -> ConsultaSesion:
+        """Nunca lanza: con `desconocido`, PAYMENTS concilia antes de dar por fallido el pago."""
+        try:
+            with self._fabrica.get_breaker(self._nombre_circuito):
+                sesion = con_reintento(
+                    lambda t: self._adaptador.consultar_sesion_pago(sesion_id, timeout_s=t),
+                    self._presupuesto_s,
+                )
+        except CircuitoAbiertoError:
+            logger.warning("circuito=%s abierto, sesión sin consultar", self._nombre_circuito)
+            return ConsultaSesion(resultado="desconocido")
+        except Exception as error:
+            logger.warning(
+                "fallo consultando sesión circuito=%s sesion=%s error=%s",
+                self._nombre_circuito,
+                id_opaco(sesion_id),
+                type(error).__name__,
+            )
+            return ConsultaSesion(resultado="desconocido")
+        if sesion is None:
+            return ConsultaSesion(resultado="no_encontrado")
+        return ConsultaSesion(resultado="encontrado", sesion=sesion)

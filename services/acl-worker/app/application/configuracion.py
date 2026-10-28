@@ -114,11 +114,12 @@ class Configuracion:
     # Ruta síncrona del usuario (CA-W03-05): lo que el usuario espera mientras el proveedor responde
     # tiene que caber en el plazo del gateway (HA-LAT-004, `infra/gateway/*`), descontando lo que
     # cuestan los saltos BFF -> POLICY -> ACL. A los proveedores de `proveedores_ruta_sincrona`
-    # se les acota el presupuesto a ese techo; los demás (el cobro, el KYC y el aviso corren en
-    # segundo plano) no. Medido en local: ~80 ms de saltos; la reserva deja margen para la nube.
+    # se les acota el presupuesto a ese techo (la firma y, desde W03-29, la pasarela: crear la
+    # sesión y confirmar el pago); los demás (el KYC y el aviso corren en segundo plano) no.
+    # Medido en local: ~80 ms de saltos; la reserva deja margen para la nube.
     plazo_ruta_sincrona_ms: int = 700
     reserva_saltos_ms: int = 250
-    proveedores_ruta_sincrona: tuple[str, ...] = ("firma",)
+    proveedores_ruta_sincrona: tuple[str, ...] = ("firma", "pasarela")
     # Bloque 5: ruta opcional al catálogo de fuentes (contracts/fuentes.json).
     fuentes_config_path: str | None = None
 
@@ -216,7 +217,7 @@ class Configuracion:
             reserva_saltos_ms=reserva_saltos_ms,
             proveedores_ruta_sincrona=tuple(
                 _normalizar_proveedor(nombre)
-                for nombre in os.getenv("PROVEEDORES_RUTA_SINCRONA", "firma").split(",")
+                for nombre in os.getenv("PROVEEDORES_RUTA_SINCRONA", "firma,pasarela").split(",")
                 if nombre.strip()
             ),
             fuentes_config_path=os.getenv("FUENTES_CONFIG_PATH") or None,

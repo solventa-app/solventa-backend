@@ -17,6 +17,13 @@ el ACL Worker corta a los 700 ms, el cobro igual quedó hecho en la pasarela
 almacena datos de tarjeta: solo un `token_medio_pago` opaco (ya tokenizado
 por el proveedor PCI-DSS), como exige CA-W05-03 y la regla de arquitectura #6.
 
+**Página de pago alojada (W03-28, HU-W03):** como PayU o Stripe, la pasarela sirve su propia
+página. Solventa abre una sesión (`POST /v1/sesiones-pago`, vence a los 10 min), el navegador va a
+`GET /checkout/{id}`, el stub captura la tarjeta, la **tokeniza** y cobra, y «Regresar al comercio»
+lleva a `url_retorno?sesion=<id>` (lista blanca `URLS_RETORNO_PERMITIDAS`). Solventa confirma con
+`GET /v1/sesiones-pago/{id}`, que con `COBRADA` entrega el token, la marca y el tipo; nunca la
+tarjeta. Ningún dato de tarjeta se guarda ni se escribe en un log (`app/tarjetas.py`).
+
 Expone además `GET /v1/estado`, que **sí obedece el modo simulado** (a
 diferencia de `/health`, que siempre responde ok como liveness del
 contenedor). `/v1/estado` es lo que usa la sonda de recuperación del circuito
@@ -26,14 +33,23 @@ ya respondió.
 """
 
 import asyncio
+import os
 import random
 import uuid
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 
+from app import pagina, tarjetas
 from app.observabilidad import configurar_trazas
 
 MODOS = ("sano", "lento", "error", "caido", "rechaza")
@@ -46,8 +62,40 @@ LATENCIA_SANA_MIN_MS = 20
 LATENCIA_SANA_MAX_MS = 120
 
 
+# Estados de una sesión de pago. VENCIDA se fija al consultarla después de `vence_en`.
+ESTADOS_SESION = ("ABIERTA", "PROCESANDO", "COBRADA", "RECHAZADA", "FALLIDA", "VENCIDA")
+ESTADOS_SESION_ALTERNA = {
+    "ABIERTA": "OPEN",
+    "PROCESANDO": "PROCESSING",
+    "COBRADA": "SUCCEEDED",
+    "RECHAZADA": "DECLINED",
+    "FALLIDA": "FAILED",
+    "VENCIDA": "EXPIRED",
+}
+FONDOS_ALTERNA = {"CREDITO": "credit", "DEBITO": "debit"}
+ESTATICOS = Path(__file__).parent / "estaticos"
+
+
 class SolicitudModo(BaseModel):
     modo: Modo
+
+
+class SolicitudSesionPago(BaseModel):
+    referencia_comercio: str  # idempotente: la misma referencia devuelve la misma sesión
+    monto: str  # decimal como texto
+    moneda: str
+    descripcion: str
+    url_retorno: str
+    idioma: str = "es"
+
+
+class SolicitudSesionAlterna(BaseModel):
+    reference: str
+    amount: str
+    currency: str
+    description: str
+    return_url: str
+    locale: str = "es"
 
 
 ESTADOS_ALTERNA = {"cobrado": "APPROVED", "rechazado": "DECLINED", "pendiente": "PENDING"}
@@ -74,12 +122,40 @@ class SolicitudCobro(BaseModel):
     token_medio_pago: str
 
 
-def create_app() -> FastAPI:
-    app = FastAPI(title="solventa-stub-pasarela", version="0.1.0")
+def _origenes(lista: str) -> set[tuple[str, str]]:
+    return {
+        (partes.scheme, partes.netloc)
+        for partes in (urlsplit(url.strip()) for url in lista.split(","))
+        if partes.scheme and partes.netloc
+    }
+
+
+def create_app(reloj: Callable[[], datetime] = lambda: datetime.now(UTC)) -> FastAPI:
+    app = FastAPI(title="solventa-stub-pasarela", version="0.2.0")
     estado = {"modo": "sano"}
     # Cobros registrados por `referencia_comercio`.
     cobros: dict[str, dict] = {}
+    # Sesiones de pago por id, y su id por `referencia_comercio` (idempotencia).
+    sesiones: dict[str, dict] = {}
+    sesion_por_referencia: dict[str, str] = {}
     candado = asyncio.Lock()
+    vigencia = timedelta(seconds=int(os.getenv("SESION_VIGENCIA_SEGUNDOS", "600")))
+    url_publica = os.getenv("PASARELA_URL_PUBLICA", "http://localhost:8103").rstrip("/")
+    # La página no debe servir de redirección abierta: solo vuelve a los orígenes del comercio.
+    retornos_permitidos = _origenes(
+        os.getenv("URLS_RETORNO_PERMITIDAS", "http://localhost:5173,http://localhost:8080")
+    )
+    app.mount("/checkout-estaticos", StaticFiles(directory=ESTATICOS), name="estaticos")
+
+    @app.middleware("http")
+    async def _cabeceras_de_seguridad(request: Request, call_next):
+        respuesta = await call_next(request)
+        if request.url.path.startswith("/checkout"):
+            respuesta.headers["Content-Security-Policy"] = pagina.CSP
+            respuesta.headers["X-Content-Type-Options"] = "nosniff"
+            respuesta.headers["Referrer-Policy"] = "no-referrer"
+            respuesta.headers["Cache-Control"] = "no-store"
+        return respuesta
 
     def _modo_efectivo(modo_qp: str | None, modo_header: str | None) -> str:
         modo = modo_qp or modo_header or estado["modo"]
@@ -205,6 +281,233 @@ def create_app() -> FastAPI:
     ) -> dict:
         await _aplicar_modo(_modo_efectivo(modo, x_modo_simulado))
         return {"ok": True}
+
+    # --- Sesiones de pago y página alojada (W03-28) ---
+
+    def _vigente(sesion: dict) -> dict:
+        """Marca VENCIDA una sesión ABIERTA cuyo plazo pasó. Una vencida no se reabre: el comercio
+        pide otra con otra referencia."""
+        if sesion["estado"] == "ABIERTA" and reloj() >= sesion["vence_en"]:
+            sesion["estado"] = "VENCIDA"
+        return sesion
+
+    def _url_regreso(sesion: dict) -> str:
+        separador = "&" if "?" in sesion["url_retorno"] else "?"
+        return f"{sesion['url_retorno']}{separador}sesion={sesion['sesion_id']}"
+
+    def _publica(sesion: dict) -> dict:
+        cobrada = sesion["estado"] == "COBRADA"
+        medio = sesion["medio"]
+        return {
+            "sesion_id": sesion["sesion_id"],
+            "referencia_comercio": sesion["referencia_comercio"],
+            "estado": sesion["estado"],
+            "motivo": sesion["motivo"],
+            "monto": sesion["monto"],
+            "moneda": sesion["moneda"],
+            "url_pago": f"{url_publica}/checkout/{sesion['sesion_id']}",
+            "vence_en": sesion["vence_en"].isoformat(),
+            # Solo el token, la marca y el tipo: nunca el número ni los últimos dígitos.
+            "medio": (
+                {"token": medio.token, "marca": medio.marca, "tipo": medio.tipo}
+                if cobrada and medio
+                else None
+            ),
+            "referencia": sesion["referencia_cobro"] if cobrada else None,
+        }
+
+    async def _crear_sesion(
+        referencia: str, monto: str, moneda: str, descripcion: str, url_retorno: str, idioma: str
+    ) -> dict:
+        partes = urlsplit(url_retorno)
+        if (partes.scheme, partes.netloc) not in retornos_permitidos:
+            raise HTTPException(status_code=422, detail="url_retorno_no_permitida")
+        try:
+            if Decimal(monto) <= 0:
+                raise InvalidOperation
+        except InvalidOperation:
+            raise HTTPException(status_code=422, detail="monto_invalido") from None
+        async with candado:
+            existente = sesion_por_referencia.get(referencia)
+            if existente is not None:
+                return sesiones[existente]
+            sesion_id = f"ses_{uuid.uuid4().hex}"
+            sesion = {
+                "sesion_id": sesion_id,
+                "referencia_comercio": referencia,
+                "monto": monto,
+                "moneda": moneda,
+                "descripcion": descripcion[:120],
+                "url_retorno": url_retorno,
+                "idioma": pagina.idioma_valido(idioma),
+                "estado": "ABIERTA",
+                "motivo": None,
+                "vence_en": reloj() + vigencia,
+                "medio": None,
+                "referencia_cobro": None,
+            }
+            sesiones[sesion_id] = sesion
+            sesion_por_referencia[referencia] = sesion_id
+            return sesion
+
+    @app.post("/v1/sesiones-pago", tags=["proveedor"], status_code=201)
+    async def crear_sesion_pago(
+        body: SolicitudSesionPago,
+        modo: str | None = None,
+        x_modo_simulado: str | None = Header(default=None),
+    ) -> dict:
+        modo_efectivo = _modo_efectivo(modo, x_modo_simulado)
+        await _fallar_si_corresponde(modo_efectivo)
+        sesion = await _crear_sesion(
+            body.referencia_comercio,
+            body.monto,
+            body.moneda,
+            body.descripcion,
+            body.url_retorno,
+            body.idioma,
+        )
+        await _esperar_respuesta(modo_efectivo)
+        return _publica(sesion)
+
+    @app.get("/v1/sesiones-pago/{sesion_id}", tags=["proveedor"])
+    async def consultar_sesion_pago(
+        sesion_id: str,
+        modo: str | None = None,
+        x_modo_simulado: str | None = Header(default=None),
+    ) -> dict:
+        await _aplicar_modo(_modo_efectivo(modo, x_modo_simulado))
+        sesion = sesiones.get(sesion_id)
+        if sesion is None:
+            raise HTTPException(status_code=404, detail="sesion no encontrada")
+        return _publica(_vigente(sesion))
+
+    @app.get("/checkout/{sesion_id}", tags=["pagina"], response_class=HTMLResponse)
+    def pagina_pago(sesion_id: str, idioma: str | None = None) -> HTMLResponse:
+        sesion = sesiones.get(sesion_id)
+        if sesion is None:
+            return HTMLResponse(
+                "<!doctype html><title>404</title><p>Sesión no encontrada.</p>", 404
+            )
+        _vigente(sesion)
+        return HTMLResponse(
+            pagina.render(
+                sesion,
+                pagina.idioma_valido(idioma or sesion["idioma"]),
+                _url_regreso(sesion),
+                vencida=sesion["estado"] == "VENCIDA",
+            )
+        )
+
+    @app.post("/checkout/{sesion_id}/pagar", tags=["pagina"])
+    async def pagar(
+        sesion_id: str,
+        request: Request,
+        modo: str | None = None,
+        x_modo_simulado: str | None = Header(default=None),
+    ) -> JSONResponse:
+        """Lo envía la propia página. El cuerpo se lee a mano y nunca se devuelve ni se registra:
+        un 422 automático de FastAPI repetiría la tarjeta en la respuesta."""
+        modo_efectivo = _modo_efectivo(modo, x_modo_simulado)
+        sesion = sesiones.get(sesion_id)
+        if sesion is None:
+            return JSONResponse({"estado": None, "motivo": "sesion_no_encontrada"}, 404)
+        try:
+            datos = await request.json()
+        except ValueError:
+            datos = None
+        if not isinstance(datos, dict):
+            return JSONResponse({"campo": "numero"}, 422)
+        if modo_efectivo == "caido":
+            await asyncio.sleep(60)
+        async with candado:
+            _vigente(sesion)
+            if sesion["estado"] != "ABIERTA":
+                return JSONResponse({"estado": sesion["estado"], "motivo": sesion["motivo"]}, 409)
+            try:
+                numero, tipo = tarjetas.validar(datos, reloj().date())
+            except tarjetas.TarjetaInvalida as error:
+                return JSONResponse({"campo": error.campo}, 422)
+            resultado, motivo = tarjetas.resultado_de(numero)
+            if modo_efectivo == "error":
+                resultado, motivo = "fallido", "pasarela_no_disponible"
+            elif modo_efectivo == "rechaza":
+                resultado, motivo = "rechazado", MOTIVO_RECHAZO
+            medio = tarjetas.tokenizar(numero, tipo)
+            del numero, datos  # la tarjeta no sale de esta función
+            if resultado == "aprobado":
+                sesion.update(estado="COBRADA", medio=medio, referencia_cobro=f"pg-{uuid.uuid4()}")
+                cobros[sesion["referencia_comercio"]] = {
+                    "estado": "cobrado",
+                    "referencia": sesion["referencia_cobro"],
+                    "motivo": None,
+                    "detalle": {"referencia_comercio": sesion["referencia_comercio"]},
+                }
+            elif resultado == "rechazado":
+                sesion.update(estado="RECHAZADA", motivo=motivo)
+                cobros[sesion["referencia_comercio"]] = {
+                    "estado": "rechazado",
+                    "referencia": None,
+                    "motivo": motivo,
+                    "detalle": {"referencia_comercio": sesion["referencia_comercio"]},
+                }
+            else:
+                sesion.update(estado="FALLIDA", motivo=motivo)
+        # Con `lento` el cobro ya quedó hecho antes de esperar (lo detecta la conciliación).
+        await _esperar_respuesta(modo_efectivo)
+        return JSONResponse({"estado": sesion["estado"], "motivo": sesion["motivo"]})
+
+    def _a_sesion_alterna(sesion: dict) -> dict:
+        publica = _publica(sesion)
+        medio = publica["medio"]
+        return {
+            "id": publica["sesion_id"],
+            "reference": publica["referencia_comercio"],
+            "status": ESTADOS_SESION_ALTERNA[publica["estado"]],
+            "decline_code": publica["motivo"],
+            "checkout_url": publica["url_pago"],
+            "expires_at": publica["vence_en"],
+            "payment_method": (
+                {
+                    "token": medio["token"],
+                    "brand": medio["marca"],
+                    "funding": FONDOS_ALTERNA[medio["tipo"]],
+                }
+                if medio
+                else None
+            ),
+            "transaction_id": publica["referencia"],
+        }
+
+    @app.post("/alterna/v2/checkout-sessions", tags=["proveedor-alterno"], status_code=201)
+    async def crear_sesion_alterna(
+        body: SolicitudSesionAlterna,
+        modo: str | None = None,
+        x_modo_simulado: str | None = Header(default=None),
+    ) -> dict:
+        modo_efectivo = _modo_efectivo(modo, x_modo_simulado)
+        await _fallar_si_corresponde(modo_efectivo)
+        sesion = await _crear_sesion(
+            body.reference,
+            body.amount,
+            body.currency,
+            body.description,
+            body.return_url,
+            body.locale,
+        )
+        await _esperar_respuesta(modo_efectivo)
+        return _a_sesion_alterna(sesion)
+
+    @app.get("/alterna/v2/checkout-sessions/{sesion_id}", tags=["proveedor-alterno"])
+    async def consultar_sesion_alterna(
+        sesion_id: str,
+        modo: str | None = None,
+        x_modo_simulado: str | None = Header(default=None),
+    ) -> dict:
+        await _aplicar_modo(_modo_efectivo(modo, x_modo_simulado))
+        sesion = sesiones.get(sesion_id)
+        if sesion is None:
+            raise HTTPException(status_code=404, detail="checkout_session_not_found")
+        return _a_sesion_alterna(_vigente(sesion))
 
     @app.get("/v1/estado", tags=["proveedor"])
     async def estado_proveedor(
