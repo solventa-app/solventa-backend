@@ -384,6 +384,11 @@ services:
       # M01: las URLs firmadas del almacenamiento apuntan a localhost:4443; desde aquí es fake-gcs.
       IDENTIDAD_REESCRITURA_ORIGENES: http://localhost:4443/=http://fake-gcs:4443/
       NOTIFICACIONES_URL: http://stub-notificaciones:8106
+      # Correo real (HU-W03): NOTIFICACIONES_PROVEEDOR=resend RESEND_API_KEY=re_... docker compose up.
+      # Por defecto el simulador; con Resend los avisos ya no aparecen en /control/enviados.
+      NOTIFICACIONES_PROVEEDOR: ${NOTIFICACIONES_PROVEEDOR:-simulado}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      CORREO_REMITENTE: ${CORREO_REMITENTE:-Solventa <onboarding@resend.dev>}
       TIMEOUT_MS: "700"        # umbral duro de EC009/EC010
       BREAKER_UMBRAL_FALLOS: "3"       # fallos consecutivos que abren el circuito
       BREAKER_TTL_SEGUNDOS: "5"        # tiempo abierto antes de permitir la próxima sonda

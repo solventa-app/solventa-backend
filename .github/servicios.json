@@ -141,11 +141,12 @@
     "url_env": "ACL_URL",
     "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela", "stub-firma", "stub-kyc", "stub-notificaciones", "consolidador-fuentes"],
     "disparador_externo": true,
-    "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
+    "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "NOTIFICACIONES_PROVEEDOR": "simulado", "CORREO_REMITENTE": "Solventa <onboarding@resend.dev>" },
     "secretos": {
       "REDIS_URL": "redis-url-acl",
       "COLA_RECONCILIACION_REDIS_URL": "redis-url-cola-reconciliacion",
       "DIDIT_API_KEY": "didit-api-key",
+      "RESEND_API_KEY": "resend-api-key",
       "IDENTIDAD_LLAVE_CACHE": "clave-cache-identidad"
     }
   },

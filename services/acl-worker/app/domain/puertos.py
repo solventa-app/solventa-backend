@@ -200,7 +200,8 @@ class PuertoKyc(Protocol):
     def verificar(self, solicitud: SolicitudKyc) -> ResultadoKyc: ...
 
 
-EstadoNotificacion = Literal["enviada", "pendiente"]
+# `rechazada` = el proveedor no puede entregarlo (p. ej. sin correo): reintentar no lo arregla.
+EstadoNotificacion = Literal["enviada", "pendiente", "rechazada"]
 
 
 @dataclass

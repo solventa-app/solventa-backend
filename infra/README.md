@@ -227,7 +227,7 @@ el merge. Localmente: `export TF_VAR_project_id=... TF_VAR_billing_account_id=..
 valor marcador (`pendiente-de-cargar`). Con `crear_cloud_sql` (y `crear_servicios`) Terraform ya escribe solo
 `database-url-auth`, `database-url-payments` y `database-url-policy`; con `crear_redis`, `redis-url-*`; y con `crear_mongo_atlas`,
 `mongo-uri-risk` y `mongo-uri-rating`: esos no hay que cargarlos. Lo que se agrega aparte es `clave-jwt`,
-`clave-cliente-id`, `clave-cifrado` y, para M01, `didit-api-key` y `clave-cache-identidad` (ver «Didit»), y ese valor nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
+`clave-cliente-id`, `clave-cifrado` y, para M01, `didit-api-key` y `clave-cache-identidad` (ver «Didit»), y para el correo real `resend-api-key` (ver «Resend»), y ese valor nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
 
 ```bash
 printf '%s' 'postgresql://USUARIO:CLAVE@/auth?host=/cloudsql/PROYECTO:REGION:INSTANCIA' \
@@ -254,6 +254,30 @@ openssl rand -base64 32 | tr -d '\n' | gcloud secrets versions add clave-cache-i
 3. En el `entorno` de `acl-worker` (`.github/servicios.json`) agrega `"IDENTIDAD_URL": "https://verification.didit.me"`.
    Sin la llave cargada el ACL no arranca con esa URL, a propósito. Sin `clave-cache-identidad` funciona, pero cada
    reintento se vuelve a cobrar.
+
+### Resend (correo real de los avisos de HU-W03)
+
+El ACL manda los avisos (código de verificación, enlace de firma y póliza emitida con el PDF) por el simulador
+(`stubs/notificaciones`) mientras `NOTIFICACIONES_PROVEEDOR` sea `simulado`. Para correo real:
+
+1. Crea la cuenta en `resend.com`, verifica un dominio (registros DNS que da Resend) y crea una API key con permiso de
+   **envío** («Sending access»). Sin dominio verificado, el remitente de prueba `onboarding@resend.dev` solo entrega al
+   correo del dueño de la cuenta. El plan gratis permite 100 correos al día y 3.000 al mes.
+2. Carga la llave:
+
+```bash
+P=solventa-511815
+read -rsp "Resend API key: " K; echo; printf '%s' "$K" | gcloud secrets versions add resend-api-key --project=$P --data-file=-; unset K
+```
+
+3. En el `entorno` de `acl-worker` (`.github/servicios.json`) cambia `"NOTIFICACIONES_PROVEEDOR": "resend"` y
+   `"CORREO_REMITENTE": "Solventa <avisos@TU-DOMINIO>"`. Con `resend` y sin la llave cargada el ACL no arranca, a
+   propósito.
+4. En POLICY, `URL_FRONT` debe ser la URL real del front: con ella se arma el enlace de firma del correo.
+
+Cada aviso viaja con su id como `Idempotency-Key`: si POLICY lo reintenta (p. ej. tras un corte a los 700 ms), Resend
+no manda otro correo. Un aviso sin correo, como el del asesor (AUTH no guarda su contacto), queda `rechazada` y POLICY
+lo omite.
 
 ### MongoDB Atlas: lo único que hay que hacer a mano
 
