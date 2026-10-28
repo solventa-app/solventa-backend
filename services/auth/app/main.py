@@ -88,6 +88,9 @@ class SolicitudUsuario(BaseModel):
     # Solo CLIENTE (HU-W03, bloque 8); se guardan cifrados y no se devuelven al crear.
     correo: str | None = None
     telefono: str | None = None
+    # Solo CLIENTE y obligatorio para él, junto con el correo (W03-27). Se guarda cifrado y como
+    # titular verificado; nunca se devuelve.
+    documento_identidad: str | None = None
 
 
 class SolicitudContacto(BaseModel):
@@ -102,6 +105,13 @@ class ContactoResponse(BaseModel):
 
     correo: str | None
     telefono: str | None
+
+
+class IdentidadResponse(BaseModel):
+    """Dato personal en claro: solo lo pide el BFF con el id del token y nunca se loguea."""
+
+    titular_id: str
+    documento: str
 
 
 class SolicitudNombres(BaseModel):
@@ -128,6 +138,8 @@ class UsuarioResponse(BaseModel):
     moneda: str = "COP"
     # Solo dice si tiene contacto (para que la web sepa cuándo pedirlo), nunca cuál es.
     tiene_contacto: bool = False
+    # Como `nombre`: solo en `POST /sesiones` y `GET /usuarios/{id}` (W03-34, `•••• 5678`).
+    documento_enmascarado: str | None = None
 
 
 class SolicitudPreferencias(BaseModel):
@@ -167,7 +179,9 @@ def create_app(
             repositorio = RepositorioUsuariosPostgres(pool)
             hasher = PasswordHasher()
             cifrador = construir_cifrador(config)
-            app.state.usuarios = ServicioUsuarios(repositorio, hasher, cifrador)
+            app.state.usuarios = ServicioUsuarios(
+                repositorio, hasher, cifrador, config.cliente_id_clave
+            )
             app.state.sesiones = ServicioSesiones(
                 repositorio, hasher, config.jwt_secreto, config.jwt_vigencia_minutos
             )
@@ -240,7 +254,11 @@ def create_app(
             sesion = app.state.sesiones.iniciar_sesion(body.usuario, body.clave)
         except CredencialesInvalidas as error:
             raise HTTPException(status_code=401, detail=str(error)) from error
-        sesion["usuario"]["nombre"] = app.state.usuarios.nombre_de(sesion["usuario"]["id"])
+        usuario_id = sesion["usuario"]["id"]
+        sesion["usuario"]["nombre"] = app.state.usuarios.nombre_de(usuario_id)
+        sesion["usuario"]["documento_enmascarado"] = app.state.usuarios.documento_enmascarado_de(
+            usuario_id
+        )
         return SesionResponse(**sesion)
 
     # ---------- Usuarios ----------
@@ -249,7 +267,13 @@ def create_app(
     def crear_usuario(body: SolicitudUsuario) -> UsuarioResponse:
         try:
             usuario = app.state.usuarios.crear(
-                body.usuario, body.clave, body.rol, body.nombre, body.correo, body.telefono
+                body.usuario,
+                body.clave,
+                body.rol,
+                body.nombre,
+                body.correo,
+                body.telefono,
+                body.documento_identidad,
             )
         except DatoInvalido as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
@@ -285,7 +309,23 @@ def create_app(
         usuario = app.state.usuarios.obtener(usuario_id)
         if usuario is None:
             raise HTTPException(status_code=404, detail="usuario no encontrado")
-        return UsuarioResponse(**usuario, nombre=app.state.usuarios.nombre_de(usuario_id))
+        return UsuarioResponse(
+            **usuario,
+            nombre=app.state.usuarios.nombre_de(usuario_id),
+            documento_enmascarado=app.state.usuarios.documento_enmascarado_de(usuario_id),
+        )
+
+    @app.get(
+        "/usuarios/{usuario_id}/identidad", tags=["usuarios"], response_model=IdentidadResponse
+    )
+    def obtener_identidad(usuario_id: str) -> IdentidadResponse:
+        """El titular y el documento en claro de un CLIENTE verificado (W03-33 y W03-34). Dato
+        personal: solo lo llama el BFF con el id del propio usuario, y lo usa en memoria. 404 si no
+        existe, no es CLIENTE o no tiene la identidad verificada. Nunca se loguea."""
+        identidad = app.state.usuarios.identidad_de(usuario_id)
+        if identidad is None:
+            raise HTTPException(status_code=404, detail="identidad no encontrada")
+        return IdentidadResponse(**identidad)
 
     @app.post("/usuarios/{usuario_id}/rol", tags=["usuarios"], response_model=UsuarioResponse)
     def cambiar_rol(usuario_id: str, body: SolicitudRol) -> UsuarioResponse:

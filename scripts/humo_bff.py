@@ -268,6 +268,9 @@ def main() -> int:
                 "clave": CLAVE_ASESOR,
                 "rol": "CLIENTE",
                 "nombre": nombre_cliente,
+                # W03-27: documento y correo obligatorios (documento al azar, uno por corrida).
+                "documentoIdentidad": "".join(random.choices(string.digits, k=10)),
+                "correo": "cliente.humo@ejemplo.co",
             }
         },
         token_backoffice,

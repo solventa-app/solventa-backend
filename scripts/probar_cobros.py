@@ -26,6 +26,7 @@ salida: 0 si todo pasa, 1 si alguna comprobación falla, 2 si no se pudo prepara
 (sin conexión, sesión o cliente)."""
 
 import argparse
+import hashlib
 import json
 import os
 import random
@@ -278,6 +279,11 @@ def preparar(argumentos) -> tuple[str, str]:
                     "clave": CLAVE_NUEVO_CLIENTE,
                     "rol": "CLIENTE",
                     "nombre": argumentos.nombre_cliente,
+                    # W03-27: documento y correo obligatorios; un documento estable por alias.
+                    "documentoIdentidad": str(
+                        int(hashlib.sha256(argumentos.cliente.encode()).hexdigest(), 16)
+                    )[:10],
+                    "correo": f"{argumentos.cliente}@ejemplo.co",
                 }
             },
             token,

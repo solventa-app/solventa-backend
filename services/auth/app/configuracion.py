@@ -9,7 +9,8 @@ JWT_SECRETO_LOCAL = "solo-local-no-secreta-jwt-solventa-0001"
 # Llave de cifrado por campo, solo para local y pruebas (32 bytes en base64): el repo es público,
 # así que NO es secreta. En Cloud Run llega de Secret Manager (`clave-cifrado`) o envuelta con KMS.
 CIFRADO_CLAVE_LOCAL = "c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE="
-# Clave local para calcular el `titular_id` (HMAC-SHA256 del documento).
+# Clave local para calcular el `titular_id` (HMAC-SHA256 del documento). Debe ser la misma del
+# BFF (`CLIENTE_ID_CLAVE`): en compose ambos usan el mismo valor; en Cloud Run, `clave-cliente-id`.
 CLIENTE_ID_CLAVE_LOCAL = "dev-cliente-id-clave-local"
 # Valor con el que Terraform crea cada secreto (infra/README.md, "Cargar los secretos").
 VALOR_MARCADOR = "pendiente-de-cargar"
@@ -48,6 +49,8 @@ class Configuracion:
             )
             if not usa_sobre_kms and cifrado_clave in (CIFRADO_CLAVE_LOCAL, VALOR_MARCADOR):
                 raise ValueError("CIFRADO_CLAVE no se ha cargado en Secret Manager")
+            if cliente_id_clave in (CLIENTE_ID_CLAVE_LOCAL, VALOR_MARCADOR):
+                raise ValueError("CLIENTE_ID_CLAVE no se ha cargado en Secret Manager")
         return cls(
             # Sin valor por defecto: compose y Cloud Run fijan DATABASE_URL completa, y una URL
             # escrita aquí llevaría la contraseña (o ninguna). `construir_pool` falla claro.

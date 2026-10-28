@@ -74,6 +74,7 @@ class PuertoAuth(Protocol):
         nombre: str | None = None,
         correo: str | None = None,
         telefono: str | None = None,
+        documento_identidad: str | None = None,
     ) -> dict: ...
 
     async def nombres_de_clientes(self, ids: list[str]) -> dict[str, str]: ...
@@ -272,9 +273,10 @@ class ClienteAuthHttp:
         nombre: str | None = None,
         correo: str | None = None,
         telefono: str | None = None,
+        documento_identidad: str | None = None,
     ) -> dict:
-        # El nombre, el contacto (datos personales) y la clave viajan solo en el cuerpo, nunca en la
-        # URL, y no se registran.
+        # El nombre, el contacto, el documento (datos personales) y la clave viajan solo en el
+        # cuerpo, nunca en la URL, y no se registran. AUTH calcula el titular (W03-27).
         cuerpo = {
             "usuario": usuario,
             "clave": clave,
@@ -282,6 +284,7 @@ class ClienteAuthHttp:
             "nombre": nombre,
             "correo": correo,
             "telefono": telefono,
+            "documento_identidad": documento_identidad,
         }
         return _json_o_error(await _pedir(self._cliente, "POST", "/usuarios", cuerpo))
 

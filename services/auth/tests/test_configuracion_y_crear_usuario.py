@@ -39,8 +39,24 @@ def test_en_cloud_run_arranca_con_un_secreto_real(monkeypatch) -> None:
     monkeypatch.setenv("K_SERVICE", "auth")
     monkeypatch.setenv("JWT_SECRETO", "a" * 64)
     monkeypatch.setenv("CIFRADO_CLAVE", "b" * 43 + "=")
+    monkeypatch.setenv("CLIENTE_ID_CLAVE", "clave-titular-real")
 
     assert Configuracion.desde_entorno().jwt_secreto == "a" * 64
+
+
+@pytest.mark.parametrize("valor", [None, "pendiente-de-cargar"])
+def test_en_cloud_run_no_arranca_sin_la_clave_del_titular(monkeypatch, valor) -> None:
+    # Con la clave local, el titular del usuario no coincidiría con el del consentimiento (W03-27).
+    monkeypatch.setenv("K_SERVICE", "auth")
+    monkeypatch.setenv("JWT_SECRETO", "a" * 64)
+    monkeypatch.setenv("CIFRADO_CLAVE", "b" * 43 + "=")
+    if valor is None:
+        monkeypatch.delenv("CLIENTE_ID_CLAVE", raising=False)
+    else:
+        monkeypatch.setenv("CLIENTE_ID_CLAVE", valor)
+
+    with pytest.raises(ValueError, match="CLIENTE_ID_CLAVE"):
+        Configuracion.desde_entorno()
 
 
 def test_sin_database_url_no_hay_valor_por_defecto_y_el_pool_falla_claro(monkeypatch) -> None:

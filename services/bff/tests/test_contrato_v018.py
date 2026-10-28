@@ -158,3 +158,31 @@ def test_propuestas_y_ticket_responden_error_publico_sin_5xx() -> None:
     assert lista["errors"][0]["message"] == MENSAJE_OPERACION_NO_DISPONIBLE
     assert ticket["errors"][0]["message"] == MENSAJE_OPERACION_NO_DISPONIBLE
     assert enlace["data"] == {"firmaPorEnlace": None}
+
+
+def test_crear_cliente_manda_el_documento_a_auth_y_yo_lo_trae_enmascarado() -> None:
+    from fakes import AuthFalso
+
+    auth = AuthFalso()
+    crear = """mutation($e: CrearUsuarioInput!) {
+      crearUsuario(entrada: $e) { ... on Usuario { id documentoEnmascarado } }
+    }"""
+    entrada = {
+        "usuario": "cliente.doc",
+        "clave": "clave-segura-1",
+        "rol": "CLIENTE",
+        "correo": "c@ejemplo.co",
+        "documentoIdentidad": "1020304050",
+    }
+    app = create_app(config=Configuracion.desde_entorno(), clientes=clientes_falsos(auth=auth))
+    with TestClient(app) as client:
+        creado = _post(client, crear, {"e": entrada}, rol="BACKOFFICE")["data"]["crearUsuario"]
+        r = client.post(
+            "/graphql/web",
+            json={"query": "{ yo { documentoEnmascarado } }"},
+            headers={"Authorization": f"Bearer {token_de_prueba('CLIENTE', creado['id'])}"},
+        )
+
+    assert auth.documentos[creado["id"]] == "1020304050"
+    assert creado["documentoEnmascarado"] is None  # al crear no se devuelve
+    assert r.json()["data"]["yo"] == {"documentoEnmascarado": "•••• 4050"}
