@@ -38,6 +38,18 @@
       "retencion_dias": 30
     },
     {
+      "tipo": "firma-imagen",
+      "descripcion": "Imagen de la firma del titular, dibujada (PNG) o cargada (PNG o JPG), estampada en la póliza (HU-W03, W03-24).",
+      "activo": true,
+      "tipos_contenido": ["image/png", "image/jpeg"],
+      "tamano_max_bytes": 512000,
+      "quien_sube": ["servicio:policy"],
+      "quien_lee": ["servicio:policy"],
+      "propietario": "poliza",
+      "requiere_consentimiento": true,
+      "retencion_dias": 1
+    },
+    {
       "tipo": "poliza-pdf",
       "descripcion": "Ejemplo, desactivado: la póliza en PDF se genera al pedirla y no se guarda (decisión W03-9).",
       "activo": false,

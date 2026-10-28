@@ -29,7 +29,11 @@ def test_el_catalogo_del_contrato_es_valido() -> None:
         "onboarding-documento",
         "onboarding-rostro",
         "onboarding-video",
+        "firma-imagen",
     }
+    firma = catalogo.obtener("firma-imagen")  # HU-W03: solo POLICY la sube y la lee
+    assert firma is not None and firma.quien_sube == ("servicio:policy",)
+    assert firma.propietario == "poliza" and firma.requiere_consentimiento
 
 
 @pytest.mark.parametrize(
