@@ -74,6 +74,29 @@ Recorrido mínimo del caso insignia (oferta completa, degradada, timeout duro y 
 de `docs/evidencias/flujo-prueba-local-hu-w01.md` y `scripts/humo_bff.py`. Útil para abrirlo en la app de Postman;
 para la verificación completa usa `solventa-bff.postman_collection.json`.
 
+## Colección de HU-W04 (`hu-w04.postman_collection.json`)
+
+Mesa de siniestros por el gateway (KAN-27, KAN-248): 26 peticiones y 52 aserciones en 8 carpetas.
+
+| Carpeta | Qué verifica |
+|---|---|
+| 0. Preparación | Reinicio de la semilla en CLAIMS (solo local), sesión de BACKOFFICE y un ASESOR para probar permisos |
+| 1. Bandeja | Los 10 casos, 7 en cola, orden por notificación y filtro por estado |
+| 2. Detalle | Póliza real de POLICY con su `ramo`, 5 evidencias con URL firmada que descarga la imagen del almacenamiento, caso inexistente `null` y peritos con la fecha límite del informe |
+| 3. Derivar | Deja el caso EN_REVISION; ya tiene perito, texto de más de 500 y perito inexistente como `ErrorSiniestro` |
+| 4. Aprobar | Indemnización, método y plazo; ya resuelto; la orden queda `PENDIENTE_DISPERSION` en PAYMENTS; un caso derivado conserva su perito |
+| 5. Rechazar | Motivo y comentario; un caso ya aprobado no se rechaza |
+| 6. Autorización y versión | ASESOR sin permiso, sin token pide sesión, `/v1/graphql/web` igual que `/graphql/web`, mensajes en inglés |
+| 7. Cierre | Vuelve a la semilla |
+
+Requiere la semilla (`docker compose run --rm sembrar-siniestros`) y CLAIMS con `DEMO_REINICIAR=true` (así está en
+compose). Variables propias de la colección: `claims_url` (`http://localhost:8011`).
+
+```bash
+npx --yes newman@6.2.2 run tests/newman/hu-w04.postman_collection.json \
+  -e tests/newman/solventa-local.postman_environment.json
+```
+
 ## Colección de HU-W03 (`hu-w03.postman_collection.json`)
 
 Suscripción, firma y póliza (KAN-26, plan de HU-W03 bloque 6). A diferencia de la colección del BFF, **todo entra por el

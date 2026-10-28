@@ -1,0 +1,1232 @@
+{
+  "info": {
+    "name": "Solventa - HU-W04 (mesa de siniestros por el gateway)",
+    "description": "Backend real de la mesa de siniestros (KAN-27): CLAIMS sobre MongoDB, póliza de POLICY, evidencias en el almacenamiento y orden de pago en PAYMENTS. Requiere `sembrar-siniestros` y CLAIMS con DEMO_REINICIAR=true (solo local). Ver tests/newman/README.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Preparación",
+      "item": [
+        {
+          "name": "0.1 CLAIMS vuelve a la semilla (solo local)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{claims_url}}/_demo/reiniciar",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('10 siniestros sembrados', () => pm.expect(pm.response.json().siniestros).to.eql(10));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.2 iniciarSesion como BACKOFFICE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) { iniciarSesion(entrada: $e) { __typename ... on Sesion { token } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{usuario_backoffice}}\",\n      \"clave\": \"{{clave_backoffice}}\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const l = 'abcdefghijklmnopqrstuvwxyz'; let s = '';",
+                  "for (let i = 0; i < 8; i++) s += l[Math.floor(Math.random() * l.length)];",
+                  "pm.collectionVariables.set('alias_asesor', 'asesor.w04.' + s);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.collectionVariables.set('token_backoffice', cuerpo.data.iniciarSesion.token);",
+                  "pm.test('Sesión de BACKOFFICE', () => pm.expect(cuerpo.data.iniciarSesion.__typename).to.eql('Sesion'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.3 crearUsuario ASESOR (para probar permisos)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CrearUsuarioInput!) { crearUsuario(entrada: $e) { __typename } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{alias_asesor}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('ASESOR creado', () => pm.expect(cuerpo.data.crearUsuario.__typename).to.eql('Usuario'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.4 iniciarSesion como ASESOR",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) { iniciarSesion(entrada: $e) { __typename ... on Sesion { token } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{alias_asesor}}\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.collectionVariables.set('token_asesor', cuerpo.data.iniciarSesion.token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Bandeja (CA-W04-01 a 05)",
+      "item": [
+        {
+          "name": "1.1 siniestros: los 10 casos, del más reciente al más antiguo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"{ siniestros { id radicado estado asegurado { nombre } notificadoEn } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const s = cuerpo.data.siniestros;",
+                  "pm.test('10 casos', () => pm.expect(s.length).to.eql(10));",
+                  "pm.test('7 en cola (pendientes y en revisión)', () => pm.expect(s.filter(x => ['PENDIENTE','EN_REVISION'].includes(x.estado)).length).to.eql(7));",
+                  "pm.test('Ordenados por notificación descendente', () => { const f = s.map(x => Date.parse(x.notificadoEn)); pm.expect(f).to.eql([...f].sort((a, b) => b - a)); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 siniestros(estado: APROBADO)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"{ siniestros(estado: APROBADO) { id estado } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Solo aprobados', () => pm.expect(cuerpo.data.siniestros.map(x => x.estado)).to.eql(['APROBADO', 'APROBADO']));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Detalle con póliza real y evidencias firmadas (CA-W04-08 a 16, W04-4, W04-5)",
+      "item": [
+        {
+          "name": "2.1 siniestro(sin-01) con su póliza de POLICY",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query { siniestro(id: \\\"sin-01\\\") { radicado estado asegurado { nombre documento } poliza { numero estado ramo cobertura { valor moneda } } evidencias { id tipo url geoetiquetada } verificaciones { cumple } venceDictamenEn resolucion { tipo } } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const s = cuerpo.data.siniestro;",
+                  "pm.test('Radicado y estado', () => { pm.expect(s.radicado).to.eql('SIN-2026-0141'); pm.expect(s.estado).to.eql('PENDIENTE'); });",
+                  "pm.test('Póliza emitida de POLICY con su ramo', () => { pm.expect(s.poliza.numero).to.match(/^SOL-\\d{4}-\\d{6}$/); pm.expect(s.poliza.estado).to.eql('EMITIDA'); pm.expect(s.poliza.ramo).to.include('Vida grupo deudor'); });",
+                  "pm.test('5 evidencias, todas con URL firmada', () => { pm.expect(s.evidencias.length).to.eql(5); s.evidencias.forEach(e => pm.expect(e.url).to.include('X-Goog-Signature')); });",
+                  "pm.test('Las fotos de la semilla van geoetiquetadas', () => pm.expect(s.evidencias.filter(e => e.tipo === 'FOTO').every(e => e.geoetiquetada)).to.be.true);",
+                  "pm.collectionVariables.set('url_evidencia', s.evidencias[0].url);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 la URL firmada descarga la imagen del almacenamiento",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{url_evidencia}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Es una imagen', () => pm.expect(pm.response.headers.get('Content-Type')).to.match(/^image\\//));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 siniestro inexistente es null",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query { siniestro(id: \\\"sin-99\\\") { id } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('null', () => pm.expect(cuerpo.data.siniestro).to.be.null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 peritos(sin-03) con la fecha límite del informe",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query { peritos(siniestroId: \\\"sin-03\\\") { id nombre tiempoRespuestaDias vencimientoInforme } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const p = cuerpo.data.peritos;",
+                  "pm.test('4 peritos con vencimiento a las 5:00 p. m. hora Colombia', () => { pm.expect(p.length).to.eql(4); p.forEach(x => pm.expect(x.vencimientoInforme).to.match(/T17:00:00-05:00$/)); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Derivar (CA-W04-17 a 23)",
+      "item": [
+        {
+          "name": "3.1 derivarSiniestro(sin-03, per-03) deja el caso EN_REVISION",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation { derivarSiniestro(id: \\\"sin-03\\\", peritoId: \\\"per-03\\\", instrucciones: \\\"Revisar el daño frontal\\\") { __typename ... on Siniestro { id estado resolucion { tipo motivo comentario indemnizacion { valor moneda } metodoTransferencia plazoDispersion perito { id nombre } instrucciones vencimientoInforme } } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.derivarSiniestro;",
+                  "pm.test('Siniestro EN_REVISION derivado', () => { pm.expect(r.__typename).to.eql('Siniestro'); pm.expect(r.estado).to.eql('EN_REVISION'); pm.expect(r.resolucion.tipo).to.eql('DERIVACION'); pm.expect(r.resolucion.perito.id).to.eql('per-03'); pm.expect(r.resolucion.instrucciones).to.eql('Revisar el daño frontal'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 derivar otra vez: ya tiene perito",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation { derivarSiniestro(id: \\\"sin-03\\\", peritoId: \\\"per-01\\\") { __typename ... on Siniestro { id estado resolucion { tipo motivo comentario indemnizacion { valor moneda } metodoTransferencia plazoDispersion perito { id nombre } instrucciones vencimientoInforme } } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('ErrorSiniestro', () => pm.expect(cuerpo.data.derivarSiniestro).to.eql({__typename: 'ErrorSiniestro', mensaje: 'El siniestro ya tiene un perito asignado.'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 instrucciones de más de 500 caracteres",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($t: String) { derivarSiniestro(id: \\\"sin-10\\\", peritoId: \\\"per-01\\\", instrucciones: $t) { __typename ... on Siniestro { id estado resolucion { tipo motivo comentario indemnizacion { valor moneda } metodoTransferencia plazoDispersion perito { id nombre } instrucciones vencimientoInforme } } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"t\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('ErrorSiniestro de texto largo', () => pm.expect(cuerpo.data.derivarSiniestro.mensaje).to.eql('El texto supera los 500 caracteres.'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 perito inexistente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation { derivarSiniestro(id: \\\"sin-10\\\", peritoId: \\\"per-99\\\") { __typename ... on Siniestro { id estado resolucion { tipo motivo comentario indemnizacion { valor moneda } metodoTransferencia plazoDispersion perito { id nombre } instrucciones vencimientoInforme } } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('ErrorSiniestro de perito', () => pm.expect(cuerpo.data.derivarSiniestro.mensaje).to.eql('El perito seleccionado no está disponible.'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Aprobar con orden de pago en PAYMENTS (CA-W04-28, W04-6, W04-8)",
+      "item": [
+        {
+          "name": "4.1 aprobarSiniestro(sin-01)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation { aprobarSiniestro(id: \\\"sin-01\\\") { __typename ... on Siniestro { id estado resolucion { tipo motivo comentario indemnizacion { valor moneda } metodoTransferencia plazoDispersion perito { id nombre } instrucciones vencimientoInforme } } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.aprobarSiniestro;",
+                  "pm.test('APROBADO con indemnización, método y plazo', () => { pm.expect(r.estado).to.eql('APROBADO'); pm.expect(r.resolucion.indemnizacion).to.eql({valor: '8650000', moneda: 'COP'}); pm.expect(r.resolucion.metodoTransferencia).to.eql('ACH Colombia Interbancario'); pm.expect(r.resolucion.plazoDispersion).to.eql('1 a 3 días hábiles'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 aprobar otra vez: ya resuelto",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation { aprobarSiniestro(id: \\\"sin-01\\\") { __typename ... on Siniestro { id estado resolucion { tipo motivo comentario indemnizacion { valor moneda } metodoTransferencia plazoDispersion perito { id nombre } instrucciones vencimientoInforme } } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('ErrorSiniestro', () => pm.expect(cuerpo.data.aprobarSiniestro.mensaje).to.eql('El siniestro ya fue resuelto y no admite cambios.'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 CLAIMS guardó la orden de PAYMENTS",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{claims_url}}/siniestros/sin-01",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json().resolucion;",
+                  "pm.test('La resolución apunta a la orden', () => pm.expect(r.orden_pago_id).to.be.a('string'));",
+                  "pm.collectionVariables.set('orden_pago_id', r.orden_pago_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.4 PAYMENTS tiene la orden PENDIENTE_DISPERSION",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payments_url}}/indemnizaciones/{{orden_pago_id}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const o = pm.response.json();",
+                  "pm.test('Orden de la indemnización sin dispersión', () => { pm.expect(o.siniestro_id).to.eql('sin-01'); pm.expect(o.monto).to.eql('8650000'); pm.expect(o.estado).to.eql('PENDIENTE_DISPERSION'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.5 un caso derivado se aprueba y conserva su perito",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation { aprobarSiniestro(id: \\\"sin-03\\\") { __typename ... on Siniestro { id estado resolucion { tipo motivo comentario indemnizacion { valor moneda } metodoTransferencia plazoDispersion perito { id nombre } instrucciones vencimientoInforme } } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.aprobarSiniestro;",
+                  "pm.test('APROBADO con el perito de la derivación', () => { pm.expect(r.estado).to.eql('APROBADO'); pm.expect(r.resolucion.perito.id).to.eql('per-03'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Rechazar (CA-W04-24 a 27)",
+      "item": [
+        {
+          "name": "5.1 rechazarSiniestro(sin-06) con motivo y comentario",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation { rechazarSiniestro(id: \\\"sin-06\\\", motivo: EVIDENCIA_INSUFICIENTE, comentario: \\\"Faltan fotos del vehículo\\\") { __typename ... on Siniestro { id estado resolucion { tipo motivo comentario indemnizacion { valor moneda } metodoTransferencia plazoDispersion perito { id nombre } instrucciones vencimientoInforme } } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.rechazarSiniestro;",
+                  "pm.test('RECHAZADO con motivo y comentario', () => { pm.expect(r.estado).to.eql('RECHAZADO'); pm.expect(r.resolucion.motivo).to.eql('EVIDENCIA_INSUFICIENTE'); pm.expect(r.resolucion.comentario).to.eql('Faltan fotos del vehículo'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.2 rechazar un caso ya aprobado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation { rechazarSiniestro(id: \\\"sin-05\\\", motivo: OTRO) { __typename ... on Siniestro { id estado resolucion { tipo motivo comentario indemnizacion { valor moneda } metodoTransferencia plazoDispersion perito { id nombre } instrucciones vencimientoInforme } } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('ErrorSiniestro', () => pm.expect(cuerpo.data.rechazarSiniestro.mensaje).to.eql('El siniestro ya fue resuelto y no admite cambios.'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Autorización y versión de la API (W04-10, W04-11)",
+      "item": [
+        {
+          "name": "6.1 un ASESOR no usa la mesa",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"{ siniestros { id } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Sin permiso', () => pm.expect(cuerpo.errors[0].message).to.eql('No tienes permiso para esta operación.'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.2 sin token se pide sesión",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"{ siniestros { id } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Debe iniciar sesión', () => pm.expect(cuerpo.errors[0].message).to.eql('Debes iniciar sesión.'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.3 /v1/graphql/web responde igual que /graphql/web",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"{ siniestros { id estado } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('10 casos por /v1', () => pm.expect(cuerpo.data.siniestros.length).to.eql(10));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.4 mensajes en inglés",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "en"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation { aprobarSiniestro(id: \\\"sin-01\\\") { __typename ... on Siniestro { id estado resolucion { tipo motivo comentario indemnizacion { valor moneda } metodoTransferencia plazoDispersion perito { id nombre } instrucciones vencimientoInforme } } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('ErrorSiniestro en inglés', () => pm.expect(cuerpo.data.aprobarSiniestro.mensaje).to.eql(\"The claim has already been resolved and can't be changed.\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Cierre",
+      "item": [
+        {
+          "name": "7.1 CLAIMS vuelve a la semilla",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{claims_url}}/_demo/reiniciar",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Semilla restaurada', () => pm.expect(pm.response.json().siniestros).to.eql(10));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "claims_url",
+      "value": "http://localhost:8011"
+    },
+    {
+      "key": "clave_nuevos",
+      "value": "clave-newman-0001"
+    }
+  ]
+}
