@@ -48,6 +48,11 @@ Tabla `usuarios` en la base `auth`: `id`, `usuario` (alias único), `hash_clave`
 | `solicitarOferta`, `contactarAsesor` | ✅ | ✅ | ❌ | ✅ como antes |
 | `oferta`, `aceptarOferta`, `propuesta`, `documentoFirma`, `poliza` (HU-W03; un CLIENTE solo ve y acepta lo suyo) | ✅ | ✅ (en nombre del cliente) | ❌ | ✅ como antes |
 | `firmarPropuesta` (HU-W03, no repudio: solo el CLIENTE titular) | ✅ | ❌ | ❌ | ❌ siempre exige token |
+| `enviarCodigoVerificacion`, `verificarCodigo`, `reenviarEnlaceFirma` (v0.18, HU-W03 bloque 9: solo el ASESOR, por el titular) | ❌ | ✅ | ❌ | ❌ siempre exige token |
+| `emitirPropuesta` (v0.18: «Emitir» del ASESOR o «Firmar» del CLIENTE titular) | ✅ | ✅ | ❌ | ❌ siempre exige token |
+| `firmaPorEnlace`, `solicitarSubidaFirma`, `firmarPorEnlace`, `iniciarPago`, `confirmarPago` (v0.18, W03-33: token del enlace en `X-Enlace-Firma` **o** sesión del CLIENTE titular) | ✅ titular | ❌ | ❌ | ✅ solo con `X-Enlace-Firma` |
+| `propuestas` (v0.18, W03-35: filtrada por el rol del token) | ✅ las suyas | ✅ las que aceptó | ✅ todas | ❌ siempre exige token |
+| `ticketAvisos` (v0.18, W03-37: ticket de 60 s para el stream de `avisos`) | ✅ | ✅ | ✅ | ❌ siempre exige token |
 | `GET /polizas/{id}/documento` (PDF de la póliza; REST, no GraphQL; un CLIENTE solo descarga la suya, una ajena da 404) | ✅ | ✅ | ❌ (403) | ❌ siempre exige token (401) |
 | `cobros`, `crearCobro`, `reintentarCobro` (KAN-28, datos de pagos) | ❌ | ❌ | ✅ | ❌ siempre exige token |
 | `usuarios`, `crearUsuario` (con `nombre`, `correo` y `telefono` para CLIENTE), `cambiarRolUsuario`, `suspenderUsuario` | ❌ | ❌ | ✅ | ❌ siempre exige token |

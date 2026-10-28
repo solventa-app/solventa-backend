@@ -131,10 +131,8 @@ class RepositorioFalso:
     def marcar_rechazado(self, archivo_id: str, motivo: str):
         return self._cambiar(archivo_id, "PENDIENTE", {"estado": "RECHAZADO", "motivo": motivo})
 
-    def marcar_eliminado(self, archivo_id: str):
-        return self._cambiar(
-            archivo_id, "DISPONIBLE", {"estado": "ELIMINADO", "eliminado_en": AHORA}
-        )
+    def marcar_eliminado(self, archivo_id: str, desde: str = "DISPONIBLE"):
+        return self._cambiar(archivo_id, desde, {"estado": "ELIMINADO", "eliminado_en": AHORA})
 
     def fijar_retencion(self, archivo_id: str, desde: datetime):
         fila = self.archivos.get(archivo_id)
@@ -152,6 +150,13 @@ class RepositorioFalso:
             and f["tipo"] in dias_por_tipo
             and f["retener_desde"] + timedelta(days=dias_por_tipo[f["tipo"]]) <= ahora
         ][:limite]
+
+    def pendientes_antes_de(self, antes: datetime, limite: int):
+        return [
+            copy.deepcopy(f)
+            for f in self.archivos.values()
+            if f["estado"] == "PENDIENTE" and f["creado_en"] < antes
+        ][: max(0, limite)]
 
     def registrar_acceso(self, archivo_id, accion, actor, actor_id, vence_en) -> None:
         self.accesos.append(

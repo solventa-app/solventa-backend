@@ -23,6 +23,9 @@ Con eso las pruebas comprueban a qué correo fue y qué se adjuntó sin retener 
 - `POST /v1/notificaciones` `{referencia_comercio, plantilla, destinatario_id, datos, correo?, telefono?, adjuntos?}` →
   `{"estado": "enviada", "referencia", "motivo"}`. **Idempotente por `referencia_comercio`** (en Solventa, el
   `id_notificacion`, `poliza-emitida-{id de la póliza}`): repetirla no manda otro aviso.
+- Plantillas que usa Solventa: `poliza-emitida` (al titular, con el PDF); desde la v0.18 (HU-W03, bloque 9)
+  `codigo-verificacion` (código de 6 dígitos al titular), `enlace-firma` (enlace de 30 min al titular) y
+  `poliza-emitida-asesor` (al asesor que la vendió, sin el PDF). El stub acepta cualquier nombre de plantilla.
 - `GET /v1/estado` → **sí obedece el modo simulado**: lo usa la sonda de recuperación del circuito, que no debe enviar.
 - Override de una sola petición: `?modo=...` o el header `X-Modo-Simulado`.
 

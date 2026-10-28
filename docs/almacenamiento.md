@@ -61,6 +61,8 @@ pide otra cuando la necesites. Cada una queda auditada.
 ## 5. Cierra la retención
 
 Cuando el trámite termina, `POST /archivos/{id}/retencion` (un CLIENTE no puede). Desde ahí corren los días del tipo.
+Lo que no pidas retener se conserva: el bucket no tiene regla por edad. Solo las subidas que nunca se confirmaron
+(`PENDIENTE`) se borran solas, a los 90 días, con la purga diaria del servicio.
 
 ## Local
 

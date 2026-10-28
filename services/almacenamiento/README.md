@@ -25,7 +25,7 @@ Cómo lo usa una historia: [`docs/almacenamiento.md`](../../docs/almacenamiento.
 | `GET` | `/archivos?propietario_tipo&propietario_id` | Los que el actor puede leer |
 | `POST` | `/archivos/{id}/retencion` | Empieza a correr la retención (`customTime`) |
 | `POST` | `/eventos/gcs` | Push de Pub/Sub con los avisos del bucket; siempre 204 |
-| `POST` | `/archivos/_purgar-vencidos` | Respaldo de la regla de ciclo de vida |
+| `POST` | `/archivos/_purgar-vencidos` | Borra las subidas `PENDIENTE` de más de 90 días (solo lo hace esta pasada; Cloud Scheduler `purga-almacenamiento`, diario) y, de respaldo, lo que ya venció por retención |
 
 El actor llega en `X-Actor-Rol` (`CLIENTE`, `ASESOR`, `BACKOFFICE`, `SERVICIO`) y `X-Actor-Id`. El servicio es privado
 (IAM de Cloud Run): solo lo invocan quienes lo declaran en `llama` del manifiesto.
