@@ -318,7 +318,8 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
     BACKOFFICE).
   - **`contracts/salud.json`:** pesos, objetivos de latencia, ventanas, umbrales de color y las APIs del socio. Una API
     queda en ROJO si uno de sus micros no responde, y la barra general no es VERDE si alguna API está en ROJO.
-- **Estado en el BFF:** esqueleto. `estadoSistema` responde un error controlado hasta el bloque 6 del plan y
-  `nombreSocio` va en null; la API `/v1` de socios llega con los bloques 4 y 5.
+- **Estado en el BFF:** implementado (2026-10-29). La API `/v1` de socios (con el modo prueba), `estadoSistema` y
+  `nombreSocio`. El contrato REST ajustó `plazoMeses` (1 a 60) y el documento (al menos 6 dígitos) a lo que ya valida
+  W01.
 - Afecta al frontend: sí. El portal de socios (W07) genera sus tipos de `socios-v1.json`; la web del BACKOFFICE puede
   copiar el esquema y usar `estadoSistema` y `nombreSocio` cuando el BFF los implemente.

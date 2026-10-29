@@ -56,6 +56,28 @@ y máximo 20 caracteres, `valorCredito` decimal mayor que 0, `plazoMeses` de 1 a
 `plazoMeses` y `direccionInmueble` viajan a RATING, que los usa en la prima (ver `services/rating/README.md`).
 Nunca se loguean (tampoco el documento).
 
+## API de socios de distribución (HU-W07, `app/socios/`)
+
+API REST `/v1/...` para los socios que revenden la póliza (contrato `contracts/openapi/socios-v1.json`, copia en
+`app/socios-v1.json`; plan `docs/plan-completar-hu-w07.md`). Convive con `/v1/graphql/{canal}`: va como un router con
+rutas explícitas, nunca como un `Mount("/v1")`.
+
+- **Token:** JWT ES256 de AUTH (`POST /v1/token`), validado con el JWKS de AUTH (10 min en caché; se vuelve a pedir si
+  llega un `kid` desconocido). Lo lee de `X-Forwarded-Authorization` o `Authorization`. `app/socios/autenticacion.py`.
+- **El socio es un intermediario como el ASESOR** (`rol = SOCIO`): aceptar (con el contacto del titular y la tasa del
+  socio, que POLICY congela), código, emitir y reenviar reutilizan `ServicioSuscripcion` y `ServicioFirmaPago`. Un
+  socio solo ve lo que vendió (404 si no) y la URL del enlace nunca vuelve en la respuesta.
+- **Presupuesto:** solo `POST /v1/cotizaciones` reserva una cotización en AUTH, después de validar los datos y que el
+  consentimiento sea del socio; si la cotización falla por nosotros, la devuelve. Agotado: 429 con `Retry-After`.
+- **Errores:** siempre `ErrorPublico` (`codigo`, `mensaje` en es o en, `puedeReintentar`), también los 422 de FastAPI.
+  Una falla inesperada es 503 con `Retry-After`, nunca un 5xx crudo. `app/socios/errores.py`.
+- **Consumo:** un middleware registra cada llamada del socio en AUTH (API, resultado y latencia) después de responder.
+- **Modo prueba** (`app/socios/modo_prueba.py`): con un token de PRUEBAS, datos simulados por documento de prueba,
+  código `000000` y avance solo hasta EMITIDA, sin llamar a las fuentes, a RATING, a POLICY ni a los stubs. Estado en
+  Redis (24 h) o en memoria.
+- **Salud** (`app/salud.py`): `GET /v1/estado` para el socio (sin nombres de micros) y `estadoSistema` para el
+  BACKOFFICE. `/health` de cada micro, los circuitos del ACL y las métricas de `METRICAS_FUENTE`.
+
 ## Variables de entorno
 
 | Variable | Default local | Nota |
@@ -70,6 +92,10 @@ Nunca se loguean (tampoco el documento).
 | `AVISOS_URL` | `http://localhost:8011/avisos/stream` | URL pública del stream SSE (fuera del API Gateway) que devuelve `ticketAvisos` |
 | `URL_FRONT` | `http://localhost:5173` | Origen del front: a `<URL_FRONT>/pago/retorno/<propuestaId>` regresa el titular desde la pasarela; debe estar en `URLS_RETORNO_PERMITIDAS` de la pasarela |
 | `AUTENTICACION_USUARIOS` | `opcional` | `opcional` u `obligatoria` (ver `docs/autenticacion-usuarios.md`) |
+| `UNDER_URL`, `CONSOLIDADOR_URL` | `http://localhost:8008`, `:8006` | Solo para su `/health` (salud del sistema, HU-W07) |
+| `METRICAS_FUENTE` | `ninguna` | `ninguna` (solo `/health`), `prometheus` (compose) o `monitoring` (Cloud Run, necesita `roles/monitoring.viewer`) |
+| `PROMETHEUS_URL` | `http://localhost:9190` | Con `METRICAS_FUENTE=prometheus`; en compose, `http://prometheus:9090` (perfil `observabilidad`) |
+| `GCP_PROYECTO` | — | Con `METRICAS_FUENTE=monitoring`; lo pone Terraform |
 
 ## Operación
 
