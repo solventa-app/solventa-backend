@@ -15,6 +15,7 @@ from app import (
 from app.configuracion import Configuracion
 from app.idioma import EN, idioma_de, traducir
 from app.main import create_app
+from app.socios import errores as errores_socios
 
 
 def _cliente(**fakes) -> TestClient:
@@ -58,6 +59,7 @@ def test_todos_los_mensajes_del_bff_tienen_traduccion() -> None:
             servicio_firma_pago,
             servicio_oferta,
             servicio_suscripcion,
+            errores_socios,
         )
         for nombre, valor in vars(modulo).items()
         if nombre.startswith("MENSAJE_") and isinstance(valor, str)

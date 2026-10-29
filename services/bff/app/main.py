@@ -2,14 +2,21 @@
 
 Un solo esquema (`app/esquema.py`, espejo del contrato) servido en dos rutas
 por canal: `/graphql/web` y `/graphql/app`. El canal viaja en el contexto para
-diferenciarlos en el futuro (resolutores o métricas por canal, ADR-01)."""
+diferenciarlos en el futuro (resolutores o métricas por canal, ADR-01).
 
+Además sirve la API REST de los socios de distribución en `/v1/...` (HU-W07, `app/socios/`), que
+convive con `/v1/graphql/{canal}`."""
+
+import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from prometheus_fastapi_instrumentator import Instrumentator
 from strawberry.fastapi import GraphQLRouter
@@ -29,12 +36,19 @@ from app.observabilidad import configurar_trazas
 from app.servicio_firma_pago import ErrorFlujoDatos, ServicioFirmaPago
 from app.servicio_oferta import ServicioOferta
 from app.servicio_suscripcion import MENSAJE_DOCUMENTO_NO_DISPONIBLE, ServicioSuscripcion
+from app.socios.api import api_de, construir_router, es_ruta_de_socios
+from app.socios.autenticacion import VerificadorTokensSocio
+from app.socios.errores import ErrorApiSocio, datos_invalidos, no_disponible, respuesta_de_error
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 configurar_trazas("bff", instrumentos=("httpx",))
 
 CANALES = ("web", "app", "movil")
+
+logger_socios = logging.getLogger("bff.socios")
+# Tareas de registro de consumo en vuelo: se guardan para que no las recoja el recolector.
+_CONSUMOS_PENDIENTES: set[asyncio.Task] = set()
 
 
 def create_app(config: Configuracion | None = None, clientes: Clientes | None = None) -> FastAPI:
@@ -54,6 +68,10 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
         app.state.servicio_firma_pago = ServicioFirmaPago(
             app.state.clientes, config.avisos_url, config.url_front
         )
+        # API de socios (HU-W07).
+        app.state.cliente_id_clave = config.cliente_id_clave
+        if app.state.clientes.socios is not None:
+            app.state.verificador_socios = VerificadorTokensSocio(app.state.clientes.socios)
         try:
             yield
         finally:
@@ -106,6 +124,51 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
             GraphQLRouter(schema, context_getter=contexto_para(canal)),
             prefix=f"/v1/graphql/{canal}",
         )
+
+    # ---------- API de socios (HU-W07) ----------
+    app.include_router(construir_router())
+
+    @app.exception_handler(ErrorApiSocio)
+    async def error_de_socio(request: Request, error: ErrorApiSocio) -> JSONResponse:
+        return respuesta_de_error(error, idioma_de(request.headers.get("accept-language")))
+
+    @app.exception_handler(RequestValidationError)
+    async def validacion(request: Request, error: RequestValidationError) -> JSONResponse:
+        # En la API de socios, un cuerpo inválido es `ErrorPublico` (DATOS_INVALIDOS), no el
+        # detalle de FastAPI; el resto del BFF responde como siempre.
+        if es_ruta_de_socios(request.url.path):
+            idioma = idioma_de(request.headers.get("accept-language"))
+            return respuesta_de_error(datos_invalidos(), idioma)
+        return await request_validation_exception_handler(request, error)
+
+    @app.middleware("http")
+    async def consumo_y_errores_de_socios(request: Request, siguiente):
+        """Registra cada llamada de un socio (W07: consumo por API, sin datos personales) y
+        convierte una falla inesperada en un 503 controlado (regla 4). El registro corre después
+        de responder: no suma latencia."""
+        if not es_ruta_de_socios(request.url.path):
+            return await siguiente(request)
+        inicio = time.perf_counter()
+        try:
+            respuesta = await siguiente(request)
+        except Exception:
+            logger_socios.exception("falla inesperada en la API de socios")
+            respuesta = respuesta_de_error(
+                no_disponible(), idioma_de(request.headers.get("accept-language"))
+            )
+        socio = getattr(request.state, "socio", None)
+        clientes_app = getattr(app.state, "clientes", None)
+        socios = getattr(clientes_app, "socios", None)
+        if socio is not None and socios is not None:
+            codigo = respuesta.status_code
+            resultado = "OK" if codigo < 400 else ("ERROR" if codigo >= 500 else "ERROR_CLIENTE")
+            latencia = int((time.perf_counter() - inicio) * 1000)
+            tarea = asyncio.create_task(
+                _registrar_consumo(socios, socio, api_de(request.url.path), resultado, latencia)
+            )
+            _CONSUMOS_PENDIENTES.add(tarea)
+            tarea.add_done_callback(_CONSUMOS_PENDIENTES.discard)
+        return respuesta
 
     @app.get("/polizas/{poliza_id}/documento", tags=["polizas"], response_class=Response)
     async def documento_poliza(poliza_id: str, request: Request) -> Response:
@@ -182,6 +245,13 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app
+
+
+async def _registrar_consumo(socios, socio, api: str, resultado: str, latencia_ms: int) -> None:
+    try:
+        await socios.registrar_consumo(socio.id, socio.entorno, api, resultado, latencia_ms)
+    except Exception:  # noqa: BLE001 - el consumo es de mejor esfuerzo, nunca afecta al socio
+        logger_socios.warning("no se pudo registrar el consumo de un socio")
 
 
 def _respuesta_de_error(error: ErrorFlujoDatos) -> JSONResponse:

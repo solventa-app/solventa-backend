@@ -113,6 +113,9 @@ class PropuestaResponse(BaseModel):
     actor_rol: str | None = None
     origen_contacto: str | None = None
     estado_visible: str | None = None
+    # HU-W07: cuándo vence el enlace de firma activo (solo en `GET /propuestas/{id}`); nunca
+    # el token.
+    enlace_vence_en: datetime | None = None
 
 
 class PolizaResumenResponse(BaseModel):
@@ -549,7 +552,11 @@ def create_app(
         propuesta = app.state.servicio_propuestas.obtener(propuesta_id)
         if propuesta is None:
             raise HTTPException(status_code=404, detail="propuesta no encontrada")
-        return _respuesta(propuesta)
+        respuesta = _respuesta(propuesta)
+        flujo = getattr(app.state, "servicio_firma_y_pago", None)
+        if flujo is not None:
+            respuesta.enlace_vence_en = flujo.vencimiento_enlace(propuesta_id)
+        return respuesta
 
     @app.get(
         "/propuestas/{propuesta_id}/documento-firma",

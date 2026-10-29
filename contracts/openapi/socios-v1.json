@@ -1321,8 +1321,9 @@
         "properties": {
           "documentoIdentidad": {
             "type": "string",
-            "minLength": 5,
-            "maxLength": 20
+            "minLength": 6,
+            "maxLength": 20,
+            "description": "Al menos 6 dígitos."
           },
           "finalidad": {
             "type": "string",
@@ -1406,8 +1407,9 @@
           },
           "documentoIdentidad": {
             "type": "string",
-            "minLength": 5,
-            "maxLength": 20
+            "minLength": 6,
+            "maxLength": 20,
+            "description": "Al menos 6 dígitos."
           },
           "valorCredito": {
             "type": "string",
@@ -1418,12 +1420,12 @@
           },
           "plazoMeses": {
             "type": "integer",
-            "minimum": 12,
-            "maximum": 360
+            "minimum": 1,
+            "maximum": 60
           },
           "direccionInmueble": {
             "type": "string",
-            "minLength": 5,
+            "minLength": 1,
             "maxLength": 200
           }
         },

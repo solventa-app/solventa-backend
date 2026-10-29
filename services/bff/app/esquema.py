@@ -770,6 +770,7 @@ def _propuesta(
     poliza: Poliza | None = None,
     nombre_titular: str | None = None,
     nombre_asesor: str | None = None,
+    nombre_socio: str | None = None,
 ) -> Propuesta:
     explicacion = explicar_estado(datos)
     return Propuesta(
@@ -789,6 +790,7 @@ def _propuesta(
         poliza=poliza,
         nombre_titular=nombre_titular,
         nombre_asesor=nombre_asesor,
+        nombre_socio=nombre_socio,
     )
 
 
@@ -1700,10 +1702,13 @@ class Query:
             datos = await servicio.listar_propuestas(
                 usuario, filtro, max(1, pagina or 1), max(1, min(tamano or 10, 50))
             )
-            asesores = (
-                await servicio.nombres_de_asesores(datos["propuestas"])
+            asesores, socios = (
+                await asyncio.gather(
+                    servicio.nombres_de_asesores(datos["propuestas"]),
+                    servicio.nombres_de_socios(datos["propuestas"]),
+                )
                 if usuario.rol == "BACKOFFICE"
-                else {}
+                else ({}, {})
             )
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_PROPUESTAS_NO_DISPONIBLES) from error
@@ -1715,6 +1720,11 @@ class Query:
                     poliza=_poliza_de_resumen(p.get("poliza"), p),
                     nombre_titular=p.get("nombre_titular") if ve_personales else None,
                     nombre_asesor=asesores.get(p.get("actor_usuario_id") or ""),
+                    nombre_socio=(
+                        socios.get(p.get("actor_usuario_id") or "")
+                        if p.get("actor_rol") == "SOCIO"
+                        else None
+                    ),
                 )
                 for p in datos["propuestas"]
             ],

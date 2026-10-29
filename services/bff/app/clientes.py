@@ -60,6 +60,14 @@ class VerificacionPendiente(Exception):
     canal no es la app (HU-M01)."""
 
 
+class CredencialesSocioInvalidas(Exception):
+    """AUTH rechazó el client_id y la clave del socio (HU-W07). Mismo mensaje en todos los casos."""
+
+
+class PresupuestoAgotado(Exception):
+    """El socio agotó sus cotizaciones del entorno (HU-W07, W07-9)."""
+
+
 class ErrorOnboardingServicio(Exception):
     """ONBOARDING (o AUTH al crear la cuenta) rechazó la solicitud con un código estable."""
 
@@ -159,6 +167,7 @@ class PuertoPolicy(Protocol):
         actor_usuario_id: str | None,
         actor_rol: str | None = None,
         contacto: dict | None = None,
+        tasa_comision: str | None = None,
     ) -> dict: ...
 
     async def obtener_propuesta(self, propuesta_id: str) -> dict | None: ...
@@ -184,6 +193,7 @@ class PuertoPolicy(Protocol):
         estado_visible: str | None,
         pagina: int,
         tamano: int,
+        actor_rol: str | None = None,
     ) -> dict: ...
 
     async def enviar_codigo(self, propuesta_id: str, correo: str | None) -> dict: ...
@@ -193,6 +203,9 @@ class PuertoPolicy(Protocol):
     async def emitir(self, propuesta_id: str, rol: str, titular_id: str | None) -> dict: ...
 
     async def reenviar_enlace(self, propuesta_id: str) -> dict: ...
+
+    # HU-W07: lo que vendió un socio, por mes.
+    async def ventas_socio(self, socio_id: str, desde: str | None, hasta: str | None) -> dict: ...
 
     async def estado_enlace(self, propuesta_id: str, acceso: "Acceso") -> dict: ...
 
@@ -298,6 +311,34 @@ class PuertoClaims(Protocol):
     ) -> dict: ...
 
 
+class PuertoSocios(Protocol):
+    """Socios de distribución en AUTH (HU-W07). Todos lanzan `ErrorServicio` si AUTH no responde."""
+
+    async def emitir_token(self, client_id: str, clave: str) -> dict: ...
+
+    async def jwks(self) -> dict: ...
+
+    async def obtener(self, socio_id: str) -> dict | None: ...
+
+    async def nombres(self, ids: list[str]) -> dict[str, str]: ...
+
+    async def credenciales(self, socio_id: str) -> list[dict]: ...
+
+    async def rotar(self, socio_id: str, entorno: str) -> dict: ...
+
+    async def reservar(self, socio_id: str, entorno: str) -> int: ...
+
+    async def devolver(self, socio_id: str, entorno: str) -> int: ...
+
+    async def registrar_consumo(
+        self, socio_id: str, entorno: str, api: str, resultado: str, latencia_ms: int
+    ) -> None: ...
+
+    async def consumo(
+        self, socio_id: str, entorno: str, desde: str | None, hasta: str | None
+    ) -> dict: ...
+
+
 @dataclass(frozen=True)
 class Acceso:
     """Cómo se autoriza una operación de la página del enlace (W03-33): el token del enlace o el
@@ -325,6 +366,7 @@ class Clientes:
     # Tickets del stream de avisos (Redis). `None` si no hay Redis: `ticketAvisos` da error.
     tickets: PuertoTickets | None = None
     claims: PuertoClaims | None = None
+    socios: PuertoSocios | None = None
 
 
 async def _pedir(
@@ -361,6 +403,97 @@ def _json_o_none(respuesta: httpx.Response) -> dict[str, Any] | None:
     if respuesta.is_error:
         raise ErrorServicio(f"HTTP {respuesta.status_code}")
     return respuesta.json()
+
+
+class ClienteSociosHttp:
+    """Los endpoints de socios de AUTH (HU-W07); comparte el `httpx.AsyncClient` de AUTH. Nunca se
+    loguea la clave ni el token (httpx registra solo la URL)."""
+
+    def __init__(self, cliente: httpx.AsyncClient) -> None:
+        self._cliente = cliente
+
+    async def emitir_token(self, client_id: str, clave: str) -> dict:
+        respuesta = await _pedir(
+            self._cliente, "POST", "/socios/tokens", {"client_id": client_id, "clave": clave}
+        )
+        if respuesta.status_code == 401:
+            raise CredencialesSocioInvalidas()
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def jwks(self) -> dict:
+        respuesta = await _pedir(self._cliente, "GET", "/.well-known/jwks.json")
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def obtener(self, socio_id: str) -> dict | None:
+        return _json_o_none(await _pedir(self._cliente, "GET", f"/socios/{socio_id}"))
+
+    async def nombres(self, ids: list[str]) -> dict[str, str]:
+        if not ids:
+            return {}
+        respuesta = await _pedir(self._cliente, "POST", "/socios/nombres", {"ids": ids})
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def credenciales(self, socio_id: str) -> list[dict]:
+        respuesta = await _pedir(self._cliente, "GET", f"/socios/{socio_id}/credenciales")
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def rotar(self, socio_id: str, entorno: str) -> dict:
+        ruta = f"/socios/{socio_id}/credenciales/{entorno}/rotar"
+        respuesta = await _pedir(self._cliente, "POST", ruta)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def reservar(self, socio_id: str, entorno: str) -> int:
+        ruta = f"/socios/{socio_id}/presupuesto/{entorno}/cotizaciones/reservar"
+        respuesta = await _pedir(self._cliente, "POST", ruta)
+        if respuesta.status_code == 429:
+            raise PresupuestoAgotado()
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()["restantes"]
+
+    async def devolver(self, socio_id: str, entorno: str) -> int:
+        ruta = f"/socios/{socio_id}/presupuesto/{entorno}/cotizaciones/devolver"
+        respuesta = await _pedir(self._cliente, "POST", ruta)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()["restantes"]
+
+    async def registrar_consumo(
+        self, socio_id: str, entorno: str, api: str, resultado: str, latencia_ms: int
+    ) -> None:
+        cuerpo = {
+            "entorno": entorno,
+            "api": api,
+            "resultado": resultado,
+            "latencia_ms": latencia_ms,
+        }
+        respuesta = await _pedir(self._cliente, "POST", f"/socios/{socio_id}/consumos", cuerpo)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+
+    async def consumo(
+        self, socio_id: str, entorno: str, desde: str | None, hasta: str | None
+    ) -> dict:
+        params = {"entorno": entorno, "desde": desde, "hasta": hasta}
+        respuesta = await _pedir(
+            self._cliente,
+            "GET",
+            f"/socios/{socio_id}/consumo",
+            params={k: v for k, v in params.items() if v is not None},
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
 
 
 class ClienteAuthHttp:
@@ -668,21 +801,21 @@ class ClientePolicyHttp:
         actor_usuario_id: str | None,
         actor_rol: str | None = None,
         contacto: dict | None = None,
+        tasa_comision: str | None = None,
     ) -> dict:
-        """`contacto` (nombre y correo) solo lo manda el ASESOR y POLICY lo guarda cifrado.
+        """`contacto` (nombre y correo) lo manda el ASESOR o el SOCIO y POLICY lo guarda cifrado;
+        `tasa_comision`, solo el SOCIO (HU-W07), y queda congelada en la propuesta.
         404 y 422 son rechazos de negocio (`PropuestaRechazada` con el motivo del contrato);
         un 5xx o un 503 (RATING caído) llega como `ErrorServicio`, que se ofrece reintentar."""
-        respuesta = await _pedir(
-            self._cliente,
-            "POST",
-            "/propuestas",
-            {
-                "oferta_id": oferta_id,
-                "actor_usuario_id": actor_usuario_id,
-                "actor_rol": actor_rol,
-                "contacto": contacto,
-            },
-        )
+        cuerpo = {
+            "oferta_id": oferta_id,
+            "actor_usuario_id": actor_usuario_id,
+            "actor_rol": actor_rol,
+            "contacto": contacto,
+        }
+        if tasa_comision is not None:
+            cuerpo["tasa_comision"] = tasa_comision
+        respuesta = await _pedir(self._cliente, "POST", "/propuestas", cuerpo)
         if respuesta.status_code in (404, 422):
             raise PropuestaRechazada(_detalle(respuesta))
         if respuesta.is_error:
@@ -788,10 +921,12 @@ class ClientePolicyHttp:
         estado_visible: str | None,
         pagina: int,
         tamano: int,
+        actor_rol: str | None = None,
     ) -> dict:
         params = {
             "cliente_id": cliente_id,
             "actor_usuario_id": actor_usuario_id,
+            "actor_rol": actor_rol,
             "estado_visible": estado_visible,
             "pagina": pagina,
             "tamano": tamano,
@@ -802,6 +937,13 @@ class ClientePolicyHttp:
 
     async def enviar_codigo(self, propuesta_id: str, correo: str | None) -> dict:
         return await self._flujo("POST", f"/propuestas/{propuesta_id}/codigo", {"correo": correo})
+
+    async def ventas_socio(self, socio_id: str, desde: str | None, hasta: str | None) -> dict:
+        params = {k: v for k, v in {"desde": desde, "hasta": hasta}.items() if v is not None}
+        respuesta = await _pedir(self._cliente, "GET", f"/socios/{socio_id}/ventas", params=params)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
 
     async def verificar_codigo(self, propuesta_id: str, codigo: str) -> dict:
         ruta = f"/propuestas/{propuesta_id}/codigo/verificar"
@@ -1162,6 +1304,7 @@ def construir_clientes(config: Configuracion) -> tuple[Clientes, list[Any]]:
         tickets=tickets,
         onboarding=ClienteOnboardingHttp(onboarding),
         claims=ClienteClaimsHttp(claims),
+        socios=ClienteSociosHttp(auth),
     )
     return clientes, [
         auth,

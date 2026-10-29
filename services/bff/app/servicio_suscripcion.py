@@ -27,6 +27,8 @@ MENSAJE_PROPUESTA_NO_FIRMABLE = "Esta propuesta no se puede firmar."
 MENSAJE_FIRMA_NO_DISPONIBLE = "No pudimos registrar tu firma. Intenta de nuevo."
 
 CORREO_VALIDO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Quienes venden por el titular y dan su contacto (W03-25): el ASESOR y el SOCIO de la API (W07-20).
+ROLES_INTERMEDIARIO = ("ASESOR", "SOCIO")
 
 
 def contacto_valido(contacto: dict) -> bool:
@@ -123,6 +125,10 @@ class ErrorAceptacionDatos:
     motivo: str | None = None
 
 
+def _es_del_socio(propuesta: dict, usuario: UsuarioActual) -> bool:
+    return propuesta.get("actor_rol") == "SOCIO" and propuesta.get("actor_usuario_id") == usuario.id
+
+
 def _error(motivo: str) -> ErrorAceptacionDatos:
     mensaje, puede_reintentar = _ACEPTACION_POR_MOTIVO[motivo]
     return ErrorAceptacionDatos(mensaje, puede_reintentar, motivo)
@@ -133,12 +139,17 @@ class ServicioSuscripcion:
         self._clientes = clientes
 
     async def aceptar(
-        self, oferta_id: str, usuario: UsuarioActual | None, contacto: dict | None = None
+        self,
+        oferta_id: str,
+        usuario: UsuarioActual | None,
+        contacto: dict | None = None,
+        tasa_comision: str | None = None,
     ) -> dict | ErrorAceptacionDatos:
         """La propuesta tal como la entrega POLICY, o un `ErrorAceptacionDatos`. Nunca lanza por
-        una falla de un servicio: se devuelve un error con reintento (CA-W03-01)."""
-        # El contacto lo da el ASESOR; el de un CLIENTE sale de AUTH (W03-25), así que se ignora.
-        if usuario is not None and usuario.rol == "ASESOR":
+        una falla de un servicio: se devuelve un error con reintento (CA-W03-01). `tasa_comision`
+        solo la manda el SOCIO (la lee de AUTH la API `/v1`)."""
+        # El contacto lo da el intermediario; el de un CLIENTE sale de AUTH (W03-25) y se ignora.
+        if usuario is not None and usuario.rol in ROLES_INTERMEDIARIO:
             # Obligatorio para el ASESOR (v0.18): sin él no hay a quién mandar el código ni el
             # enlace, y aceptar otra vez devuelve la misma propuesta, que quedaría trabada.
             if contacto is None or not contacto_valido(contacto):
@@ -168,6 +179,7 @@ class ServicioSuscripcion:
                 usuario.id if usuario is not None else None,
                 usuario.rol if usuario is not None else None,
                 contacto,
+                tasa_comision if usuario is not None and usuario.rol == "SOCIO" else None,
             )
         except PropuestaRechazada as rechazo:
             if rechazo.motivo not in _ACEPTACION_POR_MOTIVO:
@@ -216,6 +228,9 @@ class ServicioSuscripcion:
         actor = consentimiento.get("actor")
         if usuario is not None and usuario.rol == "CLIENTE" and actor is not None:
             return actor.get("usuario_id") == usuario.id
+        # Un SOCIO (HU-W07) solo usa los consentimientos que él mismo registró.
+        if usuario is not None and usuario.rol == "SOCIO":
+            return actor == {"rol": "SOCIO", "usuario_id": usuario.id}
         return True
 
     async def obtener_propuesta(
@@ -228,6 +243,9 @@ class ServicioSuscripcion:
             return None
         dueno = propuesta.get("actor_usuario_id")
         if usuario is not None and usuario.rol == "CLIENTE" and dueno not in (None, usuario.id):
+            return None
+        # Un SOCIO solo ve lo que vendió él (404 si no, W07).
+        if usuario is not None and usuario.rol == "SOCIO" and not _es_del_socio(propuesta, usuario):
             return None
         return propuesta
 
@@ -291,6 +309,8 @@ class ServicioSuscripcion:
             return None
         dueno = poliza.get("actor_usuario_id")
         if usuario is not None and usuario.rol == "CLIENTE" and dueno not in (None, usuario.id):
+            return None
+        if usuario is not None and usuario.rol == "SOCIO" and dueno != usuario.id:
             return None
         return poliza
 
