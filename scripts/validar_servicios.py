@@ -62,8 +62,8 @@ def validar() -> list[str]:
                 f"{nombre}: ningún servicio de Cloud Run debe ser público; "
                 "la única puerta pública es el API Gateway delante del BFF"
             )
-        # Un servicio `dummy` (sustituto temporal para el front) lo consume el front: no lo llama ningún
-        # otro servicio. Sigue sin poder ser `publico`; en staging lo invoca el API Gateway (gateway.tf).
+        # Un servicio `dummy` (sustituto temporal) lo consume el front: no lo llama otro servicio.
+        # Sigue sin poder ser `publico`; en staging lo invoca el API Gateway (gateway.tf).
         if (
             nombre not in ("bff", "consolidador-fuentes")
             and not s.get("dummy")
