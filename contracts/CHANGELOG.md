@@ -300,3 +300,6 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Afecta al frontend: sí, cuando la web cambie del dummy al BFF. Pasos documentados en
   `solventa-frontend-web/docs/plan-ejecucion-hu-w04-siniestros.md` («Conexión al backend real»). `siniestros.graphql`
   se conserva para el dummy, que sigue funcionando sin cambios.
+- **2026-10-29 (KAN-27, W04-13):** se retira `contracts/graphql/siniestros.graphql` junto con el dummy `stubs/siniestros`:
+  la web ya consume la mesa de siniestros del contrato principal por `/v1/graphql/web`. Afecta al frontend: no (la web
+  dejó de copiar ese contrato en `solventa-frontend-web` #94).

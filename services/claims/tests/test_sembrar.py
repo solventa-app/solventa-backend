@@ -8,8 +8,8 @@ from app.application.servicio_siniestros import ServicioSiniestros
 from app.main import create_app
 from app.sembrar import sembrar
 
-# Los datos del dummy, que se conserva (W04-13): la semilla los reutiliza en vez de copiarlos.
-DATOS = Path(__file__).resolve().parents[3] / "stubs" / "siniestros" / "app" / "datos"
+# Los datos de la semilla (los mismos 10 casos que tenía el dummy de siniestros, ya retirado).
+DATOS = Path(__file__).resolve().parents[1] / "semilla"
 
 
 def _sembrado():
