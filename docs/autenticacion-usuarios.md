@@ -285,6 +285,11 @@ En el **Sprint 1** ya existe el API Gateway delante del BFF (`infra/gateway.tf`,
   1. Pasar de HS256 a **ES256**: AUTH firma con clave privada asimétrica y publica `GET /.well-known/jwks.json`.
   2. Configurar `x-google-issuer` y `x-google-jwks_uri` en `infra/gateway/openapi.yaml` para que el gateway rechace tokens inválidos antes de tocar el BFF.
   3. Aprovechar el gateway para límites por IP y cuotas por socio B2B (HU-W07).
+- **Socios de distribución (HU-W07, 2026-10-29):** sus tokens ya son **ES256** con JWKS
+  (`POST /socios/tokens` y `GET /.well-known/jwks.json` de AUTH; `POST /v1/token` en la API de socios), y el
+  gateway los valida en el borde. Los usuarios siguen en HS256. La cuota por socio no vive en el gateway: GCP API
+  Gateway cuenta por proyecto consumidor, no por socio, así que AUTH descuenta el presupuesto de forma atómica y el BFF
+  responde 429 (`docs/plan-completar-hu-w07.md`).
 
 ## 9. Consentimiento ligado al titular y vencimiento (Bloque 4, decisiones 20, 21 y 23)
 

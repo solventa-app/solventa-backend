@@ -275,6 +275,7 @@ liberación, por el pipeline (ADR-09).
 |---|---|---|---|
 | 0 | Plan | Hecho | — |
 | 1 | Contrato v0.22 | Hecho | `validar_contratos.py` (OpenAPI de socios y `salud.json`), `sincronizar_socios.py --verificar`, paridad del BFF y 421 pruebas del BFF |
+| 2 | AUTH | Hecho | Pruebas de AUTH (token ES256 contra el JWKS, bloqueo, rotación, presupuesto, consumo y CLI); `verificar-migraciones.sh auth`; en vivo contra PostgreSQL: los dos socios demo (la segunda corrida no duplica), token, 3 reservas y 429, devolver, consumo, rotar y JWKS |
 
 **Desvíos frente al plan (decididos al ejecutar):**
 
@@ -283,3 +284,5 @@ liberación, por el pipeline (ADR-09).
   (`scripts/sincronizar_socios.py`, verificado en el CI), igual que `salud.json`.
 - **POLICY no suma `socio_id`:** con `actor_rol = SOCIO`, el socio es `actor_usuario_id`, que ya tiene índice.
 - **`CLAUDE.md` se actualiza al cierre** (bloque 9): el PR #387 cambia la misma línea.
+- **Los socios demo se crean al levantar el compose** (`crear-socios-demo`, del que depende `auth`, como
+  `crear-backoffice`), no en el perfil `semilla`: así Daniel tiene socios sin un paso extra.

@@ -154,6 +154,7 @@ def test_en_la_nube_arranca_con_sobre_kms_sin_cifrado_clave_en_claro(monkeypatch
     monkeypatch.setenv("JWT_SECRETO", "un-secreto-real-de-mas-de-32-bytes-ok")
     monkeypatch.delenv("CIFRADO_CLAVE", raising=False)
     monkeypatch.setenv("CLIENTE_ID_CLAVE", "clave-titular-real")
+    monkeypatch.setenv("SOCIOS_CLAVE_FIRMA", "clave-de-firma-de-socios-real")
     monkeypatch.setenv(
         "KMS_KEY_NAME", "projects/solventa/locations/us-central1/keyRings/sr/cryptoKeys/campos"
     )

@@ -40,8 +40,25 @@ def test_en_cloud_run_arranca_con_un_secreto_real(monkeypatch) -> None:
     monkeypatch.setenv("JWT_SECRETO", "a" * 64)
     monkeypatch.setenv("CIFRADO_CLAVE", "b" * 43 + "=")
     monkeypatch.setenv("CLIENTE_ID_CLAVE", "clave-titular-real")
+    monkeypatch.setenv("SOCIOS_CLAVE_FIRMA", "clave-de-firma-de-socios-real")
 
     assert Configuracion.desde_entorno().jwt_secreto == "a" * 64
+
+
+@pytest.mark.parametrize("valor", [None, "pendiente-de-cargar"])
+def test_en_cloud_run_no_arranca_sin_la_clave_de_firma_de_socios(monkeypatch, valor) -> None:
+    # W07-26: en la nube nunca se firman tokens de socios con la clave local, que es pública.
+    monkeypatch.setenv("K_SERVICE", "auth")
+    monkeypatch.setenv("JWT_SECRETO", "a" * 64)
+    monkeypatch.setenv("CIFRADO_CLAVE", "b" * 43 + "=")
+    monkeypatch.setenv("CLIENTE_ID_CLAVE", "clave-titular-real")
+    if valor is None:
+        monkeypatch.delenv("SOCIOS_CLAVE_FIRMA", raising=False)
+    else:
+        monkeypatch.setenv("SOCIOS_CLAVE_FIRMA", valor)
+
+    with pytest.raises(ValueError, match="SOCIOS_CLAVE_FIRMA"):
+        Configuracion.desde_entorno()
 
 
 @pytest.mark.parametrize("valor", [None, "pendiente-de-cargar"])
