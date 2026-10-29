@@ -4,7 +4,14 @@ import logging
 
 import jwt
 import pytest
-from fakes import CIFRADOR_PRUEBAS, HASHER_RAPIDO, RepositorioUsuariosMemoria
+from fakes import (
+    CIFRADOR_PRUEBAS,
+    CLAVE_TITULAR_PRUEBAS,
+    HASHER_RAPIDO,
+    RepositorioUsuariosMemoria,
+    extras_cliente,
+    extras_cliente_http,
+)
 from fastapi.testclient import TestClient
 
 from app.cifrado import CifradorAesGcm, ErrorDeCifrado
@@ -19,7 +26,9 @@ NOMBRE = "María Fernanda Gómez"
 
 def _servicio() -> tuple[ServicioUsuarios, RepositorioUsuariosMemoria]:
     repositorio = RepositorioUsuariosMemoria()
-    return ServicioUsuarios(repositorio, HASHER_RAPIDO, CIFRADOR_PRUEBAS), repositorio
+    return ServicioUsuarios(
+        repositorio, HASHER_RAPIDO, CIFRADOR_PRUEBAS, CLAVE_TITULAR_PRUEBAS
+    ), repositorio
 
 
 # ---------- cifrado
@@ -71,6 +80,7 @@ def test_en_la_nube_no_arranca_con_la_llave_local(monkeypatch) -> None:
     monkeypatch.setenv("K_SERVICE", "auth")
     monkeypatch.setenv("JWT_SECRETO", "un-secreto-real-de-mas-de-32-bytes-ok")
     monkeypatch.delenv("CIFRADO_CLAVE", raising=False)
+    monkeypatch.setenv("CLIENTE_ID_CLAVE", "clave-titular-real")
 
     with pytest.raises(ValueError, match="CIFRADO_CLAVE"):
         Configuracion.desde_entorno()
@@ -143,6 +153,7 @@ def test_en_la_nube_arranca_con_sobre_kms_sin_cifrado_clave_en_claro(monkeypatch
     monkeypatch.setenv("K_SERVICE", "auth")
     monkeypatch.setenv("JWT_SECRETO", "un-secreto-real-de-mas-de-32-bytes-ok")
     monkeypatch.delenv("CIFRADO_CLAVE", raising=False)
+    monkeypatch.setenv("CLIENTE_ID_CLAVE", "clave-titular-real")
     monkeypatch.setenv(
         "KMS_KEY_NAME", "projects/solventa/locations/us-central1/keyRings/sr/cryptoKeys/campos"
     )
@@ -159,7 +170,9 @@ def test_en_la_nube_arranca_con_sobre_kms_sin_cifrado_clave_en_claro(monkeypatch
 def test_el_nombre_se_guarda_cifrado_y_no_sale_en_el_usuario() -> None:
     servicio, repositorio = _servicio()
 
-    usuario = servicio.crear("cliente.uno", CLAVE, "CLIENTE", NOMBRE)
+    usuario = servicio.crear(
+        "cliente.uno", CLAVE, "CLIENTE", NOMBRE, **extras_cliente("cliente.uno")
+    )
 
     assert "nombre" not in usuario and "nombre_cifrado" not in usuario
     guardado = repositorio.filas[usuario["id"]]["nombre_cifrado"]
@@ -168,7 +181,9 @@ def test_el_nombre_se_guarda_cifrado_y_no_sale_en_el_usuario() -> None:
 
 def test_los_espacios_sobrantes_se_limpian() -> None:
     servicio, _ = _servicio()
-    usuario = servicio.crear("cliente.uno", CLAVE, "CLIENTE", "  Ana   Pérez ")
+    usuario = servicio.crear(
+        "cliente.uno", CLAVE, "CLIENTE", "  Ana   Pérez ", **extras_cliente("cliente.uno")
+    )
 
     assert servicio.nombres([usuario["id"]]) == {usuario["id"]: "Ana Pérez"}
 
@@ -176,7 +191,13 @@ def test_los_espacios_sobrantes_se_limpian() -> None:
 @pytest.mark.parametrize("rol", ["CLIENTE", "ASESOR", "BACKOFFICE"])
 def test_cualquier_rol_puede_tener_nombre(rol: str) -> None:
     servicio, _ = _servicio()
-    usuario = servicio.crear("persona.uno", CLAVE, rol, NOMBRE)
+    usuario = servicio.crear(
+        "persona.uno",
+        CLAVE,
+        rol,
+        NOMBRE,
+        **(extras_cliente("persona.uno") if rol == "CLIENTE" else {}),
+    )
 
     assert servicio.nombre_de(usuario["id"]) == NOMBRE
 
@@ -209,20 +230,22 @@ def test_nombres_invalidos(nombre: str) -> None:
     servicio, _ = _servicio()
 
     with pytest.raises(DatoInvalido):
-        servicio.crear("cliente.uno", CLAVE, "CLIENTE", nombre)
+        servicio.crear("cliente.uno", CLAVE, "CLIENTE", nombre, **extras_cliente("cliente.uno"))
 
 
 def test_sin_cifrador_no_se_guardan_nombres() -> None:
-    servicio = ServicioUsuarios(RepositorioUsuariosMemoria(), HASHER_RAPIDO)
+    servicio = ServicioUsuarios(
+        RepositorioUsuariosMemoria(), HASHER_RAPIDO, clave_titular=CLAVE_TITULAR_PRUEBAS
+    )
 
     with pytest.raises(DatoInvalido, match="configurado"):
-        servicio.crear("cliente.uno", CLAVE, "CLIENTE", NOMBRE)
+        servicio.crear("cliente.uno", CLAVE, "CLIENTE", NOMBRE, **extras_cliente("cliente.uno"))
 
 
 def test_nombres_devuelve_solo_clientes_con_nombre() -> None:
     servicio, _ = _servicio()
-    con = servicio.crear("cliente.uno", CLAVE, "CLIENTE", NOMBRE)
-    sin = servicio.crear("cliente.dos", CLAVE, "CLIENTE")
+    con = servicio.crear("cliente.uno", CLAVE, "CLIENTE", NOMBRE, **extras_cliente("cliente.uno"))
+    sin = servicio.crear("cliente.dos", CLAVE, "CLIENTE", **extras_cliente("cliente.dos"))
     asesor = servicio.crear("asesor.uno", CLAVE, "ASESOR")
 
     resultado = servicio.nombres([con["id"], sin["id"], asesor["id"], "no-existe"])
@@ -232,8 +255,10 @@ def test_nombres_devuelve_solo_clientes_con_nombre() -> None:
 
 def test_un_nombre_que_no_descifra_se_omite() -> None:
     servicio, repositorio = _servicio()
-    bueno = servicio.crear("cliente.uno", CLAVE, "CLIENTE", NOMBRE)
-    malo = servicio.crear("cliente.dos", CLAVE, "CLIENTE", "Pedro Ruiz")
+    bueno = servicio.crear("cliente.uno", CLAVE, "CLIENTE", NOMBRE, **extras_cliente("cliente.uno"))
+    malo = servicio.crear(
+        "cliente.dos", CLAVE, "CLIENTE", "Pedro Ruiz", **extras_cliente("cliente.dos")
+    )
     repositorio.filas[malo["id"]]["nombre_cifrado"] = "dañado"
 
     assert servicio.nombres([bueno["id"], malo["id"]]) == {bueno["id"]: NOMBRE}
@@ -253,7 +278,9 @@ def _http() -> TestClient:
     repositorio = RepositorioUsuariosMemoria()
     config = Configuracion("postgresql://no-se-usa", "secreto-de-prueba-con-32-bytes-o-mas", 60)
     app = create_app(
-        servicio_usuarios=ServicioUsuarios(repositorio, HASHER_RAPIDO, CIFRADOR_PRUEBAS),
+        servicio_usuarios=ServicioUsuarios(
+            repositorio, HASHER_RAPIDO, CIFRADOR_PRUEBAS, CLAVE_TITULAR_PRUEBAS
+        ),
         servicio_sesiones=ServicioSesiones(repositorio, HASHER_RAPIDO, config.jwt_secreto, 60),
         config=config,
     )
@@ -264,7 +291,13 @@ def test_crear_cliente_con_nombre_y_consultarlo_por_ids() -> None:
     with _http() as client:
         creado = client.post(
             "/usuarios",
-            json={"usuario": "cliente.uno", "clave": CLAVE, "rol": "CLIENTE", "nombre": NOMBRE},
+            json={
+                "usuario": "cliente.uno",
+                "clave": CLAVE,
+                "rol": "CLIENTE",
+                "nombre": NOMBRE,
+                **extras_cliente_http("cliente.uno"),
+            },
         )
         assert creado.status_code == 200
         assert creado.json()["nombre"] is None
@@ -313,7 +346,13 @@ def test_los_logs_no_llevan_el_nombre(caplog) -> None:
     with caplog.at_level(logging.DEBUG), _http() as client:
         creado = client.post(
             "/usuarios",
-            json={"usuario": "cliente.uno", "clave": CLAVE, "rol": "CLIENTE", "nombre": NOMBRE},
+            json={
+                "usuario": "cliente.uno",
+                "clave": CLAVE,
+                "rol": "CLIENTE",
+                "nombre": NOMBRE,
+                **extras_cliente_http("cliente.uno"),
+            },
         ).json()
         client.post("/usuarios/nombres", json={"ids": [creado["id"]]})
 

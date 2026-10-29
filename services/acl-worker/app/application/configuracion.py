@@ -2,6 +2,8 @@
 código). Nombres y defaults documentados en `README.md` y en
 `docs/arquitectura-backend.md`."""
 
+import base64
+import binascii
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -31,6 +33,23 @@ def _presupuestos_desde_entorno() -> dict[str, int]:
     return presupuestos
 
 
+# Terraform crea cada secreto con este valor hasta que alguien carga el real.
+VALOR_MARCADOR = "pendiente-de-cargar"
+
+
+def _llave_cache_identidad(valor: str) -> bytes | None:
+    valor = valor.strip()
+    if not valor or valor == VALOR_MARCADOR:
+        return None
+    try:
+        llave = base64.b64decode(valor, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise ValueError("IDENTIDAD_LLAVE_CACHE no es base64 válido") from error
+    if len(llave) != 32:
+        raise ValueError("IDENTIDAD_LLAVE_CACHE debe tener 32 bytes")
+    return llave
+
+
 @dataclass(frozen=True)
 class Configuracion:
     redis_url: str
@@ -53,8 +72,32 @@ class Configuracion:
     proveedor_firma: str = "estandar"
     # KYC (HU-W03): dónde está el proveedor de verificación de identidad.
     kyc_url: str = "http://localhost:8105"
+    # Verificación de identidad del onboarding móvil (HU-M01): Didit en staging, `stubs/kyc` (que
+    # imita las rutas de Didit) en local y CI. Corre en segundo plano, así que su corte es largo y
+    # no lo acota `timeout_s` (700 ms es para el camino del usuario).
+    identidad_url: str = "http://localhost:8105"
+    identidad_api_key: str = "local"
+    identidad_timeout_s: float = 15.0
+    # De dónde acepta el ACL bajar imágenes (el bucket de archivos): nadie lo usa de proxy.
+    identidad_origenes_imagenes: tuple[str, ...] = (
+        "https://storage.googleapis.com/",
+        "http://localhost:4443/",
+        "http://fake-gcs:4443/",
+    )
+    # Llave AES-256 (base64) de la caché cifrada del resultado. Sin ella: en local se genera una por
+    # proceso; en la nube la caché queda apagada (cada verificación se paga, pero nada se rompe).
+    identidad_llave_cache: bytes | None = None
+    # Solo local: `origen=destino` para bajar del emulador las URLs firmadas para el celular.
+    identidad_reescrituras: Mapping[str, str] = field(default_factory=dict)
+    identidad_cache_ttl_segundos: int = 30 * 24 * 3600
     # Notificaciones al cliente (HU-W03, bloque 5).
     notificaciones_url: str = "http://localhost:8106"
+    # "simulado" (`stubs/notificaciones`, local y CI) o "resend" (correo real). Con "resend"
+    # hacen falta `RESEND_API_KEY` (secreto `resend-api-key`) y `CORREO_REMITENTE` de un
+    # dominio verificado.
+    proveedor_notificaciones: str = "simulado"
+    resend_api_key: str = ""
+    correo_remitente: str = "Solventa <onboarding@resend.dev>"
     # Tope del contenido de un archivo adjunto a un aviso (bytes ya decodificados). El PDF de una
     # póliza pesa pocos KB; el tope evita que por aquí viaje cualquier cosa.
     adjunto_maximo_bytes: int = 5_000_000
@@ -77,11 +120,12 @@ class Configuracion:
     # Ruta síncrona del usuario (CA-W03-05): lo que el usuario espera mientras el proveedor responde
     # tiene que caber en el plazo del gateway (HA-LAT-004, `infra/gateway/*`), descontando lo que
     # cuestan los saltos BFF -> POLICY -> ACL. A los proveedores de `proveedores_ruta_sincrona`
-    # se les acota el presupuesto a ese techo; los demás (el cobro, el KYC y el aviso corren en
-    # segundo plano) no. Medido en local: ~80 ms de saltos; la reserva deja margen para la nube.
+    # se les acota el presupuesto a ese techo (la firma y, desde W03-29, la pasarela: crear la
+    # sesión y confirmar el pago); los demás (el KYC y el aviso corren en segundo plano) no.
+    # Medido en local: ~80 ms de saltos; la reserva deja margen para la nube.
     plazo_ruta_sincrona_ms: int = 700
     reserva_saltos_ms: int = 250
-    proveedores_ruta_sincrona: tuple[str, ...] = ("firma",)
+    proveedores_ruta_sincrona: tuple[str, ...] = ("firma", "pasarela")
     # Bloque 5: ruta opcional al catálogo de fuentes (contracts/fuentes.json).
     fuentes_config_path: str | None = None
 
@@ -127,7 +171,40 @@ class Configuracion:
             ]
             if faltan:
                 raise ValueError(f"DISPARADOR=externo exige {', '.join(faltan)}")
+        identidad_url = os.getenv("IDENTIDAD_URL") or os.getenv("KYC_URL", "http://localhost:8105")
+        identidad_api_key = os.getenv("DIDIT_API_KEY", "local").strip()
+        if os.getenv("IDENTIDAD_URL") and identidad_api_key in ("", "local", VALOR_MARCADOR):
+            raise ValueError("IDENTIDAD_URL apunta a un proveedor real y falta DIDIT_API_KEY")
+        proveedor_notificaciones = os.getenv("NOTIFICACIONES_PROVEEDOR", "simulado").strip()
+        if proveedor_notificaciones not in ("simulado", "resend"):
+            raise ValueError("NOTIFICACIONES_PROVEEDOR debe ser 'simulado' o 'resend'")
+        resend_api_key = os.getenv("RESEND_API_KEY", "").strip()
+        if proveedor_notificaciones == "resend" and resend_api_key in ("", VALOR_MARCADOR):
+            raise ValueError("NOTIFICACIONES_PROVEEDOR=resend y falta RESEND_API_KEY")
         return cls(
+            proveedor_notificaciones=proveedor_notificaciones,
+            resend_api_key=resend_api_key,
+            correo_remitente=os.getenv("CORREO_REMITENTE", "Solventa <onboarding@resend.dev>"),
+            identidad_url=identidad_url,
+            identidad_api_key=identidad_api_key,
+            identidad_timeout_s=float(os.getenv("IDENTIDAD_TIMEOUT_SEGUNDOS", "15")),
+            identidad_origenes_imagenes=tuple(
+                origen.strip()
+                for origen in os.getenv(
+                    "IDENTIDAD_ORIGENES_IMAGENES",
+                    "https://storage.googleapis.com/,http://localhost:4443/,http://fake-gcs:4443/",
+                ).split(",")
+                if origen.strip()
+            ),
+            identidad_reescrituras=dict(
+                par.split("=", 1)
+                for par in os.getenv("IDENTIDAD_REESCRITURA_ORIGENES", "").split(",")
+                if "=" in par
+            ),
+            identidad_llave_cache=_llave_cache_identidad(os.getenv("IDENTIDAD_LLAVE_CACHE", "")),
+            identidad_cache_ttl_segundos=int(
+                os.getenv("IDENTIDAD_CACHE_TTL_SEGUNDOS", str(30 * 24 * 3600))
+            ),
             redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/1"),
             open_finance_url=os.getenv("OPEN_FINANCE_URL", "http://localhost:8101"),
             open_data_url=os.getenv("OPEN_DATA_URL", "http://localhost:8102"),
@@ -155,7 +232,7 @@ class Configuracion:
             reserva_saltos_ms=reserva_saltos_ms,
             proveedores_ruta_sincrona=tuple(
                 _normalizar_proveedor(nombre)
-                for nombre in os.getenv("PROVEEDORES_RUTA_SINCRONA", "firma").split(",")
+                for nombre in os.getenv("PROVEEDORES_RUTA_SINCRONA", "firma,pasarela").split(",")
                 if nombre.strip()
             ),
             fuentes_config_path=os.getenv("FUENTES_CONFIG_PATH") or None,

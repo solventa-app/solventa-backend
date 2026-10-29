@@ -207,3 +207,96 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Afecta al frontend: sí. Web debe construir la pantalla donde el cliente deja su correo y su teléfono (hoy no existe en
   Figma) y llamar a `actualizarContacto`; puede usar `tieneContacto` de `yo` o `iniciarSesion` para pedirlo. Hasta que un
   cliente tenga contacto, el aviso de su póliza sigue llevando solo el enlace. Los campos son opcionales: no rompen el codegen.
+
+## v0.17 — 2026-10-27
+
+- KAN-250 (habilitadora de almacenamiento de archivos, base de HU-M01 y de otras historias): tipos `Archivo`,
+  `EstadoArchivo`, `SubidaArchivo`, `EncabezadoSubida`, `DescargaArchivo`, `ErrorArchivo`, la entrada
+  `SolicitudSubidaArchivoInput` y las uniones `ResultadoSubidaArchivo`, `ResultadoArchivo` y
+  `ResultadoDescargaArchivo`. Consulta `archivo(id)`; mutaciones `solicitarSubidaArchivo`, `confirmarSubidaArchivo` y
+  `descargarArchivo`. Todas exigen token siempre. Solo cambios aditivos.
+- Los bytes no pasan por el BFF: el cliente hace `PUT` a la URL firmada con los `encabezados` devueltos y luego
+  confirma. El catálogo de tipos es `contracts/tipos-archivo.json`; eventos nuevos `archivo.disponible` y
+  `archivo.rechazado` (`contracts/events/`).
+- Afecta al frontend: sí, cuando una pantalla suba archivos (hoy ningún tipo activo lo sube un CLIENTE directamente).
+
+## v0.18 — 2026-10-27
+
+- KAN-26 (HU-W03, bloque 9; decisiones W03-19 a W03-37 de `docs/plan-hu-w07-y-ajustes.md`) y lo que W05 necesita del
+  pago (W05-A3 y W05-A5). Parte del borrador del front (`contrato/borrador-v0.17.graphql` de `solventa-frontend-web`),
+  renombrado a v0.18 porque la v0.17 ya es del almacenamiento. **Solo cambios aditivos.**
+  - **Flujo del ASESOR:** `aceptarOferta` suma `contacto: ContactoTitularInput` (opcional en el contrato, obligatorio
+    para el ASESOR). Mutaciones `enviarCodigoVerificacion`, `verificarCodigo`, `emitirPropuesta` y
+    `reenviarEnlaceFirma`, con `CodigoEnviado`, `ErrorCodigo`, `MotivoErrorCodigo`, `EnlaceEnviado`, `ErrorEmision` y
+    las uniones `ResultadoEnvioCodigo`, `ResultadoVerificacion` y `ResultadoEmision`.
+  - **Página del enlace o sesión del CLIENTE (W03-33):** `firmaPorEnlace`, `solicitarSubidaFirma` (devuelve el
+    `ResultadoSubidaArchivo` de la v0.17, tipo `firma-imagen`), `firmarPorEnlace`, `iniciarPago` y `confirmarPago`,
+    con `EnlaceFirma`, `FirmarPorEnlaceInput`, `ModoFirma`, `SesionPago`, `ErrorPago`, `MotivoErrorPago`,
+    `ResultadoInicioPago` y `ResultadoPago`. Aceptan el token del enlace en `X-Enlace-Firma` **o** la sesión del
+    CLIENTE titular; con sesión, `propuestaId` es obligatorio. `emitirPropuesta` es también el «Firmar» del CLIENTE.
+  - **Estados:** `EstadoPropuesta` suma `IDENTIDAD_VERIFICADA`, `EN_FIRMA`, `FIRMADA` y `CANCELADA`;
+    `MotivoErrorFirma` suma `ENLACE_VENCIDO` e `IMAGEN_INVALIDA`.
+  - **«Mis pólizas» / «Pólizas emitidas» (W03-35):** consulta `propuestas(estado: EstadoVisible, pagina, tamano)` que
+    devuelve `PaginaPropuestas`, filtrada por el rol del token. `Propuesta` suma `estadoVisible`, `creadaEn`,
+    `poliza`, `nombreTitular` y `nombreAsesor` (estos dos solo para el ASESOR y el BACKOFFICE).
+  - **Avisos en vivo (W03-37):** mutación `ticketAvisos` (`TicketAvisos`: ticket de un solo uso de 60 s y la URL del
+    servicio `avisos`). La forma de los eventos SSE (`propuesta` y `cobro`) va documentada en `schema.graphql`.
+  - **W05:** `Cobro.origen` (`OrigenCobro`) y `Cobro.medio` (`MedioPago`: marca y `TipoMedioPago`; nunca el número).
+  - **Usuarios (W03-27 y W03-34):** `CrearUsuarioInput.documentoIdentidad`, `Usuario.documentoEnmascarado` y
+    `SolicitudOfertaInput.documentoIdentidad` pasa a opcional (obligatorio para el ASESOR; un CLIENTE lo toma de AUTH).
+  - Plantillas de notificación nuevas: `codigo-verificacion`, `enlace-firma` y `poliza-emitida-asesor`
+    (`stubs/notificaciones/README.md`).
+- **Diferencias con el borrador del front:** `FirmarPorEnlaceInput` cambia `firma: String!` (base64) por
+  `imagenArchivoId` (la imagen va al almacenamiento, W03-24 revisada) y `nombreFirma`, y suma `aceptaTerminos` y
+  `propuestaId`; `EnlaceFirma.venceEn` es opcional (no aplica con sesión); `iniciarPago` y `confirmarPago` suman
+  `propuestaId` opcional. Lo demás conserva los nombres del borrador.
+- **Estado en el BFF:** implementado en F-B6 (PR #368): las operaciones del asesor, las de la página del enlace, `propuestas`
+  y `ticketAvisos` leen y escriben en POLICY y AUTH. `solicitarOferta` sin documento sigue dando `DATOS_INSUFICIENTES`
+  para el ASESOR; un CLIENTE cotiza con el documento de su cuenta (W03-34). `mensajeEstado` solo sale en los cuatro
+  estados que lista `Propuesta` (no en `CANCELADA`).
+- Afecta al frontend: sí. Web copia este esquema, borra `contrato/borrador-v0.17.graphql` y regenera tipos (F-F1). Los
+  enums de salida que crecen (`EstadoPropuesta`, `MotivoErrorFirma`) piden manejar los valores nuevos.
+
+## v0.20 — 2026-10-28
+
+- KAN-31 (HU-M01): onboarding de identidad del móvil. La v0.19 queda reservada para HU-W07. **Solo cambios aditivos.**
+  - **Recorrido:** mutaciones `iniciarOnboarding` (pública), `registrarConsentimientoOnboarding`,
+    `solicitarSubidaOnboarding`, `confirmarSubidaOnboarding`, `crearCuentaOnboarding`, `enviarVerificacion` y
+    `reintentarOnboarding`; consulta `onboarding(id)`. Llevan el token del recorrido en la cabecera
+    `X-Onboarding-Token` (30 min; no es una sesión). Tipos `Onboarding`, `InicioOnboarding`, `CuentaOnboarding`,
+    `ErrorOnboarding` (con `codigo` estable), los enums `EstadoOnboarding`, `MotivoOnboarding`, `PasoOnboarding` y
+    `TipoDocumentoOnboarding`, los inputs `IniciarOnboardingInput` y `CuentaOnboardingInput` y las uniones
+    `ResultadoInicioOnboarding`, `ResultadoOnboarding`, `ResultadoSubidaOnboarding` (reusa `SubidaArchivo` de la v0.17)
+    y `ResultadoCuentaOnboarding`.
+  - **Consentimiento:** `registrarConsentimientoOnboarding` registra en AUTH la finalidad `onboarding-biometrico`
+    (canal `APP`) antes de cualquier captura (regla 7).
+  - **Cuenta y sesión:** `crearCuentaOnboarding` crea un CLIENTE en `PENDIENTE_VERIFICACION` (inicia sesión con su
+    correo) y devuelve una sesión con el único scope `verificacion-pendiente`, que solo entra a `yo`, `miVerificacion`
+    y `actualizarSesion`. Consulta nueva `miVerificacion` y mutación nueva `actualizarSesion` (token con los permisos
+    del estado actual y la misma expiración).
+  - **Usuarios:** `EstadoUsuario` suma `PENDIENTE_VERIFICACION` y `RECHAZADA`; `ErrorAutenticacion` suma `codigo`
+    (`VERIFICACION_PENDIENTE` cuando una cuenta sin verificar entra por la web).
+  - **Eventos:** `onboarding.verificado` y `onboarding.rechazado` (`contracts/events/`), solo ids opacos y códigos.
+- Detrás: el servicio `onboarding` lleva el resultado a AUTH (`POST /usuarios/{id}/verificacion`, migración `0002` del
+  onboarding) y el BFF pasa el canal al iniciar sesión.
+- Afecta al frontend: sí. El móvil (HU-M01) usa las operaciones nuevas. La web solo debe manejar los valores nuevos de
+  `EstadoUsuario` y el `codigo` `VERIFICACION_PENDIENTE` en el login.
+## v0.21 — 2026-10-28
+
+- KAN-242 (HU-W04, mesa de siniestros del BACKOFFICE; plan `docs/plan-completar-hu-w04.md`). Toma la v0.21 porque la
+  v0.19 está reservada para HU-W07 y la v0.20 es del onboarding. Los tipos del dummy
+  `contracts/graphql/siniestros.graphql` pasan al contrato principal con **los mismos nombres, argumentos y campos**:
+  `Siniestro`, `Asegurado`, `Ubicacion`, `Evidencia`, `Verificacion`, `Perito`, `Resolucion`, `ErrorSiniestro`, la
+  union `ResultadoResolucion` y los enums `EstadoSiniestro`, `TipoEvidencia`, `TipoResolucion` y `MotivoRechazo`.
+  Consultas `siniestros(estado)`, `siniestro(id)` y `peritos(siniestroId)`; mutaciones `aprobarSiniestro`,
+  `rechazarSiniestro` y `derivarSiniestro`. Todas exigen token de BACKOFFICE. **Solo cambios aditivos.**
+  - Se reutilizan `Poliza`, `Monto` y `EstadoPoliza`. `Poliza` suma `ramo` (un solo producto hoy, lo pone el BFF).
+  - `Evidencia.url` es la URL firmada de lectura del almacenamiento (vence en minutos), ya no una ruta relativa.
+  - Eventos nuevos `siniestro.aprobado`, `siniestro.rechazado` y `siniestro.derivado` (`contracts/events/`), sin datos
+    personales.
+  - Tipos de archivo nuevos `siniestro-foto` y `siniestro-documento` (`contracts/tipos-archivo.json`).
+- **Estado en el BFF:** conectado al servicio `claims` (puerto 8012). También expone `/v1/graphql/{web,app,movil}`
+  con las rutas actuales como alias (W04-10).
+- Afecta al frontend: sí, cuando la web cambie del dummy al BFF. Pasos documentados en
+  `solventa-frontend-web/docs/plan-ejecucion-hu-w04-siniestros.md` («Conexión al backend real»). `siniestros.graphql`
+  se conserva para el dummy, que sigue funcionando sin cambios.

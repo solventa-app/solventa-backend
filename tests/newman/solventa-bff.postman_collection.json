@@ -104,7 +104,9 @@
                   "let sufijo = '';",
                   "for (let i = 0; i < 8; i++) sufijo += letras[Math.floor(Math.random() * letras.length)];",
                   "pm.collectionVariables.set('alias_asesor', 'asesor.newman.' + sufijo);",
-                  "pm.collectionVariables.set('alias_cliente', 'cliente.newman.' + sufijo);"
+                  "pm.collectionVariables.set('alias_cliente', 'cliente.newman.' + sufijo);",
+                  "// W03-27: un CLIENTE necesita su documento (solo dígitos, uno por corrida).",
+                  "pm.collectionVariables.set('doc_cliente', '1' + String(Date.now()).slice(-9));"
                 ]
               }
             },
@@ -316,7 +318,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Prueba\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Prueba\",\n      \"documentoIdentidad\": \"{{doc_cliente}}\",\n      \"correo\": \"cliente.newman@ejemplo.co\"\n    }\n  }\n}"
             },
             "description": "El BACKOFFICE crea un CLIENTE con nombre. AUTH lo guarda cifrado y el usuario no lo devuelve.",
             "auth": {

@@ -23,7 +23,8 @@ se actualiza este archivo en el mismo cambio.
 | `stubs/notificaciones` | 8106 | Proveedor de notificaciones simulado (idempotente por referencia; `GET /control/enviados`) | — | 2 |
 | `stubs/kyc` | 8105 | Proveedor de KYC simulado (idempotente por referencia; modo `rechaza`) | — | 2 |
 | `consolidador-fuentes` | 8006 | Reconciliación diferida de Open Finance/Open Data degradadas (`rq` sobre Redis) | Redis (cola, db 2) | 1 (ampliación de alcance) |
-| `claims`, `consolidador-kyc` | — | Siniestros y Consolidador de KYC (Truora) | — | 3 |
+| `claims` | 8012 | Mesa de siniestros (HU-W04): siniestros, peritos, evidencias (referencias al almacenamiento), derivaciones y resoluciones; la orden de pago de la indemnización la registra PAYMENTS | MongoDB `claims` (colecciones referenciadas; bandeja y detalle en la secundaria) | 2 |
+| `consolidador-kyc` | — | Consolidador de KYC (Truora) | — | 3 |
 
 Cada servicio tiene su propia base: **nadie lee ni escribe en la base de otro**.
 
@@ -153,7 +154,7 @@ consolidador, en lugar de la cola `rq`). En local y CI siguen los bucles y `rq`.
 
 | Servicio | Variables |
 |---|---|
-| `bff` | `AUTH_URL`, `ACL_URL`, `RISK_URL`, `RATING_URL`, `PAYMENTS_URL`, `CLIENTE_ID_CLAVE`, `FUENTES_CONFIG_PATH` |
+| `bff` | `AUTH_URL`, `ACL_URL`, `RISK_URL`, `RATING_URL`, `PAYMENTS_URL`, `POLICY_URL`, `REDIS_URL` (tickets de avisos), `AVISOS_URL`, `URL_FRONT`, `CLIENTE_ID_CLAVE`, `FUENTES_CONFIG_PATH` |
 | `auth` | `DATABASE_URL`, `CIFRADO_CLAVE`, `KMS_KEY_NAME`, `CIFRADO_CLAVE_ENVUELTA`, `CLIENTE_ID_CLAVE`, `CONSENTIMIENTO_VIGENCIA_DIAS` (30) |
 | `payments` | `DATABASE_URL`, `ACL_URL` |
 | `risk` | `MONGO_URI`, `REDIS_URL` (`ScoreCacheado`), `CIFRADO_CLAVE`, `KMS_KEY_NAME`, `CIFRADO_CLAVE_ENVUELTA`, `PUBSUB_TEMA_PERFIL_ACTUALIZADO`, `BATCH_TAMANO_LOTE` (500) |

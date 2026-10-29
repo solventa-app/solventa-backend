@@ -1,0 +1,16 @@
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+prometheus-fastapi-instrumentator==8.1.0
+alembic==1.20.1
+sqlalchemy==2.1.6
+psycopg[binary]==3.3.6
+psycopg-pool==3.3.3
+opentelemetry-sdk==1.45.1
+opentelemetry-exporter-otlp-proto-http==1.45.1
+google-auth==2.62.0
+requests==2.34.2
+opentelemetry-instrumentation-httpx==0.66b1
+opentelemetry-instrumentation-psycopg==0.66b1
+cryptography==50.0.2
+httpx==0.28.1
+google-cloud-storage==3.17.1

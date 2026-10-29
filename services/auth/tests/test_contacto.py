@@ -4,7 +4,13 @@ con su propio contexto, solo para CLIENTE y lectura solo por el endpoint privado
 import logging
 
 import pytest
-from fakes import CIFRADOR_PRUEBAS, HASHER_RAPIDO, RepositorioUsuariosMemoria
+from fakes import (
+    CIFRADOR_PRUEBAS,
+    CLAVE_TITULAR_PRUEBAS,
+    HASHER_RAPIDO,
+    RepositorioUsuariosMemoria,
+    documento_de,
+)
 from fastapi.testclient import TestClient
 
 from app.cifrado import ErrorDeCifrado
@@ -28,11 +34,27 @@ TELEFONO = "+573001234567"
 def _servicio(con_cifrador: bool = True) -> tuple[ServicioUsuarios, RepositorioUsuariosMemoria]:
     repositorio = RepositorioUsuariosMemoria()
     cifrador = CIFRADOR_PRUEBAS if con_cifrador else None
-    return ServicioUsuarios(repositorio, HASHER_RAPIDO, cifrador), repositorio
+    return ServicioUsuarios(
+        repositorio, HASHER_RAPIDO, cifrador, CLAVE_TITULAR_PRUEBAS
+    ), repositorio
 
 
 def _cliente(servicio: ServicioUsuarios, alias: str = "cliente.uno", **contacto) -> dict:
-    return servicio.crear(alias, CLAVE, "CLIENTE", **contacto)
+    contacto.setdefault("correo", CORREO)
+    return servicio.crear(alias, CLAVE, "CLIENTE", documento=documento_de(alias), **contacto)
+
+
+def _cliente_anterior(
+    servicio: ServicioUsuarios,
+    repositorio: RepositorioUsuariosMemoria,
+    alias: str = "cliente.uno",
+    telefono: str | None = None,
+) -> dict:
+    """Un CLIENTE creado antes de W03-27, cuando el correo era opcional: hoy ya no se puede crear
+    así, pero los que existen siguen funcionando."""
+    creado = _cliente(servicio, alias, telefono=telefono)
+    repositorio.filas[creado["id"]]["correo_cifrado"] = None
+    return servicio.obtener(creado["id"])
 
 
 # ---------- normalización y validación
@@ -111,17 +133,25 @@ def test_el_contacto_se_guarda_cifrado_y_no_sale_en_el_usuario() -> None:
     assert creado["tiene_contacto"] is True
 
 
-def test_un_cliente_sin_contacto_dice_que_no_lo_tiene() -> None:
-    servicio, _ = _servicio()
+def test_un_cliente_anterior_sin_contacto_dice_que_no_lo_tiene() -> None:
+    servicio, repositorio = _servicio()
 
-    assert _cliente(servicio)["tiene_contacto"] is False
+    assert _cliente_anterior(servicio, repositorio)["tiene_contacto"] is False
 
 
-def test_se_puede_guardar_solo_el_correo_o_solo_el_telefono() -> None:
-    servicio, _ = _servicio()
+def test_un_cliente_nuevo_exige_el_correo() -> None:
+    servicio, repositorio = _servicio()
+
+    with pytest.raises(DatoInvalido, match="documento de identidad y su correo"):
+        servicio.crear("cliente.uno", CLAVE, "CLIENTE", telefono=TELEFONO, documento="1234567890")
+    assert repositorio.filas == {}
+
+
+def test_el_correo_o_el_telefono_pueden_faltar_en_un_cliente() -> None:
+    servicio, repositorio = _servicio()
 
     solo_correo = _cliente(servicio, "uno.correo", correo=CORREO)
-    solo_telefono = _cliente(servicio, "uno.telefono", telefono=TELEFONO)
+    solo_telefono = _cliente_anterior(servicio, repositorio, "uno.telefono", telefono=TELEFONO)
 
     assert servicio.contacto_de(solo_correo["id"]) == {"correo": CORREO, "telefono": None}
     assert servicio.contacto_de(solo_telefono["id"]) == {"correo": None, "telefono": TELEFONO}
@@ -194,8 +224,8 @@ def test_actualizar_solo_cambia_lo_que_llega() -> None:
 
 
 def test_actualizar_devuelve_que_ya_tiene_contacto_pero_no_cual() -> None:
-    servicio, _ = _servicio()
-    creado = _cliente(servicio)
+    servicio, repositorio = _servicio()
+    creado = _cliente_anterior(servicio, repositorio)
 
     actualizado = servicio.actualizar_contacto(creado["id"], CORREO, None)
 
@@ -239,9 +269,10 @@ def test_un_dato_invalido_al_actualizar_no_cambia_nada() -> None:
 
 
 def test_contacto_de_un_cliente_sin_contacto_trae_ambos_vacios() -> None:
-    servicio, _ = _servicio()
+    servicio, repositorio = _servicio()
+    creado = _cliente_anterior(servicio, repositorio)
 
-    assert servicio.contacto_de(_cliente(servicio)["id"]) == {"correo": None, "telefono": None}
+    assert servicio.contacto_de(creado["id"]) == {"correo": None, "telefono": None}
 
 
 def test_contacto_de_un_usuario_inexistente_o_que_no_es_cliente_es_none() -> None:
@@ -271,7 +302,9 @@ def _http() -> TestClient:
     repositorio = RepositorioUsuariosMemoria()
     config = Configuracion("postgresql://no-se-usa", "secreto-de-prueba-con-32-bytes-o-mas", 60)
     app = create_app(
-        servicio_usuarios=ServicioUsuarios(repositorio, HASHER_RAPIDO, CIFRADOR_PRUEBAS),
+        servicio_usuarios=ServicioUsuarios(
+            repositorio, HASHER_RAPIDO, CIFRADOR_PRUEBAS, CLAVE_TITULAR_PRUEBAS
+        ),
         servicio_sesiones=ServicioSesiones(repositorio, HASHER_RAPIDO, config.jwt_secreto, 60),
         config=config,
     )
@@ -279,6 +312,9 @@ def _http() -> TestClient:
 
 
 def _crear(client: TestClient, alias: str = "cliente.uno", rol: str = "CLIENTE", **extra):
+    if rol == "CLIENTE":
+        extra.setdefault("documento_identidad", documento_de(alias))
+        extra.setdefault("correo", CORREO)
     return client.post("/usuarios", json={"usuario": alias, "clave": CLAVE, "rol": rol, **extra})
 
 
@@ -316,14 +352,12 @@ def test_http_el_contacto_no_sale_por_ningun_otro_camino() -> None:
 def test_http_actualizar_el_contacto_del_propio_cliente() -> None:
     with _http() as client:
         creado = _crear(client).json()
-        antes = client.get(f"/usuarios/{creado['id']}").json()["tiene_contacto"]
-        r = client.post(f"/usuarios/{creado['id']}/contacto", json={"correo": CORREO})
+        r = client.post(f"/usuarios/{creado['id']}/contacto", json={"correo": "nuevo@ejemplo.co"})
         contacto = client.get(f"/usuarios/{creado['id']}/contacto").json()
 
-    assert antes is False
     assert r.status_code == 200 and r.json()["tiene_contacto"] is True
-    assert CORREO not in r.text
-    assert contacto == {"correo": CORREO, "telefono": None}
+    assert "nuevo@ejemplo.co" not in r.text
+    assert contacto == {"correo": "nuevo@ejemplo.co", "telefono": None}
 
 
 @pytest.mark.parametrize(

@@ -53,6 +53,36 @@ paths:
       responses:
         "200":
           description: Respuesta GraphQL
+  /v1/graphql/web:
+    post:
+      summary: Canal GraphQL Web, versión 1 (HA-MOD-003; /graphql/web es su alias)
+      operationId: graphqlWebV1
+      x-google-backend:
+        address: ${bff_url}/v1/graphql/web
+        deadline: 0.7
+      responses:
+        "200":
+          description: Respuesta GraphQL
+  /v1/graphql/movil:
+    post:
+      summary: Canal GraphQL Móvil, versión 1
+      operationId: graphqlMovilV1
+      x-google-backend:
+        address: ${bff_url}/v1/graphql/movil
+        deadline: 0.7
+      responses:
+        "200":
+          description: Respuesta GraphQL
+  /v1/graphql/app:
+    post:
+      summary: Alias del canal GraphQL de aplicación móvil, versión 1
+      operationId: graphqlAppV1
+      x-google-backend:
+        address: ${bff_url}/v1/graphql/app
+        deadline: 0.7
+      responses:
+        "200":
+          description: Respuesta GraphQL
   /graphql/siniestros:
     post:
       summary: GraphQL del dummy de siniestros (HU-W04, back-office; sin token)
@@ -100,3 +130,21 @@ paths:
       responses:
         "200":
           description: El documento en PDF
+  /propuestas/{propuesta_id}/contrato.pdf:
+    get:
+      summary: Contrato a firmar en PDF (token del enlace en X-Enlace-Firma o sesión del CLIENTE titular)
+      operationId: contratoPropuesta
+      produces:
+        - application/pdf
+      parameters:
+        - name: propuesta_id
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: El contrato en PDF

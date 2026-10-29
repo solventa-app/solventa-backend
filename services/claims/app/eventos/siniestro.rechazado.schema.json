@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/siniestro.rechazado/v1",
+  "title": "siniestro.rechazado",
+  "description": "CLAIMS rechazó un siniestro. Sin datos personales: el comentario del operador no viaja en el evento.",
+  "type": "object",
+  "required": [
+    "eventId",
+    "tipo",
+    "version",
+    "ocurridoEn",
+    "datos"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tipo": {
+      "const": "siniestro.rechazado"
+    },
+    "version": {
+      "const": 1
+    },
+    "ocurridoEn": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "datos": {
+      "type": "object",
+      "required": [
+        "siniestroId",
+        "radicado",
+        "polizaId",
+        "resueltaEn",
+        "actorUsuarioId",
+        "motivo"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "siniestroId": {
+          "type": "string"
+        },
+        "radicado": {
+          "type": "string"
+        },
+        "polizaId": {
+          "type": "string"
+        },
+        "resueltaEn": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "actorUsuarioId": {
+          "type": "string"
+        },
+        "motivo": {
+          "enum": [
+            "EVIDENCIA_INSUFICIENTE",
+            "FUERA_DE_COBERTURA",
+            "POLIZA_NO_VIGENTE",
+            "INCONSISTENCIA_EN_RELATO",
+            "OTRO"
+          ]
+        }
+      }
+    }
+  }
+}

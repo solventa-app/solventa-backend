@@ -36,7 +36,7 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - ./dev/postgres:/docker-entrypoint-initdb.d:ro   # crea una base por servicio (auth, payments, policy)
+      - ./dev/postgres:/docker-entrypoint-initdb.d:ro   # crea una base por servicio (auth, payments, policy, almacenamiento, onboarding)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -52,6 +52,15 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Emulador de Cloud Storage para el servicio `almacenamiento` (KAN-250). No revisa firmas ni rangos de tamaño y no
+  # emite notificaciones: el servicio vuelve a medir todo al confirmar (ver services/almacenamiento/README.md).
+  # `-public-host` es la dirección con la que el cliente (navegador, emulador móvil) llega a las URLs firmadas.
+  fake-gcs:
+    image: fsouza/fake-gcs-server:1.52.2
+    command: ["-scheme", "http", "-port", "4443", "-public-host", "localhost:4443", "-external-url", "http://localhost:4443"]
+    ports:
+      - "${FAKE_GCS_PORT:-4443}:4443"
 
   mongo1:
     image: mongo:7.0
@@ -124,6 +133,14 @@ services:
       RATING_URL: http://rating:8003
       PAYMENTS_URL: http://payments:8004
       POLICY_URL: http://policy:8007
+      ALMACENAMIENTO_URL: http://almacenamiento:8009
+      ONBOARDING_URL: http://onboarding:8010
+      CLAIMS_URL: http://claims:8012
+      # Tickets de un solo uso del stream de avisos (W03-37): misma base que POLICY, que publica allí.
+      REDIS_URL: redis://redis:6379/3
+      AVISOS_URL: http://localhost:8011/avisos/stream
+      # A donde regresa el titular desde la página de pago (debe estar en URLS_RETORNO_PERMITIDAS).
+      URL_FRONT: http://localhost:5173
       # Solo local: el repo es público. En Cloud Run llega de Secret Manager (clave-cliente-id).
       CLIENTE_ID_CLAVE: solo-local-no-secreta
       # Mismo valor que AUTH (firma HS256). Solo local; en Cloud Run llega de Secret Manager (clave-jwt).
@@ -135,6 +152,7 @@ services:
       acl-worker: { condition: service_healthy }
       risk: { condition: service_healthy }
       rating: { condition: service_healthy }
+      redis: { condition: service_healthy }
 
   migrar-auth:
     <<: *tarea
@@ -171,6 +189,9 @@ services:
       # Cifrado por campo del nombre del cliente. Sin valor, usa la llave local (no secreta);
       # en Cloud Run llega de Secret Manager (clave-cifrado) y no arranca con la local.
       CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
+      # El mismo valor que el BFF: el titular del CLIENTE debe coincidir con el del consentimiento
+      # (W03-27). Solo local; en Cloud Run llega de Secret Manager (clave-cliente-id).
+      CLIENTE_ID_CLAVE: solo-local-no-secreta
     depends_on:
       postgres: { condition: service_healthy }
       migrar-auth: { condition: service_completed_successfully }
@@ -203,6 +224,77 @@ services:
       mongo-init: { condition: service_completed_successfully }
       migrar-risk: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
+
+  migrar-claims:
+    <<: *tarea
+    image: solventa/claims:local
+    build: ./services/claims
+    command: ["python", "-m", "migrations"]
+    environment:
+      MONGO_URI: mongodb://mongo1:27017,mongo2:27017/?replicaSet=rs0
+      MONGO_DB: claims
+    depends_on:
+      mongo-init: { condition: service_completed_successfully }
+
+  claims:
+    <<: *servicio
+    image: solventa/claims:local
+    build: ./services/claims
+    ports: ["8012:8012"]
+    environment:
+      MONGO_URI: mongodb://mongo1:27017,mongo2:27017/?replicaSet=rs0
+      MONGO_DB: claims
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
+      ALMACENAMIENTO_URL: http://almacenamiento:8009
+      ALMACEN_REESCRITURA_ORIGENES: http://localhost:4443/=http://fake-gcs:4443/
+      POLICY_URL: http://policy:8007
+      PAYMENTS_URL: http://payments:8004
+      # Solo local (W04-15): POST /_demo/reiniciar vuelve a la semilla para las E2E de la web.
+      DEMO_REINICIAR: "true"
+      SEMILLA_DIR: /semilla
+    # Los datos de la semilla son los del dummy, que se conserva (W04-13): se montan, no se copian.
+    volumes:
+      - ./stubs/siniestros/app/datos:/semilla:ro
+    depends_on:
+      mongo-init: { condition: service_completed_successfully }
+      migrar-claims: { condition: service_completed_successfully }
+
+  # Semillas de la mesa de siniestros (HU-W04, W04-3), solo local: primero las pólizas en POLICY
+  # (escritor único de sus tablas) y luego los siniestros, que apuntan a esas pólizas y suben sus
+  # evidencias al almacenamiento. Idempotentes. Van en su propio perfil para que `up --wait` (CI) no
+  # las arranque: `docker compose --profile servicios run --rm sembrar-siniestros`.
+  sembrar-polizas-demo:
+    <<: *tarea
+    profiles: ["semilla"]
+    image: solventa/policy:local
+    build: ./services/policy
+    command: ["python", "-m", "app.sembrar_demo"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/policy
+    depends_on:
+      migrar-policy: { condition: service_completed_successfully }
+
+  sembrar-siniestros:
+    <<: *tarea
+    profiles: ["semilla"]
+    image: solventa/claims:local
+    build: ./services/claims
+    command: ["python", "-m", "app.sembrar"]
+    environment:
+      MONGO_URI: mongodb://mongo1:27017,mongo2:27017/?replicaSet=rs0
+      MONGO_DB: claims
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
+      ALMACENAMIENTO_URL: http://almacenamiento:8009
+      ALMACEN_REESCRITURA_ORIGENES: http://localhost:4443/=http://fake-gcs:4443/
+      POLICY_URL: http://policy:8007
+      SEMILLA_DIR: /semilla
+    volumes:
+      - ./stubs/siniestros/app/datos:/semilla:ro
+    depends_on:
+      migrar-claims: { condition: service_completed_successfully }
+      sembrar-polizas-demo: { condition: service_completed_successfully }
+      almacenamiento: { condition: service_healthy }
+      policy: { condition: service_healthy }
 
   rating:
     <<: *servicio
@@ -262,10 +354,86 @@ services:
       PAYMENTS_URL: http://payments:8004
       # El contacto y el nombre del cliente para el aviso con PDF (bloque 8, W03-16).
       AUTH_URL: http://auth:8001
+      # Bloque 9 (HU-W03): la imagen de la firma, los avisos en vivo y la página del enlace.
+      ALMACENAMIENTO_URL: http://almacenamiento:8009
+      ALMACEN_REESCRITURA_ORIGENES: http://localhost:4443/=http://fake-gcs:4443/
+      REDIS_URL: redis://redis:6379/3
+      URL_FRONT: http://localhost:5173
     depends_on:
       postgres: { condition: service_healthy }
       migrar-policy: { condition: service_completed_successfully }
       auth: { condition: service_healthy }
+      almacenamiento: { condition: service_healthy }
+
+  migrar-almacenamiento:
+    <<: *tarea
+    image: solventa/almacenamiento:local
+    build: ./services/almacenamiento
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/almacenamiento
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  almacenamiento:
+    <<: *servicio
+    image: solventa/almacenamiento:local
+    build: ./services/almacenamiento
+    ports: ["8009:8009"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/almacenamiento
+      # Local: firma con una llave de prueba contra el emulador (en Cloud Run: signBlob de IAM).
+      FIRMANTE: local
+      STORAGE_EMULATOR_HOST: http://fake-gcs:4443
+      ALMACEN_BUCKET: solventa-archivos-local
+      # Con el emulador de Android: http://10.0.2.2:4443 (y -public-host de fake-gcs igual).
+      ALMACEN_URL_PUBLICA: http://localhost:${FAKE_GCS_PORT:-4443}
+    depends_on:
+      postgres: { condition: service_healthy }
+      fake-gcs: { condition: service_started }
+      migrar-almacenamiento: { condition: service_completed_successfully }
+
+  migrar-onboarding:
+    <<: *tarea
+    image: solventa/onboarding:local
+    build: ./services/onboarding
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/onboarding
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # Recorrido de verificación de identidad de HU-M01. En local la verificación corre en un hilo (DISPARADOR=bucle).
+  onboarding:
+    <<: *servicio
+    image: solventa/onboarding:local
+    build: ./services/onboarding
+    ports: ["8010:8010"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/onboarding
+      ALMACENAMIENTO_URL: http://almacenamiento:8009
+      ACL_URL: http://acl-worker:8005
+      AUTH_URL: http://auth:8001  # cierra la cuenta PENDIENTE_VERIFICACION al terminar (HU-M01)
+      # Solo local: el repo es público. En Cloud Run llegan de Secret Manager (clave-cliente-id, clave-cifrado).
+      CLIENTE_ID_CLAVE: solo-local-no-secreta
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
+    depends_on:
+      almacenamiento: { condition: service_healthy }
+      acl-worker: { condition: service_healthy }
+      auth: { condition: service_healthy }
+      migrar-onboarding: { condition: service_completed_successfully }
+
+  # Avisos en vivo (SSE, HU-W03 W03-37). Lo abre el navegador directamente (fuera del gateway): por eso el puerto
+  # 8011 y el `Origin` permitido. Lee los tickets que guarda el BFF y los avisos que publica POLICY (Redis, base 3).
+  avisos:
+    <<: *servicio
+    build: ./services/avisos
+    ports: ["8011:8011"]
+    environment:
+      REDIS_URL: redis://redis:6379/3
+      ORIGENES_PERMITIDOS: http://localhost:5173,http://localhost:8080
+    depends_on:
+      redis: { condition: service_healthy }
 
   under:
     <<: *servicio
@@ -284,8 +452,15 @@ services:
       OPEN_DATA_URL: http://stub-open-data:8102
       PASARELA_URL: http://stub-pasarela:8103
       FIRMA_URL: http://stub-firma:8104
-      KYC_URL: http://stub-kyc:8105
+      KYC_URL: http://stub-kyc:8105   # también la verificación de identidad de M01 (rutas de Didit)
+      # M01: las URLs firmadas del almacenamiento apuntan a localhost:4443; desde aquí es fake-gcs.
+      IDENTIDAD_REESCRITURA_ORIGENES: http://localhost:4443/=http://fake-gcs:4443/
       NOTIFICACIONES_URL: http://stub-notificaciones:8106
+      # Correo real (HU-W03): NOTIFICACIONES_PROVEEDOR=resend RESEND_API_KEY=re_... docker compose up.
+      # Por defecto el simulador; con Resend los avisos ya no aparecen en /control/enviados.
+      NOTIFICACIONES_PROVEEDOR: ${NOTIFICACIONES_PROVEEDOR:-simulado}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      CORREO_REMITENTE: ${CORREO_REMITENTE:-Solventa <onboarding@resend.dev>}
       TIMEOUT_MS: "700"        # umbral duro de EC009/EC010
       BREAKER_UMBRAL_FALLOS: "3"       # fallos consecutivos que abren el circuito
       BREAKER_TTL_SEGUNDOS: "5"        # tiempo abierto antes de permitir la próxima sonda
@@ -326,6 +501,10 @@ services:
     <<: *servicio
     build: ./stubs/pasarela
     ports: ["8103:8103"]
+    environment:
+      # Página de pago alojada (W03-28): el navegador la abre en localhost:8103 y vuelve al front.
+      PASARELA_URL_PUBLICA: http://localhost:8103
+      URLS_RETORNO_PERMITIDAS: http://localhost:5173,http://localhost:8080
 
   stub-firma:
     <<: *servicio

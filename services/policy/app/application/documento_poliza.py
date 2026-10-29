@@ -11,6 +11,7 @@ loguea. Sin él, el documento identifica al asegurado por la referencia opaca de
 Las fuentes base del PDF solo cubren Latin-1 (el español entra completo); cualquier otro carácter
 se reemplaza en vez de romper el documento."""
 
+import io
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -68,6 +69,17 @@ class _Documento(FPDF):
         self.cell(0, 9, _latin1(f"Póliza No. {numero}"), new_x="LMARGIN", new_y="NEXT")
         self.ln(2)
 
+    def firma(self, imagen: bytes | None, texto: str | None) -> None:
+        """La firma del titular estampada (W03-24): la imagen (trazo o cargada) o su nombre con una
+        letra cursiva. Sin ninguna, el documento conserva solo el sello de la evidencia."""
+        if imagen:
+            self.image(io.BytesIO(imagen), w=60)
+            self.ln(2)
+        elif texto:
+            self.set_font("Times", "BI", 22)
+            self.cell(0, 12, _latin1(texto), new_x="LMARGIN", new_y="NEXT")
+            self.ln(1)
+
     def seccion(self, titulo: str, filas: list[tuple[str, str]]) -> None:
         self.set_font("Helvetica", "B", 11)
         self.set_fill_color(235, 240, 246)
@@ -88,8 +100,11 @@ def generar_pdf(
     numero: str,
     asegurado: str | None = None,
     ambiente_pruebas: bool = True,
+    firma_imagen: bytes | None = None,
+    firma_texto: str | None = None,
 ) -> bytes:
-    """El PDF de la póliza. `numero` es el número ya formateado (`SOL-AAAA-NNNNNN`)."""
+    """El PDF de la póliza. `numero` es el número ya formateado (`SOL-AAAA-NNNNNN`). `firma_imagen`
+    o `firma_texto` estampan la firma del titular (bloque 9); nada de eso se guarda."""
     prima, cobertura = propuesta["prima"], propuesta["cobertura"]
     nombre = (asegurado or "").strip()
     referencia = str(poliza["cliente_id"])[:12]
@@ -130,6 +145,7 @@ def generar_pdf(
             ("Huella del documento", evidencia["documento_hash"]),
         ],
     )
+    pdf.firma(firma_imagen, firma_texto)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(90, 90, 90)
     pdf.multi_cell(
@@ -138,6 +154,46 @@ def generar_pdf(
         _latin1(
             "La huella (SHA-256) identifica el documento exacto que el titular firmó: si cambia "
             "una sola letra, la huella cambia."
+        ),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    if ambiente_pruebas:
+        pdf.ln(3)
+        pdf.set_text_color(160, 0, 0)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.multi_cell(0, 5, _latin1(AVISO_AMBIENTE_PRUEBAS), new_x="LMARGIN", new_y="NEXT")
+    return bytes(pdf.output())
+
+
+def generar_borrador(propuesta: dict[str, Any], ambiente_pruebas: bool = True) -> bytes:
+    """El contrato que el titular lee antes de firmar (W03-31: W03-02 muestra el contrato en PDF).
+    Es un borrador: sin número de póliza, vigencia ni firma. No lleva datos personales."""
+    prima, cobertura = propuesta["prima"], propuesta["cobertura"]
+    pdf = _Documento("borrador")
+    pdf.membrete("en trámite")
+    pdf.seccion(
+        "Crédito asegurado",
+        [
+            ("Plazo del crédito", f"{propuesta['plazo_meses']} meses"),
+            ("Valor asegurado", formatear_monto(cobertura["valor"], cobertura["moneda"])),
+        ],
+    )
+    pdf.seccion(
+        "Prima y autorización de cobro",
+        [
+            ("Prima mensual", formatear_monto(prima["valor"], prima["moneda"])),
+            ("Cobro", "Recurrente, con la tarjeta que registres al pagar"),
+        ],
+    )
+    pdf.set_font("Helvetica", "", 10)
+    pdf.multi_cell(
+        0,
+        5,
+        _latin1(
+            "Al firmar aceptas las condiciones del seguro de vida para tu crédito hipotecario y "
+            "autorizas el cobro recurrente de la prima. La póliza se emite cuando se confirme el "
+            "primer pago."
         ),
         new_x="LMARGIN",
         new_y="NEXT",

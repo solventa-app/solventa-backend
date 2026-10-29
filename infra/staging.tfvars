@@ -40,3 +40,12 @@ crear_tareas = true
 # oferta. Cobran por hora (estimado ~USD 3 al día todas juntas); «Costos staging → apagar» las devuelve a mínimo 0 y
 # «encender» las restituye.
 instancias_fijas_encendidas = true
+
+# Almacenamiento de archivos (KAN-250, ADR-10): bucket privado con CMEK, URLs firmadas y avisos por Pub/Sub. Requiere
+# crear_cloud_sql (base `almacenamiento`). Encenderlo es un PR que pone true aquí y los orígenes reales del frontend.
+crear_almacenamiento = false
+
+# Firma, pago y avisos de HU-W03 (F-B8). PENDIENTE: el origen real del front web de staging (sin barra final). Hasta
+# fijarlo, el stream de avisos y el regreso desde la pasarela no funcionan en staging. Al ponerlo, repetirlo en
+# `almacenamiento_origenes_cors` y pasar `crear_almacenamiento` a true (necesita el mismo origen para las URLs firmadas).
+# url_front = "https://<front-staging>"

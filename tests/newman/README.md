@@ -74,6 +74,29 @@ Recorrido mínimo del caso insignia (oferta completa, degradada, timeout duro y 
 de `docs/evidencias/flujo-prueba-local-hu-w01.md` y `scripts/humo_bff.py`. Útil para abrirlo en la app de Postman;
 para la verificación completa usa `solventa-bff.postman_collection.json`.
 
+## Colección de HU-W04 (`hu-w04.postman_collection.json`)
+
+Mesa de siniestros por el gateway (KAN-27, KAN-248): 26 peticiones y 52 aserciones en 8 carpetas.
+
+| Carpeta | Qué verifica |
+|---|---|
+| 0. Preparación | Reinicio de la semilla en CLAIMS (solo local), sesión de BACKOFFICE y un ASESOR para probar permisos |
+| 1. Bandeja | Los 10 casos, 7 en cola, orden por notificación y filtro por estado |
+| 2. Detalle | Póliza real de POLICY con su `ramo`, 5 evidencias con URL firmada que descarga la imagen del almacenamiento, caso inexistente `null` y peritos con la fecha límite del informe |
+| 3. Derivar | Deja el caso EN_REVISION; ya tiene perito, texto de más de 500 y perito inexistente como `ErrorSiniestro` |
+| 4. Aprobar | Indemnización, método y plazo; ya resuelto; la orden queda `PENDIENTE_DISPERSION` en PAYMENTS; un caso derivado conserva su perito |
+| 5. Rechazar | Motivo y comentario; un caso ya aprobado no se rechaza |
+| 6. Autorización y versión | ASESOR sin permiso, sin token pide sesión, `/v1/graphql/web` igual que `/graphql/web`, mensajes en inglés |
+| 7. Cierre | Vuelve a la semilla |
+
+Requiere la semilla (`docker compose --profile servicios run --rm sembrar-siniestros`) y CLAIMS con `DEMO_REINICIAR=true` (así está en
+compose). Variables propias de la colección: `claims_url` (`http://localhost:8012`).
+
+```bash
+npx --yes newman@6.2.2 run tests/newman/hu-w04.postman_collection.json \
+  -e tests/newman/solventa-local.postman_environment.json
+```
+
 ## Colección de HU-W03 (`hu-w03.postman_collection.json`)
 
 Suscripción, firma y póliza (KAN-26, plan de HU-W03 bloque 6). A diferencia de la colección del BFF, **todo entra por el
@@ -88,7 +111,8 @@ comparten variables.
 | 2. Autorización | Otro CLIENTE no ve ni acepta ni firma ni descarga lo ajeno; un ASESOR no firma pero sí descarga el PDF; BACKOFFICE 403 y sin token 401 en el PDF | W03-8 (decisión), CA-W03-03 |
 | 3. Errores controlados | Oferta, propuesta y póliza inexistentes: error tipado o `null`, nunca 5xx | regla 4 |
 | 4. Degradación | Open Finance lento (la `PRELIMINAR` no se acepta); KYC caído (`EN_REVISION`, sin póliza); pasarela que rechaza (`PAGO_RECHAZADO`, sin póliza); pago rechazado que se recupera (lo reabre el back-office: el cliente no puede y la póliza se emite con un solo aviso); firma caída y firma lenta, **por el gateway** (`ErrorFirma` reintentable con HTTP 200, nunca un 5xx, y al volver el reintento emite); notificaciones caídas (la póliza se emite y el PDF se descarga, el aviso sale solo al volver). Cada escenario restaura el stub y espera a que cierren los circuitos | CA-W03-05 y 06, EC009 / EC010 |
-| 5. Contacto del cliente y aviso con PDF | Bloque 8 (W03-16 a W03-18): un CLIENTE solo con teléfono y otro sin contacto; `tieneContacto` en `yo`; el titular (con correo) recibe el aviso **por correo con el PDF**, el de solo teléfono **por SMS sin PDF** y el sin contacto **tiene póliza y el stub no recibe nada**; `actualizarContacto` (correo inválido, sin datos, ASESOR, BACKOFFICE, sin token) y que el contacto no se puede leer por GraphQL | CA-W03-08, CA-W03-09 |
+| 5. Registro del cliente y su contacto | W03-27 y W03-34: un CLIENTE sin correo, sin documento o con el documento de otro no se crea; `yo` trae el documento **enmascarado** (`•••• 1234`) y `tieneContacto`; `actualizarContacto` (correo inválido, sin datos, el titular cambia su correo, ASESOR, BACKOFFICE, sin token) y que el contacto no se puede leer por GraphQL. Los avisos por SMS y sin contacto (W03-18) ya no se prueban aquí: con el correo obligatorio ya no se puede crear ese cliente, y los cubren las pruebas de POLICY | CA-W03-08, CA-W03-09 |
+| 6. Flujos v0.18 (F-B9) | **Asesor:** aceptar sin el contacto del titular da `ErrorAceptacion`; con él, emitir antes del código da `ErrorEmision`; el código llega por correo (sin el correo en claro), uno errado da `CODIGO_INVALIDO` con los intentos que quedan y el bueno `IDENTIDAD_VERIFICADA`; «Emitir» manda el enlace (`#t=` en el fragmento, la URL nunca vuelve al asesor); reenviarlo anula el anterior y un token inventado no revela nada; imagen sin fondo `IMAGEN_INVALIDA`, imagen válida (PUT a la URL firmada con `tests/newman/archivos/`) `FIRMADA`; pago aprobado con la pasarela caída al confirmar (`PASARELA_NO_DISPONIBLE`, 1 fallo) y luego conciliado sin doble cobro; avisos al titular (con el PDF) y al asesor. **Titular:** al abrir su cuenta con su documento ve la póliza que le vendió el asesor (sin `nombreTitular`); otro CLIENTE no. **Cliente con sesión:** sin enlace, firma `NOMBRE`, rechazo `FONDOS_INSUFICIENTES` (no cuenta como falla), pasarela caída 3 veces (1, 2 y `REQUIERE_OTRA_TARJETA`) y luego paga; otro CLIENTE no ve su página; listas por rol. **Tercer modo:** otro CLIENTE firma con `TRAZO` | CA-W03-02 a 08, W03-20 a W03-35 |
 
 ```bash
 npx --yes newman@6.2.2 run tests/newman/hu-w03.postman_collection.json \
@@ -100,6 +124,8 @@ npx --yes newman@6.2.2 run tests/newman/hu-w03.postman_collection.json \
 - **Solo contra local** la carpeta 4 (los stubs y el ACL son privados en staging). Las carpetas 0 a 3 sirven contra staging
   cambiando `gateway_url` y las credenciales del BACKOFFICE en el entorno (nunca las subas al repo).
 - Datos ficticios: los documentos `CC-NEWMAN-W03-*` y los nombres `Cliente Newman *` no son personas reales.
-- **Estado:** corrida contra el stack local el 2026-10-24 sin fallos (111 peticiones ejecutadas y 204 aserciones; las 105 definidas más los
+- **Estado:** corrida completa contra el stack local el 2026-10-28 sin fallos (198 peticiones y 372 aserciones, con la carpeta 6;
+  informe en `docs/evidencias/HU-W03-2026-10-28.md`). La carpeta 6 es **solo local** (usa los stubs de pasarela y
+  notificaciones). Antes: corrida del 2026-10-24 sin fallos (111 peticiones ejecutadas y 204 aserciones; las 105 definidas más los
   sondeos); resultados y hallazgos en `docs/evidencias/HU-W03-newman-EC009-EC010-2026-10-24.md`, `CA-W03-05-firma-2026-10-24.md` y `CA-W03-06-reapertura-2026-10-24.md`.
   Si el `:8080` o el `:5432` están ocupados, ver «Cómo correrlas».

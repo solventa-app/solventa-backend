@@ -4,14 +4,18 @@
     "ruta": "services/bff",
     "instancia_fija": true,
     "puerto": 8000,
-    "llama": ["auth", "acl-worker", "risk", "rating", "payments", "policy"],
+    "llama": ["auth", "acl-worker", "risk", "rating", "payments", "policy", "almacenamiento", "onboarding", "claims"],
     "entorno": {
       "AUTENTICACION_SERVICIOS": "id_token",
       "TRAZAS_GCP": "true",
       "SERVICIOS_TIMEOUT_SEGUNDOS": "15",
       "ACL_TIMEOUT_SEGUNDOS": "15"
     },
-    "secretos": { "CLIENTE_ID_CLAVE": "clave-cliente-id", "JWT_SECRETO": "clave-jwt" }
+    "secretos": {
+      "CLIENTE_ID_CLAVE": "clave-cliente-id",
+      "JWT_SECRETO": "clave-jwt",
+      "REDIS_URL": "redis-url-w03"
+    }
   },
   {
     "nombre": "auth",
@@ -25,8 +29,17 @@
       "CIFRADO_CLAVE_ENVUELTA": "clave-cifrado-envuelta",
       "DATABASE_URL": "database-url-auth",
       "JWT_SECRETO": "clave-jwt",
-      "CIFRADO_CLAVE": "clave-cifrado"
+      "CIFRADO_CLAVE": "clave-cifrado",
+      "CLIENTE_ID_CLAVE": "clave-cliente-id"
     }
+  },
+  {
+    "nombre": "avisos",
+    "ruta": "services/avisos",
+    "puerto": 8011,
+    "ingreso_directo": true,
+    "entorno": { "TRAZAS_GCP": "true" },
+    "secretos": { "REDIS_URL": "redis-url-w03" }
   },
   {
     "nombre": "risk",
@@ -75,14 +88,18 @@
     "puerto": 8007,
     "url_env": "POLICY_URL",
     "migracion": ["alembic", "upgrade", "head"],
-    "llama": ["rating", "acl-worker", "under", "payments", "auth"],
+    "llama": ["rating", "acl-worker", "under", "payments", "auth", "almacenamiento"],
     "disparador_externo": true,
     "entorno": {
       "AUTENTICACION_SERVICIOS": "id_token",
       "TRAZAS_GCP": "true",
       "TOKEN_RECAUDO_CREDITO": "tok_recaudo_staging"
     },
-    "secretos": { "DATABASE_URL": "database-url-policy", "CIFRADO_CLAVE": "clave-cifrado" }
+    "secretos": {
+      "DATABASE_URL": "database-url-policy",
+      "CIFRADO_CLAVE": "clave-cifrado",
+      "REDIS_URL": "redis-url-w03"
+    }
   },
   {
     "nombre": "under",
@@ -93,6 +110,44 @@
     "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" }
   },
   {
+    "nombre": "almacenamiento",
+    "ruta": "services/almacenamiento",
+    "puerto": 8009,
+    "url_env": "ALMACENAMIENTO_URL",
+    "migracion": ["alembic", "upgrade", "head"],
+    "entorno": { "TRAZAS_GCP": "true" },
+    "secretos": { "DATABASE_URL": "database-url-almacenamiento" }
+  },
+  {
+    "nombre": "onboarding",
+    "ruta": "services/onboarding",
+    "puerto": 8010,
+    "url_env": "ONBOARDING_URL",
+    "migracion": ["alembic", "upgrade", "head"],
+    "llama": ["almacenamiento", "acl-worker", "auth"],
+    "disparador_externo": true,
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
+    "secretos": {
+      "DATABASE_URL": "database-url-onboarding",
+      "CIFRADO_CLAVE": "clave-cifrado",
+      "CLIENTE_ID_CLAVE": "clave-cliente-id"
+    }
+  },
+  {
+    "nombre": "claims",
+    "ruta": "services/claims",
+    "puerto": 8012,
+    "url_env": "CLAIMS_URL",
+    "migracion": ["python", "-m", "migrations"],
+    "llama": ["almacenamiento", "policy", "payments"],
+    "entorno": { "MONGO_DB": "claims", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
+    "secretos": {
+      "MONGO_URI": "mongo-uri-claims",
+      "CIFRADO_CLAVE": "clave-cifrado",
+      "CIFRADO_CLAVE_ENVUELTA": "clave-cifrado-envuelta"
+    }
+  },
+  {
     "nombre": "acl-worker",
     "ruta": "services/acl-worker",
     "instancia_fija": true,
@@ -100,10 +155,13 @@
     "url_env": "ACL_URL",
     "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela", "stub-firma", "stub-kyc", "stub-notificaciones", "consolidador-fuentes"],
     "disparador_externo": true,
-    "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
+    "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "NOTIFICACIONES_PROVEEDOR": "simulado", "CORREO_REMITENTE": "Solventa <onboarding@resend.dev>" },
     "secretos": {
       "REDIS_URL": "redis-url-acl",
-      "COLA_RECONCILIACION_REDIS_URL": "redis-url-cola-reconciliacion"
+      "COLA_RECONCILIACION_REDIS_URL": "redis-url-cola-reconciliacion",
+      "DIDIT_API_KEY": "didit-api-key",
+      "RESEND_API_KEY": "resend-api-key",
+      "IDENTIDAD_LLAVE_CACHE": "clave-cache-identidad"
     }
   },
   {
@@ -135,6 +193,7 @@
   {
     "nombre": "stub-pasarela",
     "ruta": "stubs/pasarela",
+    "ingreso_directo": true,
     "instancia_fija": true,
     "puerto": 8103,
     "url_env": "PASARELA_URL",

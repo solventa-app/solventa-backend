@@ -1,0 +1,112 @@
+/* Página de pago del stub de la pasarela (W03-28). Estilo neutro a propósito: no es Solventa. */
+:root {
+  --fondo: #eef1f5;
+  --tarjeta: #ffffff;
+  --texto: #1d2330;
+  --suave: #5b6475;
+  --borde: #d5dae3;
+  --acento: #3b5bdb;
+  --acento-texto: #ffffff;
+  --error: #c92a2a;
+  --aviso: #fff4d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #12151c;
+    --tarjeta: #1c212b;
+    --texto: #e6e9ef;
+    --suave: #a3abba;
+    --borde: #343b49;
+    --acento: #748ffc;
+    --acento-texto: #10131a;
+    --error: #ff8787;
+    --aviso: #3b3220;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px 16px;
+  background: var(--fondo);
+  color: var(--texto);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.tarjeta {
+  width: 100%;
+  max-width: 440px;
+  background: var(--tarjeta);
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  padding: 24px;
+}
+h1 { font-size: 1.4rem; margin: 0 0 16px; }
+h2 { font-size: 1.2rem; margin: 0 0 8px; }
+.aviso {
+  background: var(--aviso);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  margin: 0 0 16px;
+}
+.resumen {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  margin: 0 0 16px;
+}
+.resumen dt { color: var(--suave); }
+.resumen dd { margin: 0; text-align: right; }
+.monto { font-weight: 700; font-size: 1.1rem; }
+.cuenta { color: var(--suave); font-size: 0.9rem; }
+form label { display: block; margin: 0 0 12px; font-size: 0.9rem; }
+form input:not([type="radio"]) {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+fieldset.tipo { border: 0; padding: 0; margin: 0 0 12px; display: flex; gap: 16px; }
+fieldset.tipo legend { font-size: 0.9rem; margin-bottom: 4px; }
+fieldset.tipo label { display: inline-flex; gap: 6px; align-items: center; margin: 0; }
+.fila { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.error { color: var(--error); margin: 0 0 12px; }
+.boton {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--acento);
+  color: var(--acento-texto);
+  font: inherit;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+.boton.secundario { margin-top: 16px; }
+.pagando { text-align: center; padding: 24px 0; }
+.giro {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 12px;
+  border: 4px solid var(--borde);
+  border-top-color: var(--acento);
+  border-radius: 50%;
+  animation: girar 0.9s linear infinite;
+}
+@keyframes girar { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .giro { animation-duration: 3s; } }
+.resultado { text-align: center; padding: 8px 0; }
+.pruebas { margin-top: 20px; font-size: 0.85rem; color: var(--suave); }
+.pruebas table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.pruebas td { padding: 4px 0; border-top: 1px solid var(--borde); }

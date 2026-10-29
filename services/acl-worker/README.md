@@ -109,12 +109,19 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
   - `POST /pagos/cobrar` `{id_intento_cobro, poliza_id, monto, moneda, token_medio_pago}` → `{estado, referencia, motivo, detalle}`.
   - `POST /sonda/ejecutar` → una pasada de la sonda; la llama Cloud Scheduler con `DISPARADOR=externo` (en Cloud Run no hay bucle fiable). Devuelve el estado de cada circuito. El estado de los circuitos vive en la memoria de cada instancia.
   - `GET /pagos/cobros/{referencia_comercio}` → siempre 200 con `{resultado: encontrado|no_encontrado|desconocido, estado, referencia, motivo}`.
-- **Cambiar de pasarela (EC031, CA-W05-06):** `PROVEEDOR_PASARELA=estandar|alterna` elige el adaptador. Para sumar un proveedor: una clase en `app/adapters/` que cumpla `PuertoPasarelaPagos` (`cobrar`, `consultar`, `sondear`, `cerrar`), una línea en la elección de `app/main.py` y su prueba de contrato en `tests/test_ec031_pasarela.py`. `AdaptadorPasarelaAlterna` es el ejemplo (otra API, otros campos y estados). PAYMENTS y el BFF no cambian.
+  - `POST /pagos/sesiones` `{id_intento_cobro, monto, moneda, descripcion, url_retorno, idioma}` → siempre 200 con
+    `{resultado: creada|no_disponible, sesion, motivo}`: la sesión de la **página de pago alojada** de la pasarela
+    (HU-W03, W03-28), idempotente por intento. Un retorno fuera de la lista blanca de la pasarela llega como sesión
+    `rechazada` y no abre el circuito.
+  - `GET /pagos/sesiones/{sesion_id}` → siempre 200 con `{resultado: encontrado|no_encontrado|desconocido, sesion}`. Es la
+    confirmación de servidor a servidor al regresar del navegador; con `cobrada` trae el medio tokenizado (`token`,
+    `marca`, `tipo`), **nunca el número ni los últimos dígitos**. Mismo circuito y presupuesto que el cobro.
+- **Cambiar de pasarela (EC031, CA-W05-06):** `PROVEEDOR_PASARELA=estandar|alterna` elige el adaptador. Para sumar un proveedor: una clase en `app/adapters/` que cumpla `PuertoPasarelaPagos` (`cobrar`, `consultar`, `crear_sesion_pago`, `consultar_sesion_pago`, `sondear`, `cerrar`), una línea en la elección de `app/main.py` y su prueba de contrato en `tests/test_ec031_pasarela.py` y `tests/test_ec031_sesiones_pago.py`. `AdaptadorPasarelaAlterna` es el ejemplo (otra API, otros campos y estados). PAYMENTS y el BFF no cambian.
 - Con `DISPARADOR=externo` la reconciliación diferida va por Cloud Tasks (`app/application/cola_tareas.py`) hacia `POST /reconciliar` del consolidador, y exige `GCP_PROYECTO`, `GCP_REGION`, `TAREAS_CUENTA` y `CONSOLIDADOR_URL` (los pone Terraform; opcional `TAREAS_COLA_RECONCILIACION`).
 - Variables de entorno: `DISPARADOR` (`bucle`; `externo` desactiva el bucle de la sonda y cambia `rq` por Cloud Tasks), `PROVEEDOR_PASARELA` (`estandar`), `REDIS_URL`, `OPEN_FINANCE_URL`, `OPEN_DATA_URL`, `PASARELA_URL`,
   `TIMEOUT_MS` (700), `PRESUPUESTO_MS_<PROVEEDOR>` (cualquier proveedor: `OPEN_FINANCE`, `OPEN_DATA`, `PASARELA`,
   `FIRMA`, `KYC`, `NOTIFICACIONES`… ; sin variable vale `TIMEOUT_MS`; p. ej. 120 para EC008 en Open Finance),
-  `PLAZO_RUTA_SINCRONA_MS` (700), `RESERVA_SALTOS_MS` (250) y `PROVEEDORES_RUTA_SINCRONA` (`firma`; ver abajo),
+  `PLAZO_RUTA_SINCRONA_MS` (700), `RESERVA_SALTOS_MS` (250) y `PROVEEDORES_RUTA_SINCRONA` (`firma,pasarela`; ver abajo),
   `PRESUPUESTO_CON_CACHE_MS` (300, EC010 ≤ 500 ms), `CACHE_SERVIR_EN_TTL` (`false`; `true` en Cloud Run),
   `FUENTES_CONFIG_PATH` (`contracts/fuentes.json`), `BREAKER_UMBRAL_FALLOS` (3),
   `BREAKER_TTL_SEGUNDOS` (5), `SONDA_INTERVALO_SEGUNDOS` (2), `CACHE_TTL_SEGUNDOS` (300),
@@ -160,7 +167,7 @@ curl -s localhost:8005/circuitos   # -> open-finance: "closed"
 - EC031 / CA-W03-10: dos adaptadores (`app/adapters/firma.py` y `firma_alterna.py`), elegidos con `PROVEEDOR_FIRMA`
   (`estandar` | `alterna`). Variables nuevas: `FIRMA_URL` (`http://localhost:8104`), `PRESUPUESTO_MS_FIRMA`.
 
-**Ruta síncrona del usuario (CA-W03-05).** La firma es lo único de W03 que el usuario espera: si el proveedor tarda, el corte de 700 ms
+**Ruta síncrona del usuario (CA-W03-05 y W03-29).** La firma y las dos llamadas de pago (crear la sesión y confirmarla al regresar) son lo que el usuario de W03 espera: si el proveedor tarda, el corte de 700 ms
 del gateway (HA-LAT-004) llegaba antes que el del ACL y el cliente veía un 504. Los proveedores de `PROVEEDORES_RUTA_SINCRONA` quedan
 acotados a `PLAZO_RUTA_SINCRONA_MS − RESERVA_SALTOS_MS` (700 − 250 = **450 ms** por defecto) aunque su `PRESUPUESTO_MS_*` sea mayor; así
 la respuesta es un `ErrorFirma` con reintento y no un 5xx. El cobro, el KYC y el aviso corren en segundo plano y conservan su presupuesto.
@@ -178,9 +185,24 @@ Agregar un proveedor nuevo no toca el código: su variable `PRESUPUESTO_MS_<PROV
 - Circuito `kyc` con su sonda (`GET /v1/estado`, que nunca verifica). Variables nuevas: `KYC_URL` (`http://localhost:8105`),
   `PRESUPUESTO_MS_KYC` (700).
 
+## Verificación de identidad (HU-M01)
+
+- `POST /identidad/verificar` `{referencia, anverso_url, rostro_url, reverso_url?}` → `{estado: aprobada | rechazada | pendiente, motivo,
+  datos?, documento_autentico, coincide_rostro, puntaje_rostro, vivo, puntaje_vida, alertas}`. Siempre 200. Las imágenes llegan como URLs
+  firmadas de `almacenamiento`; el ACL las descarga solo de `IDENTIDAD_ORIGENES_IMAGENES` (anti-SSRF, máx. 10 MB) y llama a las APIs
+  independientes de Didit v3 (`id-verification`, `passive-liveness`, `face-match`, encabezado `x-api-key`, `save_api_request=false`).
+- Motivos: `documento_rechazado`, `prueba_de_vida_fallida`, `rostro_no_coincide`; en `pendiente`, `imagen_no_disponible`,
+  `circuito_abierto` o `proveedor_no_disponible`. Circuito `identidad` con su sonda (`GET /`), sin reintento (Didit cobra por llamada).
+- **Caché por huella**: llave `acl:identidad:{sha256 de las imágenes}`, nunca la cédula; valor cifrado AES-GCM con
+  `IDENTIDAD_LLAVE_CACHE` (32 bytes en base64), TTL `IDENTIDAD_CACHE_TTL_SEGUNDOS` (30 días). Solo guarda resultados definitivos.
+  Sin llave en la nube, la caché se apaga con un aviso; en local la llave es aleatoria por proceso.
+- Variables: `IDENTIDAD_URL` (por omisión `KYC_URL`, el stub), `DIDIT_API_KEY` (obligatoria si `IDENTIDAD_URL` apunta a Didit),
+  `IDENTIDAD_TIMEOUT_SEGUNDOS` (15), `IDENTIDAD_ORIGENES_IMAGENES`, `IDENTIDAD_REESCRITURA_ORIGENES` (`orig=dest`, solo en local para
+  fake-gcs). Logs solo con la referencia opaca y códigos. Evidencia: `docs/evidencias/identidad-didit-2026-10-27.md`.
+
 ## Notificaciones (HU-W03, bloque 5)
 
-- `POST /notificaciones/enviar` `{id_notificacion, plantilla, destinatario_id, datos, correo?, telefono?, adjuntos?}` → `{estado: enviada | pendiente, referencia,
+- `POST /notificaciones/enviar` `{id_notificacion, plantilla, destinatario_id, datos, correo?, telefono?, adjuntos?}` → `{estado: enviada | pendiente | rechazada, referencia,
   motivo}`. Siempre 200: con el proveedor caído, lento o el circuito abierto responde `pendiente`
   (`notificaciones_no_disponibles` / `circuito_abierto`) y POLICY reintenta. Idempotente por `id_notificacion`: repetirlo no
   manda dos avisos.
@@ -193,3 +215,13 @@ Agregar un proveedor nuevo no toca el código: su variable `PRESUPUESTO_MS_<PROV
   decodificado. Un `422` es un error de quien llama, no del proveedor: no se reintenta.
 - Circuito `notificaciones` con su sonda (`GET /v1/estado`, que nunca envía). Variables nuevas: `NOTIFICACIONES_URL`
   (`http://localhost:8106`), `PRESUPUESTO_MS_NOTIFICACIONES` (700), `ADJUNTO_MAXIMO_BYTES` (5000000).
+- **Correo real con Resend** (`app/adapters/correo_resend.py`): `NOTIFICACIONES_PROVEEDOR=resend` cambia el simulador por
+  `POST https://api.resend.com/emails` (EC031: el mismo puerto, otro adaptador). Variables: `NOTIFICACIONES_PROVEEDOR`
+  (`simulado` | `resend`), `RESEND_API_KEY` (secreto `resend-api-key`; con `resend` y sin ella no arranca) y `CORREO_REMITENTE`
+  (de un dominio verificado en Resend). El asunto y el cuerpo de las 4 plantillas (`codigo-verificacion`, `enlace-firma`,
+  `poliza-emitida` y `poliza-emitida-asesor`) viven en el adaptador, con los datos escapados en el HTML. El `id_notificacion`
+  va como `Idempotency-Key`: un reintento no manda dos correos. Un aviso sin `correo` o con una plantilla desconocida
+  responde `rechazada` sin llamar a Resend (POLICY lo omite); 429, 5xx y fallas de red cuentan para el circuito y quedan
+  `pendiente`; otro 4xx es `rechazada` con el nombre del error de Resend, nunca su mensaje (puede repetir el correo). La
+  sonda hace `GET /domains`, que nunca envía (con una llave de solo envío responde 401, y eso también cuenta como arriba).
+  Cómo cargar la llave: `infra/README.md`, «Resend».

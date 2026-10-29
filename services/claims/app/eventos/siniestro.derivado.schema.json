@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/siniestro.derivado/v1",
+  "title": "siniestro.derivado",
+  "description": "CLAIMS derivó un siniestro a un perito; el caso queda en revisión. Sin datos personales: las instrucciones no viajan en el evento.",
+  "type": "object",
+  "required": [
+    "eventId",
+    "tipo",
+    "version",
+    "ocurridoEn",
+    "datos"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tipo": {
+      "const": "siniestro.derivado"
+    },
+    "version": {
+      "const": 1
+    },
+    "ocurridoEn": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "datos": {
+      "type": "object",
+      "required": [
+        "siniestroId",
+        "radicado",
+        "polizaId",
+        "asignadaEn",
+        "actorUsuarioId",
+        "peritoId",
+        "venceInformeEn"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "siniestroId": {
+          "type": "string"
+        },
+        "radicado": {
+          "type": "string"
+        },
+        "polizaId": {
+          "type": "string"
+        },
+        "actorUsuarioId": {
+          "type": "string"
+        },
+        "peritoId": {
+          "type": "string"
+        },
+        "venceInformeEn": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "asignadaEn": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

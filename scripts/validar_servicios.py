@@ -67,6 +67,8 @@ def validar() -> list[str]:
         if (
             nombre not in ("bff", "consolidador-fuentes")
             and not s.get("dummy")
+            # `ingreso_directo`: lo abre el navegador (stream SSE de `avisos`), no otro servicio.
+            and not s.get("ingreso_directo")
             and nombre not in llamados
         ):
             errores.append(

@@ -22,6 +22,7 @@ agrega nada hasta que alguien las enciende.
 | Workload Identity Federation (GitHub) + service account de despliegue + sus permisos | `crear_pipeline` | $0 | `cicd.tf`; sin llaves; limitada a este repo y al entorno `staging` |
 | Un servicio de Cloud Run por entrada de `.github/servicios.json`, sus jobs de migración, una service account por servicio y los secretos | `crear_servicios` | ~$0 en reposo | `servicios.tf`; máx. `max_instancias` por servicio (`calentar_camino_critico = true` sube `min_instance_count = 1` solo durante sesiones de medición) |
 | Cola de Cloud Tasks `reintento-cobros` + trabajos de Cloud Scheduler `sonda-acl` y `reconciliacion-cobros-policy` y `DISPARADOR=externo` en PAYMENTS y el ACL Worker | `crear_tareas` | $0 (capa gratuita: 1 M de operaciones de Cloud Tasks; 3 trabajos de Scheduler por cuenta) | `tareas.tf`. En Cloud Run los bucles de fondo no corren de forma confiable (`cpu_idle = true`, mínimo 0). Ver «Disparadores externos» |
+| Bucket privado `<proyecto>-archivos` (CMEK con la llave `archivos`, CORS, ciclo de vida por tipo), aviso del bucket a Pub/Sub `archivos-gcs` → push OIDC a ALMACENAMIENTO, temas `archivo-disponible` y `archivo-rechazado`, base `almacenamiento` en Cloud SQL | `crear_almacenamiento` (requiere `crear_cloud_sql`; CMEK si `crear_kms`) | ~USD 0,02/GB-mes (5 GB gratis en EE. UU.); Pub/Sub en capa gratuita | `almacenamiento.tf`, [ADR-10](../docs/adr/ADR-10-almacenamiento-de-archivos.md). Fija `almacenamiento_origenes_cors` con los orígenes reales del frontend. Sin la bandera, el servicio responde 503 `ALMACEN_NO_CONFIGURADO` |
 | Memorystore Redis (BASIC, 1GB) + conector VPC | `crear_redis` | **~USD 0,12/h juntos** (estimación estándar de GCP; no se verificó empíricamente en ningún experimento de `solventa-arquitectura` — ese repo no tiene Redis en Terraform, solo en docker-compose local) | **no escala a cero**: crear y destruir por sesión (`redis_encendida`) |
 | Cloud SQL PostgreSQL (`db-f1-micro`, 1 instancia, bases `auth`, `payments` + `policy`) | `crear_cloud_sql` | ~USD 9-12/mes (instancia shared-core + 10GB disco; sin respaldos automáticos para no sumarles costo) | **no escala a cero**: cobra por hora aunque no haya tráfico (`cloud_sql_encendida`) |
 | MongoDB Atlas M0 (RISK y RATING) | `crear_mongo_atlas` | $0 (nivel gratuito) | sin CMEK en M0 (CMEK exige M10 ~USD 57/mes): cubierto por el cifrado de campo AES-GCM con llave de KMS |
@@ -226,7 +227,7 @@ el merge. Localmente: `export TF_VAR_project_id=... TF_VAR_billing_account_id=..
 valor marcador (`pendiente-de-cargar`). Con `crear_cloud_sql` (y `crear_servicios`) Terraform ya escribe solo
 `database-url-auth`, `database-url-payments` y `database-url-policy`; con `crear_redis`, `redis-url-*`; y con `crear_mongo_atlas`,
 `mongo-uri-risk` y `mongo-uri-rating`: esos no hay que cargarlos. Lo que se agrega aparte es `clave-jwt`,
-`clave-cliente-id` y `clave-cifrado`, y ese valor nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
+`clave-cliente-id`, `clave-cifrado` y, para M01, `didit-api-key` y `clave-cache-identidad` (ver «Didit»), y para el correo real `resend-api-key` (ver «Resend»), y ese valor nunca queda en el estado de Terraform. Ejemplo (solo si no usas `crear_cloud_sql`):
 
 ```bash
 printf '%s' 'postgresql://USUARIO:CLAVE@/auth?host=/cloudsql/PROYECTO:REGION:INSTANCIA' \
@@ -235,6 +236,48 @@ printf '%s' 'postgresql://USUARIO:CLAVE@/auth?host=/cloudsql/PROYECTO:REGION:INS
 
 Una migración con el valor marcador falla fuerte y a propósito. `mongo-uri-rating` es un usuario de **solo lectura**
 (RATING nunca escribe en Riesgo) y `mongo-uri-risk` el de lectura/escritura; Terraform crea los dos.
+
+### Didit (verificación de identidad de HU-M01)
+
+El ACL Worker usa `stubs/kyc` mientras `IDENTIDAD_URL` no esté definida, también en staging. Para pasar a Didit:
+
+1. Crea la cuenta y una aplicación en `business.didit.me` y copia su **API key** (la de *sandbox* responde siempre
+   aprobado con datos ficticios y no cobra; la real cobra cada llamada que responde 200).
+2. Carga la llave y la de la caché cifrada del resultado (32 bytes al azar), desde tu terminal:
+
+```bash
+P=solventa-511815
+read -rsp "Didit API key: " K; echo; printf '%s' "$K" | gcloud secrets versions add didit-api-key --project=$P --data-file=-; unset K
+openssl rand -base64 32 | tr -d '\n' | gcloud secrets versions add clave-cache-identidad --project=$P --data-file=-
+```
+
+3. En el `entorno` de `acl-worker` (`.github/servicios.json`) agrega `"IDENTIDAD_URL": "https://verification.didit.me"`.
+   Sin la llave cargada el ACL no arranca con esa URL, a propósito. Sin `clave-cache-identidad` funciona, pero cada
+   reintento se vuelve a cobrar.
+
+### Resend (correo real de los avisos de HU-W03)
+
+El ACL manda los avisos (código de verificación, enlace de firma y póliza emitida con el PDF) por el simulador
+(`stubs/notificaciones`) mientras `NOTIFICACIONES_PROVEEDOR` sea `simulado`. Para correo real:
+
+1. Crea la cuenta en `resend.com`, verifica un dominio (registros DNS que da Resend) y crea una API key con permiso de
+   **envío** («Sending access»). Sin dominio verificado, el remitente de prueba `onboarding@resend.dev` solo entrega al
+   correo del dueño de la cuenta. El plan gratis permite 100 correos al día y 3.000 al mes.
+2. Carga la llave:
+
+```bash
+P=solventa-511815
+read -rsp "Resend API key: " K; echo; printf '%s' "$K" | gcloud secrets versions add resend-api-key --project=$P --data-file=-; unset K
+```
+
+3. En el `entorno` de `acl-worker` (`.github/servicios.json`) cambia `"NOTIFICACIONES_PROVEEDOR": "resend"` y
+   `"CORREO_REMITENTE": "Solventa <avisos@TU-DOMINIO>"`. Con `resend` y sin la llave cargada el ACL no arranca, a
+   propósito.
+4. En POLICY, `URL_FRONT` debe ser la URL real del front: con ella se arma el enlace de firma del correo.
+
+Cada aviso viaja con su id como `Idempotency-Key`: si POLICY lo reintenta (p. ej. tras un corte a los 700 ms), Resend
+no manda otro correo. Un aviso sin correo, como el del asesor (AUTH no guarda su contacto), queda `rechazada` y POLICY
+lo omite.
 
 ### MongoDB Atlas: lo único que hay que hacer a mano
 
@@ -333,6 +376,23 @@ En local, `docker-compose.yml` levanta el servicio `gateway` (Envoy en `:8080`) 
 mismo corte de 700 ms. Durante sesiones de medición con k6 se puede activar `calentar_camino_critico = true` para fijar
 `min_instance_count = 1` en los servicios del camino crítico de HU-W01 y evitar arranques en frío; al terminar la sesión
 se vuelve a poner en `false`.
+
+### Firma, pago y avisos de HU-W03 (F-B8)
+
+- **Ingreso directo, fuera del gateway.** `avisos` (stream SSE: un stream largo no cabe en el corte de 700 ms) y `stub-pasarela`
+  (la página de pago que abre el titular) llevan `ingreso_directo` en `.github/servicios.json`: Terraform les da `allUsers`
+  como invocador, igual que haría con `publico`. Si la organización bloquea `allUsers`, esos dos recursos fallan (es
+  esperable, como con el gateway). El resto de servicios sigue privado.
+- **`url_front`** (variable, sin barra final) es el origen del front web (Vercel). De ella salen `ORIGENES_PERMITIDOS` de
+  `avisos`, `URLS_RETORNO_PERMITIDAS` de la pasarela y `URL_FRONT` de POLICY y del BFF (a `<url_front>/pago/retorno/<id>`
+  regresa el titular). **Sin fijarla en `staging.tfvars` vale `http://localhost:5173`, y el stream de avisos y el regreso
+  de la pasarela no sirven en staging.** El mismo origen va en `almacenamiento_origenes_cors` al encender el almacenamiento.
+- **Redis base 3 (`redis-url-w03`)**: tickets del BFF, avisos que publica POLICY y lectura de `avisos`. Con Memorystore apagado,
+  la URL marcador no resuelve: los avisos se pierden (de mejor esfuerzo) y `ticketAvisos` responde error con reintento.
+- **Cloud Scheduler `purgar-contactos-policy`** (`purgar_contactos_cron`, diario 03:00 Bogotá): `POST /_purgar-contactos` de
+  POLICY. Con el almacenamiento encendido, `purga-almacenamiento` (F-B0) borra las subidas abandonadas.
+- **Gateway:** `GET /propuestas/{id}/contrato.pdf` en `openapi.yaml` y `envoy.yaml` (`scripts/validar_gateway.py` las compara).
+  La cabecera `X-Enlace-Firma` del token del enlace pasa tal cual hasta el BFF.
 
 ### Pub/Sub (`crear_pubsub`) y Batch nocturno (`crear_batch`)
 

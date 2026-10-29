@@ -1,5 +1,6 @@
 """Dobles de prueba de AUTH: en memoria, sin levantar PostgreSQL."""
 
+import hashlib
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -10,6 +11,25 @@ from app.consentimientos import VIGENCIA_DIAS_POR_DEFECTO, Consentimiento
 
 # Llave fija de pruebas (32 bytes); no es la local ni una real.
 CIFRADOR_PRUEBAS = CifradorAesGcm(b"0123456789abcdef0123456789abcdef")
+
+# Clave del HMAC del titular en las pruebas (en compose y Cloud Run, `CLIENTE_ID_CLAVE`).
+CLAVE_TITULAR_PRUEBAS = "clave-titular-de-pruebas"
+
+
+def documento_de(alias: str) -> str:
+    """Un documento de 10 dígitos distinto por alias: un CLIENTE necesita el suyo (W03-27)."""
+    return str(int(hashlib.sha256(alias.encode()).hexdigest(), 16))[:10]
+
+
+def extras_cliente(alias: str) -> dict[str, str]:
+    """Lo que un CLIENTE necesita además del alias, la clave y el rol (W03-27)."""
+    return {"correo": f"{alias}@ejemplo.co", "documento": documento_de(alias)}
+
+
+def extras_cliente_http(alias: str) -> dict[str, str]:
+    """Lo mismo, con los nombres de `POST /usuarios`."""
+    return {"correo": f"{alias}@ejemplo.co", "documento_identidad": documento_de(alias)}
+
 
 # argon2 con costo mínimo: mismas reglas, pero las pruebas no tardan segundos.
 HASHER_RAPIDO = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
@@ -30,6 +50,8 @@ class RepositorioUsuariosMemoria:
         nombre_cifrado: str | None = None,
         correo_cifrado: str | None = None,
         telefono_cifrado: str | None = None,
+        titular_id: str | None = None,
+        documento_cifrado: str | None = None,
     ) -> dict | None:
         if any(f["usuario"] == alias for f in self.filas.values()):
             return None
@@ -45,6 +67,9 @@ class RepositorioUsuariosMemoria:
             "nombre_cifrado": nombre_cifrado,
             "correo_cifrado": correo_cifrado,
             "telefono_cifrado": telefono_cifrado,
+            "titular_id": titular_id,
+            "documento_cifrado": documento_cifrado,
+            "correo_hmac": None,
             "idioma": "ES",
             "moneda": "COP",
         }
@@ -63,6 +88,12 @@ class RepositorioUsuariosMemoria:
     def obtener(self, usuario_id: str) -> dict | None:
         fila = self.filas.get(usuario_id)
         return dict(fila) if fila else None
+
+    def obtener_por_titular(self, titular_id: str) -> dict | None:
+        for fila in self.filas.values():
+            if fila["titular_id"] == titular_id:
+                return dict(fila)
+        return None
 
     def obtener_por_alias(self, alias: str) -> dict | None:
         for fila in self.filas.values():
@@ -118,6 +149,35 @@ class RepositorioUsuariosMemoria:
     def registrar_exito(self, usuario_id: str) -> None:
         self.filas[usuario_id]["intentos_fallidos"] = 0
         self.filas[usuario_id]["bloqueado_hasta"] = None
+
+    def crear_pendiente(self, usuario_id, alias, hash_clave, correo_cifrado, correo_hmac):
+        if any(f.get("correo_hmac") == correo_hmac for f in self.filas.values()):
+            return None
+        fila = self.crear(usuario_id, alias, hash_clave, "CLIENTE", None, correo_cifrado)
+        self.filas[usuario_id].update(estado="PENDIENTE_VERIFICACION", correo_hmac=correo_hmac)
+        return dict(self.filas[usuario_id]) if fila else None
+
+    def obtener_por_correo_hmac(self, correo_hmac):
+        for fila in self.filas.values():
+            if fila.get("correo_hmac") == correo_hmac:
+                return dict(fila)
+        return None
+
+    def cerrar_verificacion(
+        self, usuario_id, estado, nombre_cifrado, titular_id=None, documento_cifrado=None
+    ):
+        fila = self.filas.get(usuario_id)
+        if fila is None or fila["estado"] not in ("PENDIENTE_VERIFICACION", estado):
+            return None
+        fila["estado"] = estado
+        for campo, valor in (
+            ("nombre_cifrado", nombre_cifrado),
+            ("titular_id", titular_id),
+            ("documento_cifrado", documento_cifrado),
+        ):
+            if valor:
+                fila[campo] = valor
+        return dict(fila)
 
 
 class Reloj:

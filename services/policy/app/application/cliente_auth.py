@@ -45,6 +45,13 @@ class PuertoContactos(Protocol):
         ...
 
 
+class PuertoConsentimientos(Protocol):
+    def consentimiento_vigente(self, consentimiento_id: str) -> bool:
+        """Si el consentimiento sigue vigente (W03-26). Uno que no existe no lo está. Lanza
+        `AuthNoDisponible`."""
+        ...
+
+
 class ClienteAuth:
     def __init__(self, url: str, timeout_s: float, auth: httpx.Auth | None = None) -> None:
         self._cliente = httpx.Client(base_url=url, timeout=timeout_s, auth=auth)
@@ -68,6 +75,16 @@ class ClienteAuth:
             respuesta = self._cliente.post("/usuarios/nombres", json={"ids": [usuario_id]})
             respuesta.raise_for_status()
             return respuesta.json().get(usuario_id)
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as error:
+            raise AuthNoDisponible(type(error).__name__) from error
+
+    def consentimiento_vigente(self, consentimiento_id: str) -> bool:
+        try:
+            respuesta = self._cliente.get(f"/consentimientos/{consentimiento_id}")
+            if respuesta.status_code == 404:
+                return False
+            respuesta.raise_for_status()
+            return bool(respuesta.json()["vigente"])
         except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as error:
             raise AuthNoDisponible(type(error).__name__) from error
 

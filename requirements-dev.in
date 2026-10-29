@@ -1,7 +1,7 @@
 # Herramientas de desarrollo y CI (no van en las imágenes de los servicios)
 pytest==9.1.1
-ruff==0.17.1
+ruff==0.17.2
 jsonschema==4.23.0
 # Misma versión que trae strawberry en services/bff: si difieren, el segundo pip del CI baja la del servicio.
-graphql-core==3.3.0
+graphql-core==3.3.1
 pytest-cov==7.1.0

@@ -38,11 +38,12 @@ los llama el BFF, que ya validó el token y el rol.
 
 | Método | Ruta | Respuesta |
 |---|---|---|
-| `POST` | `/sesiones` `{usuario, clave}` | `{token, expira_en, usuario}` (con el `nombre` propio, o `null`; el JWT no lo lleva), o `401` con mensaje genérico |
-| `POST` | `/usuarios` `{usuario, clave, rol, nombre?, correo?, telefono?}` | el usuario (sin hash, nombre ni contacto; con `tiene_contacto`); `400` alias, clave, nombre o contacto inválidos (el nombre se admite en cualquier rol; el contacto solo en CLIENTE); `409` alias repetido |
+| `POST` | `/sesiones` `{usuario, clave}` | `{token, expira_en, usuario}` (con el `nombre` y el `documento_enmascarado` propios, o `null`; el JWT no los lleva), o `401` con mensaje genérico |
+| `POST` | `/usuarios` `{usuario, clave, rol, nombre?, correo?, telefono?, documento_identidad?}` | el usuario (sin hash, nombre, contacto ni documento; con `tiene_contacto`); `400` alias, clave, nombre, contacto o documento inválidos (el nombre se admite en cualquier rol; el contacto y el documento solo en CLIENTE, y **un CLIENTE exige documento y correo**, W03-27); `409` alias repetido o documento de otro CLIENTE |
 | `POST` | `/usuarios/nombres` `{ids}` | `{id: nombre}` de los CLIENTE pedidos (hasta 200; ids en el cuerpo). Dato personal: solo lo llama el BFF para un BACKOFFICE |
 | `GET` | `/usuarios?rol=` | lista de usuarios (el `nombre` siempre en `null`) |
-| `GET` | `/usuarios/{id}` | el usuario con su `nombre` (el BFF solo lo llama con el id del propio usuario, para `yo`), o `404` |
+| `GET` | `/usuarios/{id}` | el usuario con su `nombre` y su `documento_enmascarado` (`•••• 4050`; el BFF solo lo llama con el id del propio usuario, para `yo`), o `404` |
+| `GET` | `/usuarios/{id}/identidad` | `{titular_id, documento}` **en claro** de un CLIENTE con la identidad verificada, o `404`. Dato personal: solo lo llama el BFF con el id del token, para cotizar sin pedirle la cédula (W03-34) y autorizar por titular (W03-33); nunca se loguea |
 | `POST` | `/usuarios/{id}/rol` `{rol}` | el usuario con el rol nuevo, o `404` |
 | `POST` | `/usuarios/{id}/suspender` | baja lógica (`estado = SUSPENDIDO`), o `404` |
 | `POST` | `/usuarios/{id}/contacto` `{correo?, telefono?}` | el usuario con `tiene_contacto` (nunca el contacto). Lo que no llega se conserva; `400` si no llega ninguno, es inválido o el usuario no es CLIENTE; `404` |
@@ -53,6 +54,12 @@ los llama el BFF, que ya validó el token y el rol.
   (`clave-jwt` en Secret Manager, el mismo que lee el BFF). En Cloud Run no arranca con el valor local, el marcador de
   Terraform ni uno de menos de 32 bytes.
 - El alias no puede ser un correo ni un documento. Los datos personales son el **nombre** de cualquier rol (KAN-28) y el **correo y teléfono** de los CLIENTE (HU-W03, bloque 8; migración `0007`, opcionales): van cifrados por campo (AES-256-GCM con un dato asociado, `app/cifrado.py`). El nombre usa el id del usuario; el correo y el teléfono usan `correo:<id>` y `telefono:<id>`, así que un cifrado movido de una columna a otra no se descifra. El correo se guarda en minúsculas (solo se revisa su forma, no que exista) y el teléfono solo con dígitos y un `+` opcional (7 a 15 dígitos). Solo los CLIENTE tienen contacto y solo POLICY puede leerlo.
+- **Documento y titular del CLIENTE (W03-27, migración `0008`):** `crearUsuario` de un CLIENTE exige documento (5 a 20
+  letras o números, en mayúsculas) y correo. Se guarda cifrado (`documento:<id>`) y como `titular_id` =
+  `HMAC-SHA256(CLIENTE_ID_CLAVE, documento)`, **la misma clave y la misma normalización del BFF**, así que coincide con
+  el titular del consentimiento y con el `cliente_id` de las pólizas de POLICY. Lo crea un BACKOFFICE, que verifica la
+  identidad: por eso el titular se fija al crear (W03-36; la otra vía es la verificación de M01). Único: un documento,
+  un CLIENTE. En Cloud Run no arranca sin `CLIENTE_ID_CLAVE` (secreto `clave-cliente-id`, el mismo del BFF).
   - **Cifrado por sobre (envelope encryption) con KMS (HA-SEG-002, EC022):** si se configuran `KMS_KEY_NAME` y `CIFRADO_CLAVE_ENVUELTA` (DEK envuelta en base64 desde Secret Manager), AUTH desenvuelve la DEK al iniciar mediante Cloud KMS (`DesenvolvedorGoogleKms`). Si la versión de llave en KMS está deshabilitada o inaccesible, falla de inmediato con `ErrorDeCifrado` sin degradar a texto plano ni clave local.
   - **Fallback local:** sin configuración KMS, usa `CIFRADO_CLAVE` (local no secreta; en Cloud Run exige sobre KMS válido o `CIFRADO_CLAVE` de producción). Rotarla sin re-cifrar deja los nombres ilegibles.
 - Primer BACKOFFICE: `CLAVE_INICIAL=... python -m app.crear_usuario --usuario <alias> --rol BACKOFFICE` (idempotente).
@@ -60,6 +67,20 @@ los llama el BFF, que ya validó el token y el rol.
 - Un CLIENTE, un ASESOR y un operador de prueba, por el BFF: `python scripts/crear_usuarios.py`. El primer BACKOFFICE de
   staging se crea directo en AUTH con `--auth <url-de-auth>` (ver `infra/README.md`, «Usuarios de staging»).
 - Logs: solo el id opaco del usuario; nunca el alias, la clave ni el token.
+
+## Cuentas del onboarding del móvil (HU-M01)
+
+- `POST /usuarios/onboarding {correo, clave}`: CLIENTE en `PENDIENTE_VERIFICACION` (M01-05b). El alias es opaco (`c-…`):
+  el cliente entra con su **correo**, que se guarda cifrado (`correo_cifrado`, sirve también para el aviso de póliza) y se
+  busca por su HMAC (`correo_hmac`, con `CLIENTE_ID_CLAVE`). Un correo, una cuenta (`409`).
+- `POST /sesiones {usuario, clave, canal}`: `usuario` puede ser el correo. Una cuenta sin verificar (`PENDIENTE_VERIFICACION`
+  o `RECHAZADA`) recibe en `canal = app` un token con el único scope `verificacion-pendiente`, y en cualquier otro canal
+  `403 VERIFICACION_PENDIENTE` (solo con la clave correcta; no cuenta como intento fallido).
+- `POST /usuarios/{id}/verificacion {aprobada, nombre?, documento?}`: lo llama el servicio `onboarding` al cerrar. ACTIVO
+  con el nombre y el documento leídos (cifrados) y su `titular_id` (W03-36, liga las pólizas previas), o RECHAZADA.
+  Idempotente; `404` si la cuenta no está pendiente; `409` si el documento ya es de otra cuenta.
+- `POST /sesiones/renovar {usuario_id, expira_en}`: `actualizarSesion`. Un token con los scopes del estado actual y **la
+  misma expiración** (no alarga la sesión). El BFF lo llama con un token que ya validó.
 
 ## Operación
 
@@ -74,4 +95,4 @@ PostgreSQL `auth` (este servicio es su único escritor). Alembic con SQL explíc
 - Aplicar: `alembic upgrade head` (necesita `DATABASE_URL`). En `docker compose` lo hace `migrar-auth` antes de arrancar el servicio; en staging, el Cloud Run Job `migrar-auth` con la misma imagen.
 - Nueva migración: `alembic revision -m "texto" --rev-id 0002`, escribir `upgrade` **y** `downgrade`, y verificar con `bash ../../scripts/verificar-migraciones.sh auth` (una sola cabeza; subir, bajar a base y subir).
 - Compatibles hacia atrás: agregar sí; renombrar o borrar en dos despliegues (ADR-07). Nunca edites una migración ya integrada a `main`.
-- `0002_usuarios` crea la tabla de usuarios (HU-M02), `0004_consentimientos` la de consentimiento (append-only, T-W01-4) y `0005_consentimiento_titular_y_vencimiento` agrega `titular_id`, `tipo_dato`, `fuente_datos`, `canal` y `vence_en`.
+- `0002_usuarios` crea la tabla de usuarios (HU-M02), `0004_consentimientos` la de consentimiento (append-only, T-W01-4) y `0005_consentimiento_titular_y_vencimiento` agrega `titular_id`, `tipo_dato`, `fuente_datos`, `canal` y `vence_en`. `0008_titular_y_documento` agrega a `usuarios` el `titular_id` (único) y el `documento_cifrado` del CLIENTE (W03-27); los usuarios anteriores quedan sin ellos y los de prueba se recrean. `0009_cuentas_onboarding` (HU-M01) amplía los estados con `PENDIENTE_VERIFICACION` y `RECHAZADA` y agrega `correo_hmac` (login por correo).

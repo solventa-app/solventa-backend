@@ -14,7 +14,7 @@ Microservicios por dominio en Python/FastAPI sobre GCP (Cloud Run), con BFF Grap
 
 | Ruta | Contenido |
 |---|---|
-| `services/` | Un directorio por servicio desplegable: `bff`, `auth`, `risk`, `rating`, `payments`, `acl-worker` (Sprint 1) y `policy` (Sprint 2, HU-W03). `under`, `claims` y `consolidador` llegan en los Sprints 2 y 3 |
+| `services/` | Un directorio por servicio desplegable: `bff`, `auth`, `risk`, `rating`, `payments`, `acl-worker` (Sprint 1), `policy` (Sprint 2, HU-W03) y `almacenamiento` (KAN-250, archivos con URLs firmadas, [ADR-10](docs/adr/ADR-10-almacenamiento-de-archivos.md)). `under`, `claims` y `consolidador` llegan en los Sprints 2 y 3 |
 | `stubs/` | Proveedores simulados por contrato: Open Finance, Open Data y pasarela (D-05) |
 | `contracts/` | **Contratos compartidos**: esquema GraphQL y eventos. Es lo único que otro repo debe leer |
 | `infra/` | Terraform (GCP): APIs, Artifact Registry, KMS opcional, identidad del pipeline y servicios de Cloud Run (opcionales) |
@@ -46,7 +46,7 @@ python scripts/validar_contratos.py
 python scripts/validar_servicios.py
 
 # 5. Migraciones de un servicio contra su base real (lo mismo que corre el CI)
-bash scripts/verificar-migraciones.sh auth      # auth | payments | policy | risk
+bash scripts/verificar-migraciones.sh auth      # auth | payments | policy | almacenamiento | risk
 ```
 
 Si 5432 o 6379 ya están ocupados en tu máquina: `POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose up -d`.
@@ -59,7 +59,7 @@ Un solo camino, el mismo en local, CI y staging ([ADR-07](docs/adr/ADR-07-cicd-y
 PR ─► CI ─► merge a develop ─► construir (imagen = SHA) ─► migrar (job) ─► revisión sin tráfico ─► humo ─► promover
 ```
 
-- **Migraciones:** `auth`, `payments` y `policy` con Alembic (`services/<x>/migrations/`), `risk` con un runner propio para MongoDB.
+- **Migraciones:** `auth`, `payments`, `policy` y `almacenamiento` con Alembic (`services/<x>/migrations/`), `risk` con un runner propio para MongoDB.
   Cada servicio migra solo su almacén. Compatibles hacia atrás: expandir primero, contraer en un despliegue posterior.
 - **Agregar un servicio:** una entrada en [`.github/servicios.json`](.github/servicios.json) + su carpeta, filtro en `ci.yml`
   y Dependabot; `python scripts/validar_servicios.py` dice qué falta.

@@ -252,3 +252,28 @@ variable "reconciliacion_cobros_cron" {
   type        = string
   default     = "*/15 * * * *"
 }
+
+variable "url_front" {
+  description = "Origen del front web (sin barra final), p. ej. https://solventa.vercel.app. Lo usan el stream de avisos (Origin permitido), la pasarela de prueba (a dónde regresa el titular tras pagar) y POLICY (la URL del enlace de firma). El valor por defecto es el local; en staging se fija en staging.tfvars."
+  type        = string
+  default     = "http://localhost:5173"
+}
+
+variable "purgar_contactos_cron" {
+  description = "Cada cuánto el trabajo de Cloud Scheduler `purgar-contactos-policy` llama a `POST /_purgar-contactos` de POLICY: borra nombre, correo e imagen de la firma de las propuestas cuyo consentimiento venció (W03-26). Formato cron, zona America/Bogota. Solo aplica con `crear_tareas = true`."
+  type        = string
+  default     = "0 3 * * *"
+}
+
+variable "crear_almacenamiento" {
+  description = "Crea el bucket privado de archivos (CMEK con la llave `archivos` si crear_kms), sus avisos por Pub/Sub a ALMACENAMIENTO y los temas `archivo-disponible` y `archivo-rechazado` (KAN-250, ADR-10). Cobra por GB guardado (~USD 0,02/GB-mes)."
+  type        = bool
+  default     = false
+}
+
+variable "almacenamiento_origenes_cors" {
+  description = "Orígenes del frontend que pueden subir y bajar archivos directo al bucket con las URLs firmadas (CORS)."
+  type        = list(string)
+  default     = ["http://localhost:3000", "http://localhost:5173"]
+}
+

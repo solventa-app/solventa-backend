@@ -1,6 +1,13 @@
 """Endpoints HTTP de sesiones y usuarios, con dobles (sin PostgreSQL)."""
 
-from fakes import HASHER_RAPIDO, AlmacenConsentimientosMemoria, RepositorioUsuariosMemoria
+from fakes import (
+    CIFRADOR_PRUEBAS,
+    CLAVE_TITULAR_PRUEBAS,
+    HASHER_RAPIDO,
+    AlmacenConsentimientosMemoria,
+    RepositorioUsuariosMemoria,
+    extras_cliente_http,
+)
 from fastapi.testclient import TestClient
 
 from app.configuracion import Configuracion
@@ -16,7 +23,9 @@ def _cliente() -> TestClient:
     config = Configuracion("postgresql://no-se-usa", "secreto-de-prueba-con-32-bytes-o-mas", 60)
     app = create_app(
         almacen=AlmacenConsentimientosMemoria(),
-        servicio_usuarios=ServicioUsuarios(repositorio, HASHER_RAPIDO),
+        servicio_usuarios=ServicioUsuarios(
+            repositorio, HASHER_RAPIDO, CIFRADOR_PRUEBAS, CLAVE_TITULAR_PRUEBAS
+        ),
         servicio_sesiones=ServicioSesiones(repositorio, HASHER_RAPIDO, config.jwt_secreto, 60),
         config=config,
     )
@@ -49,11 +58,31 @@ def test_credenciales_invalidas_responden_401_con_mensaje_generico() -> None:
 def test_alias_invalido_400_y_duplicado_409() -> None:
     with _cliente() as client:
         invalido = client.post(
-            "/usuarios", json={"usuario": "a@b.co", "clave": CLAVE, "rol": "CLIENTE"}
+            "/usuarios",
+            json={
+                "usuario": "a@b.co",
+                "clave": CLAVE,
+                "rol": "CLIENTE",
+                **extras_cliente_http("a@b.co"),
+            },
         )
-        client.post("/usuarios", json={"usuario": "cliente.a", "clave": CLAVE, "rol": "CLIENTE"})
+        client.post(
+            "/usuarios",
+            json={
+                "usuario": "cliente.a",
+                "clave": CLAVE,
+                "rol": "CLIENTE",
+                **extras_cliente_http("cliente.a"),
+            },
+        )
         duplicado = client.post(
-            "/usuarios", json={"usuario": "cliente.a", "clave": CLAVE, "rol": "CLIENTE"}
+            "/usuarios",
+            json={
+                "usuario": "cliente.a",
+                "clave": CLAVE,
+                "rol": "CLIENTE",
+                **extras_cliente_http("cliente.a"),
+            },
         )
 
     assert invalido.status_code == 400
@@ -63,7 +92,13 @@ def test_alias_invalido_400_y_duplicado_409() -> None:
 def test_listar_cambiar_rol_y_suspender() -> None:
     with _cliente() as client:
         creado = client.post(
-            "/usuarios", json={"usuario": "cliente.a", "clave": CLAVE, "rol": "CLIENTE"}
+            "/usuarios",
+            json={
+                "usuario": "cliente.a",
+                "clave": CLAVE,
+                "rol": "CLIENTE",
+                **extras_cliente_http("cliente.a"),
+            },
         ).json()
         listado = client.get("/usuarios", params={"rol": "CLIENTE"}).json()
         con_rol = client.post(f"/usuarios/{creado['id']}/rol", json={"rol": "ASESOR"}).json()
@@ -87,7 +122,13 @@ def test_preferencias_de_idioma_y_moneda() -> None:
     """KAN-209: se guardan, salen al iniciar sesión y en `GET /usuarios/{id}`, y se validan."""
     with _cliente() as client:
         creado = client.post(
-            "/usuarios", json={"usuario": "cliente.pref", "clave": CLAVE, "rol": "CLIENTE"}
+            "/usuarios",
+            json={
+                "usuario": "cliente.pref",
+                "clave": CLAVE,
+                "rol": "CLIENTE",
+                **extras_cliente_http("cliente.pref"),
+            },
         ).json()
         assert (creado["idioma"], creado["moneda"]) == ("ES", "COP")
 

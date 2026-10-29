@@ -9,6 +9,7 @@ locals {
     "artifactregistry.googleapis.com",
     "secretmanager.googleapis.com",
     "pubsub.googleapis.com",
+    "storage.googleapis.com", # bucket de archivos (almacenamiento.tf)
     # Trazas distribuidas (OpenTelemetry → API de Telemetry); sin costo en el volumen de staging.
     "telemetry.googleapis.com",
     "cloudtrace.googleapis.com",

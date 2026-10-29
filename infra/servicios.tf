@@ -28,8 +28,11 @@ locals {
   servicios  = { for s in local.manifiesto : s.nombre => s }
   activos    = { for n, s in local.servicios : n => s if var.crear_servicios }
 
-  con_migracion  = { for n, s in local.activos : n => s if try(s.migracion, null) != null }
-  publicos       = { for n, s in local.activos : n => s if try(s.publico, false) }
+  con_migracion = { for n, s in local.activos : n => s if try(s.migracion, null) != null }
+  # Públicos: `publico` (ninguno hoy: el BFF solo lo invoca el gateway) y `ingreso_directo`, los que abre el navegador
+  # sin pasar por el gateway: `avisos` (stream SSE, no cabe en el gateway) y `stub-pasarela` (la página de pago del
+  # titular). Ambos son del flujo de firma y pago de HU-W03.
+  publicos       = { for n, s in local.activos : n => s if try(s.publico, false) || try(s.ingreso_directo, false) }
   camino_critico = toset(["bff", "auth", "acl-worker", "risk", "rating", "stub-open-finance", "stub-open-data"])
 
   # Instancias fijas mientras `instancias_fijas_encendidas` sea true: los servicios con `instancia_fija` en el manifiesto
@@ -61,6 +64,25 @@ locals {
       for d in try(s.llama, []) : "${n}->${d}" => { origen = n, destino = d }
     }
   ]...)
+
+  # Variables de HU-W03 (firma, pago y avisos) que dependen de la URL de otros servicios o del front, y por eso no
+  # caben en el manifiesto. `url_front` es el origen del front web (Vercel); sin él valdría el local.
+  entorno_w03 = {
+    bff = {
+      AVISOS_URL = "${local.url["avisos"]}/avisos/stream"
+      URL_FRONT  = var.url_front
+    }
+    policy = {
+      URL_FRONT = var.url_front
+    }
+    avisos = {
+      ORIGENES_PERMITIDOS = var.url_front
+    }
+    "stub-pasarela" = {
+      PASARELA_URL_PUBLICA    = local.url["stub-pasarela"]
+      URLS_RETORNO_PERMITIDAS = var.url_front
+    }
+  }
 
   secretos = var.crear_servicios ? toset(flatten([for s in local.manifiesto : values(try(s.secretos, {}))])) : toset([])
   lecturas_de_secretos = merge([
@@ -141,9 +163,12 @@ resource "google_cloud_run_v2_service" "servicio" {
     google_secret_manager_secret_version.database_url_auth,
     google_secret_manager_secret_version.database_url_payments,
     google_secret_manager_secret_version.database_url_policy,
+    google_secret_manager_secret_version.database_url_almacenamiento,
+    google_secret_manager_secret_version.database_url_onboarding,
     google_secret_manager_secret_version.redis_url,
     google_secret_manager_secret_version.redis_url_apagado,
     google_secret_manager_secret_version.mongo_uri,
+    google_secret_manager_secret_version.mongo_uri_claims,
     google_secret_manager_secret_version.mongo_uri_rating,
   ]
 
@@ -216,6 +241,20 @@ resource "google_cloud_run_v2_service" "servicio" {
         }
       }
 
+      # Almacenamiento de archivos (almacenamiento.tf, KAN-250): el bucket y los temas de sus eventos. Sin esto el
+      # servicio arranca sano pero responde 503 ALMACEN_NO_CONFIGURADO.
+      dynamic "env" {
+        for_each = (each.key == "almacenamiento" && local.almacenamiento_activo) ? {
+          ALMACEN_BUCKET                 = google_storage_bucket.archivos[0].name
+          PUBSUB_TEMA_ARCHIVO_DISPONIBLE = google_pubsub_topic.archivo["archivo-disponible"].id
+          PUBSUB_TEMA_ARCHIVO_RECHAZADO  = google_pubsub_topic.archivo["archivo-rechazado"].id
+        } : {}
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
       # Disparadores externos (tareas.tf): quién dispara el trabajo de fondo, y lo que Cloud Tasks necesita para
       # firmar y dirigir la tarea. Solo con `crear_tareas` y en los servicios que lo declaran.
       dynamic "env" {
@@ -226,6 +265,14 @@ resource "google_cloud_run_v2_service" "servicio" {
           URL_PROPIA    = local.url[each.key]
           TAREAS_CUENTA = google_service_account.runtime[each.key].email
         } : {}
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      dynamic "env" {
+        for_each = try(local.entorno_w03[each.key], {})
         content {
           name  = env.key
           value = env.value

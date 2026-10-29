@@ -6,7 +6,47 @@ tarjeta: solo el `token_medio_pago` ya tokenizado por el proveedor PCI-DSS
 
 import httpx
 
-from app.domain.puertos import OrdenCobro, ResultadoCobro
+from app.domain.puertos import (
+    MedioPagoTokenizado,
+    OrdenCobro,
+    ResultadoCobro,
+    SesionPago,
+    SolicitudSesionPago,
+)
+
+ESTADOS_SESION = {
+    "ABIERTA": "abierta",
+    "PROCESANDO": "procesando",
+    "COBRADA": "cobrada",
+    "RECHAZADA": "rechazada",
+    "FALLIDA": "fallida",
+    "VENCIDA": "vencida",
+}
+
+
+def _sesion(cuerpo: dict) -> SesionPago:
+    estado = ESTADOS_SESION.get(cuerpo.get("estado", ""))
+    medio = cuerpo.get("medio")
+    if estado is None:
+        # Un estado desconocido no se da por cobrado: queda en proceso y se vuelve a consultar.
+        return SesionPago(
+            estado="procesando",
+            sesion_id=cuerpo.get("sesion_id"),
+            motivo="estado_desconocido_del_proveedor",
+        )
+    return SesionPago(
+        estado=estado,
+        sesion_id=cuerpo["sesion_id"],
+        url_pago=cuerpo.get("url_pago"),
+        vence_en=cuerpo.get("vence_en"),
+        motivo=cuerpo.get("motivo"),
+        medio=(
+            MedioPagoTokenizado(token=medio["token"], marca=medio["marca"], tipo=medio["tipo"])
+            if estado == "cobrada" and medio
+            else None
+        ),
+        referencia=cuerpo.get("referencia") if estado == "cobrada" else None,
+    )
 
 
 class AdaptadorPasarela:
@@ -63,6 +103,44 @@ class AdaptadorPasarela:
             motivo=cuerpo.get("motivo"),
             detalle=cuerpo.get("detalle", {}),
         )
+
+    def crear_sesion_pago(
+        self, solicitud: SolicitudSesionPago, timeout_s: float | None = None
+    ) -> SesionPago:
+        """`POST /v1/sesiones-pago`. Un 422 (p. ej. `url_retorno_no_permitida`) es un rechazo de la
+        solicitud, no una falla del proveedor: no abre el circuito."""
+        timeout = timeout_s if timeout_s is not None else self._timeout_s
+        respuesta = self._cliente.post(
+            "/v1/sesiones-pago",
+            json={
+                "referencia_comercio": solicitud.id_intento_cobro,
+                "monto": solicitud.monto,
+                "moneda": solicitud.moneda,
+                "descripcion": solicitud.descripcion,
+                "url_retorno": solicitud.url_retorno,
+                "idioma": solicitud.idioma,
+            },
+            timeout=timeout,
+        )
+        if respuesta.status_code == 422:
+            detalle = respuesta.json().get("detail")
+            return SesionPago(
+                estado="rechazada",
+                motivo=detalle if isinstance(detalle, str) else "solicitud_invalida",
+            )
+        respuesta.raise_for_status()
+        return _sesion(respuesta.json())
+
+    def consultar_sesion_pago(
+        self, sesion_id: str, timeout_s: float | None = None
+    ) -> SesionPago | None:
+        """`GET /v1/sesiones-pago/{id}`: 404 → `None` (no abre el circuito)."""
+        timeout = timeout_s if timeout_s is not None else self._timeout_s
+        respuesta = self._cliente.get(f"/v1/sesiones-pago/{sesion_id}", timeout=timeout)
+        if respuesta.status_code == 404:
+            return None
+        respuesta.raise_for_status()
+        return _sesion(respuesta.json())
 
     def sondear(self) -> None:
         """Llama `GET /v1/estado` (obedece el modo simulado) en vez de ejecutar un

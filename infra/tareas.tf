@@ -17,6 +17,9 @@
 #     `POST /propuestas/{id}/_emitir` (decisión de UNDER, primer cobro con PAYMENTS y emisión), y la vuelve a encolar
 #     mientras el primer cobro siga pendiente. La cola reintenta con backoff si UNDER o PAYMENTS no responden (503).
 #
+#   - Verificación de identidad (HU-M01): Cloud Tasks. Al enviar las capturas, ONBOARDING encola una tarea HTTP
+#     hacia su propio `POST /tareas/verificar/{id}`; la cola reintenta si el storage o el ACL no responden (503).
+#
 # Solo `variables de entorno` + estos recursos: el código de los servicios no cambia entre local (bucle) y nube.
 # Gate: var.crear_tareas (default false) y var.crear_servicios.
 #
@@ -146,6 +149,58 @@ resource "google_cloud_run_v2_service_iam_member" "policy_se_invoca" {
   member   = "serviceAccount:${google_service_account.runtime["policy"].email}"
 }
 
+# ------------------------------------------------------------------ verificación de onboarding (Cloud Tasks, HU-M01)
+resource "google_cloud_tasks_queue" "verificacion_onboarding" {
+  count      = local.hay_tareas ? 1 : 0
+  depends_on = [google_project_service.tareas_apis]
+  project    = var.project_id
+  name       = "verificacion-onboarding"
+  location   = var.region
+
+  # Cada tarea es una sesión distinta y la verificación es idempotente (solo avanza desde EN_VERIFICACION).
+  rate_limits {
+    max_dispatches_per_second = 5
+    max_concurrent_dispatches = 5
+  }
+
+  # Si el storage o el ACL no responden, ONBOARDING contesta 503 y Cloud Tasks reintenta. Agotados, la sesión
+  # queda EN_VERIFICACION y volver a enviarla (idempotente) la vuelve a encolar.
+  retry_config {
+    max_attempts  = 5
+    min_backoff   = "5s"
+    max_backoff   = "60s"
+    max_doublings = 3
+  }
+}
+
+# ONBOARDING puede crear tareas en esa cola...
+resource "google_cloud_tasks_queue_iam_member" "onboarding_encola" {
+  count    = local.hay_tareas ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_tasks_queue.verificacion_onboarding[0].name
+  role     = "roles/cloudtasks.enqueuer"
+  member   = "serviceAccount:${google_service_account.runtime["onboarding"].email}"
+}
+
+# ...firmadas con su propia identidad (para eso necesita poder «actuar como» ella misma)...
+resource "google_service_account_iam_member" "onboarding_firma_tareas" {
+  count              = local.hay_tareas ? 1 : 0
+  service_account_id = google_service_account.runtime["onboarding"].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.runtime["onboarding"].email}"
+}
+
+# ...y esa identidad puede invocar a ONBOARDING (el servicio es privado).
+resource "google_cloud_run_v2_service_iam_member" "onboarding_se_invoca" {
+  count    = local.hay_tareas ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.servicio["onboarding"].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.runtime["onboarding"].email}"
+}
+
 # --------------------------------------------------------------- reconciliación de fuentes (Cloud Tasks)
 resource "google_cloud_tasks_queue" "reconciliacion_fuentes" {
   count      = local.hay_tareas ? 1 : 0
@@ -265,6 +320,37 @@ resource "google_cloud_scheduler_job" "reconciliacion_cobros_policy" {
   http_target {
     http_method = "POST"
     uri         = "${local.url["policy"]}/reconciliacion/cobros"
+
+    oidc_token {
+      service_account_email = google_service_account.programador[0].email
+      audience              = local.url["policy"]
+    }
+  }
+}
+
+# ------------------------------------------------------------------ purga de contactos de POLICY (Cloud Scheduler)
+# W03-26: pasada diaria que borra el nombre, el correo y la imagen de la firma de las propuestas cuyo consentimiento
+# venció (la revocación a mano la avisa el BFF al instante). Idempotente: una pasada que no termina la retoma la del día
+# siguiente. Misma cuenta `programador`; POLICY es privado.
+resource "google_cloud_scheduler_job" "purgar_contactos_policy" {
+  count       = local.hay_tareas ? 1 : 0
+  depends_on  = [google_project_service.tareas_apis]
+  project     = var.project_id
+  region      = var.region
+  name        = "purgar-contactos-policy"
+  description = "Una pasada de la purga de contactos de POLICY: borra nombre, correo e imagen de la firma de lo que ya no tiene consentimiento vigente"
+  schedule    = var.purgar_contactos_cron
+  time_zone   = "America/Bogota"
+
+  attempt_deadline = "300s"
+
+  retry_config {
+    retry_count = 0
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.url["policy"]}/_purgar-contactos"
 
     oidc_token {
       service_account_email = google_service_account.programador[0].email

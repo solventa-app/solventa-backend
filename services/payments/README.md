@@ -10,6 +10,7 @@ PAYMENTS procesa el cobro de primas e indemnizaciones con **pasarela tokenizada*
 - **Idempotencia real a nivel de base de datos (CA-W05-04):** un mismo intento recibido dos veces (incluso en paralelo) se ejecuta una sola vez. `id_intento_cobro` es `UNIQUE` en PostgreSQL; el `INSERT ... ON CONFLICT (id_intento_cobro) DO NOTHING RETURNING ...` es correcto bajo concurrencia real (ver "Diseño" abajo), no solo un `SELECT` seguido de un `INSERT`.
 - Estados de cobro: `cobrando` → `cobrado` / `rechazado` / `pendiente` (PostgreSQL, base `payments`, única que escribe esta tabla — regla de escritor único).
 - `GET /polizas/{poliza_id}/balance`: suma los `monto` de los cobros en estado `cobrado` de esa póliza. No cubre balances de indemnización (Sprint 3, HU-W04/HU-M04).
+- `POST /indemnizaciones` (HU-W04, W04-6, migración `0009`): la **orden de pago** de la indemnización de un siniestro aprobado, que pide CLAIMS antes de guardar la aprobación. Queda `PENDIENTE_DISPERSION`; es idempotente por `siniestro_id` (otro monto para el mismo siniestro es 409). `GET /indemnizaciones/{id}` la consulta. La **dispersión** por la pasarela sigue en el Sprint 3 (CA-W05-07).
 - **Reintento del cobro pendiente (T-W05-4, CA-W05-05):** un bucle local reintenta los cobros `pendiente` reutilizando el MISMO `id_intento_cobro`, acotado a un número máximo de intentos. Ver huecos abajo (no es Cloud Tasks real).
 - **Back-office: listar y reintentar con conciliación (KAN-28, CA-W05-01/02):** `POST /cobros/buscar` (filtros `poliza_id` y
   `estado` en el cuerpo, nunca en la URL), `GET /cobros/{id}` y `POST /cobros/{id}/reintentar`. Antes de cobrar, se **concilia**: se pregunta a la
@@ -77,7 +78,7 @@ A diferencia de RISK, aquí **no se hashea `cobroId` ni `idIntentoCobro`** en el
 - **Cloud Tasks real:** el reintento (T-W05-4) es un bucle `asyncio` local, no una tarea programada de GCP. Ver "Diseño" arriba para qué cambia cuando exista un proyecto GCP.
 - **Cifrado de campo de `token_medio_pago`:** no aplica (regla de arquitectura #6: cero datos de tarjeta, solo token PCI-DSS) — no es el mismo caso que los datos personales de RISK, que sigue sin cifrado por falta de Cloud KMS (ver `services/risk/README.md`).
 - **Bus de eventos real:** `BusEventosLog` solo loguea; cuando `infra-engineer` levante Pub/Sub real, se sustituye sin tocar `ServicioCobros` ni `app.application.reintento`.
-- **Balance de órdenes de indemnización:** fuera de alcance (Sprint 3, HU-W04/HU-M04). `GET /polizas/{poliza_id}/balance` solo suma cobros `cobrado`.
+- **Dispersión y balance de las indemnizaciones:** fuera de alcance (Sprint 3, HU-W04/HU-M04). Desde HU-W04 existe la orden (`POST /indemnizaciones`), pero no se dispersa ni entra en `GET /polizas/{poliza_id}/balance`, que solo suma cobros `cobrado`.
 - **Reintentos de red hacia `acl-worker` desde el propio `ClienteAcl`:** si la llamada HTTP de PAYMENTS al ACL Worker falla (no la pasarela, sino el ACL Worker mismo inalcanzable), se trata igual que `pasarela_no_disponible` (`motivo=acl_no_disponible`, estado `pendiente`) — no hay un retry inmediato dentro de la misma petición, se apoya en el mismo bucle de reintento de pendientes.
 
 ## Operación
@@ -88,6 +89,26 @@ A diferencia de RISK, aquí **no se hashea `cobroId` ni `idIntentoCobro`** en el
   de pago (antes devolvía en silencio el cobro original). El nombre viene de la migración `0003`/`0004` (antes
   `clave_idempotencia`).
 - `GET /polizas/{poliza_id}/balance` → `{poliza_id, balance}`.
+- **Página de pago alojada (HU-W03, W03-28 a W03-30; W05-A1 a A4).** El titular paga en la página de la pasarela;
+  PAYMENTS abre la sesión por el ACL y confirma el resultado de servidor a servidor (`app/application/servicio_sesiones.py`).
+  - `POST /sesiones-pago` `{propuesta_id, cliente_id?, monto, moneda, descripcion, url_retorno, idioma?}` → la sesión
+    `{sesion_id, intento, id_intento_cobro, estado, motivo, url_pago, vence_en, fallos_seguidos, cobro}`. Si la anterior
+    sigue abierta, **la concilia primero**: si ya se cobró la devuelve cobrada, si sigue vigente devuelve la misma, y
+    solo si venció, se rechazó o falló abre otra (intento `n + 1`, `id_intento_cobro = uuid5(propuesta, n)`). Sin
+    respuesta de la pasarela no abre otra (la anterior pudo cobrarse). `422` si la pasarela no acepta la solicitud
+    (p. ej. un retorno fuera de su lista blanca).
+  - `POST /sesiones-pago/{sesion_id}/confirmar` `{propuesta_id}` → la sesión tras preguntarle a la pasarela
+    (`sesion_id` es el de la pasarela, el que vuelve en la URL de regreso). `cobrada`: guarda en una transacción el
+    medio (`medios_pago`), el cobro `INTERACTIVO` y la sesión, y publica `cobro.estado-cambiado`. Idempotente. `404`
+    si no existe o es de otra propuesta.
+  - `GET /propuestas/{propuesta_id}/sesion-pago` → la última sesión, sin preguntarle a la pasarela.
+  - **Fallas (W03-30):** sin respuesta de la pasarela, una sesión `fallida` o una que no se pudo abrir suman un fallo
+    (`fallos_seguidos`); al tercero el motivo es `requiere_otra_tarjeta` y la sesión siguiente arranca en 0. Un rechazo
+    (`fondos_insuficientes`, `tarjeta_vencida`) no es una falla: se pide otra tarjeta. Nunca un 5xx por la pasarela.
+  - **Medios de pago:** solo el token del proveedor cifrado (`enc:v1:`, con el id del medio), la marca y el tipo
+    (`CREDITO` o `DEBITO`); **ni el número ni los últimos dígitos**. Los cobros devuelven `origen` (`INTERACTIVO` o
+    `RECURRENTE`) y `medio` (`{marca, tipo}`); el token nunca sale de PAYMENTS.
+  - `/cobros/_reintentar` **no toca los `INTERACTIVO`** (W05-A3): esos solo se concilian al confirmar la sesión.
 - `POST /cobros/buscar` `{poliza_id?, estado?}` → lista de cobros (también con `creado_en` y `actualizado_en`). Los
   filtros van en el cuerpo y no en la URL porque las URL quedan en los logs de acceso (regla #6).
 - `GET /cobros/{id}` → el cobro, o `404`.
@@ -109,6 +130,8 @@ PostgreSQL `payments` (este servicio es su único escritor). Alembic con SQL exp
 - Aplicar: `alembic upgrade head` (necesita `DATABASE_URL`). En `docker compose` lo hace `migrar-payments` antes de arrancar el servicio; en staging, el Cloud Run Job `migrar-payments` con la misma imagen.
 - Nueva migración: `alembic revision -m "texto" --rev-id NNNN`, escribir `upgrade` **y** `downgrade`, y verificar con `bash ../../scripts/verificar-migraciones.sh payments` (una sola cabeza; subir, bajar a base y subir).
 - Compatibles hacia atrás: agregar sí; renombrar o borrar en dos despliegues (ADR-07). Nunca edites una migración ya integrada a `main`.
+- `0008_sesiones_y_medios_de_pago` (HU-W03): tablas `sesiones_pago` y `medios_pago`, y `cobros.origen` (por defecto
+  `RECURRENTE`) y `cobros.medio_pago_id`. Solo expandir.
 - Estados de cobro, idempotencia y balances (T-W05-3) viven en la tabla `cobros`, creada por la migración `0002`
   (`migrations/versions/0002_cobros.py`, `down_revision = "0001"`). El esquema ya **no** lo crea la app al arrancar
   (se quitó `RepositorioCobrosPostgres.preparar_esquema` y `app/sql/001_cobros.sql`): Alembic es la única fuente del esquema,

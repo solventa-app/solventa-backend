@@ -72,11 +72,17 @@ class CifradorAesGcm:
         return texto.decode("utf-8")
 
 
-def cifrador_desde_entorno() -> CifradorAesGcm:
-    """Local: la llave pública de pruebas. En la nube (Cloud Run define `K_SERVICE`, los jobs
-    `CLOUD_RUN_JOB`) la llave es obligatoria y no puede ser la local ni el marcador de Terraform."""
+def clave_desde_entorno() -> str:
+    """La llave en base64, con las mismas reglas que `cifrador_desde_entorno`. También es el
+    material de la clave de las huellas del código y del enlace (`huellas.clave_de_huellas`)."""
     clave = os.getenv("CIFRADO_CLAVE", CIFRADO_CLAVE_LOCAL)
     en_la_nube = bool(os.getenv("K_SERVICE") or os.getenv("CLOUD_RUN_JOB"))
     if en_la_nube and clave in (CIFRADO_CLAVE_LOCAL, VALOR_MARCADOR):
         raise ValueError("CIFRADO_CLAVE no se ha cargado en Secret Manager")
-    return CifradorAesGcm.desde_base64(clave)
+    return clave
+
+
+def cifrador_desde_entorno() -> CifradorAesGcm:
+    """Local: la llave pública de pruebas. En la nube (Cloud Run define `K_SERVICE`, los jobs
+    `CLOUD_RUN_JOB`) la llave es obligatoria y no puede ser la local ni el marcador de Terraform."""
+    return CifradorAesGcm.desde_base64(clave_desde_entorno())

@@ -28,6 +28,10 @@
                   "pm.collectionVariables.set('telefono_tel', '+573001234567');",
                   "pm.collectionVariables.set('alias_ajeno', 'ajeno.newman.' + sufijo);",
                   "pm.collectionVariables.set('alias_asesor', 'asesor.newman.' + sufijo);",
+                  "// W03-27: cada CLIENTE necesita su documento (solo dígitos, distinto por corrida).",
+                  "const base = String(Date.now()).slice(-9);",
+                  "pm.collectionVariables.set('doc_cuenta_titular', '1' + base);",
+                  "pm.collectionVariables.set('doc_cuenta_ajeno', '2' + base);",
                   "pm.collectionVariables.set('sondeo', 0);"
                 ]
               }
@@ -124,7 +128,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_titular}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Titular\",\n      \"correo\": \"{{correo_titular}}\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_titular}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Titular\",\n      \"correo\": \"{{correo_titular}}\",\n      \"documentoIdentidad\": \"{{doc_cuenta_titular}}\"\n    }\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -180,7 +184,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_ajeno}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Ajeno\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_ajeno}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Ajeno\",\n      \"documentoIdentidad\": \"{{doc_cuenta_ajeno}}\",\n      \"correo\": \"ajeno.newman@ejemplo.co\"\n    }\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -411,10 +415,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// Documento único por escenario: el caché del ACL Worker (TTL 300 s) está por documento y un",
-                  "// documento repetido entre corridas serviría CACHE en vez de OK. El BFF exige 6+ dígitos y",
-                  "// 20 caracteres como máximo: 'CC-' + 13 dígitos + '-' + 1 letra = 18.",
-                  "pm.collectionVariables.set('doc_feliz', 'CC-' + Date.now() + '-F');"
+                  "// F-B3: el CLIENTE solo consiente con el documento de su propia cuenta.",
+                  "pm.collectionVariables.set('doc_feliz', pm.collectionVariables.get('doc_cuenta_titular'));"
                 ]
               }
             },
@@ -2213,10 +2215,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// Documento único por escenario: el caché del ACL Worker (TTL 300 s) está por documento y un",
-                  "// documento repetido entre corridas serviría CACHE en vez de OK. El BFF exige 6+ dígitos y",
-                  "// 20 caracteres como máximo: 'CC-' + 13 dígitos + '-' + 1 letra = 18.",
-                  "pm.collectionVariables.set('doc_kyc', 'CC-' + Date.now() + '-K');"
+                  "// F-B3: el CLIENTE solo consiente con el documento de su propia cuenta.",
+                  "pm.collectionVariables.set('doc_kyc', pm.collectionVariables.get('doc_cuenta_titular'));"
                 ]
               }
             },
@@ -2718,10 +2718,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// Documento único por escenario: el caché del ACL Worker (TTL 300 s) está por documento y un",
-                  "// documento repetido entre corridas serviría CACHE en vez de OK. El BFF exige 6+ dígitos y",
-                  "// 20 caracteres como máximo: 'CC-' + 13 dígitos + '-' + 1 letra = 18.",
-                  "pm.collectionVariables.set('doc_rechazo', 'CC-' + Date.now() + '-R');"
+                  "// F-B3: el CLIENTE solo consiente con el documento de su propia cuenta.",
+                  "pm.collectionVariables.set('doc_rechazo', pm.collectionVariables.get('doc_cuenta_titular'));"
                 ]
               }
             },
@@ -3223,10 +3221,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// Documento único por escenario: el caché del ACL Worker (TTL 300 s) está por documento y un",
-                  "// documento repetido entre corridas serviría CACHE en vez de OK. El BFF exige 6+ dígitos y",
-                  "// 20 caracteres como máximo: 'CC-' + 13 dígitos + '-' + 1 letra = 18.",
-                  "pm.collectionVariables.set('doc_firma', 'CC-' + Date.now() + '-M');"
+                  "// F-B3: el CLIENTE solo consiente con el documento de su propia cuenta.",
+                  "pm.collectionVariables.set('doc_firma', pm.collectionVariables.get('doc_cuenta_titular'));"
                 ]
               }
             },
@@ -3776,10 +3772,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// Documento único por escenario: el caché del ACL Worker (TTL 300 s) está por documento y un",
-                  "// documento repetido entre corridas serviría CACHE en vez de OK. El BFF exige 6+ dígitos y",
-                  "// 20 caracteres como máximo: 'CC-' + 13 dígitos + '-' + 1 letra = 18.",
-                  "pm.collectionVariables.set('doc_aviso', 'CC-' + Date.now() + '-A');"
+                  "// F-B3: el CLIENTE solo consiente con el documento de su propia cuenta.",
+                  "pm.collectionVariables.set('doc_aviso', pm.collectionVariables.get('doc_cuenta_titular'));"
                 ]
               }
             },
@@ -4437,10 +4431,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// Documento único por escenario: el caché del ACL Worker (TTL 300 s) está por documento y un",
-                  "// documento repetido entre corridas serviría CACHE en vez de OK. El BFF exige 6+ dígitos y",
-                  "// 20 caracteres como máximo: 'CC-' + 13 dígitos + '-' + 1 letra = 18.",
-                  "pm.collectionVariables.set('doc_lenta', 'CC-' + Date.now() + '-L');"
+                  "// F-B3: el CLIENTE solo consiente con el documento de su propia cuenta.",
+                  "pm.collectionVariables.set('doc_lenta', pm.collectionVariables.get('doc_cuenta_titular'));"
                 ]
               }
             },
@@ -4989,10 +4981,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// Documento único por escenario: el caché del ACL Worker (TTL 300 s) está por documento y un",
-                  "// documento repetido entre corridas serviría CACHE en vez de OK. El BFF exige 6+ dígitos y",
-                  "// 20 caracteres como máximo: 'CC-' + 13 dígitos + '-' + 1 letra = 18.",
-                  "pm.collectionVariables.set('doc_reabre', 'CC-' + Date.now() + '-P');"
+                  "// F-B3: el CLIENTE solo consiente con el documento de su propia cuenta.",
+                  "pm.collectionVariables.set('doc_reabre', pm.collectionVariables.get('doc_cuenta_titular'));"
                 ]
               }
             },
@@ -5959,10 +5949,10 @@
       "description": "Cada escenario fija un stub en modo de falla, comprueba el resultado y lo restaura. Solo contra local (los stubs son privados en staging)."
     },
     {
-      "name": "5. Contacto del cliente y aviso con PDF (bloque 8: W03-16 a W03-18)",
+      "name": "5. Registro del cliente y su contacto (W03-27, W03-34 y bloque 8)",
       "item": [
         {
-          "name": "5.1 crearUsuario CLIENTE solo con teléfono",
+          "name": "5.1 crearUsuario CLIENTE sin correo -> ErrorUsuario (W03-27)",
           "event": [
             {
               "listen": "test",
@@ -5973,15 +5963,9 @@
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const cuerpo = pm.response.json();",
                   "const r = cuerpo.data.crearUsuario;",
-                  "pm.test('crea el usuario activo con el rol pedido', () => {",
-                  "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(r.__typename).to.eql('Usuario');",
-                  "  pm.expect(r.rol).to.eql('CLIENTE');",
-                  "  pm.expect(r.estado).to.eql('ACTIVO');",
-                  "});",
-                  "pm.test('queda con contacto y la respuesta no lo devuelve', () => {",
-                  "  pm.expect(r.tieneContacto).to.be.true;",
-                  "  pm.expect(JSON.stringify(cuerpo)).to.not.include(pm.collectionVariables.get('telefono_tel'));",
+                  "pm.test('ErrorUsuario con el mensaje de AUTH y sin crear el usuario', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorUsuario');",
+                  "  pm.expect(r.mensaje).to.eql('Un cliente necesita su documento de identidad y su correo.');",
                   "});"
                 ]
               }
@@ -6007,7 +5991,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_tel}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Telefono\",\n      \"telefono\": \"{{telefono_tel}}\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_tel}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Telefono\",\n      \"telefono\": \"{{telefono_tel}}\",\n      \"documentoIdentidad\": \"9000000001\"\n    }\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -6022,7 +6006,7 @@
           }
         },
         {
-          "name": "5.2 crearUsuario CLIENTE sin contacto",
+          "name": "5.2 crearUsuario CLIENTE sin documento -> ErrorUsuario (W03-27)",
           "event": [
             {
               "listen": "test",
@@ -6033,13 +6017,10 @@
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const cuerpo = pm.response.json();",
                   "const r = cuerpo.data.crearUsuario;",
-                  "pm.test('crea el usuario activo con el rol pedido', () => {",
-                  "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(r.__typename).to.eql('Usuario');",
-                  "  pm.expect(r.rol).to.eql('CLIENTE');",
-                  "  pm.expect(r.estado).to.eql('ACTIVO');",
-                  "});",
-                  "pm.test('queda sin contacto', () => pm.expect(r.tieneContacto).to.be.false);"
+                  "pm.test('ErrorUsuario con el mensaje de AUTH y sin crear el usuario', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorUsuario');",
+                  "  pm.expect(r.mensaje).to.eql('Un cliente necesita su documento de identidad y su correo.');",
+                  "});"
                 ]
               }
             }
@@ -6064,7 +6045,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_sin}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Sin\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_sin}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Sin\",\n      \"correo\": \"sin.newman@ejemplo.co\"\n    }\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -6079,7 +6060,7 @@
           }
         },
         {
-          "name": "5.3 iniciarSesion CLIENTE (solo teléfono)",
+          "name": "5.3 crearUsuario CLIENTE con el documento de otro cliente -> ErrorUsuario",
           "event": [
             {
               "listen": "test",
@@ -6089,13 +6070,11 @@
                   "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const cuerpo = pm.response.json();",
-                  "const r = cuerpo.data.iniciarSesion;",
-                  "pm.test('inicia sesión como CLIENTE', () => {",
-                  "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(r.__typename).to.eql('Sesion');",
-                  "  pm.expect(r.usuario.rol).to.eql('CLIENTE');",
-                  "});",
-                  "pm.collectionVariables.set('token_tel', r.token);"
+                  "const r = cuerpo.data.crearUsuario;",
+                  "pm.test('ErrorUsuario con el mensaje de AUTH y sin crear el usuario', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorUsuario');",
+                  "  pm.expect(r.mensaje).to.eql('Ya existe un cliente con ese documento.');",
+                  "});"
                 ]
               }
             }
@@ -6120,64 +6099,22 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CredencialesInput!) {\\n  iniciarSesion(entrada: $entrada) {\\n    __typename\\n    ... on Sesion { token usuario { id rol } }\\n    ... on ErrorAutenticacion { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_tel}}\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_sin}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Sin\",\n      \"correo\": \"sin.newman@ejemplo.co\",\n      \"documentoIdentidad\": \"{{doc_cuenta_titular}}\"\n    }\n  }\n}"
             },
             "auth": {
-              "type": "noauth"
-            }
-          }
-        },
-        {
-          "name": "5.4 iniciarSesion CLIENTE (sin contacto)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "const r = cuerpo.data.iniciarSesion;",
-                  "pm.test('inicia sesión como CLIENTE', () => {",
-                  "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(r.__typename).to.eql('Sesion');",
-                  "  pm.expect(r.usuario.rol).to.eql('CLIENTE');",
-                  "});",
-                  "pm.collectionVariables.set('token_sin', r.token);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
               ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CredencialesInput!) {\\n  iniciarSesion(entrada: $entrada) {\\n    __typename\\n    ... on Sesion { token usuario { id rol } }\\n    ... on ErrorAutenticacion { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_sin}}\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
-            },
-            "auth": {
-              "type": "noauth"
             }
           }
         },
         {
-          "name": "5.5 yo.tieneContacto del titular (dejó correo) -> true",
+          "name": "5.4 yo.tieneContacto del titular (dejó correo) -> true",
           "event": [
             {
               "listen": "test",
@@ -6227,361 +6164,19 @@
           }
         },
         {
-          "name": "5.6 yo.tieneContacto del cliente solo con teléfono -> true",
+          "name": "5.5 yo.documentoEnmascarado del titular (W03-34)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const cuerpo = pm.response.json();",
-                  "pm.test('tieneContacto = true', () => pm.expect(cuerpo.data.yo.tieneContacto).to.be.true);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"{\\n  yo { tieneContacto }\\n}\"\n}"
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_tel}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "5.7 yo.tieneContacto del cliente sin contacto -> false",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "pm.test('tieneContacto = false', () => pm.expect(cuerpo.data.yo.tieneContacto).to.be.false);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"{\\n  yo { tieneContacto }\\n}\"\n}"
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_sin}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "5.8 Registrar consentimiento",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Documento único por escenario: el caché del ACL Worker (TTL 300 s) está por documento y un",
-                  "// documento repetido entre corridas serviría CACHE en vez de OK. El BFF exige 6+ dígitos y",
-                  "// 20 caracteres como máximo: 'CC-' + 13 dígitos + '-' + 1 letra = 18.",
-                  "pm.collectionVariables.set('doc_tel', 'CC-' + Date.now() + '-T');"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "const c = cuerpo.data.registrarConsentimiento;",
-                  "pm.test('consentimiento vigente', () => {",
-                  "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(c.vigente).to.be.true;",
-                  "});",
-                  "pm.collectionVariables.set('cons_tel', c.id);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: ConsentimientoInput!) {\\n  registrarConsentimiento(entrada: $entrada) { id vigente }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"finalidad\": \"cotizacion-vida-hipotecario\",\n      \"versionTexto\": \"v1\",\n      \"documentoIdentidad\": \"{{doc_tel}}\",\n      \"tipoDato\": \"financiero\",\n      \"fuenteDatos\": \"open-finance\",\n      \"canal\": \"web\"\n    }\n  }\n}"
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_tel}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "5.9 Solicitar oferta (proveedores sanos) -> COMPLETA",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "const r = cuerpo.data.solicitarOferta;",
-                  "pm.test('es una Oferta COMPLETA', () => {",
-                  "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(r.__typename).to.eql('Oferta');",
-                  "  pm.expect(r.tipo).to.eql('COMPLETA');",
-                  "});",
-                  "pm.collectionVariables.set('oferta_tel', r.id);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n    __typename\\n    ... on Oferta { id tipo prima { valor moneda } }\\n    ... on ErrorOferta { mensaje puedeReintentar motivo }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{cons_tel}}\",\n      \"documentoIdentidad\": \"{{doc_tel}}\",\n      \"valorCredito\": \"200000000\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Bogotá D.C., Chapinero\"\n    }\n  }\n}"
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_tel}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "5.10 aceptarOferta",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "const r = cuerpo.data.aceptarOferta;",
-                  "pm.test('crea la propuesta ACEPTADA', () => {",
-                  "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(r.__typename).to.eql('Propuesta');",
-                  "  pm.expect(r.estado).to.eql('ACEPTADA');",
-                  "  pm.expect(r.polizaId).to.be.null;",
-                  "});",
-                  "pm.collectionVariables.set('propuesta_tel', r.id);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($id: ID!) {\\n  aceptarOferta(ofertaId: $id) {\\n    __typename\\n    ... on Propuesta { id ofertaId estado prima { valor moneda } plazoMeses polizaId }\\n    ... on ErrorAceptacion { mensaje puedeReintentar motivo }\\n  }\\n}\",\n  \"variables\": {\n    \"id\": \"{{oferta_tel}}\"\n  }\n}"
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_tel}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "5.11 documentoFirma",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "const d = cuerpo.data.documentoFirma;",
-                  "pm.test('el documento muestra monto mensual, meses y forma de cobro (CA-W03-02)', () => {",
-                  "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(d).to.not.be.null;",
-                  "  pm.expect(d.version).to.be.a('string').and.not.empty;",
-                  "  pm.expect(parseFloat(d.montoMensual.valor)).to.be.above(0);",
-                  "  pm.expect(d.meses).to.be.above(0);",
-                  "  pm.expect(d.formaCobro).to.be.a('string').and.not.empty;",
-                  "});",
-                  "pm.collectionVariables.set('version_tel', d.version);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  documentoFirma(propuestaId: $id) {\\n    propuestaId version resumen\\n    montoMensual { valor moneda } meses formaCobro\\n  }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_tel}}\"\n  }\n}"
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_tel}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "5.12 firmarPropuesta (solo teléfono) -> FirmaRegistrada",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "const r = cuerpo.data.firmarPropuesta;",
-                  "pm.test('la firma queda registrada con su referencia', () => {",
-                  "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(r.__typename).to.eql('FirmaRegistrada');",
-                  "  pm.expect(r.referencia).to.be.a('string').and.not.empty;",
-                  "  pm.expect(r.firmadaEn).to.be.a('string');",
+                  "const doc = pm.collectionVariables.get('doc_cuenta_titular');",
+                  "pm.test('solo los últimos 4 dígitos', () => {",
+                  "  pm.expect(cuerpo.data.yo.documentoEnmascarado).to.eql('•••• ' + doc.slice(-4));",
+                  "  pm.expect(JSON.stringify(cuerpo)).to.not.include(doc);",
                   "});"
                 ]
               }
@@ -6607,14 +6202,14 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: FirmarPropuestaInput!) {\\n  firmarPropuesta(entrada: $entrada) {\\n    __typename\\n    ... on FirmaRegistrada { propuestaId firmadaEn referencia estado }\\n    ... on ErrorFirma { mensaje puedeReintentar motivo }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"propuestaId\": \"{{propuesta_tel}}\",\n      \"autorizaCobro\": true,\n      \"versionDocumento\": \"{{version_tel}}\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"{\\n  yo { documentoEnmascarado }\\n}\"\n}"
             },
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{token_tel}}",
+                  "value": "{{token_titular}}",
                   "type": "string"
                 }
               ]
@@ -6622,555 +6217,7 @@
           }
         },
         {
-          "name": "5.13 la propuesta del cliente solo con teléfono queda EMITIDA",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Espera activa entre consultas: la emisión corre en segundo plano (Cloud Tasks en la nube, inline en local).",
-                  "if (Number(pm.collectionVariables.get('sondeo') || 0) > 0) { setTimeout(() => {}, 500); }"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "const p = cuerpo.data.propuesta;",
-                  "const objetivos = [\"EMITIDA\"];",
-                  "const intentos = Number(pm.collectionVariables.get('sondeo') || 0) + 1;",
-                  "if (p && !objetivos.includes(p.estado) && intentos < 40) {",
-                  "  pm.collectionVariables.set('sondeo', intentos);",
-                  "  postman.setNextRequest(pm.info.requestName);",
-                  "} else {",
-                  "  pm.collectionVariables.set('sondeo', 0);",
-                  "  pm.test('la propuesta llega a ' + objetivos.join(' o ') + ' (después de ' + intentos + ' consultas)', () => {",
-                  "    pm.expect(cuerpo.errors).to.be.undefined;",
-                  "    pm.expect(p).to.not.be.null;",
-                  "    pm.expect(objetivos).to.include(p.estado);",
-                  "  });",
-                  "  if (p) {",
-                  "    pm.collectionVariables.set('poliza_tel', p.polizaId);",
-                  "  }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn motivoEstado mensajeEstado accionSugerida }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_tel}}\"\n  }\n}"
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_tel}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "description": "Repite la consulta (máx. 40 veces, cada 500 ms) hasta que el estado sea EMITIDA."
-          }
-        },
-        {
-          "name": "5.14 el aviso sale por SMS y sin PDF",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (Number(pm.collectionVariables.get('sondeo') || 0) > 0) { setTimeout(() => {}, 500); }"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const referencia = 'poliza-emitida-' + pm.collectionVariables.get('poliza_tel');",
-                  "const avisos = pm.response.json().filter(a => a.referencia_comercio === referencia);",
-                  "const intentos = Number(pm.collectionVariables.get('sondeo') || 0) + 1;",
-                  "if (avisos.length === 0 && intentos < 40) {",
-                  "  pm.collectionVariables.set('sondeo', intentos);",
-                  "  postman.setNextRequest(pm.info.requestName);",
-                  "} else {",
-                  "  pm.collectionVariables.set('sondeo', 0);",
-                  "  pm.test('el aviso salió exactamente una vez', () => pm.expect(avisos).to.have.lengthOf(1));",
-                  "  pm.test('sale por SMS, al teléfono del cliente y sin PDF (W03-17)', () => {",
-                  "    const huella = CryptoJS.SHA256(pm.collectionVariables.get('telefono_tel')).toString().slice(0, 12);",
-                  "    pm.expect(avisos[0].canal).to.eql('sms');",
-                  "    pm.expect(avisos[0].destino_huella).to.eql(huella);",
-                  "    pm.expect(avisos[0].adjuntos).to.eql([]);",
-                  "  });",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{stub_notificaciones_url}}/control/enviados",
-              "host": [
-                "{{stub_notificaciones_url}}"
-              ],
-              "path": [
-                "control",
-                "enviados"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Repite la consulta hasta ver el aviso por SMS."
-          }
-        },
-        {
-          "name": "5.15 Registrar consentimiento",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Documento único por escenario: el caché del ACL Worker (TTL 300 s) está por documento y un",
-                  "// documento repetido entre corridas serviría CACHE en vez de OK. El BFF exige 6+ dígitos y",
-                  "// 20 caracteres como máximo: 'CC-' + 13 dígitos + '-' + 1 letra = 18.",
-                  "pm.collectionVariables.set('doc_sin', 'CC-' + Date.now() + '-N');"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "const c = cuerpo.data.registrarConsentimiento;",
-                  "pm.test('consentimiento vigente', () => {",
-                  "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(c.vigente).to.be.true;",
-                  "});",
-                  "pm.collectionVariables.set('cons_sin', c.id);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: ConsentimientoInput!) {\\n  registrarConsentimiento(entrada: $entrada) { id vigente }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"finalidad\": \"cotizacion-vida-hipotecario\",\n      \"versionTexto\": \"v1\",\n      \"documentoIdentidad\": \"{{doc_sin}}\",\n      \"tipoDato\": \"financiero\",\n      \"fuenteDatos\": \"open-finance\",\n      \"canal\": \"web\"\n    }\n  }\n}"
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_sin}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "5.16 Solicitar oferta (proveedores sanos) -> COMPLETA",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "const r = cuerpo.data.solicitarOferta;",
-                  "pm.test('es una Oferta COMPLETA', () => {",
-                  "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(r.__typename).to.eql('Oferta');",
-                  "  pm.expect(r.tipo).to.eql('COMPLETA');",
-                  "});",
-                  "pm.collectionVariables.set('oferta_sin', r.id);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n    __typename\\n    ... on Oferta { id tipo prima { valor moneda } }\\n    ... on ErrorOferta { mensaje puedeReintentar motivo }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{cons_sin}}\",\n      \"documentoIdentidad\": \"{{doc_sin}}\",\n      \"valorCredito\": \"200000000\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Bogotá D.C., Chapinero\"\n    }\n  }\n}"
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_sin}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "5.17 aceptarOferta",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "const r = cuerpo.data.aceptarOferta;",
-                  "pm.test('crea la propuesta ACEPTADA', () => {",
-                  "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(r.__typename).to.eql('Propuesta');",
-                  "  pm.expect(r.estado).to.eql('ACEPTADA');",
-                  "  pm.expect(r.polizaId).to.be.null;",
-                  "});",
-                  "pm.collectionVariables.set('propuesta_sin', r.id);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($id: ID!) {\\n  aceptarOferta(ofertaId: $id) {\\n    __typename\\n    ... on Propuesta { id ofertaId estado prima { valor moneda } plazoMeses polizaId }\\n    ... on ErrorAceptacion { mensaje puedeReintentar motivo }\\n  }\\n}\",\n  \"variables\": {\n    \"id\": \"{{oferta_sin}}\"\n  }\n}"
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_sin}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "5.18 documentoFirma",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "const d = cuerpo.data.documentoFirma;",
-                  "pm.test('el documento muestra monto mensual, meses y forma de cobro (CA-W03-02)', () => {",
-                  "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(d).to.not.be.null;",
-                  "  pm.expect(d.version).to.be.a('string').and.not.empty;",
-                  "  pm.expect(parseFloat(d.montoMensual.valor)).to.be.above(0);",
-                  "  pm.expect(d.meses).to.be.above(0);",
-                  "  pm.expect(d.formaCobro).to.be.a('string').and.not.empty;",
-                  "});",
-                  "pm.collectionVariables.set('version_sin', d.version);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  documentoFirma(propuestaId: $id) {\\n    propuestaId version resumen\\n    montoMensual { valor moneda } meses formaCobro\\n  }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_sin}}\"\n  }\n}"
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_sin}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "5.19 firmarPropuesta (sin contacto) -> FirmaRegistrada",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "const r = cuerpo.data.firmarPropuesta;",
-                  "pm.test('la firma queda registrada con su referencia', () => {",
-                  "  pm.expect(cuerpo.errors).to.be.undefined;",
-                  "  pm.expect(r.__typename).to.eql('FirmaRegistrada');",
-                  "  pm.expect(r.referencia).to.be.a('string').and.not.empty;",
-                  "  pm.expect(r.firmadaEn).to.be.a('string');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: FirmarPropuestaInput!) {\\n  firmarPropuesta(entrada: $entrada) {\\n    __typename\\n    ... on FirmaRegistrada { propuestaId firmadaEn referencia estado }\\n    ... on ErrorFirma { mensaje puedeReintentar motivo }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"propuestaId\": \"{{propuesta_sin}}\",\n      \"autorizaCobro\": true,\n      \"versionDocumento\": \"{{version_sin}}\"\n    }\n  }\n}"
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_sin}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "5.20 la propuesta del cliente sin contacto queda EMITIDA igual",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Espera activa entre consultas: la emisión corre en segundo plano (Cloud Tasks en la nube, inline en local).",
-                  "if (Number(pm.collectionVariables.get('sondeo') || 0) > 0) { setTimeout(() => {}, 500); }"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
-                  "const cuerpo = pm.response.json();",
-                  "const p = cuerpo.data.propuesta;",
-                  "const objetivos = [\"EMITIDA\"];",
-                  "const intentos = Number(pm.collectionVariables.get('sondeo') || 0) + 1;",
-                  "if (p && !objetivos.includes(p.estado) && intentos < 40) {",
-                  "  pm.collectionVariables.set('sondeo', intentos);",
-                  "  postman.setNextRequest(pm.info.requestName);",
-                  "} else {",
-                  "  pm.collectionVariables.set('sondeo', 0);",
-                  "  pm.test('la propuesta llega a ' + objetivos.join(' o ') + ' (después de ' + intentos + ' consultas)', () => {",
-                  "    pm.expect(cuerpo.errors).to.be.undefined;",
-                  "    pm.expect(p).to.not.be.null;",
-                  "    pm.expect(objetivos).to.include(p.estado);",
-                  "  });",
-                  "  if (p) {",
-                  "    pm.collectionVariables.set('poliza_sin', p.polizaId);",
-                  "    pm.test('tiene póliza', () => pm.expect(p.polizaId).to.be.a('string').and.not.empty);",
-                  "  }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}"
-              ],
-              "path": [
-                "graphql",
-                "web"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  propuesta(id: $id) { id estado polizaId actualizadoEn motivoEstado mensajeEstado accionSugerida }\\n}\",\n  \"variables\": {\n    \"id\": \"{{propuesta_sin}}\"\n  }\n}"
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token_sin}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "description": "Repite la consulta (máx. 40 veces, cada 500 ms) hasta que el estado sea EMITIDA."
-          }
-        },
-        {
-          "name": "5.21 el aviso se omite: el stub no recibe nada",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// El aviso se decide justo después de emitir: se espera para no confundir 'todavía' con 'nunca'.",
-                  "setTimeout(() => {}, 2500);"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const referencia = 'poliza-emitida-' + pm.collectionVariables.get('poliza_sin');",
-                  "const avisos = pm.response.json().filter(a => a.referencia_comercio === referencia);",
-                  "pm.test('el stub no recibió ningún aviso de esta póliza (W03-18)', () => pm.expect(avisos).to.have.lengthOf(0));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{stub_notificaciones_url}}/control/enviados",
-              "host": [
-                "{{stub_notificaciones_url}}"
-              ],
-              "path": [
-                "control",
-                "enviados"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "La póliza ya está EMITIDA; el aviso se omite (SIN_CONTACTO) y el stub no recibe nada."
-          }
-        },
-        {
-          "name": "5.22 actualizarContacto con un correo inválido -> ErrorUsuario",
+          "name": "5.6 actualizarContacto con un correo inválido -> ErrorUsuario",
           "event": [
             {
               "listen": "test",
@@ -7216,7 +6263,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{token_sin}}",
+                  "value": "{{token_titular}}",
                   "type": "string"
                 }
               ]
@@ -7224,7 +6271,7 @@
           }
         },
         {
-          "name": "5.23 actualizarContacto sin ningún dato -> ErrorUsuario",
+          "name": "5.7 actualizarContacto sin ningún dato -> ErrorUsuario",
           "event": [
             {
               "listen": "test",
@@ -7270,7 +6317,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{token_sin}}",
+                  "value": "{{token_titular}}",
                   "type": "string"
                 }
               ]
@@ -7278,7 +6325,7 @@
           }
         },
         {
-          "name": "5.24 el cliente sin contacto deja su correo -> tieneContacto",
+          "name": "5.8 el titular cambia su correo -> tieneContacto",
           "event": [
             {
               "listen": "test",
@@ -7293,7 +6340,7 @@
                   "  pm.expect(cuerpo.errors).to.be.undefined;",
                   "  pm.expect(r.__typename).to.eql('Usuario');",
                   "  pm.expect(r.tieneContacto).to.be.true;",
-                  "  pm.expect(JSON.stringify(cuerpo)).to.not.include('sin.contacto.newman');",
+                  "  pm.expect(JSON.stringify(cuerpo)).to.not.include('titular.otro.newman');",
                   "});"
                 ]
               }
@@ -7319,14 +6366,14 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: ContactoInput!) {\\n  actualizarContacto(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"correo\": \"sin.contacto.newman@ejemplo.co\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: ContactoInput!) {\\n  actualizarContacto(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"correo\": \"titular.otro.newman@ejemplo.co\"\n    }\n  }\n}"
             },
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{token_sin}}",
+                  "value": "{{token_titular}}",
                   "type": "string"
                 }
               ]
@@ -7334,7 +6381,7 @@
           }
         },
         {
-          "name": "5.25 yo.tieneContacto ya dice true",
+          "name": "5.9 yo.tieneContacto ya dice true",
           "event": [
             {
               "listen": "test",
@@ -7376,7 +6423,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{token_sin}}",
+                  "value": "{{token_titular}}",
                   "type": "string"
                 }
               ]
@@ -7384,7 +6431,7 @@
           }
         },
         {
-          "name": "5.26 un ASESOR no actualiza el contacto de un cliente",
+          "name": "5.10 un ASESOR no actualiza el contacto de un cliente",
           "event": [
             {
               "listen": "test",
@@ -7434,7 +6481,7 @@
           }
         },
         {
-          "name": "5.27 un BACKOFFICE tampoco",
+          "name": "5.11 un BACKOFFICE tampoco",
           "event": [
             {
               "listen": "test",
@@ -7484,7 +6531,7 @@
           }
         },
         {
-          "name": "5.28 sin token exige sesión",
+          "name": "5.12 sin token exige sesión",
           "event": [
             {
               "listen": "test",
@@ -7527,7 +6574,7 @@
           }
         },
         {
-          "name": "5.29 el contacto no se puede leer por GraphQL",
+          "name": "5.13 el contacto no se puede leer por GraphQL",
           "event": [
             {
               "listen": "test",
@@ -7581,6 +6628,3465 @@
         }
       ],
       "description": "Contacto del cliente (decisiones W03-16 a W03-18): quién lo deja, qué aviso recibe cada cliente y que el contacto nunca vuelve por GraphQL."
+    },
+    {
+      "name": "6. Flujos v0.18 del asesor y del cliente: código, enlace, firma, pago y listas (F-B9)",
+      "item": [
+        {
+          "name": "6.1 preparar datos del flujo del asesor (v0.18)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// El titular al que vende el asesor: documento y correo únicos por corrida.",
+                  "pm.collectionVariables.set('doc_vendido', '5' + String(Date.now()).slice(-9));",
+                  "const letras = 'abcdefghijklmnopqrstuvwxyz';",
+                  "let s = '';",
+                  "for (let i = 0; i < 8; i++) s += letras[Math.floor(Math.random() * letras.length)];",
+                  "pm.collectionVariables.set('correo_vendido', 'vendido.' + s + '@ejemplo.co');",
+                  "pm.collectionVariables.set('alias_vendido', 'vendido.newman.' + s);",
+                  "pm.collectionVariables.set('sondeo', 0);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('la pasarela está sana', () => pm.expect(pm.response.json().modo).to.eql('sano'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/control/modo",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "control",
+                "modo"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.2 registrarConsentimiento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.registrarConsentimiento : undefined;",
+                  "pm.test('consentimiento vigente', () => pm.expect(r.vigente).to.be.true);",
+                  "pm.collectionVariables.set('w6a_cons', r.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: ConsentimientoInput!) {\\n  registrarConsentimiento(entrada: $entrada) { id vigente }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"finalidad\": \"cotizacion-vida-hipotecario\",\n      \"versionTexto\": \"v1\",\n      \"tipoDato\": \"financiero\",\n      \"fuenteDatos\": \"open-finance\",\n      \"canal\": \"web\",\n      \"documentoIdentidad\": \"{{doc_vendido}}\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.3 solicitarOferta -> COMPLETA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.solicitarOferta : undefined;",
+                  "pm.test('oferta COMPLETA', () => {",
+                  "  pm.expect(r.__typename).to.eql('Oferta');",
+                  "  pm.expect(r.tipo).to.eql('COMPLETA');",
+                  "});",
+                  "pm.collectionVariables.set('w6a_oferta', r.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n    __typename\\n    ... on Oferta { id tipo }\\n    ... on ErrorOferta { mensaje motivo }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{w6a_cons}}\",\n      \"valorCredito\": \"200000000\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Calle 100 # 10-20, Bogotá\",\n      \"documentoIdentidad\": \"{{doc_vendido}}\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.4 aceptarOferta del ASESOR sin el contacto del titular -> ErrorAceptacion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.aceptarOferta : undefined;",
+                  "pm.test('el ASESOR debe dejar el contacto del titular', () => pm.expect(r.__typename).to.eql('ErrorAceptacion'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($o: ID!, $c: ContactoTitularInput) {\\n  aceptarOferta(ofertaId: $o, contacto: $c) {\\n    __typename\\n    ... on Propuesta { id estado }\\n    ... on ErrorAceptacion { mensaje motivo }\\n  }\\n}\",\n  \"variables\": {\n    \"o\": \"{{w6a_oferta}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.5 aceptarOferta del ASESOR con el contacto -> ACEPTADA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.aceptarOferta : undefined;",
+                  "pm.test('propuesta ACEPTADA', () => {",
+                  "  pm.expect(r.__typename).to.eql('Propuesta');",
+                  "  pm.expect(r.estado).to.eql('ACEPTADA');",
+                  "});",
+                  "pm.collectionVariables.set('w6a_prop', r.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($o: ID!, $c: ContactoTitularInput) {\\n  aceptarOferta(ofertaId: $o, contacto: $c) {\\n    __typename\\n    ... on Propuesta { id estado }\\n    ... on ErrorAceptacion { mensaje motivo }\\n  }\\n}\",\n  \"variables\": {\n    \"o\": \"{{w6a_oferta}}\",\n    \"c\": {\n      \"nombre\": \"Titular Vendido Newman\",\n      \"correo\": \"{{correo_vendido}}\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.6 emitirPropuesta antes de verificar el código -> ErrorEmision",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.emitirPropuesta : undefined;",
+                  "pm.test('sin el código verificado no se emite', () => pm.expect(r.__typename).to.eql('ErrorEmision'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID!) {\\n  emitirPropuesta(propuestaId: $p) {\\n    __typename\\n    ... on EnlaceEnviado { correoEnmascarado venceEn propuesta { estado } }\\n    ... on Propuesta { estado }\\n    ... on ErrorEmision { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6a_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.7 enviarCodigoVerificacion -> CodigoEnviado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.enviarCodigoVerificacion : undefined;",
+                  "pm.test('código enviado, con el correo enmascarado', () => {",
+                  "  pm.expect(r.__typename).to.eql('CodigoEnviado');",
+                  "  pm.expect(r.correoEnmascarado).to.not.eql(pm.collectionVariables.get('correo_vendido'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID!) {\\n  enviarCodigoVerificacion(propuestaId: $p) {\\n    __typename\\n    ... on CodigoEnviado { propuestaId correoEnmascarado venceEn }\\n    ... on ErrorCodigo { mensaje motivo }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6a_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.8 stub de notificaciones: el código llegó al correo del titular",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (Number(pm.collectionVariables.get('sondeo') || 0) > 0) { setTimeout(() => {}, 500); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const avisos = pm.response.json().filter(a => a.plantilla === 'codigo-verificacion' && a.destino_huella === CryptoJS.SHA256(pm.collectionVariables.get('correo_vendido')).toString().slice(0, 12));",
+                  "const intentos = Number(pm.collectionVariables.get('sondeo') || 0) + 1;",
+                  "if (avisos.length === 0 && intentos < 40) {",
+                  "  pm.collectionVariables.set('sondeo', intentos);",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.set('sondeo', 0);",
+                  "  pm.test('el aviso salió', () => pm.expect(avisos).to.not.be.empty);",
+                  "  const aviso = avisos[avisos.length - 1];",
+                  "  pm.test('plantilla codigo-verificacion por correo, sin el correo en claro', () => {",
+                  "    pm.expect(aviso.plantilla).to.eql('codigo-verificacion');",
+                  "    pm.expect(aviso.canal).to.eql('correo');",
+                  "    pm.expect(JSON.stringify(aviso)).to.not.include('@ejemplo.co');",
+                  "  });",
+                  "  pm.collectionVariables.set('w6a_codigo', aviso.datos.codigo);",
+                  "  pm.collectionVariables.set('w6a_codigo_malo', aviso.datos.codigo === '000000' ? '111111' : '000000');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{stub_notificaciones_url}}/control/enviados",
+              "host": [
+                "{{stub_notificaciones_url}}"
+              ],
+              "path": [
+                "control",
+                "enviados"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.9 verificarCodigo con un código errado -> CODIGO_INVALIDO",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.verificarCodigo : undefined;",
+                  "pm.test('CODIGO_INVALIDO con los intentos que quedan', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorCodigo');",
+                  "  pm.expect(r.motivo).to.eql('CODIGO_INVALIDO');",
+                  "  pm.expect(r.intentosRestantes).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID!, $c: String!) {\\n  verificarCodigo(propuestaId: $p, codigo: $c) {\\n    __typename\\n    ... on Propuesta { id estado }\\n    ... on ErrorCodigo { mensaje motivo intentosRestantes }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6a_prop}}\",\n    \"c\": \"{{w6a_codigo_malo}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.10 verificarCodigo con el código -> IDENTIDAD_VERIFICADA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.verificarCodigo : undefined;",
+                  "pm.test('identidad verificada', () => pm.expect(r.estado).to.eql('IDENTIDAD_VERIFICADA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID!, $c: String!) {\\n  verificarCodigo(propuestaId: $p, codigo: $c) {\\n    __typename\\n    ... on Propuesta { id estado }\\n    ... on ErrorCodigo { mensaje motivo intentosRestantes }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6a_prop}}\",\n    \"c\": \"{{w6a_codigo}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.11 emitirPropuesta -> EnlaceEnviado (EN_FIRMA)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.emitirPropuesta : undefined;",
+                  "pm.test('enlace enviado y la propuesta EN_FIRMA; la URL nunca vuelve al asesor', () => {",
+                  "  pm.expect(r.__typename).to.eql('EnlaceEnviado');",
+                  "  pm.expect(r.propuesta.estado).to.eql('EN_FIRMA');",
+                  "  pm.expect(JSON.stringify(r)).to.not.include('#t=');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID!) {\\n  emitirPropuesta(propuestaId: $p) {\\n    __typename\\n    ... on EnlaceEnviado { correoEnmascarado venceEn propuesta { estado } }\\n    ... on Propuesta { estado }\\n    ... on ErrorEmision { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6a_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.12 stub de notificaciones: el enlace llegó al correo del titular",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (Number(pm.collectionVariables.get('sondeo') || 0) > 0) { setTimeout(() => {}, 500); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const avisos = pm.response.json().filter(a => a.plantilla === 'enlace-firma' && a.destino_huella === CryptoJS.SHA256(pm.collectionVariables.get('correo_vendido')).toString().slice(0, 12));",
+                  "const intentos = Number(pm.collectionVariables.get('sondeo') || 0) + 1;",
+                  "if (avisos.length === 0 && intentos < 40) {",
+                  "  pm.collectionVariables.set('sondeo', intentos);",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.set('sondeo', 0);",
+                  "  pm.test('el aviso salió', () => pm.expect(avisos).to.not.be.empty);",
+                  "  const aviso = avisos[avisos.length - 1];",
+                  "  pm.test('el token del enlace va en el fragmento (#t=), no en la ruta', () => {",
+                  "    pm.expect(aviso.datos.enlace).to.include('/firma#t=');",
+                  "  });",
+                  "  pm.collectionVariables.set('w6a_enlace_viejo', aviso.datos.enlace.split('#t=')[1]);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{stub_notificaciones_url}}/control/enviados",
+              "host": [
+                "{{stub_notificaciones_url}}"
+              ],
+              "path": [
+                "control",
+                "enviados"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.13 reenviarEnlaceFirma -> EnlaceEnviado (anula el anterior)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.reenviarEnlaceFirma : undefined;",
+                  "pm.test('enlace reenviado', () => pm.expect(r.__typename).to.eql('EnlaceEnviado'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID!) {\\n  reenviarEnlaceFirma(propuestaId: $p) {\\n    __typename\\n    ... on EnlaceEnviado { venceEn }\\n    ... on ErrorEmision { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6a_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.14 stub de notificaciones: llegó un enlace nuevo",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (Number(pm.collectionVariables.get('sondeo') || 0) > 0) { setTimeout(() => {}, 500); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const avisos = pm.response.json().filter(a => a.plantilla === 'enlace-firma' && a.destino_huella === CryptoJS.SHA256(pm.collectionVariables.get('correo_vendido')).toString().slice(0, 12) && a.datos.enlace.split('#t=')[1] !== pm.collectionVariables.get('w6a_enlace_viejo'));",
+                  "const intentos = Number(pm.collectionVariables.get('sondeo') || 0) + 1;",
+                  "if (avisos.length === 0 && intentos < 40) {",
+                  "  pm.collectionVariables.set('sondeo', intentos);",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.set('sondeo', 0);",
+                  "  pm.test('el aviso salió', () => pm.expect(avisos).to.not.be.empty);",
+                  "  const aviso = avisos[avisos.length - 1];",
+                  "  pm.collectionVariables.set('w6a_enlace', aviso.datos.enlace.split('#t=')[1]);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{stub_notificaciones_url}}/control/enviados",
+              "host": [
+                "{{stub_notificaciones_url}}"
+              ],
+              "path": [
+                "control",
+                "enviados"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.15 firmaPorEnlace con el enlace anulado -> vigente false",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.firmaPorEnlace : undefined;",
+                  "pm.test('el enlace anterior ya no sirve (ENLACE_VENCIDO para la web)', () => {",
+                  "  pm.expect(r === null || r.vigente === false).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w6a_enlace_viejo}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: ID) {\\n  firmaPorEnlace(propuestaId: $p) {\\n    vigente venceEn\\n    propuesta { id estado }\\n    documento { version }\\n  }\\n}\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.16 firmaPorEnlace con un token inventado -> no revela nada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.request.headers.upsert({ key: 'X-Enlace-Firma', value: 'token-que-no-existe-0000000000000' });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.firmaPorEnlace : undefined;",
+                  "pm.test('sin propuesta ni documento', () => pm.expect(r === null || r.vigente === false).to.be.true);",
+                  "pm.test('no expone datos de ninguna propuesta', () => pm.expect(JSON.stringify(r || {})).to.not.include('documento\":{'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w6a_enlace_viejo}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: ID) {\\n  firmaPorEnlace(propuestaId: $p) {\\n    vigente venceEn\\n    propuesta { id estado }\\n    documento { version }\\n  }\\n}\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.17 firmaPorEnlace con el enlace vigente -> documento a firmar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.firmaPorEnlace : undefined;",
+                  "pm.test('vigente, EN_FIRMA y con la versión del documento', () => {",
+                  "  pm.expect(r.vigente).to.be.true;",
+                  "  pm.expect(r.propuesta.estado).to.eql('EN_FIRMA');",
+                  "  pm.expect(r.documento.version).to.be.a('string');",
+                  "});",
+                  "pm.collectionVariables.set('w6a_version', r.documento.version);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w6a_enlace}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: ID) {\\n  firmaPorEnlace(propuestaId: $p) {\\n    vigente venceEn\\n    propuesta { id estado }\\n    documento { version }\\n  }\\n}\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.18 solicitarSubidaFirma (firma-invalida.png)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.solicitarSubidaFirma : undefined;",
+                  "pm.test('URL firmada para subir la imagen al almacenamiento', () => {",
+                  "  pm.expect(r.__typename).to.eql('SubidaArchivo');",
+                  "  pm.expect(r.url).to.be.a('string');",
+                  "});",
+                  "pm.collectionVariables.set('w6a_mala_archivo', r.archivo.id);",
+                  "pm.collectionVariables.set('w6a_mala_url_subida', r.url);",
+                  "pm.collectionVariables.set('w6a_mala_cab_subida', JSON.stringify(r.encabezados));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w6a_enlace}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($t: String!, $n: Int!, $p: ID) {\\n  solicitarSubidaFirma(tipoContenido: $t, tamanoBytes: $n, propuestaId: $p) {\\n    __typename\\n    ... on SubidaArchivo { archivo { id } url encabezados { nombre valor } }\\n    ... on ErrorArchivo { codigo mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"t\": \"image/png\",\n    \"n\": 327\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.19 PUT de firma-invalida.png a la URL firmada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "JSON.parse(pm.collectionVariables.get('w6a_mala_cab_subida')).forEach(c =>",
+                  "  pm.request.headers.upsert({ key: c.nombre, value: c.valor }));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('la imagen quedó en el bucket', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{w6a_mala_url_subida}}",
+              "host": [
+                "{{w6a_mala_url_subida}}"
+              ],
+              "path": []
+            },
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": "tests/newman/archivos/firma-invalida.png"
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.20 firmarPorEnlace IMAGEN con una imagen sin fondo -> IMAGEN_INVALIDA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.firmarPorEnlace : undefined;",
+                  "pm.test('IMAGEN_INVALIDA y se puede subir otra', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorFirma');",
+                  "  pm.expect(r.motivo).to.eql('IMAGEN_INVALIDA');",
+                  "  pm.expect(r.puedeReintentar).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w6a_enlace}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: FirmarPorEnlaceInput!) {\\n  firmarPorEnlace(entrada: $e) {\\n    __typename\\n    ... on FirmaRegistrada { estado referencia }\\n    ... on ErrorFirma { mensaje motivo puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"versionDocumento\": \"{{w6a_version}}\",\n      \"aceptaTerminos\": true,\n      \"autorizaCobro\": true,\n      \"modo\": \"IMAGEN\",\n      \"imagenArchivoId\": \"{{w6a_mala_archivo}}\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.21 solicitarSubidaFirma (firma-valida.png)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.solicitarSubidaFirma : undefined;",
+                  "pm.test('URL firmada para subir la imagen al almacenamiento', () => {",
+                  "  pm.expect(r.__typename).to.eql('SubidaArchivo');",
+                  "  pm.expect(r.url).to.be.a('string');",
+                  "});",
+                  "pm.collectionVariables.set('w6a_archivo', r.archivo.id);",
+                  "pm.collectionVariables.set('w6a_url_subida', r.url);",
+                  "pm.collectionVariables.set('w6a_cab_subida', JSON.stringify(r.encabezados));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w6a_enlace}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($t: String!, $n: Int!, $p: ID) {\\n  solicitarSubidaFirma(tipoContenido: $t, tamanoBytes: $n, propuestaId: $p) {\\n    __typename\\n    ... on SubidaArchivo { archivo { id } url encabezados { nombre valor } }\\n    ... on ErrorArchivo { codigo mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"t\": \"image/png\",\n    \"n\": 385\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.22 PUT de firma-valida.png a la URL firmada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "JSON.parse(pm.collectionVariables.get('w6a_cab_subida')).forEach(c =>",
+                  "  pm.request.headers.upsert({ key: c.nombre, value: c.valor }));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('la imagen quedó en el bucket', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{w6a_url_subida}}",
+              "host": [
+                "{{w6a_url_subida}}"
+              ],
+              "path": []
+            },
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": "tests/newman/archivos/firma-valida.png"
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.23 firmarPorEnlace IMAGEN -> FIRMADA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.firmarPorEnlace : undefined;",
+                  "pm.test('firma registrada con su referencia', () => {",
+                  "  pm.expect(r.__typename).to.eql('FirmaRegistrada');",
+                  "  pm.expect(r.estado).to.eql('FIRMADA');",
+                  "  pm.expect(r.referencia).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w6a_enlace}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: FirmarPorEnlaceInput!) {\\n  firmarPorEnlace(entrada: $e) {\\n    __typename\\n    ... on FirmaRegistrada { estado referencia }\\n    ... on ErrorFirma { mensaje motivo puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"versionDocumento\": \"{{w6a_version}}\",\n      \"aceptaTerminos\": true,\n      \"autorizaCobro\": true,\n      \"modo\": \"IMAGEN\",\n      \"imagenArchivoId\": \"{{w6a_archivo}}\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.24 iniciarPago por el enlace -> SesionPago",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.iniciarPago : undefined;",
+                  "pm.test('sesión de pago en la página de la pasarela', () => {",
+                  "  pm.expect(r.__typename).to.eql('SesionPago');",
+                  "  pm.expect(r.urlPago).to.include('/checkout/');",
+                  "});",
+                  "pm.collectionVariables.set('w6a_sesion', r.sesionId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w6a_enlace}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID) {\\n  iniciarPago(propuestaId: $p) {\\n    __typename\\n    ... on SesionPago { sesionId urlPago venceEn }\\n    ... on ErrorPago { mensaje motivo fallosSeguidos puedeReintentar }\\n  }\\n}\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.25 el titular paga en la pasarela (tarjeta aprobada)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('la pasarela recibió el pago', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/checkout/{{w6a_sesion}}/pagar",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "checkout",
+                "{{w6a_sesion}}",
+                "pagar"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numero\": \"4242424242424242\",\n  \"nombre\": \"Titular Newman\",\n  \"vencimiento\": \"12/30\",\n  \"cvv\": \"123\",\n  \"tipo\": \"CREDITO\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.26 Stub pasarela -> modo caido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('modo caido', () => pm.expect(pm.response.json().modo).to.eql('caido'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/control/modo",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "control",
+                "modo"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"modo\": \"caido\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.27 confirmarPago con la pasarela sin responder -> PASARELA_NO_DISPONIBLE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.confirmarPago : undefined;",
+                  "pm.test('error con reintento, sin póliza todavía', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorPago');",
+                  "  pm.expect(r.motivo).to.eql('PASARELA_NO_DISPONIBLE');",
+                  "  pm.expect(r.fallosSeguidos).to.eql(1);",
+                  "  pm.expect(r.puedeReintentar).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w6a_enlace}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($s: ID!, $p: ID) {\\n  confirmarPago(sesionId: $s, propuestaId: $p) {\\n    __typename\\n    ... on Poliza { id numero estado }\\n    ... on ErrorPago { mensaje motivo fallosSeguidos puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"s\": \"{{w6a_sesion}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.28 Stub pasarela -> modo sano",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('modo sano', () => pm.expect(pm.response.json().modo).to.eql('sano'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/control/modo",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "control",
+                "modo"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"modo\": \"sano\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.29 ACL: esperar a que los circuitos cierren",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Espera activa: el circuito se recupera fuera del camino síncrono (regla #5).",
+                  "setTimeout(() => {}, 10000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('todos los circuitos cerrados', () => {",
+                  "  const estados = Object.values(pm.response.json());",
+                  "  pm.expect(estados).to.not.be.empty;",
+                  "  estados.forEach(e => pm.expect(e).to.eql('closed'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{acl_url}}/circuitos",
+              "host": [
+                "{{acl_url}}"
+              ],
+              "path": [
+                "circuitos"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.30 confirmarPago otra vez: concilia el pago que sí se hizo -> Poliza",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.confirmarPago : undefined;",
+                  "pm.test('póliza EMITIDA con número', () => {",
+                  "  pm.expect(r.__typename).to.eql('Poliza');",
+                  "  pm.expect(r.estado).to.eql('EMITIDA');",
+                  "  pm.expect(r.numero).to.be.a('string');",
+                  "});",
+                  "pm.collectionVariables.set('w6a_poliza', r.id);",
+                  "pm.collectionVariables.set('w6a_numero', r.numero);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w6a_enlace}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($s: ID!, $p: ID) {\\n  confirmarPago(sesionId: $s, propuestaId: $p) {\\n    __typename\\n    ... on Poliza { id numero estado }\\n    ... on ErrorPago { mensaje motivo fallosSeguidos puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"s\": \"{{w6a_sesion}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.31 confirmarPago repetido -> la misma póliza (sin doble cobro)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.confirmarPago : undefined;",
+                  "pm.test('misma póliza', () => pm.expect(r.numero).to.eql(pm.collectionVariables.get('w6a_numero')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w6a_enlace}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($s: ID!, $p: ID) {\\n  confirmarPago(sesionId: $s, propuestaId: $p) {\\n    __typename\\n    ... on Poliza { id numero estado }\\n    ... on ErrorPago { mensaje motivo fallosSeguidos puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"s\": \"{{w6a_sesion}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.32 stub de notificaciones: aviso de póliza al titular con el PDF",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (Number(pm.collectionVariables.get('sondeo') || 0) > 0) { setTimeout(() => {}, 500); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const avisos = pm.response.json().filter(a => a.referencia_comercio === 'poliza-emitida-' + pm.collectionVariables.get('w6a_poliza'));",
+                  "const intentos = Number(pm.collectionVariables.get('sondeo') || 0) + 1;",
+                  "if (avisos.length === 0 && intentos < 40) {",
+                  "  pm.collectionVariables.set('sondeo', intentos);",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.set('sondeo', 0);",
+                  "  pm.test('el aviso salió', () => pm.expect(avisos).to.not.be.empty);",
+                  "  const aviso = avisos[avisos.length - 1];",
+                  "  pm.test('al correo del titular, con el PDF adjunto', () => {",
+                  "    pm.expect(aviso.destino_huella).to.eql(CryptoJS.SHA256(pm.collectionVariables.get('correo_vendido')).toString().slice(0, 12));",
+                  "    pm.expect(aviso.adjuntos[0].es_pdf).to.be.true;",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{stub_notificaciones_url}}/control/enviados",
+              "host": [
+                "{{stub_notificaciones_url}}"
+              ],
+              "path": [
+                "control",
+                "enviados"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.33 stub de notificaciones: aviso de póliza al asesor",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (Number(pm.collectionVariables.get('sondeo') || 0) > 0) { setTimeout(() => {}, 500); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const avisos = pm.response.json().filter(a => a.plantilla === 'poliza-emitida-asesor' && JSON.stringify(a).includes(pm.collectionVariables.get('w6a_poliza')));",
+                  "const intentos = Number(pm.collectionVariables.get('sondeo') || 0) + 1;",
+                  "if (avisos.length === 0 && intentos < 40) {",
+                  "  pm.collectionVariables.set('sondeo', intentos);",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.set('sondeo', 0);",
+                  "  pm.test('el aviso salió', () => pm.expect(avisos).to.not.be.empty);",
+                  "  const aviso = avisos[avisos.length - 1];",
+                  "  pm.test('plantilla poliza-emitida-asesor', () => pm.expect(aviso.plantilla).to.eql('poliza-emitida-asesor'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{stub_notificaciones_url}}/control/enviados",
+              "host": [
+                "{{stub_notificaciones_url}}"
+              ],
+              "path": [
+                "control",
+                "enviados"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.34 propuestas del ASESOR: ve la que vendió, con el nombre del titular",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.propuestas : undefined;",
+                  "const p = r.propuestas.find(x => x.id === pm.collectionVariables.get('w6a_prop'));",
+                  "pm.test('la propuesta vendida sale EMITIDA con su póliza y el nombre del titular', () => {",
+                  "  pm.expect(p).to.not.be.undefined;",
+                  "  pm.expect(p.estadoVisible).to.eql('EMITIDA');",
+                  "  pm.expect(p.poliza.numero).to.eql(pm.collectionVariables.get('w6a_numero'));",
+                  "  pm.expect(p.nombreTitular).to.eql('Titular Vendido Newman');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  propuestas {\\n    total\\n    propuestas { id estado estadoVisible nombreTitular poliza { id numero } }\\n  }\\n}\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.35 el titular vendido abre su cuenta (crearUsuario CLIENTE con su documento)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.crearUsuario : undefined;",
+                  "pm.test('CLIENTE creado', () => pm.expect(r.__typename).to.eql('Usuario'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_vendido}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Titular Vendido Newman\",\n      \"correo\": \"{{correo_vendido}}\",\n      \"documentoIdentidad\": \"{{doc_vendido}}\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.36 iniciarSesion del titular vendido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.iniciarSesion : undefined;",
+                  "pm.test('sesión', () => pm.expect(r.__typename).to.eql('Sesion'));",
+                  "pm.collectionVariables.set('token_vendido', r.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CredencialesInput!) {\\n  iniciarSesion(entrada: $entrada) {\\n    __typename\\n    ... on Sesion { token }\\n    ... on ErrorAutenticacion { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_vendido}}\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.37 propuestas del titular verificado: ve la póliza que le vendió el asesor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.propuestas : undefined;",
+                  "const p = r.propuestas.find(x => x.id === pm.collectionVariables.get('w6a_prop'));",
+                  "pm.test('la ve EMITIDA, sin el nombre del titular (solo para ASESOR y BACKOFFICE)', () => {",
+                  "  pm.expect(p).to.not.be.undefined;",
+                  "  pm.expect(p.estadoVisible).to.eql('EMITIDA');",
+                  "  pm.expect(p.nombreTitular).to.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  propuestas {\\n    total\\n    propuestas { id estado estadoVisible nombreTitular poliza { id numero } }\\n  }\\n}\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_vendido}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.38 propuestas de otro CLIENTE: no ve la póliza ajena",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.propuestas : undefined;",
+                  "pm.test('no aparece', () => pm.expect(r.propuestas.map(x => x.id)).to.not.include(pm.collectionVariables.get('w6a_prop')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  propuestas {\\n    total\\n    propuestas { id estado estadoVisible nombreTitular poliza { id numero } }\\n  }\\n}\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_ajeno}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.39 registrarConsentimiento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.registrarConsentimiento : undefined;",
+                  "pm.test('consentimiento vigente', () => pm.expect(r.vigente).to.be.true);",
+                  "pm.collectionVariables.set('w6c_cons', r.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: ConsentimientoInput!) {\\n  registrarConsentimiento(entrada: $entrada) { id vigente }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"finalidad\": \"cotizacion-vida-hipotecario\",\n      \"versionTexto\": \"v1\",\n      \"tipoDato\": \"financiero\",\n      \"fuenteDatos\": \"open-finance\",\n      \"canal\": \"web\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.40 solicitarOferta -> COMPLETA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.solicitarOferta : undefined;",
+                  "pm.test('oferta COMPLETA', () => {",
+                  "  pm.expect(r.__typename).to.eql('Oferta');",
+                  "  pm.expect(r.tipo).to.eql('COMPLETA');",
+                  "});",
+                  "pm.collectionVariables.set('w6c_oferta', r.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n    __typename\\n    ... on Oferta { id tipo }\\n    ... on ErrorOferta { mensaje motivo }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{w6c_cons}}\",\n      \"valorCredito\": \"200000000\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Calle 100 # 10-20, Bogotá\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.41 aceptarOferta del CLIENTE (sin contacto) -> ACEPTADA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.aceptarOferta : undefined;",
+                  "pm.test('ACEPTADA', () => pm.expect(r.estado).to.eql('ACEPTADA'));",
+                  "pm.collectionVariables.set('w6c_prop', r.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($o: ID!, $c: ContactoTitularInput) {\\n  aceptarOferta(ofertaId: $o, contacto: $c) {\\n    __typename\\n    ... on Propuesta { id estado }\\n    ... on ErrorAceptacion { mensaje motivo }\\n  }\\n}\",\n  \"variables\": {\n    \"o\": \"{{w6c_oferta}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.42 firmaPorEnlace de otro CLIENTE -> como si no existiera",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.firmaPorEnlace : undefined;",
+                  "pm.test('no ve la propuesta ajena (igual que una inexistente)', () => {",
+                  "  pm.expect(r === null || r === undefined || r.propuesta === null).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: ID) {\\n  firmaPorEnlace(propuestaId: $p) {\\n    vigente venceEn\\n    propuesta { id estado }\\n    documento { version }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6c_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_ajeno}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.43 emitirPropuesta del CLIENTE («Firmar», sin enlace) -> EN_FIRMA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.emitirPropuesta : undefined;",
+                  "pm.test('EN_FIRMA sin mandar enlace', () => {",
+                  "  pm.expect(r.__typename).to.eql('Propuesta');",
+                  "  pm.expect(r.estado).to.eql('EN_FIRMA');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID!) {\\n  emitirPropuesta(propuestaId: $p) {\\n    __typename\\n    ... on EnlaceEnviado { correoEnmascarado venceEn propuesta { estado } }\\n    ... on Propuesta { estado }\\n    ... on ErrorEmision { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6c_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.44 firmaPorEnlace con la sesión del CLIENTE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.firmaPorEnlace : undefined;",
+                  "pm.test('vigente y con la versión del documento', () => pm.expect(r.vigente).to.be.true);",
+                  "pm.collectionVariables.set('w6c_version', r.documento.version);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: ID) {\\n  firmaPorEnlace(propuestaId: $p) {\\n    vigente venceEn\\n    propuesta { id estado }\\n    documento { version }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6c_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.45 firmarPorEnlace NOMBRE -> FIRMADA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.firmarPorEnlace : undefined;",
+                  "pm.test('FIRMADA', () => pm.expect(r.estado).to.eql('FIRMADA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: FirmarPorEnlaceInput!) {\\n  firmarPorEnlace(entrada: $e) {\\n    __typename\\n    ... on FirmaRegistrada { estado referencia }\\n    ... on ErrorFirma { mensaje motivo puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"propuestaId\": \"{{w6c_prop}}\",\n      \"versionDocumento\": \"{{w6c_version}}\",\n      \"aceptaTerminos\": true,\n      \"autorizaCobro\": true,\n      \"modo\": \"NOMBRE\",\n      \"nombreFirma\": \"Cliente Newman Titular\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.46 iniciarPago del CLIENTE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.iniciarPago : undefined;",
+                  "pm.test('SesionPago', () => pm.expect(r.__typename).to.eql('SesionPago'));",
+                  "pm.collectionVariables.set('w6c_sesion', r.sesionId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID) {\\n  iniciarPago(propuestaId: $p) {\\n    __typename\\n    ... on SesionPago { sesionId urlPago venceEn }\\n    ... on ErrorPago { mensaje motivo fallosSeguidos puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6c_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.47 pago rechazado en la pasarela (fondos insuficientes)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('la pasarela recibió el pago', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/checkout/{{w6c_sesion}}/pagar",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "checkout",
+                "{{w6c_sesion}}",
+                "pagar"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numero\": \"4000000000000002\",\n  \"nombre\": \"Titular Newman\",\n  \"vencimiento\": \"12/30\",\n  \"cvv\": \"123\",\n  \"tipo\": \"DEBITO\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.48 confirmarPago -> FONDOS_INSUFICIENTES (un rechazo no cuenta como falla)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.confirmarPago : undefined;",
+                  "pm.test('rechazo con su motivo, se reintenta con otra tarjeta', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorPago');",
+                  "  pm.expect(r.motivo).to.eql('FONDOS_INSUFICIENTES');",
+                  "  pm.expect(r.fallosSeguidos).to.eql(0);",
+                  "  pm.expect(r.puedeReintentar).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($s: ID!, $p: ID) {\\n  confirmarPago(sesionId: $s, propuestaId: $p) {\\n    __typename\\n    ... on Poliza { id numero estado }\\n    ... on ErrorPago { mensaje motivo fallosSeguidos puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"s\": \"{{w6c_sesion}}\",\n    \"p\": \"{{w6c_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.49 Stub pasarela -> modo caido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('modo caido', () => pm.expect(pm.response.json().modo).to.eql('caido'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/control/modo",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "control",
+                "modo"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"modo\": \"caido\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.50 iniciarPago con la pasarela caída (falla 1) -> PASARELA_NO_DISPONIBLE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.iniciarPago : undefined;",
+                  "pm.test('PASARELA_NO_DISPONIBLE con 1 fallo(s) seguido(s), nunca un 5xx', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorPago');",
+                  "  pm.expect(r.motivo).to.eql('PASARELA_NO_DISPONIBLE');",
+                  "  pm.expect(r.fallosSeguidos).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID) {\\n  iniciarPago(propuestaId: $p) {\\n    __typename\\n    ... on SesionPago { sesionId urlPago venceEn }\\n    ... on ErrorPago { mensaje motivo fallosSeguidos puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6c_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.51 iniciarPago con la pasarela caída (falla 2) -> PASARELA_NO_DISPONIBLE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.iniciarPago : undefined;",
+                  "pm.test('PASARELA_NO_DISPONIBLE con 2 fallo(s) seguido(s), nunca un 5xx', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorPago');",
+                  "  pm.expect(r.motivo).to.eql('PASARELA_NO_DISPONIBLE');",
+                  "  pm.expect(r.fallosSeguidos).to.eql(2);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID) {\\n  iniciarPago(propuestaId: $p) {\\n    __typename\\n    ... on SesionPago { sesionId urlPago venceEn }\\n    ... on ErrorPago { mensaje motivo fallosSeguidos puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6c_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.52 iniciarPago con la pasarela caída (falla 3) -> REQUIERE_OTRA_TARJETA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.iniciarPago : undefined;",
+                  "pm.test('REQUIERE_OTRA_TARJETA con 3 fallo(s) seguido(s), nunca un 5xx', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorPago');",
+                  "  pm.expect(r.motivo).to.eql('REQUIERE_OTRA_TARJETA');",
+                  "  pm.expect(r.fallosSeguidos).to.eql(3);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID) {\\n  iniciarPago(propuestaId: $p) {\\n    __typename\\n    ... on SesionPago { sesionId urlPago venceEn }\\n    ... on ErrorPago { mensaje motivo fallosSeguidos puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6c_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.53 Stub pasarela -> modo sano",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('modo sano', () => pm.expect(pm.response.json().modo).to.eql('sano'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/control/modo",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "control",
+                "modo"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"modo\": \"sano\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.54 ACL: esperar a que los circuitos cierren",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Espera activa: el circuito se recupera fuera del camino síncrono (regla #5).",
+                  "setTimeout(() => {}, 10000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('todos los circuitos cerrados', () => {",
+                  "  const estados = Object.values(pm.response.json());",
+                  "  pm.expect(estados).to.not.be.empty;",
+                  "  estados.forEach(e => pm.expect(e).to.eql('closed'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{acl_url}}/circuitos",
+              "host": [
+                "{{acl_url}}"
+              ],
+              "path": [
+                "circuitos"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.55 iniciarPago de nuevo (el contador arrancó en 0)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.iniciarPago : undefined;",
+                  "pm.test('SesionPago', () => pm.expect(r.__typename).to.eql('SesionPago'));",
+                  "pm.collectionVariables.set('w6c_sesion', r.sesionId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID) {\\n  iniciarPago(propuestaId: $p) {\\n    __typename\\n    ... on SesionPago { sesionId urlPago venceEn }\\n    ... on ErrorPago { mensaje motivo fallosSeguidos puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6c_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.56 pago aprobado con otra tarjeta (débito)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('la pasarela recibió el pago', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{stub_pasarela_url}}/checkout/{{w6c_sesion}}/pagar",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "checkout",
+                "{{w6c_sesion}}",
+                "pagar"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numero\": \"4242424242424242\",\n  \"nombre\": \"Titular Newman\",\n  \"vencimiento\": \"12/30\",\n  \"cvv\": \"123\",\n  \"tipo\": \"DEBITO\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.57 confirmarPago -> Poliza EMITIDA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.confirmarPago : undefined;",
+                  "pm.test('póliza EMITIDA', () => pm.expect(r.estado).to.eql('EMITIDA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($s: ID!, $p: ID) {\\n  confirmarPago(sesionId: $s, propuestaId: $p) {\\n    __typename\\n    ... on Poliza { id numero estado }\\n    ... on ErrorPago { mensaje motivo fallosSeguidos puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"s\": \"{{w6c_sesion}}\",\n    \"p\": \"{{w6c_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.58 «Mis pólizas» del CLIENTE: la suya EMITIDA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.propuestas : undefined;",
+                  "const p = r.propuestas.find(x => x.id === pm.collectionVariables.get('w6c_prop'));",
+                  "pm.test('EMITIDA con su póliza', () => {",
+                  "  pm.expect(p.estadoVisible).to.eql('EMITIDA');",
+                  "  pm.expect(p.poliza).to.not.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  propuestas {\\n    total\\n    propuestas { id estado estadoVisible nombreTitular poliza { id numero } }\\n  }\\n}\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_titular}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.59 propuestas del ASESOR: no ve las del CLIENTE que no vendió",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.propuestas : undefined;",
+                  "pm.test('no aparece', () => pm.expect(r.propuestas.map(x => x.id)).to.not.include(pm.collectionVariables.get('w6c_prop')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  propuestas {\\n    total\\n    propuestas { id estado estadoVisible nombreTitular poliza { id numero } }\\n  }\\n}\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.60 registrarConsentimiento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.registrarConsentimiento : undefined;",
+                  "pm.test('consentimiento vigente', () => pm.expect(r.vigente).to.be.true);",
+                  "pm.collectionVariables.set('w6t_cons', r.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: ConsentimientoInput!) {\\n  registrarConsentimiento(entrada: $entrada) { id vigente }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"finalidad\": \"cotizacion-vida-hipotecario\",\n      \"versionTexto\": \"v1\",\n      \"tipoDato\": \"financiero\",\n      \"fuenteDatos\": \"open-finance\",\n      \"canal\": \"web\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_ajeno}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.61 solicitarOferta -> COMPLETA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.solicitarOferta : undefined;",
+                  "pm.test('oferta COMPLETA', () => {",
+                  "  pm.expect(r.__typename).to.eql('Oferta');",
+                  "  pm.expect(r.tipo).to.eql('COMPLETA');",
+                  "});",
+                  "pm.collectionVariables.set('w6t_oferta', r.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $entrada) {\\n    __typename\\n    ... on Oferta { id tipo }\\n    ... on ErrorOferta { mensaje motivo }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"consentimientoId\": \"{{w6t_cons}}\",\n      \"valorCredito\": \"200000000\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Calle 100 # 10-20, Bogotá\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_ajeno}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.62 aceptarOferta (otro CLIENTE)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.aceptarOferta : undefined;",
+                  "pm.collectionVariables.set('w6t_prop', r.id);",
+                  "pm.test('ACEPTADA', () => pm.expect(r.estado).to.eql('ACEPTADA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($o: ID!, $c: ContactoTitularInput) {\\n  aceptarOferta(ofertaId: $o, contacto: $c) {\\n    __typename\\n    ... on Propuesta { id estado }\\n    ... on ErrorAceptacion { mensaje motivo }\\n  }\\n}\",\n  \"variables\": {\n    \"o\": \"{{w6t_oferta}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_ajeno}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.63 emitirPropuesta (otro CLIENTE)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.emitirPropuesta : undefined;",
+                  "pm.test('EN_FIRMA', () => pm.expect(r.estado).to.eql('EN_FIRMA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID!) {\\n  emitirPropuesta(propuestaId: $p) {\\n    __typename\\n    ... on EnlaceEnviado { correoEnmascarado venceEn propuesta { estado } }\\n    ... on Propuesta { estado }\\n    ... on ErrorEmision { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6t_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_ajeno}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.64 firmaPorEnlace (otro CLIENTE)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.firmaPorEnlace : undefined;",
+                  "pm.collectionVariables.set('w6t_version', r.documento.version);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: ID) {\\n  firmaPorEnlace(propuestaId: $p) {\\n    vigente venceEn\\n    propuesta { id estado }\\n    documento { version }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": \"{{w6t_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_ajeno}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.65 solicitarSubidaFirma (firma-valida.png)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.solicitarSubidaFirma : undefined;",
+                  "pm.test('URL firmada para subir la imagen al almacenamiento', () => {",
+                  "  pm.expect(r.__typename).to.eql('SubidaArchivo');",
+                  "  pm.expect(r.url).to.be.a('string');",
+                  "});",
+                  "pm.collectionVariables.set('w6t_archivo', r.archivo.id);",
+                  "pm.collectionVariables.set('w6t_url_subida', r.url);",
+                  "pm.collectionVariables.set('w6t_cab_subida', JSON.stringify(r.encabezados));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($t: String!, $n: Int!, $p: ID) {\\n  solicitarSubidaFirma(tipoContenido: $t, tamanoBytes: $n, propuestaId: $p) {\\n    __typename\\n    ... on SubidaArchivo { archivo { id } url encabezados { nombre valor } }\\n    ... on ErrorArchivo { codigo mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"t\": \"image/png\",\n    \"n\": 385,\n    \"p\": \"{{w6t_prop}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_ajeno}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.66 PUT de firma-valida.png a la URL firmada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "JSON.parse(pm.collectionVariables.get('w6t_cab_subida')).forEach(c =>",
+                  "  pm.request.headers.upsert({ key: c.nombre, value: c.valor }));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('la imagen quedó en el bucket', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{w6t_url_subida}}",
+              "host": [
+                "{{w6t_url_subida}}"
+              ],
+              "path": []
+            },
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": "tests/newman/archivos/firma-valida.png"
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "6.67 firmarPorEnlace TRAZO -> FIRMADA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.firmarPorEnlace : undefined;",
+                  "pm.test('FIRMADA', () => pm.expect(r.estado).to.eql('FIRMADA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: FirmarPorEnlaceInput!) {\\n  firmarPorEnlace(entrada: $e) {\\n    __typename\\n    ... on FirmaRegistrada { estado referencia }\\n    ... on ErrorFirma { mensaje motivo puedeReintentar }\\n  }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"propuestaId\": \"{{w6t_prop}}\",\n      \"versionDocumento\": \"{{w6t_version}}\",\n      \"aceptaTerminos\": true,\n      \"autorizaCobro\": true,\n      \"modo\": \"TRAZO\",\n      \"imagenArchivoId\": \"{{w6t_archivo}}\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_ajeno}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6.68 BACKOFFICE: ve todas las propuestas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data ? cuerpo.data.propuestas : undefined;",
+                  "const ids = r.propuestas.map(x => x.id);",
+                  "pm.test('el BACKOFFICE ve las de todos', () => pm.expect(r.total).to.be.at.least(3));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  propuestas {\\n    total\\n    propuestas { id estado estadoVisible nombreTitular poliza { id numero } }\\n  }\\n}\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
