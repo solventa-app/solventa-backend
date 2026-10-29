@@ -1,6 +1,13 @@
 # Configuración de Envoy local que replica el API Gateway de GCP (ESPv2 corre sobre Envoy).
 # Escucha en :8080 y reenvía al BFF (bff:8000) con el mismo corte duro de 700 ms (timeout: 0.7s).
 # Sincronizado con infra/gateway/openapi.yaml mediante scripts/validar_gateway.py.
+# El admin (:9901) solo se usa dentro de compose: Prometheus lee de ahí las métricas del borde para la
+# salud del sistema (HU-W07). No se publica en el host.
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
 static_resources:
   listeners:
     - name: listener_gateway

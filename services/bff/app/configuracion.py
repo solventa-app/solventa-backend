@@ -49,6 +49,14 @@ class Configuracion:
     autenticacion_usuarios: str
     # Mesa de siniestros (HU-W04): `siniestros`, `aprobarSiniestro`...
     claims_url: str = "http://localhost:8012"
+    # Salud del sistema (HU-W07, bloque 6): el BFF solo les pide `/health` a UNDER y al
+    # consolidador.
+    under_url: str = "http://localhost:8008"
+    consolidador_url: str = "http://localhost:8006"
+    # "ninguna" (CI y pruebas: solo `/health`), "prometheus" (local) o "monitoring" (Cloud Run).
+    metricas_fuente: str = "ninguna"
+    prometheus_url: str = "http://localhost:9190"
+    gcp_proyecto: str = ""
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -84,6 +92,11 @@ class Configuracion:
             url_front=os.getenv("URL_FRONT", "http://localhost:5173").rstrip("/"),
             onboarding_url=os.getenv("ONBOARDING_URL", "http://localhost:8010"),
             claims_url=os.getenv("CLAIMS_URL", "http://localhost:8012"),
+            under_url=os.getenv("UNDER_URL", "http://localhost:8008"),
+            consolidador_url=os.getenv("CONSOLIDADOR_URL", "http://localhost:8006"),
+            metricas_fuente=os.getenv("METRICAS_FUENTE", "ninguna"),
+            prometheus_url=os.getenv("PROMETHEUS_URL", "http://localhost:9190"),
+            gcp_proyecto=os.getenv("GCP_PROYECTO", os.getenv("GOOGLE_CLOUD_PROJECT", "")),
             # El ACL Worker corta a los 700 ms (EC009/EC010) y degrada; el margen
             # cubre la red y su propia respuesta degradada.
             acl_timeout_segundos=float(os.getenv("ACL_TIMEOUT_SEGUNDOS", "1.0")),

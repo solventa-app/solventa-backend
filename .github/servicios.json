@@ -4,10 +4,11 @@
     "ruta": "services/bff",
     "instancia_fija": true,
     "puerto": 8000,
-    "llama": ["auth", "acl-worker", "risk", "rating", "payments", "policy", "almacenamiento", "onboarding", "claims"],
+    "llama": ["auth", "acl-worker", "risk", "rating", "payments", "policy", "almacenamiento", "onboarding", "claims", "under", "consolidador-fuentes"],
     "entorno": {
       "AUTENTICACION_SERVICIOS": "id_token",
       "TRAZAS_GCP": "true",
+      "METRICAS_FUENTE": "monitoring",
       "SERVICIOS_TIMEOUT_SEGUNDOS": "15",
       "ACL_TIMEOUT_SEGUNDOS": "15"
     },

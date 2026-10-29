@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
 from typing import Any
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
@@ -28,11 +29,18 @@ from app.autenticacion_usuarios import (
     extraer_cabecera_autorizacion,
     leer_usuario,
 )
-from app.clientes import Clientes, ErrorServicio, construir_clientes
+from app.clientes import Clientes, ErrorServicio, construir_clientes, construir_sondas
 from app.configuracion import Configuracion
 from app.esquema import schema
 from app.idioma import idioma_de
 from app.observabilidad import configurar_trazas
+from app.salud import (
+    MetricasMonitoring,
+    MetricasPrometheus,
+    ServicioSalud,
+    SinMetricas,
+    sonda_http,
+)
 from app.servicio_firma_pago import ErrorFlujoDatos, ServicioFirmaPago
 from app.servicio_oferta import ServicioOferta
 from app.servicio_suscripcion import MENSAJE_DOCUMENTO_NO_DISPONIBLE, ServicioSuscripcion
@@ -52,7 +60,31 @@ logger_socios = logging.getLogger("bff.socios")
 _CONSUMOS_PENDIENTES: set[asyncio.Task] = set()
 
 
-def create_app(config: Configuracion | None = None, clientes: Clientes | None = None) -> FastAPI:
+async def _siempre() -> bool:
+    return True
+
+
+def _salud_desde_config(config: Configuracion, clientes: Clientes) -> tuple[ServicioSalud, list]:
+    """La salud real: `/health` de cada micro y la fuente de métricas de `METRICAS_FUENTE`."""
+    sondas_http, abiertos = construir_sondas(config)
+    sondas = {nombre: sonda_http(cliente) for nombre, cliente in sondas_http.items()}
+    sondas["bff"] = _siempre  # quien calcula está vivo
+    if config.metricas_fuente == "prometheus":
+        prometheus = httpx.AsyncClient(base_url=config.prometheus_url, timeout=2.0)
+        abiertos.append(prometheus)
+        metricas = MetricasPrometheus(prometheus)
+    elif config.metricas_fuente == "monitoring" and config.gcp_proyecto:
+        metricas = MetricasMonitoring(config.gcp_proyecto)
+    else:
+        metricas = SinMetricas()
+    return ServicioSalud(sondas, clientes.acl.circuitos, metricas), abiertos
+
+
+def create_app(
+    config: Configuracion | None = None,
+    clientes: Clientes | None = None,
+    salud: ServicioSalud | None = None,
+) -> FastAPI:
     """`clientes` permite inyectar dobles de prueba (ver `tests/fakes.py`) sin
     levantar AUTH, ACL Worker, RISK ni RATING. En producción se omite y los
     clientes HTTP se abren en el lifespan (nunca al importar el módulo)."""
@@ -78,6 +110,18 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
             if clientes is None:
                 abiertos.append(almacen)
             app.state.modo_prueba = ModoPrueba(almacen, app.state.clientes.socios)
+        # Salud del sistema (HU-W07). Con dobles y sin `salud`, todos los micros responden.
+        if salud is not None:
+            app.state.salud = salud
+        elif clientes is None:
+            app.state.salud, abiertos_salud = _salud_desde_config(config, app.state.clientes)
+            abiertos.extend(abiertos_salud)
+        else:
+            nombres = ("bff", "auth", "acl-worker", "risk", "rating", "payments", "policy",
+                       "almacenamiento", "under", "consolidador-fuentes")  # fmt: skip
+            app.state.salud = ServicioSalud(
+                {n: _siempre for n in nombres}, app.state.clientes.acl.circuitos
+            )
         try:
             yield
         finally:
@@ -116,6 +160,8 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
                 "cliente_id_clave": config.cliente_id_clave,
                 # Token del recorrido de onboarding (HU-M01): no es una sesión de usuario.
                 "token_onboarding": request.headers.get("x-onboarding-token"),
+                # Salud del sistema (HU-W07): `estadoSistema` del BACKOFFICE.
+                "salud": getattr(app.state, "salud", None),
             }
 
         return contexto
