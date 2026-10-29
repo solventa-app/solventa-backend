@@ -3,9 +3,9 @@
 Uso: `python -m app.sembrar` (tarea `sembrar-siniestros` de docker compose). Solo para local y
 pruebas.
 
-Lee los datos del dummy (`siniestros.json`, `peritos.json` y `medios/`, en `SEMILLA_DIR`) para que
-la web vea los
-mismos casos que con el dummy, y los guarda en el modelo real:
+Lee los datos de `services/claims/semilla/` (`siniestros.json`, `peritos.json` y `medios/`,
+montados en `SEMILLA_DIR`): los mismos 10 casos que tenía el dummy de siniestros, ya retirado
+(W04-13). Los guarda en el modelo real:
 
 - **Pólizas reales:** cada siniestro apunta a la póliza que creó la semilla de POLICY
   (`demo-siniestros-prop-NN`, `python -m app.sembrar_demo`); su id se pide a POLICY.
@@ -17,8 +17,8 @@ mismos casos que con el dummy, y los guarda en el modelo real:
 - **Derivaciones y resoluciones:** se dejan como en los datos, borrando las que haya creado la demo.
 
 Es idempotente (los ids son fijos). `reiniciar` hace lo mismo sin llamar a POLICY ni al
-almacenamiento: conserva la póliza y las evidencias ya guardadas. Las fotos del dummy no traen EXIF:
-la geoetiqueta y las coordenadas las fija la semilla (W04-14).
+almacenamiento: conserva la póliza y las evidencias ya guardadas. Las fotos de la semilla no traen
+EXIF: la geoetiqueta y las coordenadas las fija la semilla (W04-14).
 """
 
 import json

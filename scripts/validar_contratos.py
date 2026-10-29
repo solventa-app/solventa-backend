@@ -13,7 +13,7 @@ RAIZ = Path(__file__).resolve().parent.parent / "contracts"
 def main() -> int:
     errores: list[str] = []
 
-    # schema.graphql (BFF) y los contratos de servicios dummy (p. ej. siniestros.graphql).
+    # schema.graphql (BFF) y cualquier otro contrato GraphQL que se publique en contracts/graphql/.
     for ruta_schema in sorted((RAIZ / "graphql").glob("*.graphql")):
         try:
             build_schema(ruta_schema.read_text(encoding="utf-8"))

@@ -72,7 +72,7 @@ El dummy no tenía base de datos (decisión del plan del front de W04), así que
 | W04-10 | **`/v1/graphql/{web,app,movil}` en el BFF.** Las rutas actuales siguen igual, como alias. Convive con W07, porque la API REST de socios usará `/v1/<recurso>`, sin `graphql`, registrada después | Propuesta |
 | W04-11 | Todas las operaciones con `exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)` | Cerrada |
 | W04-12 | **Contrato v0.21, aditivo.** Se reutilizan `Poliza`, `Monto` y `EstadoPoliza` | Cerrada |
-| W04-13 | **El dummy se conserva, sin borrarlo.** Deja de usarse y se marca obsoleto en su README, en `docs/convenciones.md` y en el encabezado de `contracts/graphql/siniestros.graphql`. Se retira en una tarea aparte cuando el equipo lo decida | Cerrada |
+| W04-13 | **Ejecutada el 2026-10-29: el dummy se retiró** (decisión de Felipe, tras pasar la web al BFF; los datos se movieron a `services/claims/semilla/`). Decisión original: **el dummy se conserva, sin borrarlo.** Deja de usarse y se marca obsoleto en su README, en `docs/convenciones.md` y en el encabezado de `contracts/graphql/siniestros.graphql`. Se retira en una tarea aparte cuando el equipo lo decida | Cerrada |
 | W04-14 | **Geoetiqueta desde el EXIF:** no se trabaja ahora y se anota en el plan del front. El backend guarda `geoetiquetada`, `latitud` y `longitud` por evidencia (por ahora los fija la semilla) | Cerrada |
 | W04-15 | **Reinicio para las E2E:** `claims` `POST /_demo/reiniciar`, solo con `DEMO_REINICIAR=true` (compose; nunca en staging) | Propuesta |
 | W04-16 | **Sin `terraform apply`.** Atlas (usuario `claims`, secreto `mongo-uri-claims`) y Cloud Run se aplican por el pipeline | Cerrada |
@@ -234,7 +234,7 @@ Rama del backend `feat/KAN-27-backend-siniestros` (desde `develop` 45f140b) y de
 
 - **La semilla de `claims` monta los datos del dummy** (`./stubs/siniestros/app/datos:/semilla:ro`) en vez de copiarlos
   a `services/claims/semilla/`: evita duplicar ~8 MB de imágenes y el dummy se conserva (W04-13). Si el dummy se retira,
-  sus `datos/` deben moverse antes.
+  sus `datos/` deben moverse antes. **Hecho el 2026-10-29:** se movieron a `services/claims/semilla/` al retirar el dummy.
 - **`contracts/graphql/siniestros.graphql` no lleva la nota de obsoleto en su encabezado**: la web verifica su copia byte
   a byte en el CI y cambiarlo rompería ese chequeo. La nota va en `CHANGELOG.md` (v0.21), el README del dummy y
   `convenciones.md`.
