@@ -45,7 +45,9 @@ instancias_fijas_encendidas = true
 # crear_cloud_sql (base `almacenamiento`). Encenderlo es un PR que pone true aquí y los orígenes reales del frontend.
 crear_almacenamiento = false
 
-# Firma, pago y avisos de HU-W03 (F-B8). PENDIENTE: el origen real del front web de staging (sin barra final). Hasta
-# fijarlo, el stream de avisos y el regreso desde la pasarela no funcionan en staging. Al ponerlo, repetirlo en
-# `almacenamiento_origenes_cors` y pasar `crear_almacenamiento` a true (necesita el mismo origen para las URLs firmadas).
-# url_front = "https://<front-staging>"
+# Firma, pago y avisos de HU-W03 (F-B8). Origen del front web (Vercel, sin barra final): de aquí salen el Origin permitido
+# del stream de avisos, la lista de regreso de la pasarela de prueba y la URL de POLICY (enlace de firma) y del BFF.
+url_front = "https://solventa-frontend-pink.vercel.app"
+# Mismo origen para las URLs firmadas del bucket. `crear_almacenamiento` sigue en false (cobra por GB y CMEK): encenderlo
+# es un PR aparte.
+almacenamiento_origenes_cors = ["https://solventa-frontend-pink.vercel.app"]
