@@ -1,6 +1,9 @@
 # Plan para completar HU-W04 · Backend real de la mesa de siniestros (KAN-27)
 
-> **Estado: aprobado por Felipe el 2026-10-28, en ejecución** en la rama `feat/KAN-27-backend-siniestros`. Reemplaza el
+> **Estado: hecho en código y en local (2026-10-29).** Backend en `develop` (PR #378) y la web conectada al BFF real
+> (front #91 y #94). Lo que queda está en «Pendiente», al final de «Estado de ejecución».
+>
+> Aprobado por Felipe el 2026-10-28 y ejecutado en la rama `feat/KAN-27-backend-siniestros`. Reemplaza el
 > borrador anterior de este archivo (sin versionar), que proponía el puerto 8010, URLs HMAC interinas y otra numeración.
 
 ## Contexto
@@ -209,8 +212,11 @@ para la mesa de un operador, pero limita la medición de EC011/EC012 en staging.
 | 8 | Los 8 specs E2E reinician con `POST http://localhost:8012/_demo/reiniciar` | `e2e/cypress/e2e/**/w04-*` |
 | 9 | Nota de la geoetiqueta desde el EXIF (W04-14), pendiente | `docs/plan-ejecucion-hu-w04-siniestros.md` |
 
-La URL firmada vence a los 300 s: si el detalle queda abierto más de 5 min, abrir una imagen falla hasta recargar. Se
-acepta.
+La URL firmada vence a los 300 s. Los 5 minutos cuentan para **descargar** la imagen, no para mirarla: el operador
+puede quedarse lo que necesite en el detalle y aprobar, rechazar o derivar después. Lo que falla pasado ese tiempo es
+**ampliar** una imagen (se abre en otra pestaña) o **bajar** hasta una que aún no cargaba (`loading="lazy"`). Queda
+como el **ajuste 10** del plan del front, pendiente: al fallar, volver a consultar `siniestro(id)` una vez para recibir
+URLs nuevas. El backend no cambia y no se sube el vencimiento.
 
 ## Estado de ejecución (2026-10-28)
 
@@ -253,12 +259,15 @@ Rama del backend `feat/KAN-27-backend-siniestros` (desde `develop` 45f140b) y de
 
 **Pendiente:**
 
-1. Abrir los dos PR hacia `develop` (Felipe) y el visto bueno de Frans sobre el commit de PAYMENTS.
-2. Ejecutar los 9 ajustes del front (su plan) y correr sus E2E contra el backend real.
+1. ~~Abrir los dos PR hacia `develop`~~: backend #378 y front #89 fusionados (2026-10-28). Sigue pendiente el visto
+   bueno de Frans sobre el commit de PAYMENTS (c964110).
+2. ~~Ejecutar los ajustes del front~~: 1 a 8 hechos en los PR del front #91 y #94 (2026-10-29), con los 39 E2E de W04
+   contra el backend local. Quedan el 9 (geoetiqueta, punto 4) y el **10: renovar la URL firmada** de las evidencias
+   cuando vence (ver «Front»).
 3. Staging: liberación a `main`; el usuario de Atlas `claims` y su secreto salen por el pipeline; **las evidencias no
    funcionan en staging mientras `crear_almacenamiento = false`** (decisión de costo); las semillas son solo locales.
 4. La geoetiqueta desde el EXIF (W04-14), con la subida móvil de HU-M04.
-5. La reintegración `main → develop` del hotfix #331 (se dejó para la próxima liberación).
+5. ~~La reintegración `main → develop` del hotfix #331~~: hecha en el PR #381 (2026-10-29).
 6. Los cambios en Jira de la tabla siguiente.
 
 ## Cambios en Jira (los hace Felipe)
@@ -298,6 +307,6 @@ Rama del backend `feat/KAN-27-backend-siniestros` (desde `develop` 45f140b) y de
 5. El dummy sigue respondiendo en 8107 sin cambios.
 
 **Web:** sin cambios de código en este feature; solo se revisa que la sección documentada del front cubra los 9 ajustes.
-La web sigue usando el dummy, que no se toca, hasta que se ejecuten esos ajustes en su repo.
+Después, los ajustes se hicieron en el repo del front (#91 y #94) y la web dejó de usar el dummy.
 
 **Logs:** sin nombre, documento, descripción ni coordenadas (EC022).
