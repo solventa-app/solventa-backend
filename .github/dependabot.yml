@@ -20,7 +20,6 @@ updates:
   - { package-ecosystem: pip, directory: /stubs/firma, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /stubs/kyc, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /stubs/notificaciones, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /stubs/siniestros, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: pip, directory: /, target-branch: develop, schedule: { interval: weekly } }  # requirements-dev.in / .txt
 
   # --- Imágenes base de Docker ---
@@ -43,7 +42,6 @@ updates:
   - { package-ecosystem: docker, directory: /stubs/firma, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /stubs/kyc, target-branch: develop, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /stubs/notificaciones, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /stubs/siniestros, target-branch: develop, schedule: { interval: weekly } }
 
   # --- Infraestructura y automatización ---
   - { package-ecosystem: terraform, directory: /infra, target-branch: develop, schedule: { interval: monthly } }

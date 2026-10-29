@@ -252,9 +252,8 @@ services:
       # Solo local (W04-15): POST /_demo/reiniciar vuelve a la semilla para las E2E de la web.
       DEMO_REINICIAR: "true"
       SEMILLA_DIR: /semilla
-    # Los datos de la semilla son los del dummy, que se conserva (W04-13): se montan, no se copian.
     volumes:
-      - ./stubs/siniestros/app/datos:/semilla:ro
+      - ./services/claims/semilla:/semilla:ro
     depends_on:
       mongo-init: { condition: service_completed_successfully }
       migrar-claims: { condition: service_completed_successfully }
@@ -289,7 +288,7 @@ services:
       POLICY_URL: http://policy:8007
       SEMILLA_DIR: /semilla
     volumes:
-      - ./stubs/siniestros/app/datos:/semilla:ro
+      - ./services/claims/semilla:/semilla:ro
     depends_on:
       migrar-claims: { condition: service_completed_successfully }
       sembrar-polizas-demo: { condition: service_completed_successfully }
@@ -520,12 +519,6 @@ services:
     <<: *servicio
     build: ./stubs/notificaciones
     ports: ["8106:8106"]
-
-  # Dummy de siniestros para el front de HU-W04 (KAN-27): sin BD ni tokens; solo local por ahora.
-  stub-siniestros:
-    <<: *servicio
-    build: ./stubs/siniestros
-    ports: ["8107:8107"]
 
   # -------------------------------------------------------- observabilidad
   prometheus:

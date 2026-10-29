@@ -67,5 +67,6 @@ cd services/claims && python -m pytest
 
 ## Pendiente
 
-- Los plazos en días hábiles no descuentan festivos (falta un calendario oficial), igual que el dummy.
-- El radicado de los siniestros nuevos llega con HU-M04, cuando el móvil los cree; hoy los crea la semilla.
+- Los plazos en días hábiles no descuentan festivos (falta un calendario oficial).
+- El radicado de los siniestros nuevos llega con HU-M04, cuando el móvil los cree; hoy los crea la semilla
+  (`services/claims/semilla/`: JSON y fotos, con sus créditos y licencias en `CREDITOS.md`).
