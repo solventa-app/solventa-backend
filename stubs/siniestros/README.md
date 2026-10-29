@@ -22,9 +22,10 @@ gateway) y sirve las fotos de evidencia. Cuando exista el servicio real, el fron
   contenedor o llamar `/control/reiniciar` vuelve a los datos del JSON.
 - `venceDictamenEn` se calcula al cargar (`vence_dictamen_horas` del JSON), para que la cuenta regresiva tenga sentido
   en cualquier demo.
-- **Solo local por ahora**: está en `.github/servicios.json` con `"dummy": true`, que lo exime de "lo llama otro
-  servicio" y lo deja fuera del despliegue (`scripts/seleccionar_servicios.py`, `infra/servicios.tf`,
-  `scripts/informe_despliegue.py`).
+- **Local y staging**: está en `.github/servicios.json` con `"dummy": true`, que lo exime de "lo llama otro servicio".
+  En staging es un Cloud Run **privado** como los demás: solo lo invoca el API Gateway (`infra/gateway.tf`), que expone
+  `POST /graphql/siniestros` y `GET /graphql/siniestros/medios/{archivo}` (sin `/control/reiniciar`). Cada instancia
+  arranca con los datos del JSON: el estado de las acciones se pierde cuando Cloud Run la escala a cero.
 
 ## Contrato
 
@@ -50,5 +51,6 @@ docker compose --profile servicios up stub-siniestros --build --wait   # http://
 cd stubs/siniestros && python -m pytest
 ```
 
-El front lo consume en `/graphql/siniestros` a través del proxy de Vite (`VITE_SINIESTROS_URL`, por defecto
-`http://localhost:8107`).
+El front lo consume en `/graphql/siniestros`: en local, por el proxy de Vite (`VITE_SINIESTROS_URL`, por defecto
+`http://localhost:8107`) o por el gateway Envoy (`:8080`); en staging, por el rewrite de Vercel `/graphql/:path*` al API
+Gateway.

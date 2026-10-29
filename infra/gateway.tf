@@ -30,6 +30,16 @@ resource "google_service_account" "gateway_bff" {
   display_name = "API Gateway invocador exclusivo del BFF"
 }
 
+# El dummy de siniestros (HU-W04) es privado como el resto: el front lo alcanza por el gateway en /graphql/siniestros.
+resource "google_cloud_run_v2_service_iam_member" "gateway_invoca_siniestros" {
+  count    = (var.crear_gateway && var.crear_servicios) ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.servicio["stub-siniestros"].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.gateway_bff[0].email}"
+}
+
 # El BFF ya no tiene `allUsers`: solo el API Gateway (y el pipeline en la prueba de humo) puede invocarlo.
 resource "google_cloud_run_v2_service_iam_member" "gateway_invoca_bff" {
   count    = (var.crear_gateway && var.crear_servicios) ? 1 : 0
@@ -61,7 +71,8 @@ resource "google_api_gateway_api_config" "bff" {
     document {
       path = "openapi.yaml"
       contents = base64encode(templatefile("${path.module}/gateway/openapi.yaml", {
-        bff_url = local.url["bff"]
+        bff_url        = local.url["bff"]
+        siniestros_url = local.url["stub-siniestros"]
       }))
     }
   }
