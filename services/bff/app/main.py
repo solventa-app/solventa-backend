@@ -39,6 +39,7 @@ from app.servicio_suscripcion import MENSAJE_DOCUMENTO_NO_DISPONIBLE, ServicioSu
 from app.socios.api import api_de, construir_router, es_ruta_de_socios
 from app.socios.autenticacion import VerificadorTokensSocio
 from app.socios.errores import ErrorApiSocio, datos_invalidos, no_disponible, respuesta_de_error
+from app.socios.modo_prueba import AlmacenMemoria, AlmacenRedis, ModoPrueba
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -72,6 +73,11 @@ def create_app(config: Configuracion | None = None, clientes: Clientes | None = 
         app.state.cliente_id_clave = config.cliente_id_clave
         if app.state.clientes.socios is not None:
             app.state.verificador_socios = VerificadorTokensSocio(app.state.clientes.socios)
+            # Modo prueba (W07-10): en Redis si el BFF lo tiene; si no (pruebas), en memoria.
+            almacen = AlmacenRedis(config.redis_url) if clientes is None else AlmacenMemoria()
+            if clientes is None:
+                abiertos.append(almacen)
+            app.state.modo_prueba = ModoPrueba(almacen, app.state.clientes.socios)
         try:
             yield
         finally:

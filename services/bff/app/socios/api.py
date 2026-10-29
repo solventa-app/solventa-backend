@@ -299,7 +299,9 @@ def construir_router() -> APIRouter:
     async def registrar_consentimiento(body: SolicitudConsentimiento, request: Request) -> dict:
         socio = await socio_de(request)
         if socio.es_prueba:
-            return modo_prueba(request).consentimiento(socio, body.finalidad, body.version_texto)
+            return await modo_prueba(request).consentimiento(
+                socio, body.finalidad, body.version_texto, body.documento_identidad
+            )
         documento = body.documento_identidad.strip()
         if sum(c.isdigit() for c in documento) < 6:
             raise datos_invalidos()
@@ -330,7 +332,7 @@ def construir_router() -> APIRouter:
     async def revocar_consentimiento(consentimiento_id: str, request: Request) -> dict:
         socio = await socio_de(request)
         if socio.es_prueba:
-            return modo_prueba(request).revocar(socio, consentimiento_id)
+            return await modo_prueba(request).revocar(socio, consentimiento_id)
         await _consentimiento_del_socio(request, socio, consentimiento_id)
         clientes = estado(request).clientes
         try:
@@ -357,7 +359,7 @@ def construir_router() -> APIRouter:
     async def cotizar(body: SolicitudCotizacion, request: Request) -> dict:
         socio = await socio_de(request)
         if socio.es_prueba:
-            return modo_prueba(request).cotizar(
+            return await modo_prueba(request).cotizar(
                 socio, body.consentimiento_id, body.documento_identidad
             )
         # Primero lo que no gasta presupuesto: los datos y que el consentimiento sea de este socio.
@@ -405,7 +407,7 @@ def construir_router() -> APIRouter:
     async def crear_propuesta(body: SolicitudPropuesta, request: Request) -> dict:
         socio = await socio_de(request)
         if socio.es_prueba:
-            return modo_prueba(request).aceptar(socio, body.oferta_id, idioma(request))
+            return await modo_prueba(request).aceptar(socio, body.oferta_id, idioma(request))
         clientes = estado(request).clientes
         try:
             datos_socio = await clientes.socios.obtener(socio.id)
@@ -445,7 +447,7 @@ def construir_router() -> APIRouter:
     async def obtener_propuesta(propuesta_id: str, request: Request) -> dict:
         socio = await socio_de(request)
         if socio.es_prueba:
-            return modo_prueba(request).propuesta(socio, propuesta_id, idioma(request))
+            return await modo_prueba(request).propuesta(socio, propuesta_id, idioma(request))
         return propuesta_rest(
             await _propuesta_del_socio(request, socio, propuesta_id), idioma(request)
         )
@@ -454,7 +456,7 @@ def construir_router() -> APIRouter:
     async def enviar_codigo(propuesta_id: str, body: SolicitudCodigo, request: Request) -> dict:
         socio = await socio_de(request)
         if socio.es_prueba:
-            return modo_prueba(request).codigo(socio, propuesta_id)
+            return await modo_prueba(request).codigo(socio, propuesta_id)
         datos = await estado(request).servicio_firma_pago.enviar_codigo(
             socio.como_usuario(), propuesta_id, body.correo
         )
@@ -471,7 +473,9 @@ def construir_router() -> APIRouter:
     ) -> dict:
         socio = await socio_de(request)
         if socio.es_prueba:
-            return modo_prueba(request).verificar(socio, propuesta_id, body.codigo, idioma(request))
+            return await modo_prueba(request).verificar(
+                socio, propuesta_id, body.codigo, idioma(request)
+            )
         datos = await estado(request).servicio_firma_pago.verificar_codigo(
             socio.como_usuario(), propuesta_id, body.codigo
         )
@@ -483,7 +487,7 @@ def construir_router() -> APIRouter:
     async def emitir(propuesta_id: str, request: Request) -> dict:
         socio = await socio_de(request)
         if socio.es_prueba:
-            return modo_prueba(request).emitir(socio, propuesta_id, idioma(request))
+            return await modo_prueba(request).emitir(socio, propuesta_id, idioma(request))
         datos = await estado(request).servicio_firma_pago.emitir(socio.como_usuario(), propuesta_id)
         if isinstance(datos, ErrorFlujoDatos):
             raise error_de_flujo(datos)
@@ -507,7 +511,7 @@ def construir_router() -> APIRouter:
     async def reenviar_enlace(propuesta_id: str, request: Request) -> dict:
         socio = await socio_de(request)
         if socio.es_prueba:
-            return modo_prueba(request).reenviar(socio, propuesta_id)
+            return await modo_prueba(request).reenviar(socio, propuesta_id)
         datos = await estado(request).servicio_firma_pago.reenviar_enlace(
             socio.como_usuario(), propuesta_id
         )
@@ -525,7 +529,7 @@ def construir_router() -> APIRouter:
     async def obtener_poliza(poliza_id: str, request: Request) -> dict:
         socio = await socio_de(request)
         if socio.es_prueba:
-            return modo_prueba(request).poliza(socio, poliza_id)
+            return await modo_prueba(request).poliza(socio, poliza_id)
         try:
             datos = await ServicioSuscripcion(estado(request).clientes).obtener_poliza(
                 poliza_id, socio.como_usuario()
@@ -540,7 +544,7 @@ def construir_router() -> APIRouter:
     async def documento_poliza(poliza_id: str, request: Request) -> Response:
         socio = await socio_de(request)
         if socio.es_prueba:
-            numero, pdf = modo_prueba(request).documento(socio, poliza_id)
+            numero, pdf = await modo_prueba(request).documento(socio, poliza_id)
         else:
             try:
                 documento = await ServicioSuscripcion(estado(request).clientes).documento_poliza(
@@ -603,7 +607,7 @@ def construir_router() -> APIRouter:
     async def ventas(request: Request, desde: str | None = None, hasta: str | None = None) -> dict:
         socio = await socio_de(request)
         if socio.es_prueba:
-            return modo_prueba(request).ventas(socio)
+            return await modo_prueba(request).ventas(socio)
         clientes = estado(request).clientes
         try:
             datos_socio, datos = await asyncio.gather(

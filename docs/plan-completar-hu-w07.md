@@ -278,6 +278,7 @@ liberación, por el pipeline (ADR-09).
 | 2 | AUTH | Hecho | Pruebas de AUTH (token ES256 contra el JWKS, bloqueo, rotación, presupuesto, consumo y CLI); `verificar-migraciones.sh auth`; en vivo contra PostgreSQL: los dos socios demo (la segunda corrida no duplica), token, 3 reservas y 429, devolver, consumo, rotar y JWKS |
 | 3 | POLICY | Hecho | Pruebas de POLICY (el SOCIO recorre código → emitir → enlace → firma → pago, sin avisos del asesor; comisión única con la tasa congelada; ventas por mes; HTTP); `verificar-migraciones.sh policy`; en vivo contra PostgreSQL: la comisión se causa una vez (185000 × 0,10 = 18500) y la lista filtra por socio |
 | 4 | BFF `/v1` | Hecho | Pruebas del BFF: token ES256 (claims, JWKS en caché, `X-Forwarded-Authorization`), `ErrorPublico` en todos los errores (también los 422 de FastAPI y una falla inesperada, que da 503), presupuesto (429 con `Retry-After`; datos inválidos no gastan; la unidad vuelve si fallamos), el socio como intermediario (contacto y tasa a POLICY, 404 entre socios, el enlace sin URL), consumo por llamada, `/v1/graphql/*` intacto y las rutas iguales al contrato |
+| 5 | Modo prueba | Hecho | Pruebas del BFF: con token de PRUEBAS el flujo llega a EMITIDA (código `000000`, avance solo por reloj, PDF «MODO PRUEBA») sin llamadas a RATING ni a POLICY; documentos de prueba para PRELIMINAR, rechazo, revisión, presupuesto agotado y consentimiento vencido; el sandbox de un socio no lo ve otro |
 
 **Desvíos frente al plan (decididos al ejecutar):**
 
@@ -290,6 +291,10 @@ liberación, por el pipeline (ADR-09).
   (el borrador del bloque 1 decía de 12 a 360).
 - **POLICY devuelve `enlace_vence_en`** en `GET /propuestas/{id}` (aditivo): así el socio sigue el enlace por su
   vencimiento sin ver nunca el token (W07-17).
+- **Modo prueba sin página de firma:** tras «emitir», la propuesta avanza sola (`FIRMADA` a los 3 s y `EMITIDA` a
+  los 6 s, al consultarla). El plan proponía una página del dummy que firmara al abrirla; con el avance por tiempo no
+  hace falta otra ruta pública. **Sí descuenta el presupuesto de PRUEBAS en AUTH**, para que el consumo del sandbox sea
+  real; no toca las fuentes, RATING, POLICY ni los stubs.
 - **El BFF declara `cryptography`** en `requirements.in` (antes llegaba solo por `google-auth`): ES256 la necesita.
 - **Los socios demo se crean al levantar el compose** (`crear-socios-demo`, del que depende `auth`, como
   `crear-backoffice`), no en el perfil `semilla`: así Daniel tiene socios sin un paso extra.

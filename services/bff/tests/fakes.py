@@ -1158,7 +1158,11 @@ class SociosFalso:
             "sol_test_1": ("socio-1", "PRUEBAS", "clave-test-1"),
             "sol_prod_2": ("socio-2", "PRODUCCION", "clave-prod-2"),
         }
-        self.presupuesto = {("socio-1", "PRODUCCION"): presupuesto, ("socio-2", "PRODUCCION"): 1}
+        self.presupuesto = {
+            ("socio-1", "PRODUCCION"): presupuesto,
+            ("socio-1", "PRUEBAS"): 50,
+            ("socio-2", "PRODUCCION"): 1,
+        }
         self.consumidas: dict[tuple[str, str], int] = {}
         self.devoluciones: list[tuple[str, str]] = []
         self.consumos: list[tuple[str, str, str, str]] = []
