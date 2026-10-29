@@ -266,6 +266,9 @@ EN: dict[str, str] = {
     "No pudimos consultar los siniestros. Intenta de nuevo.": (
         "We couldn't load the claims. Please try again."
     ),
+    "No pudimos calcular el estado del sistema. Intenta de nuevo.": (
+        "We couldn't compute the system status. Please try again."
+    ),
     "No pudimos consultar la póliza del siniestro. Intenta de nuevo.": (
         "We couldn't load the claim's policy. Please try again."
     ),

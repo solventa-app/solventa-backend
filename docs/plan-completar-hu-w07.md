@@ -106,14 +106,14 @@ Solo expandir, con `downgrade` probado:
 
 | Cambio | Detalle |
 |---|---|
-| `propuestas.socio_id` y `propuestas.tasa_comision` | Nulos salvo con `actor_rol = SOCIO`. La tasa se congela al aceptar (la lee el BFF de AUTH). Índice `ix_propuestas_socio_id` |
+| `propuestas.tasa_comision` | Nula salvo con `actor_rol = SOCIO`. La tasa se congela al aceptar (la lee el BFF de AUTH). **El socio es `actor_usuario_id`** cuando `actor_rol = SOCIO` (ya tiene índice), así que no hace falta una columna `socio_id` |
 | `comisiones` | `id`, `socio_id`, `poliza_id` (**único**: idempotencia), `propuesta_id`, `prima`, `tasa`, `comision`, `moneda`, `causada_en`. Append-only. Dinero como texto decimal, redondeado según la moneda |
 
 `actor_rol` de POLICY no tiene `CHECK` en la base: el `SOCIO` se admite en los modelos de la API (`^(CLIENTE|ASESOR|SOCIO)$`).
 
 ---
 
-## 4. La API `/v1` (contrato `contracts/openapi/socios-v1.yaml`)
+## 4. La API `/v1` (contrato `contracts/openapi/socios-v1.json`)
 
 | Grupo | Endpoints | Qué reutiliza |
 |---|---|---|
@@ -151,7 +151,7 @@ o similar, a definir en el bloque 1).
 | `services/policy/app/application/avisos.py` y `servicio_emision.py` | **Sin cambios:** ya excluyen al socio (comparan con `"ASESOR"`). Se agrega una prueba que lo fija |
 | `services/auth` | Migración `0010`, `app/socios.py`, `app/tokens_socio.py`, endpoints internos y la CLI `app/crear_socio.py` |
 | `services/bff` | Paquete nuevo `app/socios/` (`api.py`, `autenticacion.py`, `cotizacion.py`, `emision.py`, `salud.py`, `sandbox.py`) montado como router en `main.py`; `estadoSistema` en `esquema.py`; `clientes.py` suma los métodos de AUTH y POLICY para socios |
-| `contracts/` | `openapi/socios-v1.yaml`, `salud.json`, GraphQL v0.22, `CHANGELOG.md` (libera la v0.19), `README.md` y `scripts/validar_contratos.py` |
+| `contracts/` | `openapi/socios-v1.json`, `salud.json`, GraphQL v0.22, `CHANGELOG.md` (libera la v0.19), `README.md` y `scripts/validar_contratos.py` |
 | `infra/gateway/envoy.yaml` y `scripts/validar_gateway.py` | Rutas de socios con `jwt_authn` y CORS (W07-24) |
 | `infra/` (Terraform, sin `apply`) | `openapi-socios.yaml` y el gateway de socios detrás de `crear_gateway_socios = false`; secreto `clave-firma-socios`; `roles/monitoring.viewer` para el BFF |
 | `docker-compose.yml` | Tarea `crear-socio` en el perfil `semilla`; `METRICAS_FUENTE=prometheus` en el BFF |
@@ -164,7 +164,7 @@ o similar, a definir en el bloque 1).
 | # | Qué entrega | Depende de |
 |---|---|---|
 | 0 | Este plan versionado | — |
-| 1 | **Contrato:** `socios-v1.yaml`, GraphQL v0.22 (`estadoSistema`), `salud.json` y su validación, `CHANGELOG.md` con la v0.19 liberada. **Es lo que desbloquea a Daniel** | 0 |
+| 1 | **Contrato:** `socios-v1.json`, GraphQL v0.22 (`estadoSistema`), `salud.json` y su validación, `CHANGELOG.md` con la v0.19 liberada. **Es lo que desbloquea a Daniel** | 0 |
 | 2 | **AUTH:** `0010`, socios, credenciales, presupuesto atómico, consumos, ES256 y JWKS, endpoints internos, CLI `crear-socio` y la tarea del compose con los dos socios demo | 1 |
 | 3 | **POLICY:** `0008`, rol `SOCIO` en el flujo del intermediario, comisión al emitir, lista por `socio_id` y `GET /socios/{id}/ventas` | 1 |
 | 4 | **BFF `/v1`:** autenticación con el JWKS, registro de consumo, cotización con reserva, propuesta, código, emitir, reenvío, póliza, PDF y cuenta | 2, 3 |
@@ -254,7 +254,7 @@ liberación, por el pipeline (ADR-09).
 |---|---|
 | KAN-30 | Descripción: el socio **revende la póliza** y hace el papel del asesor por la API; el titular firma y paga con el enlace de W03; comisión al emitir. Los socios se crean por semilla, sin pantalla de alta |
 | KAN-30, criterios | No cambian. Propuesta opcional: «el socio ve sus pólizas emitidas, las primas y la comisión causada por mes» |
-| Tareas de back | Contrato v0.22 y `socios-v1.yaml`; AUTH `0010` y la CLI; POLICY `0008` y las comisiones; BFF `/v1`; modo prueba; salud; gateway; pruebas y evidencia |
+| Tareas de back | Contrato v0.22 y `socios-v1.json`; AUTH `0010` y la CLI; POLICY `0008` y las comisiones; BFF `/v1`; modo prueba; salud; gateway; pruebas y evidencia |
 | Tareas de front (Daniel) | Las del plan del front: portal (W07-01 a 03), estado del sistema del BACKOFFICE y la guía en PDF |
 | Nueva | «Huecos de RISK: borrar el perfil al revocar, vencimiento y batch» (W01-A3 a A5), después de la primera versión de W07 |
 | Nueva, futura | «Alta de socios desde el BACKOFFICE» y «Webhooks para socios» (fuera del MVP) |
@@ -266,3 +266,20 @@ liberación, por el pipeline (ADR-09).
 1. ~~El visto bueno de Felipe sobre W07-24, 25 y 26 y los pesos~~: cerrados el 2026-10-29.
 2. Pasar al plan del front lo que cambia frente a la v2: contrato v0.22, rol SOCIO y dos socios demo.
 3. Coordinar con Daniel la fecha del contrato (bloque 1), que es lo que necesita para arrancar sin adivinar.
+
+---
+
+## 11. Estado de ejecución
+
+| # | Bloque | Estado | Verificación |
+|---|---|---|---|
+| 0 | Plan | Hecho | — |
+| 1 | Contrato v0.22 | Hecho | `validar_contratos.py` (OpenAPI de socios y `salud.json`), `sincronizar_socios.py --verificar`, paridad del BFF y 421 pruebas del BFF |
+
+**Desvíos frente al plan (decididos al ejecutar):**
+
+- **El contrato REST va en JSON** (`contracts/openapi/socios-v1.json`), no en YAML: el repo no tiene `pyyaml`, FastAPI
+  trabaja en JSON y el front genera sus tipos igual. El BFF lleva una copia en `app/socios-v1.json`
+  (`scripts/sincronizar_socios.py`, verificado en el CI), igual que `salud.json`.
+- **POLICY no suma `socio_id`:** con `actor_rol = SOCIO`, el socio es `actor_usuario_id`, que ya tiene índice.
+- **`CLAUDE.md` se actualiza al cierre** (bloque 9): el PR #387 cambia la misma línea.

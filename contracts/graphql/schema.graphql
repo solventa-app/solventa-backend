@@ -1,5 +1,6 @@
 """
-Contrato GraphQL del BFF (v0, Sprint 1: HU-W01 y HU-W05; v0.20 suma el onboarding de HU-M01).
+Contrato GraphQL del BFF (v0, Sprint 1: HU-W01 y HU-W05; v0.20 suma el onboarding de HU-M01; v0.22, el estado del
+sistema de HU-W07. La API REST de los socios está aparte, en contracts/openapi/socios-v1.json).
 
 Este archivo es la FUENTE DE VERDAD del contrato con `solventa-frontend`.
 Reglas (ver contracts/README.md): solo cambios ADITIVOS; para quitar algo se marca @deprecated
@@ -292,6 +293,9 @@ type Propuesta {
   # Datos personales: solo para el ASESOR que la aceptó y el BACKOFFICE; null para el CLIENTE.
   nombreTitular: String # el nombre que capturó el asesor, o el de AUTH si el titular tiene cuenta
   nombreAsesor: String # solo para el BACKOFFICE; null si la aceptó el propio CLIENTE
+  # v0.22 (HU-W07): solo para el BACKOFFICE; el socio de distribución que la vendió por la API. Entonces
+  # `nombreAsesor` es null.
+  nombreSocio: String
 }
 
 type PaginaPropuestas {
@@ -827,6 +831,59 @@ type ErrorSiniestro {
 
 union ResultadoResolucion = Siniestro | ErrorSiniestro
 
+# ---------- Estado del sistema (v0.22, HU-W07) ----------
+# Solo BACKOFFICE. Los pesos, los objetivos de latencia y los umbrales viven en contracts/salud.json. El socio ve una
+# versión sin micros internos en `GET /v1/estado` (contracts/openapi/socios-v1.json).
+
+enum ColorSalud {
+  VERDE # >= 90
+  AMARILLO # >= 70
+  ROJO
+}
+
+enum EstadoCircuito {
+  CERRADO
+  SEMIABIERTO
+  ABIERTO
+  DESCONOCIDO # el ACL no respondió
+}
+
+type SaludMicro {
+  nombre: String!
+  peso: Int!
+  porcentaje: Int! # 0 si /health no responde
+  color: ColorSalud!
+  responde: Boolean!
+  sinTrafico: Boolean! # sin peticiones en la ventana (p. ej. escalado a cero)
+  disponibilidad: Float # % de peticiones sin 5xx; null sin tráfico o sin métricas
+  latenciaMediaMs: Int
+  latenciaP95Ms: Int
+}
+
+type SaludExterna {
+  nombre: String! # el circuito del ACL: open-finance, open-data, firma, kyc, pasarela, notificaciones
+  estado: EstadoCircuito!
+}
+
+type SaludApi {
+  nombre: String! # COTIZACION o EMISION
+  porcentaje: Int!
+  color: ColorSalud! # ROJO si alguno de sus micros no responde
+  micros: [String!]!
+  externas: [SaludExterna!]!
+}
+
+type EstadoSistema {
+  porcentaje: Int! # promedio ponderado de los micros
+  color: ColorSalud! # no es VERDE si alguna API está en ROJO
+  disponibilidad: Float # del gateway (lo que vive el usuario); null sin métricas
+  latenciaMediaMs: Int
+  ventana: String! # 15m, 1h, 24h o 7d
+  calculadoEn: DateTime!
+  apis: [SaludApi!]!
+  micros: [SaludMicro!]!
+}
+
 type Query {
   # El archivo si existe y quien pregunta puede leerlo; si no, null.
   archivo(id: ID!): Archivo
@@ -856,6 +913,9 @@ type Query {
   siniestro(id: ID!): Siniestro
   # Peritos disponibles para derivar este caso, cada uno con su fecha límite de informe si se le deriva hoy.
   peritos(siniestroId: ID!): [Perito!]!
+  # ---------- v0.22 (HU-W07) ----------
+  # Solo BACKOFFICE. `ventana`: 15m, 1h, 24h o 7d.
+  estadoSistema(ventana: String = "1h"): EstadoSistema!
 }
 
 type Mutation {
