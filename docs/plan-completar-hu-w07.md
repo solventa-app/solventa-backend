@@ -81,9 +81,9 @@ RISK.
 | W07-21 | **Alta de socios sin interfaz** | En este MVP no hay pantalla ni endpoint de alta. Los socios se crean con la CLI `crear-socio` de AUTH, idempotente. En local corre como tarea del compose en el perfil `semilla`. En staging, después, con un *job* puntual o en la base. La rotación de claves desde el portal sí entra, porque es criterio de Jira | **Cerrada** |
 | W07-22 | **Dos socios demo** | `socio-demo-1` y `socio-demo-2`, con ids fijos, tasas distintas y presupuesto. Con dos, Newman prueba que un socio no ve lo del otro (404). Sus claves locales son fijas y **solo locales**, en el entorno de Newman, como las del BACKOFFICE | **Cerrada** |
 | W07-23 | Contrato | **GraphQL v0.22** (`estadoSistema`) y el archivo nuevo `contracts/openapi/socios-v1.yaml`. La reserva de la v0.19 se libera en `contracts/CHANGELOG.md` y en `CLAUDE.md` | **Cerrada** |
-| W07-24 | `/v1` compartido | **La API de socios convive con `/v1/graphql/{canal}`** (W04-10): <br>• en el BFF va como un `APIRouter` con rutas explícitas, **nunca** como `Mount("/v1")`, que se tragaría `/v1/graphql/*`; <br>• en Envoy, rutas de socios con su prefijo (`/v1/token`, `/v1/cotizaciones`, `/v1/propuestas`…) y `jwt_authn` ES256 **solo en ellas**: `/v1/graphql/*` sigue con el JWT HS256 de usuario, que valida el BFF | Propuesta |
-| W07-25 | Plazo del gateway para socios | **0,7 s, como el resto.** La cotización suma solo la reserva atómica en AUTH, de pocos ms, a la cadena de W01 (EC010 ≤ 500 ms). Si la medición local muestra que no cabe, se sube a 1,5 s solo en `/v1/cotizaciones`. La v2 proponía 1,5 s para todo `/v1` | Propuesta |
-| W07-26 | Clave de firma ES256 en local | Sin `SOCIOS_CLAVE_FIRMA`, AUTH genera una clave efímera al arrancar **solo con `ENTORNO=local`**, y el JWKS cambia en cada reinicio. Nunca se versiona una clave. En staging es obligatoria y sale de Secret Manager (`clave-firma-socios`) | Propuesta |
+| W07-24 | `/v1` compartido | **La API de socios convive con `/v1/graphql/{canal}`** (W04-10): <br>• en el BFF va como un `APIRouter` con rutas explícitas, **nunca** como `Mount("/v1")`, que se tragaría `/v1/graphql/*`; <br>• en Envoy, rutas de socios con su prefijo (`/v1/token`, `/v1/cotizaciones`, `/v1/propuestas`…) y `jwt_authn` ES256 **solo en ellas**: `/v1/graphql/*` sigue con el JWT HS256 de usuario, que valida el BFF | **Cerrada** (2026-10-29) |
+| W07-25 | Plazo del gateway para socios | **0,7 s, como el resto.** La cotización suma solo la reserva atómica en AUTH, de pocos ms, a la cadena de W01 (EC010 ≤ 500 ms). Si la medición local muestra que no cabe, se sube a 1,5 s solo en `/v1/cotizaciones`. La v2 proponía 1,5 s para todo `/v1` | **Cerrada** (2026-10-29) |
+| W07-26 | Clave de firma ES256 | **Igual que el resto de secretos del sistema** (`JWT_SECRETO`, `CIFRADO_CLAVE`): en local, una clave fija marcada «solo local, no secreta» en `docker-compose.yml` y como valor por defecto en `configuracion.py` (como `JWT_SECRETO_LOCAL`), con su entrada en la lista blanca de `.gitleaks.toml`; en staging, `clave-firma-socios` de Secret Manager, obligatoria. **Sigue siendo ES256 y no HS256 como los usuarios**, porque el gateway valida el token del socio con la clave pública (JWKS): con HS256 tendría que guardar el mismo secreto que firma los tokens de todos los roles | **Cerrada** (2026-10-29) |
 | W07-27 | Huecos de RISK | Fuera de esta versión (sección 1) | **Cerrada** |
 
 ---
@@ -188,6 +188,12 @@ portal contra el backend sin MSW. Mientras tanto el front trabaja con MSW a part
 - Consolidado: las métricas del gateway.
 - Colores: verde ≥ 90, amarillo ≥ 70 y rojo < 70.
 
+**Corrección a la v2 (aprobada el 2026-10-29).** Con la fórmula de la v2, si RATING se cae la barra queda en 90 % y
+Cotización en 90, las dos en verde, aunque no se pueda cotizar. Por eso:
+- **una API queda en rojo si cualquiera de sus micros no responde** (los necesita todos); si todos responden, se usa el
+  promedio de sus micros y de sus APIs externas;
+- **la barra general no queda en verde si alguna API está en rojo:** como mucho, amarillo.
+
 **Pesos revisados.** Desde la v2 llegaron `almacenamiento`, `avisos`, `onboarding` y `claims`. **Emisión usa
 `almacenamiento`** para la imagen de la firma, así que entra en el cálculo. Los otros tres no están en el camino de
 cotizar ni emitir y quedan fuera.
@@ -212,7 +218,7 @@ cotizar ni emitir y quedan fuera.
 | Cotización | BFF, AUTH, ACL, RISK y RATING | open-finance y open-data |
 | Emisión | BFF, AUTH, POLICY, UNDER, PAYMENTS y ALMACENAMIENTO | firma, KYC, pasarela y notificaciones |
 
-Los pesos los valida el equipo; una prueba del CI verifica que suman 100 y que cada micro existe en
+Pesos aprobados por Felipe el 2026-10-29; una prueba del CI verifica que suman 100 y que cada micro existe en
 `.github/servicios.json`.
 
 ---
@@ -232,7 +238,7 @@ Los pesos los valida el equipo; una prueba del CI verifica que suman 100 y que c
      firma y pago en la página de la pasarela → `EMITIDA` → comisión en `GET /v1/ventas`;
    - presupuesto agotado da 429; sin token, 401 del gateway; el socio 2 recibe 404 en las propuestas del socio 1;
    - modo prueba hasta `EMITIDA` sin llamadas a los stubs;
-   - salud con el perfil `observabilidad`: bajar `rating` y ver caer Cotización.
+   - salud con el perfil `observabilidad`: bajar `rating` y ver Cotización en rojo y la barra general en amarillo.
 4. **Newman `socios-w07`** como humo en el CI.
 5. **Validadores:** `validar_contratos.py`, `validar_gateway.py` y `validar_servicios.py`.
 6. **Logs:** sin documento, nombre, correo ni claves (EC022).
@@ -257,6 +263,6 @@ liberación, por el pipeline (ADR-09).
 
 ## 10. Pendiente antes de empezar
 
-1. **El visto bueno de Felipe** sobre W07-24, W07-25 y W07-26 y sobre los pesos de la sección 7.
+1. ~~El visto bueno de Felipe sobre W07-24, 25 y 26 y los pesos~~: cerrados el 2026-10-29.
 2. Pasar al plan del front lo que cambia frente a la v2: contrato v0.22, rol SOCIO y dos socios demo.
 3. Coordinar con Daniel la fecha del contrato (bloque 1), que es lo que necesita para arrancar sin adivinar.
