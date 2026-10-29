@@ -113,11 +113,256 @@ static_resources:
                           route:
                             cluster: bff_cluster
                             timeout: 0.7s
+                        # API de socios de distribución (HU-W07): las rutas de
+                        # `contracts/openapi/socios-v1.json` (en la nube, `openapi-socios.yaml`), con el
+                        # mismo corte de 0.7 s (W07-25). Exactas: nunca un prefijo `/v1/` que tape
+                        # `/v1/graphql/*` (W07-24).
+                        - match:
+                            path: "/v1/token"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            path: "/v1/.well-known/jwks.json"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            path: "/v1/openapi.json"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            path: "/v1/docs"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            path: "/v1/consentimientos"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            safe_regex:
+                              regex: "/v1/consentimientos/[^/]+/revocar"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            path: "/v1/cotizaciones"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            path: "/v1/propuestas"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            safe_regex:
+                              regex: "/v1/propuestas/[^/]+"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            safe_regex:
+                              regex: "/v1/propuestas/[^/]+/codigo"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            safe_regex:
+                              regex: "/v1/propuestas/[^/]+/codigo/verificar"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            safe_regex:
+                              regex: "/v1/propuestas/[^/]+/emitir"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            safe_regex:
+                              regex: "/v1/propuestas/[^/]+/reenviar-enlace"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            safe_regex:
+                              regex: "/v1/polizas/[^/]+"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            safe_regex:
+                              regex: "/v1/polizas/[^/]+/documento"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            path: "/v1/estado"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            path: "/v1/consumo"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            path: "/v1/ventas"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            path: "/v1/credenciales"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            safe_regex:
+                              regex: "/v1/credenciales/[^/]+/rotar"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                # Un 401 de Envoy (token del socio ausente o inválido) sale como `ErrorPublico`, igual que
+                # los del BFF.
+                local_reply_config:
+                  mappers:
+                    - filter:
+                        status_code_filter:
+                          comparison:
+                            op: EQ
+                            value: { default_value: 401, runtime_key: respuesta_local_401 }
+                      body_format_override:
+                        content_type: application/json
+                        text_format: '{"codigo":"TOKEN_INVALIDO","mensaje":"Falta el token de acceso o no es válido.","puedeReintentar":false}'
                 http_filters:
+                  # Token ES256 del socio validado en el borde con el JWKS de AUTH, como el API Gateway
+                  # de GCP (`x-google-jwks_uri`). Las rutas públicas y `/v1/graphql/*` (JWT HS256 de
+                  # usuario, que valida el BFF) pasan sin él. `forward` deja el token al BFF, que lo
+                  # vuelve a validar.
+                  - name: envoy.filters.http.jwt_authn
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+                      providers:
+                        socios:
+                          issuer: solventa-auth
+                          audiences: [solventa-socios]
+                          forward: true
+                          remote_jwks:
+                            http_uri:
+                              uri: http://auth:8001/.well-known/jwks.json
+                              cluster: auth_cluster
+                              timeout: 1s
+                            cache_duration: 600s
+                      rules:
+                        - match: { path: "/v1/token" }
+                        - match: { path: "/v1/.well-known/jwks.json" }
+                        - match: { path: "/v1/openapi.json" }
+                        - match: { path: "/v1/docs" }
+                        - match: { prefix: "/v1/graphql/" }
+                        - match: { prefix: "/v1/" }
+                          requires: { provider_name: socios }
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
   clusters:
+    # Solo para leer el JWKS de los socios (`jwt_authn`); el tráfico de negocio va siempre al BFF.
+    - name: auth_cluster
+      connect_timeout: 0.25s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: auth_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: auth
+                      port_value: 8001
     - name: bff_cluster
       connect_timeout: 0.25s
       type: STRICT_DNS

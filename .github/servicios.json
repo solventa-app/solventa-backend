@@ -31,7 +31,8 @@
       "DATABASE_URL": "database-url-auth",
       "JWT_SECRETO": "clave-jwt",
       "CIFRADO_CLAVE": "clave-cifrado",
-      "CLIENTE_ID_CLAVE": "clave-cliente-id"
+      "CLIENTE_ID_CLAVE": "clave-cliente-id",
+      "SOCIOS_CLAVE_FIRMA": "clave-firma-socios"
     }
   },
   {
