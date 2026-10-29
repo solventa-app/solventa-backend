@@ -20,6 +20,7 @@ from app.application.cliente_payments import (
 from app.application.cliente_payments import ResultadoCobro as ResultadoCobroPayments
 from app.application.cliente_rating import OfertaNoEncontrada, RatingNoDisponible
 from app.application.cliente_under import ResultadoDecision, UnderNoDisponible
+from app.application.comisiones import calcular_comision, mes
 
 
 def oferta_de_rating(**cambios: Any) -> dict[str, Any]:
@@ -67,6 +68,7 @@ class RepositorioPropuestasFalso:
         self.documentos_guardados: dict[str, str] = {}
         self._polizas: dict[str, dict[str, Any]] = {}
         self._secuencia = 0
+        self.comisiones: list[dict[str, Any]] = []
 
     def obtener(self, propuesta_id: str) -> dict[str, Any] | None:
         for propuesta in self._por_oferta.values():
@@ -140,7 +142,44 @@ class RepositorioPropuestasFalso:
             self._polizas[propuesta_id] = poliza
             propuesta["estado"] = "EMITIDA"
             propuesta["poliza_id"] = poliza["id"]
+            self._causar_comision(propuesta, poliza["id"])
             return dict(poliza), True
+
+    def _causar_comision(self, propuesta: dict[str, Any], poliza_id: str) -> None:
+        """Como el repositorio real (HU-W07): una por póliza de un SOCIO, al emitir."""
+        if propuesta.get("actor_rol") != "SOCIO" or propuesta.get("tasa_comision") is None:
+            return
+        if any(c["poliza_id"] == poliza_id for c in self.comisiones):
+            return
+        self.comisiones.append(
+            {
+                "socio_id": propuesta["actor_usuario_id"],
+                "poliza_id": poliza_id,
+                "tasa": propuesta["tasa_comision"],
+                "moneda": propuesta["prima"]["moneda"],
+                "prima": propuesta["prima"]["valor"],
+                "comision": calcular_comision(
+                    propuesta["prima"]["valor"], propuesta["tasa_comision"]
+                ),
+                "causada_en": datetime.now(UTC),
+            }
+        )
+
+    def propuestas_de_socio_por_mes(self, socio_id, desde, hasta):
+        por_mes: dict[str, int] = {}
+        for p in self._por_oferta.values():
+            if p.get("actor_rol") == "SOCIO" and p["actor_usuario_id"] == socio_id:
+                if desde <= p["creado_en"].date() <= hasta:
+                    clave = mes(p["creado_en"])
+                    por_mes[clave] = por_mes.get(clave, 0) + 1
+        return por_mes
+
+    def comisiones_de_socio(self, socio_id, desde, hasta):
+        return [
+            dict(c)
+            for c in self.comisiones
+            if c["socio_id"] == socio_id and desde <= c["causada_en"].date() <= hasta
+        ]
 
     def obtener_poliza(self, poliza_id: str) -> dict[str, Any] | None:
         for propuesta_id, poliza in self._polizas.items():
@@ -217,6 +256,8 @@ class RepositorioPropuestasFalso:
                 "plazo_meses": datos["plazo_meses"],
                 "creado_en": datetime.now(UTC),
                 "actualizado_en": datetime.now(UTC),
+                "actor_rol": datos.get("actor_rol"),
+                "tasa_comision": datos.get("tasa_comision"),
             }
             self._por_oferta[datos["oferta_id"]] = propuesta
             return dict(propuesta), True

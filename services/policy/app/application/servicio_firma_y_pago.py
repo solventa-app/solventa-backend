@@ -1,6 +1,7 @@
 """Firma y pago con el asesor o en la sesión del CLIENTE (HU-W03, bloque 9: W03-19 a W03-34).
 
-    ASESOR:  ACEPTADA ─código─► IDENTIDAD_VERIFICADA ─«Emitir» (UNDER)─► EN_FIRMA + enlace de 30 min
+    ASESOR o SOCIO (HU-W07, por la API): ACEPTADA ─código─► IDENTIDAD_VERIFICADA ─«Emitir» (UNDER)─►
+             EN_FIRMA + enlace de 30 min
     CLIENTE: ACEPTADA ─────────────────────────────── «Firmar» (UNDER)─► EN_FIRMA (en su sesión)
     los dos: EN_FIRMA ─firma (trazo, imagen o nombre)─► FIRMADA ─pago en la pasarela─► EMITIDA
 
@@ -63,6 +64,9 @@ from app.application.imagen_firma import ImagenInvalida, validar
 logger = logging.getLogger("policy.firma_y_pago")
 
 MODOS_FIRMA = ("TRAZO", "IMAGEN", "NOMBRE")
+# Quien vende por el titular: verifica su identidad con el código y «emite» (W07-20). Los avisos al
+# asesor siguen siendo solo del ASESOR (`avisos.py` y el correo `poliza-emitida-asesor`).
+ROLES_INTERMEDIARIO = ("ASESOR", "SOCIO")
 CORREO_VALIDO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 # Motivos (los del contrato v0.18, en mayúsculas) y su estado HTTP.
@@ -308,7 +312,7 @@ class ServicioFirmaYPago:
             if not titular_id or titular_id != propuesta["cliente_id"]:
                 raise ErrorFlujo(NO_ENCONTRADA)
             desde = ("ACEPTADA",)
-        elif rol == "ASESOR":
+        elif rol in ROLES_INTERMEDIARIO:
             desde = ("IDENTIDAD_VERIFICADA",)
         else:
             raise ErrorFlujo(NO_VALIDA)
@@ -336,7 +340,7 @@ class ServicioFirmaYPago:
         logger.info("decisión propuesta=%s -> %s", id_opaco(propuesta_id), actualizada["estado"])
         self._avisos.publicar(actualizada, actualizada["estado"])
         enlace = None
-        if actualizada["estado"] == "EN_FIRMA" and rol == "ASESOR":
+        if actualizada["estado"] == "EN_FIRMA" and rol in ROLES_INTERMEDIARIO:
             enlace = self._enviar_enlace(actualizada)
         return {"propuesta": actualizada, "enlace": enlace}
 

@@ -276,6 +276,7 @@ liberación, por el pipeline (ADR-09).
 | 0 | Plan | Hecho | — |
 | 1 | Contrato v0.22 | Hecho | `validar_contratos.py` (OpenAPI de socios y `salud.json`), `sincronizar_socios.py --verificar`, paridad del BFF y 421 pruebas del BFF |
 | 2 | AUTH | Hecho | Pruebas de AUTH (token ES256 contra el JWKS, bloqueo, rotación, presupuesto, consumo y CLI); `verificar-migraciones.sh auth`; en vivo contra PostgreSQL: los dos socios demo (la segunda corrida no duplica), token, 3 reservas y 429, devolver, consumo, rotar y JWKS |
+| 3 | POLICY | Hecho | Pruebas de POLICY (el SOCIO recorre código → emitir → enlace → firma → pago, sin avisos del asesor; comisión única con la tasa congelada; ventas por mes; HTTP); `verificar-migraciones.sh policy`; en vivo contra PostgreSQL: la comisión se causa una vez (185000 × 0,10 = 18500) y la lista filtra por socio |
 
 **Desvíos frente al plan (decididos al ejecutar):**
 
