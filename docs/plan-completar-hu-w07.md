@@ -1,6 +1,7 @@
 # Plan para completar HU-W07 · Socios de distribución (KAN-30), v3
 
-> **Estado: borrador v3 (2026-10-29), por aprobar.** Reemplaza la v2 (rama `feat/KAN-30-socios-api`, 2026-10-24) y la
+> **Estado: hecho en código y en local (2026-10-29), bloques 0 a 9.** Falta staging (sección 10) y la integración
+> con el portal de Daniel. Aprobado por Felipe el 2026-10-29. Reemplaza la v2 (rama `feat/KAN-30-socios-api`, 2026-10-24) y la
 > sección 3 del plan consolidado `docs/plan-hu-w07-y-ajustes.md` (rama `chore/KAN-30-plan-w07-y-ajustes`, 2026-10-27).
 > Esas dos ramas quedan como historia: están 228 y 95 commits detrás de `develop` y no se integran.
 >
@@ -261,11 +262,17 @@ liberación, por el pipeline (ADR-09).
 
 ---
 
-## 10. Pendiente antes de empezar
+## 10. Pendiente
 
 1. ~~El visto bueno de Felipe sobre W07-24, 25 y 26 y los pesos~~: cerrados el 2026-10-29.
-2. Pasar al plan del front lo que cambia frente a la v2: contrato v0.22, rol SOCIO y dos socios demo.
-3. Coordinar con Daniel la fecha del contrato (bloque 1), que es lo que necesita para arrancar sin adivinar.
+2. Pasar al plan del front lo que cambia frente a la v2: contrato v0.22 (en JSON), rol SOCIO, dos socios demo y el
+   modo prueba (documentos de prueba y código `000000`).
+3. **Integración con el portal de Daniel**, sin MSW, contra el compose con los socios demo.
+4. **Staging** (`infra/README.md`, «API Gateway de los socios»): cargar `clave-firma-socios` **antes** de la próxima
+   liberación (si no, AUTH no arranca), encender `crear_gateway_socios`, llenar `jwks_socios_url` y dar de alta los
+   socios con un Job.
+5. Los huecos de RISK (W01-A3 a A5), después de esta primera versión (W07-27).
+6. Los cambios en Jira de la sección 9.
 
 ---
 
@@ -280,6 +287,9 @@ liberación, por el pipeline (ADR-09).
 | 4 | BFF `/v1` | Hecho | Pruebas del BFF: token ES256 (claims, JWKS en caché, `X-Forwarded-Authorization`), `ErrorPublico` en todos los errores (también los 422 de FastAPI y una falla inesperada, que da 503), presupuesto (429 con `Retry-After`; datos inválidos no gastan; la unidad vuelve si fallamos), el socio como intermediario (contacto y tasa a POLICY, 404 entre socios, el enlace sin URL), consumo por llamada, `/v1/graphql/*` intacto y las rutas iguales al contrato |
 | 5 | Modo prueba | Hecho | Pruebas del BFF: con token de PRUEBAS el flujo llega a EMITIDA (código `000000`, avance solo por reloj, PDF «MODO PRUEBA») sin llamadas a RATING ni a POLICY; documentos de prueba para PRELIMINAR, rechazo, revisión, presupuesto agotado y consentimiento vencido; el sandbox de un socio no lo ve otro |
 | 6 | Salud | Hecho | Pruebas del BFF: fórmulas, colores, RATING caído deja Cotización en ROJO y la barra en AMARILLO, circuitos abiertos, ACL caído, caché de 60 s, el socio sin micros, Prometheus (con respuestas simuladas y caído), `GET /v1/estado` y `estadoSistema` solo para el BACKOFFICE. Terraform: `roles/monitoring.viewer` y `GCP_PROYECTO` para el BFF (`fmt` en verde, sin `apply`). Prometheus local recoge todos los micros y el admin de Envoy |
+| 7 | Gateway e infraestructura | Hecho | Envoy: las 20 rutas de socios exactas (0,7 s), `jwt_authn` con el JWKS de AUTH (públicas y `/v1/graphql/*` sin token) y el 401 como `ErrorPublico` (`envoy --mode validate` en verde). `openapi-socios.yaml` para GCP. `validar_gateway.py` compara contrato, `openapi-socios.yaml` y Envoy. Terraform del gateway de socios detrás de `crear_gateway_socios = false` y el secreto `clave-firma-socios` en AUTH (`terraform validate` en verde, sin `apply`) |
+| 8 | Pruebas | Hecho | Newman `socios-w07`: 55 peticiones y 52 aserciones en verde (2.ª y 3.ª corrida; la 1.ª, recién levantado el stack, falló, probablemente por el arranque en frío). Sin regresión en `solventa-bff` (141), `hu-w03` (372) y `hu-w04` (52). `verificar-migraciones.sh auth` y `policy`. Sin datos personales en los logs. [Evidencia](evidencias/HU-W07-2026-10-29.md) |
+| 9 | Documentos | Hecho | README de AUTH, POLICY, BFF y Newman, `infra/README.md`, `arquitectura-backend.md`, `autenticacion-usuarios.md`, `contracts/README.md` y `CLAUDE.md` |
 
 **Desvíos frente al plan (decididos al ejecutar):**
 
@@ -296,6 +306,10 @@ liberación, por el pipeline (ADR-09).
   los 6 s, al consultarla). El plan proponía una página del dummy que firmara al abrirla; con el avance por tiempo no
   hace falta otra ruta pública. **Sí descuenta el presupuesto de PRUEBAS en AUTH**, para que el consumo del sandbox sea
   real; no toca las fuentes, RATING, POLICY ni los stubs.
+- **Sin filtro CORS en Envoy:** el portal llama a `/v1` por el proxy de Vite en local y por el rewrite de Vercel en
+  la nube (mismo origen), como la web con `/graphql`.
+- **El JWKS público del gateway de socios** es la ruta `/v1/.well-known/jwks.json` del propio gateway (AUTH es
+  privado): `jwks_socios_url` se llena después del primer despliegue (`infra/gateway.tf`).
 - **El BFF declara `cryptography`** en `requirements.in` (antes llegaba solo por `google-auth`): ES256 la necesita.
 - **Los socios demo se crean al levantar el compose** (`crear-socios-demo`, del que depende `auth`, como
   `crear-backoffice`), no en el perfil `semilla`: así Daniel tiene socios sin un paso extra.

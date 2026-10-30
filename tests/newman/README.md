@@ -74,6 +74,31 @@ Recorrido mínimo del caso insignia (oferta completa, degradada, timeout duro y 
 de `docs/evidencias/flujo-prueba-local-hu-w01.md` y `scripts/humo_bff.py`. Útil para abrirlo en la app de Postman;
 para la verificación completa usa `solventa-bff.postman_collection.json`.
 
+## Colección de HU-W07 (`socios-w07.postman_collection.json`)
+
+API REST de los socios de distribución (KAN-30) por el gateway: 55 peticiones y 52 aserciones en 9 carpetas.
+
+| Carpeta | Qué verifica |
+|---|---|
+| 0. Acceso | Token ES256 de producción y de pruebas, clave errada (401), JWKS público, el contrato, y el 401 de Envoy sin token o con uno inventado, como `ErrorPublico` |
+| 1. Consentimiento y cotización | Consentimiento a nombre del socio, oferta COMPLETA con el presupuesto restante, el consentimiento de otro socio (404) y datos inválidos (422) |
+| 2. Propuesta, identidad y emisión | Aceptar con el contacto del titular, otro socio no la ve (404), el código por correo (del stub de notificaciones), código errado (409) y emitir **sin la URL del enlace** |
+| 3. El titular firma y paga | La página de W03 con el token del enlace: firma, pasarela y `confirmarPago` → EMITIDA |
+| 4. Seguimiento y ventas | Propuesta EMITIDA, póliza, PDF, otro socio (404), ventas con la comisión y el aviso al titular |
+| 5. Presupuesto | El socio 2 (3 cotizaciones) cotiza hasta el 429 con `Retry-After` |
+| 6. Modo prueba | Con el token de PRUEBAS, hasta EMITIDA con el código `000000` y sin tocar los micros |
+| 7. Cuenta | Consumo, credenciales (403 con el token de pruebas) y estado del sistema |
+| 8. Convivencia y BACKOFFICE | `/v1/graphql/web` sigue igual; `nombreSocio` y `estadoSistema` para el BACKOFFICE |
+
+Requiere el stack completo: los socios demo los crea `crear-socios-demo` al levantarlo, con claves **solo locales**, que
+están en el entorno (`socio1_*`, `socio2_*`). Se puede repetir: la carpeta 5 cotiza hasta agotar, aunque ya esté
+agotado de una corrida anterior.
+
+```bash
+npx --yes newman@6.2.2 run tests/newman/socios-w07.postman_collection.json \
+  -e tests/newman/solventa-local.postman_environment.json
+```
+
 ## Colección de HU-W04 (`hu-w04.postman_collection.json`)
 
 Mesa de siniestros por el gateway (KAN-27, KAN-248): 26 peticiones y 52 aserciones en 8 carpetas.

@@ -112,8 +112,11 @@ Además de `gitleaks`, `Dependabot` y `actionlint` (obligatorios), `.github/work
 - Servicios **dummy** (`"dummy": true` en `.github/servicios.json`): sustitutos
   temporales de un servicio que aún no existe, para que el front avance. Son autónomos (sin base, sin tokens, sin
   llamar a nadie) y publican su contrato en `contracts/graphql/<nombre>.graphql`. En staging se despliegan **privados**
-  y solo los invoca el API Gateway, con rutas propias en `infra/gateway/openapi.yaml` y `envoy.yaml`. Se reemplazan
-  por el servicio real sin que el front cambie más que la URL.
+  y solo los invoca el API Gateway, con rutas propias en `infra/gateway/openapi.yaml` y `envoy.yaml`. Al
+  reemplazarlos por el servicio real se mantienen las pantallas, las operaciones y la forma de las respuestas, pero el
+  front cambia más que la URL si el dummy no pasa por el BFF: con `stubs/siniestros` cambiaron el endpoint y el token,
+  el contrato aparte, las imágenes (URL firmada) y el reinicio de los datos para las E2E (ver «Front» en
+  `docs/plan-completar-hu-w04.md`).
   Hoy no hay ninguno: `stubs/siniestros` (HU-W04) se retiró el 2026-10-29 cuando la web pasó a `claims` por el BFF
   (W04-13); sus datos quedaron como semilla de `claims` (`services/claims/semilla/`).
 - Carga y escenarios: k6 en `tests/k6/`. Los guiones de los experimentos pasan a ser pruebas de regresión en cada sprint.

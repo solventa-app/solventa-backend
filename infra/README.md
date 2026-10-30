@@ -377,6 +377,28 @@ mismo corte de 700 ms. Durante sesiones de medición con k6 se puede activar `ca
 `min_instance_count = 1` en los servicios del camino crítico de HU-W01 y evitar arranques en frío; al terminar la sesión
 se vuelve a poner en `false`.
 
+### API Gateway de los socios (`crear_gateway_socios`, HU-W07)
+
+Con `crear_gateway = true` y `crear_gateway_socios = true` (`gateway.tf`), Terraform crea un segundo gateway,
+`solventa-gateway-socios`, configurado con `infra/gateway/openapi-socios.yaml`: las 20 rutas de
+`contracts/openapi/socios-v1.json`, con el corte de 700 ms y el token ES256 del socio validado en el borde
+(`x-google-jwks_uri`). Usa la misma cuenta `gateway-bff` para invocar al BFF.
+
+Pasos, en orden (nada se aplica a mano; va por el pipeline al llegar a `main`):
+
+1. **Cargar `clave-firma-socios`** en Secret Manager antes de la liberación: AUTH no arranca en Cloud Run con el
+   marcador ni con la clave local. Una clave EC P-256 en PKCS#8, como DER en base64 de una sola línea:
+   `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -outform DER | base64 -w0 | gcloud secrets versions add clave-firma-socios --data-file=-`.
+2. Liberar con `crear_gateway_socios = true` y `jwks_socios_url = ""`.
+3. Poner en `jwks_socios_url` la URL `<terraform output -raw gateway_socios_url>/v1/.well-known/jwks.json` (la sirve
+   el BFF sin token, por el mismo gateway) y volver a liberar.
+4. Dar de alta los socios con un Cloud Run Job de la imagen de AUTH: `python -m app.crear_socio ...` (no hay pantalla
+   de alta, W07-21).
+
+El BFF tiene `roles/monitoring.viewer` y `METRICAS_FUENTE=monitoring` para la salud del sistema (`servicios.tf`). En
+local, Envoy replica este gateway en el mismo `:8080` (filtro `jwt_authn` con el JWKS de AUTH) y
+`scripts/validar_gateway.py` verifica que el contrato, `openapi-socios.yaml` y `envoy.yaml` tengan las mismas rutas.
+
 ### Firma, pago y avisos de HU-W03 (F-B8)
 
 - **Ingreso directo, fuera del gateway.** `avisos` (stream SSE: un stream largo no cabe en el corte de 700 ms) y `stub-pasarela`

@@ -1,0 +1,1967 @@
+{
+  "info": {
+    "name": "Solventa · HU-W07 socios de distribución (API /v1)",
+    "description": "API REST de los socios por el gateway (Envoy :8080): token ES256, consentimiento, cotización, propuesta, código, emisión con el enlace al titular (que firma y paga en la página de W03), seguimiento, póliza, ventas con la comisión al emitir, presupuesto agotado, modo prueba, cuenta y convivencia con /v1/graphql. Requiere el stack completo y los socios demo (`crear-socios-demo`).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Acceso",
+      "item": [
+        {
+          "name": "0.1 token de PRODUCCION del socio 1",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/token",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientId\": \"{{socio1_client_id}}\",\n  \"clave\": \"{{socio1_clave}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('w7_correo', `titular.w07.${Date.now()}@ejemplo.co`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 con un token Bearer de producción', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const c = pm.response.json();",
+                  "  pm.expect(c.tokenType).to.eql('Bearer');",
+                  "  pm.expect(c.entorno).to.eql('PRODUCCION');",
+                  "});",
+                  "pm.test('el token es ES256', () => {",
+                  "  const cabecera = JSON.parse(atob(pm.response.json().accessToken.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')));",
+                  "  pm.expect(cabecera.alg).to.eql('ES256');",
+                  "});",
+                  "pm.collectionVariables.set('token_s1', pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.2 token de PRUEBAS del socio 1",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/token",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientId\": \"{{socio1_client_id_pruebas}}\",\n  \"clave\": \"{{socio1_clave_pruebas}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('entorno PRUEBAS', () => pm.expect(pm.response.json().entorno).to.eql('PRUEBAS'));",
+                  "pm.collectionVariables.set('token_s1_pruebas', pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.3 token de PRODUCCION del socio 2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/token",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientId\": \"{{socio2_client_id}}\",\n  \"clave\": \"{{socio2_clave}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_s2', pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.4 clave errada -> 401 CREDENCIALES_INVALIDAS",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/token",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientId\": \"{{socio1_client_id}}\",\n  \"clave\": \"no-es-la-clave\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function errorPublico(estado, codigo) {",
+                  "  pm.test(`HTTP ${estado} con ErrorPublico ${codigo}`, () => {",
+                  "    pm.response.to.have.status(estado);",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c.codigo).to.eql(codigo);",
+                  "    pm.expect(c.mensaje).to.be.a('string');",
+                  "    pm.expect(c.puedeReintentar).to.be.a('boolean');",
+                  "  });",
+                  "}",
+                  "errorPublico(401, 'CREDENCIALES_INVALIDAS');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.5 JWKS público",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/.well-known/jwks.json",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('una clave EC P-256 sin la parte privada', () => { const k = pm.response.json().keys[0]; pm.expect(k.crv).to.eql('P-256'); pm.expect(k).to.not.have.property('d'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.6 el contrato publicado",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/openapi.json",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OpenAPI 3.1 con las rutas de socios', () => { const c = pm.response.json(); pm.expect(c.openapi).to.eql('3.1.0'); pm.expect(c.paths).to.have.property('/v1/cotizaciones'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.7 sin token -> 401 del gateway como ErrorPublico",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/consumo",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function errorPublico(estado, codigo) {",
+                  "  pm.test(`HTTP ${estado} con ErrorPublico ${codigo}`, () => {",
+                  "    pm.response.to.have.status(estado);",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c.codigo).to.eql(codigo);",
+                  "    pm.expect(c.mensaje).to.be.a('string');",
+                  "    pm.expect(c.puedeReintentar).to.be.a('boolean');",
+                  "  });",
+                  "}",
+                  "errorPublico(401, 'TOKEN_INVALIDO');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.8 token inventado -> 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/consumo",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_inventado}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('token_inventado', 'eyJhbGciOiJFUzI1NiJ9.e30.firma');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function errorPublico(estado, codigo) {",
+                  "  pm.test(`HTTP ${estado} con ErrorPublico ${codigo}`, () => {",
+                  "    pm.response.to.have.status(estado);",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c.codigo).to.eql(codigo);",
+                  "    pm.expect(c.mensaje).to.be.a('string');",
+                  "    pm.expect(c.puedeReintentar).to.be.a('boolean');",
+                  "  });",
+                  "}",
+                  "errorPublico(401, 'TOKEN_INVALIDO');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Consentimiento y cotización",
+      "item": [
+        {
+          "name": "1.1 consentimiento del titular a nombre del socio",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/consentimientos",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documentoIdentidad\": \"1098765432\",\n  \"finalidad\": \"cotizacion-seguro-vida-hipotecario\",\n  \"versionTexto\": \"v1\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201 vigente', () => { pm.response.to.have.status(201); pm.expect(pm.response.json().vigente).to.be.true; });",
+                  "pm.collectionVariables.set('w7_cons', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 cotizar -> oferta COMPLETA y presupuesto restante",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/cotizaciones",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consentimientoId\": \"{{w7_cons}}\",\n  \"documentoIdentidad\": \"1098765432\",\n  \"valorCredito\": \"150000000\",\n  \"plazoMeses\": 60,\n  \"direccionInmueble\": \"Calle 26 # 13-19, Bogotá\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 con oferta COMPLETA', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const c = pm.response.json();",
+                  "  pm.expect(c.oferta.tipo).to.eql('COMPLETA');",
+                  "  pm.expect(c.oferta.prima.valor).to.match(/^\\d+(\\.\\d+)?$/);",
+                  "  pm.expect(c.presupuestoRestante).to.be.a('number');",
+                  "});",
+                  "pm.test('sin el desglose del score', () => pm.expect(pm.response.json().oferta).to.not.have.property('desgloseScore'));",
+                  "pm.collectionVariables.set('w7_oferta', pm.response.json().oferta.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 el socio 2 no usa el consentimiento del socio 1 -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/cotizaciones",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s2}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consentimientoId\": \"{{w7_cons}}\",\n  \"documentoIdentidad\": \"1098765432\",\n  \"valorCredito\": \"150000000\",\n  \"plazoMeses\": 60,\n  \"direccionInmueble\": \"Calle 26 # 13-19, Bogotá\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function errorPublico(estado, codigo) {",
+                  "  pm.test(`HTTP ${estado} con ErrorPublico ${codigo}`, () => {",
+                  "    pm.response.to.have.status(estado);",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c.codigo).to.eql(codigo);",
+                  "    pm.expect(c.mensaje).to.be.a('string');",
+                  "    pm.expect(c.puedeReintentar).to.be.a('boolean');",
+                  "  });",
+                  "}",
+                  "errorPublico(404, 'NO_ENCONTRADO');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 plazo fuera de rango -> 422 (no gasta presupuesto)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/cotizaciones",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consentimientoId\": \"{{w7_cons}}\",\n  \"documentoIdentidad\": \"1098765432\",\n  \"valorCredito\": \"150000000\",\n  \"plazoMeses\": 61,\n  \"direccionInmueble\": \"Calle 26 # 13-19, Bogotá\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function errorPublico(estado, codigo) {",
+                  "  pm.test(`HTTP ${estado} con ErrorPublico ${codigo}`, () => {",
+                  "    pm.response.to.have.status(estado);",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c.codigo).to.eql(codigo);",
+                  "    pm.expect(c.mensaje).to.be.a('string');",
+                  "    pm.expect(c.puedeReintentar).to.be.a('boolean');",
+                  "  });",
+                  "}",
+                  "errorPublico(422, 'DATOS_INVALIDOS');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Propuesta, identidad y emisión",
+      "item": [
+        {
+          "name": "2.1 aceptar sin el contacto del titular -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/propuestas",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ofertaId\": \"{{w7_oferta}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function errorPublico(estado, codigo) {",
+                  "  pm.test(`HTTP ${estado} con ErrorPublico ${codigo}`, () => {",
+                  "    pm.response.to.have.status(estado);",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c.codigo).to.eql(codigo);",
+                  "    pm.expect(c.mensaje).to.be.a('string');",
+                  "    pm.expect(c.puedeReintentar).to.be.a('boolean');",
+                  "  });",
+                  "}",
+                  "errorPublico(422, 'DATOS_INVALIDOS');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 aceptar con el contacto -> ACEPTADA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/propuestas",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ofertaId\": \"{{w7_oferta}}\",\n  \"contacto\": {\n    \"nombre\": \"Titular Newman Socio\",\n    \"correo\": \"{{w7_correo}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201 ACEPTADA', () => { pm.response.to.have.status(201); pm.expect(pm.response.json().estado).to.eql('ACEPTADA'); });",
+                  "pm.collectionVariables.set('w7_prop', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 el socio 2 no ve la propuesta del socio 1 -> 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/propuestas/{{w7_prop}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s2}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function errorPublico(estado, codigo) {",
+                  "  pm.test(`HTTP ${estado} con ErrorPublico ${codigo}`, () => {",
+                  "    pm.response.to.have.status(estado);",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c.codigo).to.eql(codigo);",
+                  "    pm.expect(c.mensaje).to.be.a('string');",
+                  "    pm.expect(c.puedeReintentar).to.be.a('boolean');",
+                  "  });",
+                  "}",
+                  "errorPublico(404, 'NO_ENCONTRADO');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 pedir el código al correo del titular",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/propuestas/{{w7_prop}}/codigo",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('correo enmascarado', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().correoEnmascarado).to.include('•••'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.5 stub de notificaciones: el código llegó al titular",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{stub_notificaciones_url}}/control/enviados",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (Number(pm.collectionVariables.get('sondeo') || 0) > 0) { setTimeout(() => {}, 500); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const huella = CryptoJS.SHA256(pm.collectionVariables.get('w7_correo')).toString().slice(0, 12);",
+                  "const avisos = pm.response.json().filter(a => a.plantilla === 'codigo-verificacion' && a.destino_huella === huella);",
+                  "const intentos = Number(pm.collectionVariables.get('sondeo') || 0) + 1;",
+                  "if (avisos.length === 0 && intentos < 40) {",
+                  "  pm.collectionVariables.set('sondeo', intentos);",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.set('sondeo', 0);",
+                  "  pm.test('el aviso llegó al correo del titular, nunca al socio', () => pm.expect(avisos).to.not.be.empty);",
+                  "  const aviso = avisos[avisos.length - 1];",
+                  "  pm.collectionVariables.set('w7_codigo', aviso.datos.codigo);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.6 código errado -> 409 CODIGO_INVALIDO con intentos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/propuestas/{{w7_prop}}/codigo/verificar",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codigo\": \"000001\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function errorPublico(estado, codigo) {",
+                  "  pm.test(`HTTP ${estado} con ErrorPublico ${codigo}`, () => {",
+                  "    pm.response.to.have.status(estado);",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c.codigo).to.eql(codigo);",
+                  "    pm.expect(c.mensaje).to.be.a('string');",
+                  "    pm.expect(c.puedeReintentar).to.be.a('boolean');",
+                  "  });",
+                  "}",
+                  "errorPublico(409, 'CODIGO_INVALIDO');",
+                  "pm.test('dice cuántos intentos quedan', () => pm.expect(pm.response.json().intentosRestantes).to.be.a('number'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.7 código del titular -> IDENTIDAD_VERIFICADA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/propuestas/{{w7_prop}}/codigo/verificar",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codigo\": \"{{w7_codigo}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('IDENTIDAD_VERIFICADA', () => pm.expect(pm.response.json().estado).to.eql('IDENTIDAD_VERIFICADA'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.8 emitir -> EN_FIRMA y enlace enviado, sin la URL",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/propuestas/{{w7_prop}}/emitir",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('EN_FIRMA con el enlace enviado', () => {",
+                  "  const c = pm.response.json();",
+                  "  pm.expect(c.propuesta.estado).to.eql('EN_FIRMA');",
+                  "  pm.expect(c.enlace.correoEnmascarado).to.be.a('string');",
+                  "});",
+                  "pm.test('la URL del enlace nunca vuelve al socio (W07-17)', () => {",
+                  "  pm.expect(pm.response.text()).to.not.include('#t=');",
+                  "  pm.expect(pm.response.text()).to.not.include('/firma');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.9 stub de notificaciones: el enlace llegó al titular",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{stub_notificaciones_url}}/control/enviados",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (Number(pm.collectionVariables.get('sondeo') || 0) > 0) { setTimeout(() => {}, 500); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const huella = CryptoJS.SHA256(pm.collectionVariables.get('w7_correo')).toString().slice(0, 12);",
+                  "const avisos = pm.response.json().filter(a => a.plantilla === 'enlace-firma' && a.destino_huella === huella);",
+                  "const intentos = Number(pm.collectionVariables.get('sondeo') || 0) + 1;",
+                  "if (avisos.length === 0 && intentos < 40) {",
+                  "  pm.collectionVariables.set('sondeo', intentos);",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.set('sondeo', 0);",
+                  "  pm.test('el aviso llegó al correo del titular, nunca al socio', () => pm.expect(avisos).to.not.be.empty);",
+                  "  const aviso = avisos[avisos.length - 1];",
+                  "  pm.collectionVariables.set('w7_enlace', aviso.datos.enlace.split('#t=')[1]);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.10 seguimiento: el enlace vigente, sin token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/propuestas/{{w7_prop}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('enlace vigente con su vencimiento', () => { const e = pm.response.json().enlace; pm.expect(e.vigente).to.be.true; pm.expect(e.venceEn).to.be.a('string'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. El titular firma y paga (página de W03)",
+      "item": [
+        {
+          "name": "3.1 firmaPorEnlace -> documento a firmar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w7_enlace}}"
+              }
+            ],
+            "url": "{{gateway_url}}/graphql/web",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query { firmaPorEnlace { vigente propuesta { estado } documento { version } } }\",\n  \"variables\": {}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('EN_FIRMA con la versión del documento', () => { const r = pm.response.json().data.firmaPorEnlace; pm.expect(r.propuesta.estado).to.eql('EN_FIRMA'); pm.collectionVariables.set('w7_version', r.documento.version); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 firmarPorEnlace NOMBRE -> FIRMADA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w7_enlace}}"
+              }
+            ],
+            "url": "{{gateway_url}}/graphql/web",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: FirmarPorEnlaceInput!) { firmarPorEnlace(entrada: $e) { __typename ... on FirmaRegistrada { estado } ... on ErrorFirma { mensaje motivo } } }\",\n  \"variables\": {\n    \"e\": {\n      \"versionDocumento\": \"{{w7_version}}\",\n      \"aceptaTerminos\": true,\n      \"autorizaCobro\": true,\n      \"modo\": \"NOMBRE\",\n      \"nombreFirma\": \"Titular Newman Socio\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('FIRMADA', () => pm.expect(pm.response.json().data.firmarPorEnlace.estado).to.eql('FIRMADA'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 iniciarPago -> sesión en la pasarela",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w7_enlace}}"
+              }
+            ],
+            "url": "{{gateway_url}}/graphql/web",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation { iniciarPago { __typename ... on SesionPago { sesionId urlPago } ... on ErrorPago { mensaje motivo } } }\",\n  \"variables\": {}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('SesionPago', () => { const r = pm.response.json().data.iniciarPago; pm.expect(r.__typename).to.eql('SesionPago'); pm.collectionVariables.set('w7_sesion', r.sesionId); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 el titular paga con su tarjeta en la pasarela",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{stub_pasarela_url}}/checkout/{{w7_sesion}}/pagar",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numero\": \"4242424242424242\",\n  \"nombre\": \"Titular Newman\",\n  \"vencimiento\": \"12/30\",\n  \"cvv\": \"123\",\n  \"tipo\": \"CREDITO\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('la pasarela recibió el pago', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.5 confirmarPago -> póliza EMITIDA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Enlace-Firma",
+                "value": "{{w7_enlace}}"
+              }
+            ],
+            "url": "{{gateway_url}}/graphql/web",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($s: ID!) { confirmarPago(sesionId: $s) { __typename ... on Poliza { id numero estado } ... on ErrorPago { mensaje motivo } } }\",\n  \"variables\": {\n    \"s\": \"{{w7_sesion}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Poliza EMITIDA', () => { const r = pm.response.json().data.confirmarPago; pm.expect(r.estado).to.eql('EMITIDA'); pm.collectionVariables.set('w7_poliza', r.id); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Seguimiento, póliza y ventas del socio",
+      "item": [
+        {
+          "name": "4.1 seguimiento -> EMITIDA con la póliza",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/propuestas/{{w7_prop}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('EMITIDA', () => { const p = pm.response.json(); pm.expect(p.estado).to.eql('EMITIDA'); pm.expect(p.estadoVisible).to.eql('EMITIDA'); pm.expect(p.polizaId).to.eql(pm.collectionVariables.get('w7_poliza')); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 la póliza",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/polizas/{{w7_poliza}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('número, ramo y montos como texto', () => { const p = pm.response.json(); pm.expect(p.numero).to.include('SOL-'); pm.expect(p.ramo).to.be.a('string'); pm.expect(p.prima.valor).to.be.a('string'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 el PDF de la póliza",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/polizas/{{w7_poliza}}/documento",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('application/pdf', () => { pm.response.to.have.status(200); pm.expect(pm.response.headers.get('Content-Type')).to.include('application/pdf'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.4 el socio 2 no ve la póliza del socio 1 -> 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/polizas/{{w7_poliza}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s2}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function errorPublico(estado, codigo) {",
+                  "  pm.test(`HTTP ${estado} con ErrorPublico ${codigo}`, () => {",
+                  "    pm.response.to.have.status(estado);",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c.codigo).to.eql(codigo);",
+                  "    pm.expect(c.mensaje).to.be.a('string');",
+                  "    pm.expect(c.puedeReintentar).to.be.a('boolean');",
+                  "  });",
+                  "}",
+                  "errorPublico(404, 'NO_ENCONTRADO');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.5 ventas: la póliza y su comisión, causada al emitir",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/ventas",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('al menos una emitida con comisión', () => {",
+                  "  const v = pm.response.json();",
+                  "  pm.expect(v.tasaComision).to.eql('0.1000');",
+                  "  pm.expect(v.totales.emitidas).to.be.at.least(1);",
+                  "  pm.expect(Number(v.totales.comision.valor)).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.6 stub de notificaciones: el titular recibe su póliza con el PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{stub_notificaciones_url}}/control/enviados",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const huella = CryptoJS.SHA256(pm.collectionVariables.get('w7_correo')).toString().slice(0, 12);",
+                  "pm.test('el aviso de póliza va al titular', () => {",
+                  "  pm.expect(pm.response.json().filter(a => a.plantilla === 'poliza-emitida' && a.destino_huella === huella)).to.not.be.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Presupuesto agotado (socio 2: 3 cotizaciones)",
+      "item": [
+        {
+          "name": "5.1 consentimiento a nombre del socio 2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/consentimientos",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s2}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documentoIdentidad\": \"1098765432\",\n  \"finalidad\": \"cotizacion-seguro-vida-hipotecario\",\n  \"versionTexto\": \"v1\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('w7_cons_s2', pm.response.json().id);",
+                  "pm.collectionVariables.set('cotizaciones_s2', 0);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.2 cotizar hasta agotar -> 429 PRESUPUESTO_AGOTADO",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/cotizaciones",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s2}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consentimientoId\": \"{{w7_cons_s2}}\",\n  \"documentoIdentidad\": \"1098765432\",\n  \"valorCredito\": \"150000000\",\n  \"plazoMeses\": 60,\n  \"direccionInmueble\": \"Calle 26 # 13-19, Bogotá\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function errorPublico(estado, codigo) {",
+                  "  pm.test(`HTTP ${estado} con ErrorPublico ${codigo}`, () => {",
+                  "    pm.response.to.have.status(estado);",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c.codigo).to.eql(codigo);",
+                  "    pm.expect(c.mensaje).to.be.a('string');",
+                  "    pm.expect(c.puedeReintentar).to.be.a('boolean');",
+                  "  });",
+                  "}",
+                  "",
+                  "const intentos = Number(pm.collectionVariables.get('cotizaciones_s2')) + 1;",
+                  "pm.collectionVariables.set('cotizaciones_s2', intentos);",
+                  "if (pm.response.code === 200 && intentos < 5) {",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  errorPublico(429, 'PRESUPUESTO_AGOTADO');",
+                  "  pm.test('con Retry-After', () => pm.expect(Number(pm.response.headers.get('Retry-After'))).to.be.above(0));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Modo prueba (token de PRUEBAS)",
+      "item": [
+        {
+          "name": "6.1 consentimiento simulado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/consentimientos",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1_pruebas}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documentoIdentidad\": \"1000000001\",\n  \"finalidad\": \"cotizacion\",\n  \"versionTexto\": \"v1\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('id de prueba', () => pm.expect(pm.response.json().id).to.include('prueba-'));",
+                  "pm.collectionVariables.set('w7p_cons', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.2 cotización simulada",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/cotizaciones",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1_pruebas}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consentimientoId\": \"{{w7p_cons}}\",\n  \"documentoIdentidad\": \"1000000001\",\n  \"valorCredito\": \"150000000\",\n  \"plazoMeses\": 60,\n  \"direccionInmueble\": \"Calle 26 # 13-19, Bogotá\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('oferta de prueba COMPLETA', () => { const o = pm.response.json().oferta; pm.expect(o.id).to.include('prueba-'); pm.expect(o.tipo).to.eql('COMPLETA'); });",
+                  "pm.collectionVariables.set('w7p_oferta', pm.response.json().oferta.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.3 aceptar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/propuestas",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1_pruebas}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ofertaId\": \"{{w7p_oferta}}\",\n  \"contacto\": {\n    \"nombre\": \"Titular Prueba\",\n    \"correo\": \"titular@prueba.co\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('w7p_prop', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.4 verificar con el código fijo 000000",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/propuestas/{{w7p_prop}}/codigo/verificar",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1_pruebas}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codigo\": \"000000\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('IDENTIDAD_VERIFICADA', () => pm.expect(pm.response.json().estado).to.eql('IDENTIDAD_VERIFICADA'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.5 emitir",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/propuestas/{{w7p_prop}}/emitir",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1_pruebas}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('EN_FIRMA', () => pm.expect(pm.response.json().propuesta.estado).to.eql('EN_FIRMA'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.6 el titular simulado firma y paga solo -> EMITIDA",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/propuestas/{{w7p_prop}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1_pruebas}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (Number(pm.collectionVariables.get('sondeo') || 0) > 0) { setTimeout(() => {}, 1000); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const intentos = Number(pm.collectionVariables.get('sondeo') || 0) + 1;",
+                  "if (pm.response.json().estado !== 'EMITIDA' && intentos < 15) {",
+                  "  pm.collectionVariables.set('sondeo', intentos);",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.set('sondeo', 0);",
+                  "  pm.test('EMITIDA en segundos, sin firma ni pasarela reales', () => pm.expect(pm.response.json().estado).to.eql('EMITIDA'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Cuenta",
+      "item": [
+        {
+          "name": "7.1 consumo: las llamadas de esta corrida",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/consumo",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('cotizaciones en el consumo y el presupuesto', () => { const c = pm.response.json(); pm.expect(c.porApi.map(a => a.api)).to.include('cotizaciones'); pm.expect(c.presupuesto.asignadas).to.eql(1000); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.2 credenciales con el token de producción",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/credenciales",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('las 2 claves del socio', () => { const c = pm.response.json(); pm.expect(c.socio.nombre).to.eql('Banco Andino Demo'); pm.expect(c.credenciales).to.have.lengthOf(2); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.3 credenciales con el token de pruebas -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/credenciales",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1_pruebas}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function errorPublico(estado, codigo) {",
+                  "  pm.test(`HTTP ${estado} con ErrorPublico ${codigo}`, () => {",
+                  "    pm.response.to.have.status(estado);",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c.codigo).to.eql(codigo);",
+                  "    pm.expect(c.mensaje).to.be.a('string');",
+                  "    pm.expect(c.puedeReintentar).to.be.a('boolean');",
+                  "  });",
+                  "}",
+                  "errorPublico(403, 'PROHIBIDO');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.4 estado del sistema, sin nombres de micros",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/estado?ventana=15m",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_s1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('porcentaje y las dos APIs', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.porcentaje).to.be.within(0, 100);",
+                  "  pm.expect(e.apis.map(a => a.nombre).sort()).to.eql(['COTIZACION', 'EMISION']);",
+                  "});",
+                  "pm.test('sin micros internos (W07-14)', () => pm.expect(pm.response.text()).to.not.include('rating'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Convivencia y BACKOFFICE",
+      "item": [
+        {
+          "name": "8.1 /v1/graphql/web sigue respondiendo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/graphql/web",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"{ __typename }\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('la API de socios no tapa /v1/graphql', () => pm.expect(pm.response.json().data.__typename).to.eql('Query'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.2 iniciarSesion del BACKOFFICE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/graphql/web",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) { iniciarSesion(entrada: $e) { __typename ... on Sesion { token } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{usuario_backoffice}}\",\n      \"clave\": \"{{clave_backoffice}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('token_bo', pm.response.json().data.iniciarSesion.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.3 propuestas: la del socio con su nombre (nombreSocio)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/graphql/web",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_bo}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query { propuestas(tamano: 50) { propuestas { id nombreSocio nombreAsesor } } }\",\n  \"variables\": {}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('nombreSocio en la propuesta del socio', () => {",
+                  "  const p = pm.response.json().data.propuestas.propuestas.find(x => x.id === pm.collectionVariables.get('w7_prop'));",
+                  "  pm.expect(p.nombreSocio).to.eql('Banco Andino Demo');",
+                  "  pm.expect(p.nombreAsesor).to.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.4 estadoSistema del BACKOFFICE con el detalle por micro",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway_url}}/graphql/web",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_bo}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query { estadoSistema(ventana: \\\"15m\\\") { porcentaje color micros { nombre peso responde } apis { nombre color } } }\",\n  \"variables\": {}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('los 10 micros con peso', () => { const e = pm.response.json().data.estadoSistema; pm.expect(e.micros).to.have.lengthOf(10); pm.expect(e.micros.reduce((s, m) => s + m.peso, 0)).to.eql(100); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "sondeo",
+      "value": "0"
+    }
+  ]
+}
