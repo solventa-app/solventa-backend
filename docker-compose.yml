@@ -136,6 +136,12 @@ services:
       ALMACENAMIENTO_URL: http://almacenamiento:8009
       ONBOARDING_URL: http://onboarding:8010
       CLAIMS_URL: http://claims:8012
+      # Salud del sistema (HU-W07): solo `/health` de UNDER y del consolidador, y las métricas de
+      # Prometheus (perfil `observabilidad`; sin él, la salud sale solo de `/health`).
+      UNDER_URL: http://under:8008
+      CONSOLIDADOR_URL: http://consolidador-fuentes:8006
+      METRICAS_FUENTE: prometheus
+      PROMETHEUS_URL: http://prometheus:9090
       # Tickets de un solo uso del stream de avisos (W03-37): misma base que POLICY, que publica allí.
       REDIS_URL: redis://redis:6379/3
       AVISOS_URL: http://localhost:8011/avisos/stream

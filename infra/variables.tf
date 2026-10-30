@@ -235,6 +235,18 @@ variable "crear_gateway" {
   default     = false
 }
 
+variable "crear_gateway_socios" {
+  description = "Crea el API Gateway de los socios de distribución (HU-W07, `infra/gateway/openapi-socios.yaml`): valida el token ES256 del socio en el borde y reenvía al BFF con el corte de 700 ms. Exige `crear_gateway` (usa la cuenta `gateway-bff`)."
+  type        = bool
+  default     = false
+}
+
+variable "jwks_socios_url" {
+  description = "URL pública del JWKS de los tokens de socios para `x-google-jwks_uri`: la ruta `/v1/.well-known/jwks.json` del propio gateway de socios (output `gateway_socios_url`). Vacía en el primer despliegue."
+  type        = string
+  default     = ""
+}
+
 variable "calentar_camino_critico" {
   description = "Pone `min_instance_count = 1` en los servicios del camino crítico de HU-W01 solo durante las sesiones de medición para evitar arranques en frío frente al corte de 700 ms del gateway. Mantener en `false` fuera de las sesiones."
   type        = bool

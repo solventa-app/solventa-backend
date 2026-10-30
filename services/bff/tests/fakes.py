@@ -361,9 +361,16 @@ class AuthFalso:
 
 class AclFalso:
     def __init__(self, fallan: set[str] | None = None) -> None:
+        self.circuitos_estado: dict[str, str] = {
+            n: "closed"
+            for n in ("open-finance", "open-data", "pasarela", "firma", "kyc", "notificaciones")
+        }
         self.fallan = fallan or set()
         self.llamadas: list[tuple[str, str, str]] = []
         self.invalidaciones: list[str] = []
+
+    async def circuitos(self) -> dict[str, str]:
+        return dict(self.circuitos_estado)
 
     async def consultar_fuente(self, cliente_id: str, consentimiento_id: str, fuente: str) -> dict:
         self.llamadas.append((cliente_id, consentimiento_id, fuente))

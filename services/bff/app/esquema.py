@@ -1390,6 +1390,7 @@ class EstadoSistema:
 
 
 MENSAJE_ESTADO_SISTEMA = "No pudimos calcular el estado del sistema. Intenta de nuevo."
+MENSAJE_VENTANA_INVALIDA = "La ventana debe ser 15m, 1h, 24h o 7d."
 MENSAJE_POLIZA_SINIESTRO = "No pudimos consultar la póliza del siniestro. Intenta de nuevo."
 MENSAJE_ACCION_SINIESTRO = "No pudimos completar la acción sobre el siniestro. Intenta de nuevo."
 
@@ -1805,9 +1806,54 @@ class Query:
 
     @strawberry.field
     async def estado_sistema(self, info: Info, ventana: str | None = "1h") -> EstadoSistema:
-        """v0.22 (HU-W07), solo BACKOFFICE. El cálculo llega con el bloque 6 del plan de W07."""
+        """v0.22 (HU-W07), solo BACKOFFICE: la salud general, por API y por micro
+        (`app/salud.py`)."""
         exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
-        raise ErrorPublico(MENSAJE_ESTADO_SISTEMA)
+        salud = info.context.get("salud")
+        ventana = ventana or "1h"
+        if salud is None:
+            raise ErrorPublico(MENSAJE_ESTADO_SISTEMA)
+        if ventana not in salud.ventanas:
+            raise ErrorPublico(MENSAJE_VENTANA_INVALIDA)
+        try:
+            datos = await salud.calcular(ventana)
+        except Exception as error:  # noqa: BLE001 - nunca un 5xx crudo (regla 4)
+            raise ErrorPublico(MENSAJE_ESTADO_SISTEMA) from error
+        return EstadoSistema(
+            porcentaje=datos["porcentaje"],
+            color=ColorSalud(datos["color"]),
+            ventana=datos["ventana"],
+            calculado_en=datos["calculado_en"],
+            disponibilidad=datos["disponibilidad"],
+            latencia_media_ms=datos["latencia_media_ms"],
+            apis=[
+                SaludApi(
+                    nombre=a["nombre"],
+                    porcentaje=a["porcentaje"],
+                    color=ColorSalud(a["color"]),
+                    micros=a["micros"],
+                    externas=[
+                        SaludExterna(nombre=x["nombre"], estado=EstadoCircuito(x["estado"]))
+                        for x in a["externas"]
+                    ],
+                )
+                for a in datos["apis"]
+            ],
+            micros=[
+                SaludMicro(
+                    nombre=m["nombre"],
+                    peso=m["peso"],
+                    porcentaje=m["porcentaje"],
+                    color=ColorSalud(m["color"]),
+                    responde=m["responde"],
+                    sin_trafico=m["sin_trafico"],
+                    disponibilidad=m["disponibilidad"],
+                    latencia_media_ms=m["latencia_media_ms"],
+                    latencia_p95_ms=m["latencia_p95_ms"],
+                )
+                for m in datos["micros"]
+            ],
+        )
 
     @strawberry.field
     async def cobros(

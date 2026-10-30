@@ -141,6 +141,9 @@ class PuertoAcl(Protocol):
 
     async def tasas_cambio(self) -> dict[str, str]: ...
 
+    # HU-W07: el estado de cada circuito (`closed`, `half-opened` u `opened`), para la salud.
+    async def circuitos(self) -> dict[str, str]: ...
+
 
 class PuertoRisk(Protocol):
     async def registrar_perfil(self, cliente_id: str, fuentes: list[dict]) -> dict: ...
@@ -688,6 +691,12 @@ class ClienteAclHttp:
         self._cliente = cliente
         self._tasas: dict[str, str] | None = None
         self._tasas_vencen = 0.0
+
+    async def circuitos(self) -> dict[str, str]:
+        respuesta = await _pedir(self._cliente, "GET", "/circuitos")
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
 
     async def tasas_cambio(self) -> dict[str, str]:
         """Cuántos COP vale una unidad de cada moneda (KAN-209), como texto decimal."""
@@ -1318,3 +1327,28 @@ def construir_clientes(config: Configuracion) -> tuple[Clientes, list[Any]]:
         onboarding,
         claims,
     ]
+
+
+def construir_sondas(config: Configuracion) -> tuple[dict[str, Any], list[Any]]:
+    """Un cliente por micro solo para su `/health` (salud del sistema, HU-W07), con la misma
+    autenticación de servicio que el resto. Devuelve `{micro: cliente}` y lo que hay que cerrar."""
+    urls = {
+        "auth": config.auth_url,
+        "acl-worker": config.acl_url,
+        "risk": config.risk_url,
+        "rating": config.rating_url,
+        "payments": config.payments_url,
+        "policy": config.policy_url,
+        "almacenamiento": config.almacenamiento_url,
+        "under": config.under_url,
+        "consolidador-fuentes": config.consolidador_url,
+    }
+    clientes = {
+        nombre: httpx.AsyncClient(
+            base_url=url,
+            timeout=1.0,
+            auth=autenticacion_para(config.autenticacion_servicios, nombre),
+        )
+        for nombre, url in urls.items()
+    }
+    return clientes, list(clientes.values())

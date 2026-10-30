@@ -67,3 +67,8 @@ output "gateway_url" {
   description = "URL pública del API Gateway delante del BFF con corte duro de 700 ms (null si crear_gateway = false)."
   value       = var.crear_gateway ? "https://${google_api_gateway_gateway.bff[0].default_hostname}" : null
 }
+
+output "gateway_socios_url" {
+  description = "URL pública del API Gateway de los socios (HU-W07); null si crear_gateway_socios = false. Su `/v1/.well-known/jwks.json` es el valor de `jwks_socios_url`."
+  value       = local.gateway_socios ? "https://${google_api_gateway_gateway.socios[0].default_hostname}" : null
+}
