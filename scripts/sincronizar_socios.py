@@ -1,9 +1,9 @@
 """Mantiene en la imagen del BFF las copias de los contratos de socios (HU-W07, KAN-30).
 
-Las fuentes de verdad son `contracts/openapi/socios-v1.json` (la API REST `/v1` que el BFF sirve en
-`/v1/openapi.json`) y `contracts/salud.json` (pesos y reglas de la salud del sistema). La imagen se
-construye solo con la carpeta del servicio, así que lleva una copia en `services/bff/app/` (se copia,
-no se enlaza):
+Las fuentes de verdad son `contracts/openapi/socios-v1.json` (la API REST `/v1` que el BFF sirve
+en `/v1/openapi.json`) y `contracts/salud.json` (pesos y reglas de la salud del sistema). La imagen
+se construye solo con la carpeta del servicio, así que lleva una copia en `services/bff/app/` (se
+copia, no se enlaza):
 
     python scripts/sincronizar_socios.py             # copia los contratos al BFF
     python scripts/sincronizar_socios.py --verificar # falla si una copia difiere (CI)"""
@@ -13,9 +13,10 @@ import sys
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
+BFF = RAIZ / "services" / "bff" / "app"
 COPIAS = {
-    RAIZ / "contracts" / "openapi" / "socios-v1.json": RAIZ / "services" / "bff" / "app" / "socios-v1.json",
-    RAIZ / "contracts" / "salud.json": RAIZ / "services" / "bff" / "app" / "salud.json",
+    RAIZ / "contracts" / "openapi" / "socios-v1.json": BFF / "socios-v1.json",
+    RAIZ / "contracts" / "salud.json": BFF / "salud.json",
 }
 
 
