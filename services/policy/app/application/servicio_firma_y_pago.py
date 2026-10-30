@@ -344,6 +344,11 @@ class ServicioFirmaYPago:
             enlace = self._enviar_enlace(actualizada)
         return {"propuesta": actualizada, "enlace": enlace}
 
+    def vencimiento_enlace(self, propuesta_id: str) -> datetime | None:
+        """Cuándo vence el enlace activo (HU-W07: el socio sigue la propuesta sin ver el enlace)."""
+        enlace = self._repo.enlace_activo(propuesta_id)
+        return enlace["vence_en"] if enlace else None
+
     def reenviar_enlace(self, propuesta_id: str) -> dict[str, Any]:
         """Solo ASESOR: un enlace nuevo que anula el anterior; el titular retoma donde iba."""
         propuesta = self._propuesta(propuesta_id)

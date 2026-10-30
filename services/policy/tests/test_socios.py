@@ -149,7 +149,9 @@ def test_http_aceptar_como_socio_listar_y_ventas(e) -> None:
         pid = creada.json()["id"]
         client.post(f"/propuestas/{pid}/codigo", json={})
         client.post(f"/propuestas/{pid}/codigo/verificar", json={"codigo": e.codigo_enviado()})
+        antes = client.get(f"/propuestas/{pid}").json()
         emitida = client.post(f"/propuestas/{pid}/emitir", json={"rol": "SOCIO"})
+        despues = client.get(f"/propuestas/{pid}").json()
         del_socio = client.get(
             "/propuestas", params={"actor_usuario_id": SOCIO, "actor_rol": "SOCIO"}
         ).json()
@@ -164,6 +166,8 @@ def test_http_aceptar_como_socio_listar_y_ventas(e) -> None:
     assert creada.status_code == 200 and creada.json()["actor_rol"] == "SOCIO"
     assert mala.status_code == 422
     assert emitida.status_code == 200 and emitida.json()["propuesta"]["estado"] == "EN_FIRMA"
+    # El socio sigue el enlace por su vencimiento, nunca por el token (W07-17).
+    assert antes["enlace_vence_en"] is None and despues["enlace_vence_en"] is not None
     assert del_socio["total"] == 1 and como_asesor["total"] == 0
     assert ventas.status_code == 200 and ventas.json()["totales"]["propuestas"] == 1
     assert al_reves.status_code == 422

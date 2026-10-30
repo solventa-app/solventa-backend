@@ -152,13 +152,16 @@ class ServicioFirmaPago:
     async def _propuesta_del_asesor(
         self, usuario: UsuarioActual, propuesta_id: str
     ) -> dict | ErrorFlujoDatos:
-        """El ASESOR opera solo sobre lo que él aceptó; una ajena responde como inexistente."""
+        """El intermediario (ASESOR o SOCIO) opera solo sobre lo que él aceptó; una ajena responde
+        como inexistente. Un SOCIO, además, solo sobre lo que aceptó como SOCIO (HU-W07)."""
         try:
             propuesta = await self._c.policy.obtener_propuesta(propuesta_id)
         except ErrorServicio as error:
             logger.warning("POLICY no disponible error=%s", error)
             return _error_servicio()
         if propuesta is None or propuesta.get("actor_usuario_id") != usuario.id:
+            return _no_encontrada()
+        if usuario.rol == "SOCIO" and propuesta.get("actor_rol") != "SOCIO":
             return _no_encontrada()
         return propuesta
 
@@ -181,12 +184,13 @@ class ServicioFirmaPago:
         return await self._llamar(self._c.policy.verificar_codigo(propuesta_id, codigo))
 
     async def emitir(self, usuario: UsuarioActual, propuesta_id: str) -> dict | ErrorFlujoDatos:
-        """ASESOR: «Emitir». CLIENTE: «Firmar» (el titular sale de AUTH, nunca del cliente)."""
-        if usuario.rol == "ASESOR":
+        """ASESOR o SOCIO: «Emitir». CLIENTE: «Firmar» (el titular sale de AUTH, nunca del
+        cliente)."""
+        if usuario.rol in ("ASESOR", "SOCIO"):
             previo = await self._propuesta_del_asesor(usuario, propuesta_id)
             if isinstance(previo, ErrorFlujoDatos):
                 return previo
-            return await self._llamar(self._c.policy.emitir(propuesta_id, "ASESOR", None))
+            return await self._llamar(self._c.policy.emitir(propuesta_id, usuario.rol, None))
         try:
             titular = await self._titular_de(usuario)
         except ErrorServicio as error:
@@ -359,6 +363,23 @@ class ServicioFirmaPago:
 
         pares = await asyncio.gather(*(nombre(i) for i in ids))
         return {i: n for i, n in pares if n}
+
+    async def nombres_de_socios(self, propuestas: list[dict]) -> dict[str, str]:
+        """Solo para el BACKOFFICE (v0.22, `Propuesta.nombreSocio`). El nombre comercial del socio
+        no es un dato personal. De mejor esfuerzo, como el del asesor."""
+        ids = sorted(
+            {
+                p["actor_usuario_id"]
+                for p in propuestas
+                if p.get("actor_rol") == "SOCIO" and p.get("actor_usuario_id")
+            }
+        )
+        if not ids or self._c.socios is None:
+            return {}
+        try:
+            return await self._c.socios.nombres(ids)
+        except ErrorServicio:
+            return {}
 
     async def ticket_avisos(self, usuario: UsuarioActual) -> dict:
         """Ticket de un solo uso de 60 s. Lanza `ErrorServicio` si no se pudo emitir."""

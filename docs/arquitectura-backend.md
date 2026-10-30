@@ -26,6 +26,11 @@ se actualiza este archivo en el mismo cambio.
 | `claims` | 8012 | Mesa de siniestros (HU-W04): siniestros, peritos, evidencias (referencias al almacenamiento), derivaciones y resoluciones; la orden de pago de la indemnización la registra PAYMENTS | MongoDB `claims` (colecciones referenciadas; bandeja y detalle en la secundaria) | 2 |
 | `consolidador-kyc` | — | Consolidador de KYC (Truora) | — | 3 |
 
+**Socios de distribución (HU-W07):** no hay un servicio nuevo. La API REST `/v1/...` vive en el `bff`
+(`app/socios/`) detrás de su propio API Gateway; AUTH guarda los socios, sus credenciales, el presupuesto de
+cotizaciones y el consumo, y firma sus tokens ES256 (migración `0010`); POLICY trata al socio como un intermediario más
+(`actor_rol = SOCIO`) y causa su comisión al emitir (migración `0008`). Plan: `docs/plan-completar-hu-w07.md`.
+
 Cada servicio tiene su propia base: **nadie lee ni escribe en la base de otro**.
 
 ## Caso insignia (Journey 5) — flujo del Sprint 1

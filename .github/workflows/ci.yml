@@ -65,6 +65,7 @@ jobs:
               - 'infra/**'
               - '.github/servicios.json'
               - 'scripts/validar_gateway.py'
+              - 'contracts/openapi/**'
             manifiesto:
               - '.github/**'
               - 'docker-compose.yml'
