@@ -57,11 +57,15 @@ jobs:
               - 'services/*/app/tipos-archivo.json'
               - 'scripts/sincronizar_eventos_siniestros.py'
               - 'services/claims/app/eventos/**'
+              - 'scripts/sincronizar_socios.py'
+              - 'services/bff/app/socios-v1.json'
+              - 'services/bff/app/salud.json'
               - 'requirements-dev.txt'
             infra:
               - 'infra/**'
               - '.github/servicios.json'
               - 'scripts/validar_gateway.py'
+              - 'contracts/openapi/**'
             manifiesto:
               - '.github/**'
               - 'docker-compose.yml'
@@ -100,7 +104,6 @@ jobs:
             stubs/firma: ['stubs/firma/**']
             stubs/kyc: ['stubs/kyc/**']
             stubs/notificaciones: ['stubs/notificaciones/**']
-            stubs/siniestros: ['stubs/siniestros/**']
       - name: Matrices de servicios afectados
         id: matriz
         env:
@@ -313,6 +316,8 @@ jobs:
         run: python scripts/sincronizar_tipos_archivo.py --verificar
       - name: Las copias de los esquemas siniestro.* de claims siguen iguales al contrato
         run: python scripts/sincronizar_eventos_siniestros.py --verificar
+      - name: Las copias de los contratos de socios (OpenAPI y salud.json) del BFF siguen iguales
+        run: python scripts/sincronizar_socios.py --verificar
 
   manifiesto:
     needs: cambios

@@ -175,13 +175,14 @@ class RepositorioBloque9Falso(RepositorioPropuestasFalso):
             if p["estado"] != "EMITIDA" and not p.get("contacto_borrado_en")
         ][:limite]
 
-    def listar(self, cliente_id, actor_usuario_id, estado_visible, pagina, tamano):
+    def listar(self, cliente_id, actor_usuario_id, estado_visible, pagina, tamano, actor_rol=None):
         estados = ESTADOS_POR_VISIBLE[estado_visible] if estado_visible else None
         filas = [
             dict(p, nombre_titular=self.contactos.get(p["id"], {}).get("nombre"))
             for p in self._por_oferta.values()
             if (cliente_id is None or p["cliente_id"] == cliente_id)
             and (actor_usuario_id is None or p["actor_usuario_id"] == actor_usuario_id)
+            and (actor_rol is None or p.get("actor_rol") == actor_rol)
             and (estados is None or p["estado"] in estados)
         ]
         filas.sort(key=lambda p: p["creado_en"], reverse=True)

@@ -118,6 +118,22 @@ los dos: EN_FIRMA ─firma (trazo, imagen o nombre)─► FIRMADA ─pago en la 
 - **Avisos en vivo (W03-37):** cada cambio de estado del flujo nuevo publica en Redis (`avisos:asesor:<usuario>`, `avisos:titular:<hmac>`, `avisos:todos`) `{tipo, propuestaId, estado, estadoVisible, polizaId, numero}`, sin datos personales. Sin `REDIS_URL` no se publica (mejor esfuerzo).
 - **La imagen de la firma y la purga:** `evidencias_firma` es append-only, así que la purga no borra `imagen_firma_archivo_id`; pide la retención del archivo y el bucket lo borra en un día.
 
+## Socios de distribución (HU-W07, migración `0008`)
+
+El socio vende por la API como un intermediario más (W07-20): `actor_rol = SOCIO` y `actor_usuario_id` = id del
+socio. Plan: `docs/plan-completar-hu-w07.md`.
+
+- `POST /propuestas` acepta `actor_rol = SOCIO` con el `contacto` del titular (obligatorio, lo exige el BFF) y la
+  `tasa_comision` del socio, que queda **congelada** en la propuesta (W07-7). Con otro rol la tasa se ignora.
+- Código, verificación, `POST /propuestas/{id}/emitir {rol: SOCIO}` y el reenvío funcionan como para el ASESOR
+  (`ROLES_INTERMEDIARIO`). El enlace va al correo del titular y nunca vuelve en la respuesta.
+- **Los avisos al asesor no le llegan al socio:** el SSE `avisos:asesor:<id>` y el correo `poliza-emitida-asesor`
+  siguen siendo solo del `ASESOR`. El titular sí recibe su póliza. El socio sigue la propuesta por consulta (W07-8).
+- **Comisión al emitir:** `emitir_poliza` inserta en `comisiones` (append-only, `poliza_id` único) prima × tasa con los
+  decimales de la prima, en la misma transacción. La prima y la comisión van cifradas.
+- `GET /propuestas?actor_rol=SOCIO&actor_usuario_id=<socio>` y `GET /socios/{id}/ventas?desde=&hasta=` (propuestas,
+  emitidas, primas y comisión por mes; por defecto, los últimos 12 meses).
+
 ## Diseño
 
 - **Capas simples** (sin puertos y adaptadores): hexagonal es solo para `acl-worker` (regla #3). POLICY no llama a

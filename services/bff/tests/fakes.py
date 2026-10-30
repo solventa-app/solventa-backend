@@ -5,15 +5,18 @@ import uuid
 from datetime import UTC, datetime
 
 import jwt
+from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.clientes import (
     Acceso,
     ArchivoRechazado,
     Clientes,
+    CredencialesSocioInvalidas,
     ErrorOnboardingServicio,
     ErrorServicio,
     FirmaRechazada,
     FlujoRechazado,
+    PresupuestoAgotado,
     PropuestaRechazada,
     ResolucionRechazada,
     SolicitudInvalida,
@@ -185,6 +188,7 @@ class AuthFalso:
             "tipo_dato": tipo_dato,
             "fuente_datos": fuente_datos,
             "canal": canal,
+            "actor": actor,
         }
         self.registros_consentimiento.append(nuevo)
         self.consentimientos[nuevo["id"]] = nuevo
@@ -357,9 +361,16 @@ class AuthFalso:
 
 class AclFalso:
     def __init__(self, fallan: set[str] | None = None) -> None:
+        self.circuitos_estado: dict[str, str] = {
+            n: "closed"
+            for n in ("open-finance", "open-data", "pasarela", "firma", "kyc", "notificaciones")
+        }
         self.fallan = fallan or set()
         self.llamadas: list[tuple[str, str, str]] = []
         self.invalidaciones: list[str] = []
+
+    async def circuitos(self) -> dict[str, str]:
+        return dict(self.circuitos_estado)
 
     async def consultar_fuente(self, cliente_id: str, consentimiento_id: str, fuente: str) -> dict:
         self.llamadas.append((cliente_id, consentimiento_id, fuente))
@@ -554,6 +565,7 @@ class PolicyFalso:
         self.error_documento: Exception | None = None
         self.reconciliaciones: list[str] = []
         self.contactos_recibidos: list[dict | None] = []
+        self.tasas_recibidas: list[str | None] = []
         self.error_reconciliar: Exception | None = None
         self.propuestas_conocidas: set[str] | None = None  # None = conoce cualquier id
         # v0.18: lo que el BFF le pidió (operación, argumentos) y lo que responderá.
@@ -574,9 +586,25 @@ class PolicyFalso:
             raise self.rechazos[operacion]
         return self.respuestas.get(operacion)
 
-    async def listar_propuestas(self, cliente_id, actor_usuario_id, estado_visible, pagina, tamano):
+    async def listar_propuestas(
+        self, cliente_id, actor_usuario_id, estado_visible, pagina, tamano, actor_rol=None
+    ):
         canned = self._flujo("listar", cliente_id, actor_usuario_id, estado_visible, pagina, tamano)
         return canned or {"propuestas": [], "total": 0, "pagina": pagina, "tamano": tamano}
+
+    async def ventas_socio(self, socio_id: str, desde: str | None, hasta: str | None) -> dict:
+        canned = self._flujo("ventas_socio", socio_id, desde, hasta)
+        return canned or {
+            "desde": desde or "2025-11-01",
+            "hasta": hasta or "2026-10-29",
+            "meses": [],
+            "totales": {
+                "propuestas": 0,
+                "emitidas": 0,
+                "primas": {"valor": "0", "moneda": "COP"},
+                "comision": {"valor": "0", "moneda": "COP"},
+            },
+        }
 
     async def enviar_codigo(self, propuesta_id: str, correo: str | None) -> dict:
         canned = self._flujo("enviar_codigo", propuesta_id, correo)
@@ -594,7 +622,7 @@ class PolicyFalso:
         canned = self._flujo("emitir", propuesta_id, rol, titular_id)
         if canned:
             return canned
-        if rol == "ASESOR":
+        if rol in ("ASESOR", "SOCIO"):
             return {
                 "propuesta": self._propuesta_en(propuesta_id, "EN_FIRMA"),
                 "enlace": {
@@ -736,9 +764,11 @@ class PolicyFalso:
         actor_usuario_id: str | None,
         actor_rol: str | None = None,
         contacto: dict | None = None,
+        tasa_comision: str | None = None,
     ) -> dict:
         self.llamadas.append((oferta_id, actor_usuario_id))
         self.contactos_recibidos.append(contacto)
+        self.tasas_recibidas.append(tasa_comision)
         if self.error is not None:
             raise self.error
         if self.rechazo is not None:
@@ -750,6 +780,7 @@ class PolicyFalso:
                 "oferta_id": oferta_id,
                 "cliente_id": "cliente-opaco",
                 "actor_usuario_id": actor_usuario_id,
+                "actor_rol": actor_rol,
                 "estado": "ACEPTADA",
                 "prima": {"valor": "185000", "moneda": "COP"},
                 "cobertura": {"valor": "200000000", "moneda": "COP"},
@@ -1111,6 +1142,139 @@ def expediente_de_prueba(sid: str = "sin-01", poliza_id: str = "pol-01") -> dict
     }
 
 
+class SociosFalso:
+    """Doble de los endpoints de socios de AUTH (HU-W07). Firma tokens ES256 **reales** con una
+    clave generada para la prueba, para que el BFF los verifique igual que en producción."""
+
+    EMISOR = "solventa-auth"
+    AUDIENCIA = "solventa-socios"
+
+    def __init__(self, presupuesto: int = 2, falla: bool = False) -> None:
+        self._clave = ec.generate_private_key(ec.SECP256R1())
+        publica = jwt.algorithms.ECAlgorithm.to_jwk(self._clave.public_key(), as_dict=True)
+        self._jwk = {**publica, "kid": "kid-prueba", "alg": "ES256", "use": "sig"}
+        self.falla = falla
+        self.socios = {
+            "socio-1": {"id": "socio-1", "nombre": "Banco Demo", "estado": "ACTIVO",
+                        "tasa_comision": "0.1000"},
+            "socio-2": {"id": "socio-2", "nombre": "Fintech Demo", "estado": "ACTIVO",
+                        "tasa_comision": "0.0800"},
+        }  # fmt: skip
+        self.claves = {
+            "sol_prod_1": ("socio-1", "PRODUCCION", "clave-prod-1"),
+            "sol_test_1": ("socio-1", "PRUEBAS", "clave-test-1"),
+            "sol_prod_2": ("socio-2", "PRODUCCION", "clave-prod-2"),
+        }
+        self.presupuesto = {
+            ("socio-1", "PRODUCCION"): presupuesto,
+            ("socio-1", "PRUEBAS"): 50,
+            ("socio-2", "PRODUCCION"): 1,
+        }
+        self.consumidas: dict[tuple[str, str], int] = {}
+        self.devoluciones: list[tuple[str, str]] = []
+        self.consumos: list[tuple[str, str, str, str]] = []
+        self.pedidos_jwks = 0
+
+    def _caer(self) -> None:
+        if self.falla:
+            raise ErrorServicio("caido")
+
+    def token(self, socio_id: str = "socio-1", entorno: str = "PRODUCCION", **cambios) -> str:
+        ahora = int(datetime.now(UTC).timestamp())
+        claims = {
+            "iss": self.EMISOR, "aud": self.AUDIENCIA, "sub": socio_id, "rol": "SOCIO",
+            "entorno": entorno, "iat": ahora, "exp": ahora + 900, **cambios,
+        }  # fmt: skip
+        return jwt.encode(claims, self._clave, algorithm="ES256", headers={"kid": "kid-prueba"})
+
+    async def emitir_token(self, client_id: str, clave: str) -> dict:
+        self._caer()
+        credencial = self.claves.get(client_id)
+        if credencial is None or credencial[2] != clave:
+            raise CredencialesSocioInvalidas()
+        socio_id, entorno, _ = credencial
+        return {
+            "token": self.token(socio_id, entorno),
+            "expira_en": "2026-10-29T12:15:00+00:00",
+            "entorno": entorno,
+            "socio_id": socio_id,
+        }
+
+    async def jwks(self) -> dict:
+        self._caer()
+        self.pedidos_jwks += 1
+        return {"keys": [self._jwk]}
+
+    async def obtener(self, socio_id: str) -> dict | None:
+        self._caer()
+        return self.socios.get(socio_id)
+
+    async def nombres(self, ids: list[str]) -> dict[str, str]:
+        self._caer()
+        return {i: self.socios[i]["nombre"] for i in ids if i in self.socios}
+
+    async def credenciales(self, socio_id: str) -> list[dict]:
+        self._caer()
+        return [
+            {"entorno": e, "client_id": c, "clave": k, "creada_en": "2026-10-29T00:00:00+00:00"}
+            for c, (s, e, k) in self.claves.items()
+            if s == socio_id
+        ]
+
+    async def rotar(self, socio_id: str, entorno: str) -> dict:
+        self._caer()
+        for client_id, (s, e, _) in list(self.claves.items()):
+            if s == socio_id and e == entorno:
+                del self.claves[client_id]
+        nuevo = f"sol_nuevo_{len(self.claves)}"
+        self.claves[nuevo] = (socio_id, entorno, "clave-nueva")
+        return {
+            "entorno": entorno,
+            "client_id": nuevo,
+            "clave": "clave-nueva",
+            "creada_en": "2026-10-29T00:00:00+00:00",
+        }
+
+    async def reservar(self, socio_id: str, entorno: str) -> int:
+        self._caer()
+        clave = (socio_id, entorno)
+        usadas = self.consumidas.get(clave, 0)
+        if usadas >= self.presupuesto.get(clave, 0):
+            raise PresupuestoAgotado()
+        self.consumidas[clave] = usadas + 1
+        return self.presupuesto[clave] - usadas - 1
+
+    async def devolver(self, socio_id: str, entorno: str) -> int:
+        self._caer()
+        clave = (socio_id, entorno)
+        self.devoluciones.append(clave)
+        self.consumidas[clave] = max(0, self.consumidas.get(clave, 0) - 1)
+        return self.presupuesto.get(clave, 0) - self.consumidas[clave]
+
+    async def registrar_consumo(self, socio_id, entorno, api, resultado, latencia_ms) -> None:
+        self._caer()
+        self.consumos.append((socio_id, entorno, api, resultado))
+
+    async def consumo(self, socio_id, entorno, desde, hasta) -> dict:
+        self._caer()
+        asignadas = self.presupuesto.get((socio_id, entorno), 0)
+        consumidas = self.consumidas.get((socio_id, entorno), 0)
+        return {
+            "entorno": entorno,
+            "desde": desde or "2026-09-30",
+            "hasta": hasta or "2026-10-29",
+            "presupuesto": {
+                "asignadas": asignadas,
+                "consumidas": consumidas,
+                "restantes": asignadas - consumidas,
+            },
+            "por_api": [
+                {"api": "cotizaciones", "llamadas": 2, "errores": 0, "latencia_media_ms": 120}
+            ],
+            "diario": [{"fecha": "2026-10-29", "llamadas": 2}],
+        }
+
+
 def clientes_falsos(
     auth: AuthFalso | None = None,
     acl: AclFalso | None = None,
@@ -1122,6 +1286,7 @@ def clientes_falsos(
     tickets: TicketsFalso | None = None,
     onboarding: OnboardingFalso | None = None,
     claims: ClaimsFalso | None = None,
+    socios: SociosFalso | None = None,
 ) -> Clientes:
     return Clientes(
         auth=auth or AuthFalso(),
@@ -1134,4 +1299,5 @@ def clientes_falsos(
         tickets=tickets or TicketsFalso(),
         onboarding=onboarding or OnboardingFalso(),
         claims=claims or ClaimsFalso(),
+        socios=socios or SociosFalso(),
     )

@@ -20,6 +20,31 @@ from strawberry.extensions import SchemaExtension
 Idioma = Literal["es", "en"]
 
 EN: dict[str, str] = {
+    # API de socios (HU-W07, contracts/openapi/socios-v1.json)
+    "Credenciales inválidas.": (
+        "Invalid credentials."
+    ),
+    "Falta el token de acceso o no es válido.": (
+        "The access token is missing or invalid."
+    ),
+    "Esta operación requiere un token de producción.": (
+        "This operation requires a production token."
+    ),
+    "No existe o no pertenece a este socio.": (
+        "It does not exist or does not belong to this partner."
+    ),
+    "Revisa los datos de la solicitud.": (
+        "Check the request data."
+    ),
+    "No hay un consentimiento vigente de este socio para el titular.": (
+        "This partner has no valid consent for the holder."
+    ),
+    "Se agotó el presupuesto de cotizaciones de este entorno.": (
+        "The quote budget for this environment is used up."
+    ),
+    "El servicio no está disponible en este momento. Intenta de nuevo.": (
+        "The service is not available right now. Please try again."
+    ),
     # Onboarding del móvil (HU-M01, contrato v0.20)
     "Estamos verificando tu identidad. Podrás usar esto al terminar.": (
         "We are verifying your identity. You can use this once it is done."
@@ -265,6 +290,12 @@ EN: dict[str, str] = {
     # Mesa de siniestros (HU-W04): mensajes del BFF y de CLAIMS, que llegan tal cual
     "No pudimos consultar los siniestros. Intenta de nuevo.": (
         "We couldn't load the claims. Please try again."
+    ),
+    "La ventana debe ser 15m, 1h, 24h o 7d.": (
+        "The window must be 15m, 1h, 24h or 7d."
+    ),
+    "No pudimos calcular el estado del sistema. Intenta de nuevo.": (
+        "We couldn't compute the system status. Please try again."
     ),
     "No pudimos consultar la póliza del siniestro. Intenta de nuevo.": (
         "We couldn't load the claim's policy. Please try again."

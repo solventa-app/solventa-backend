@@ -136,6 +136,12 @@ services:
       ALMACENAMIENTO_URL: http://almacenamiento:8009
       ONBOARDING_URL: http://onboarding:8010
       CLAIMS_URL: http://claims:8012
+      # Salud del sistema (HU-W07): solo `/health` de UNDER y del consolidador, y las métricas de
+      # Prometheus (perfil `observabilidad`; sin él, la salud sale solo de `/health`).
+      UNDER_URL: http://under:8008
+      CONSOLIDADOR_URL: http://consolidador-fuentes:8006
+      METRICAS_FUENTE: prometheus
+      PROMETHEUS_URL: http://prometheus:9090
       # Tickets de un solo uso del stream de avisos (W03-37): misma base que POLICY, que publica allí.
       REDIS_URL: redis://redis:6379/3
       AVISOS_URL: http://localhost:8011/avisos/stream
@@ -177,6 +183,31 @@ services:
     depends_on:
       migrar-auth: { condition: service_completed_successfully }
 
+  # Socios demo de HU-W07 (W07-21 y W07-22): no hay alta por la API, así que se crean aquí, como el
+  # BACKOFFICE. Idempotente. Las claves son SOLO LOCALES (también en el entorno de Newman); el socio 2
+  # tiene 3 cotizaciones de producción para probar el presupuesto agotado (429).
+  crear-socios-demo:
+    <<: *tarea
+    image: solventa/auth:local
+    build: ./services/auth
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        SOCIO_CLIENT_ID_PRODUCCION=sol_prod_demo1 SOCIO_CLAVE_PRODUCCION=solo-local-socio-demo-1-produccion
+        SOCIO_CLIENT_ID_PRUEBAS=sol_test_demo1 SOCIO_CLAVE_PRUEBAS=solo-local-socio-demo-1-pruebas
+        python -m app.crear_socio --id socio-demo-1 --nombre "Banco Andino Demo" --tasa-comision 0.10
+        --presupuesto-cotizaciones 1000 --presupuesto-cotizaciones-pruebas 5000 &&
+        SOCIO_CLIENT_ID_PRODUCCION=sol_prod_demo2 SOCIO_CLAVE_PRODUCCION=solo-local-socio-demo-2-produccion
+        SOCIO_CLIENT_ID_PRUEBAS=sol_test_demo2 SOCIO_CLAVE_PRUEBAS=solo-local-socio-demo-2-pruebas
+        python -m app.crear_socio --id socio-demo-2 --nombre "Fintech Pacifico Demo" --tasa-comision 0.08
+        --presupuesto-cotizaciones 3 --presupuesto-cotizaciones-pruebas 50
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/auth
+      # La misma llave local de AUTH: la clave del socio se guarda cifrada y AUTH la descifra.
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
+    depends_on:
+      migrar-auth: { condition: service_completed_successfully }
+
   auth:
     <<: *servicio
     image: solventa/auth:local
@@ -192,10 +223,14 @@ services:
       # El mismo valor que el BFF: el titular del CLIENTE debe coincidir con el del consentimiento
       # (W03-27). Solo local; en Cloud Run llega de Secret Manager (clave-cliente-id).
       CLIENTE_ID_CLAVE: solo-local-no-secreta
+      # Clave ES256 de los tokens de socios (W07-26), DER PKCS#8 en base64. Solo local y no secreta;
+      # en Cloud Run llega de Secret Manager (clave-firma-socios) y no arranca con la local.
+      SOCIOS_CLAVE_FIRMA: MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgz8m0FhNRi5jz+ZJZOEL+WI9sA86sSOnnzCwCzLMLKK6hRANCAATI4t/bJXE3sAMp24CJyTykuROOmf34Zpp6BGqhsuYJYVIKID3R8q88FTdnt7LG6WlD8tXqduK9mRJZPdhHuXOq
     depends_on:
       postgres: { condition: service_healthy }
       migrar-auth: { condition: service_completed_successfully }
       crear-backoffice: { condition: service_completed_successfully }
+      crear-socios-demo: { condition: service_completed_successfully }
 
   migrar-risk:
     <<: *tarea
@@ -252,9 +287,8 @@ services:
       # Solo local (W04-15): POST /_demo/reiniciar vuelve a la semilla para las E2E de la web.
       DEMO_REINICIAR: "true"
       SEMILLA_DIR: /semilla
-    # Los datos de la semilla son los del dummy, que se conserva (W04-13): se montan, no se copian.
     volumes:
-      - ./stubs/siniestros/app/datos:/semilla:ro
+      - ./services/claims/semilla:/semilla:ro
     depends_on:
       mongo-init: { condition: service_completed_successfully }
       migrar-claims: { condition: service_completed_successfully }
@@ -289,7 +323,7 @@ services:
       POLICY_URL: http://policy:8007
       SEMILLA_DIR: /semilla
     volumes:
-      - ./stubs/siniestros/app/datos:/semilla:ro
+      - ./services/claims/semilla:/semilla:ro
     depends_on:
       migrar-claims: { condition: service_completed_successfully }
       sembrar-polizas-demo: { condition: service_completed_successfully }
@@ -520,12 +554,6 @@ services:
     <<: *servicio
     build: ./stubs/notificaciones
     ports: ["8106:8106"]
-
-  # Dummy de siniestros para el front de HU-W04 (KAN-27): sin BD ni tokens; solo local por ahora.
-  stub-siniestros:
-    <<: *servicio
-    build: ./stubs/siniestros
-    ports: ["8107:8107"]
 
   # -------------------------------------------------------- observabilidad
   prometheus:

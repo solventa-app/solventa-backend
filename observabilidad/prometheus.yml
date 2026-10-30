@@ -13,9 +13,21 @@ scrape_configs:
           - rating:8003
           - payments:8004
           - acl-worker:8005
+          - consolidador-fuentes:8006
+          - policy:8007
+          - under:8008
+          - almacenamiento:8009
+          - onboarding:8010
+          - claims:8012
         labels: { capa: negocio }
       - targets:
           - stub-open-finance:8101
           - stub-open-data:8102
           - stub-pasarela:8103
         labels: { capa: stub }
+  # El borde: las métricas del admin de Envoy (el API Gateway local), para la disponibilidad y la
+  # latencia consolidadas de la salud del sistema (HU-W07). El admin no se publica fuera de compose.
+  - job_name: gateway
+    metrics_path: /stats/prometheus
+    static_configs:
+      - targets: [gateway:9901]

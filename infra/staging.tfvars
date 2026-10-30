@@ -42,12 +42,12 @@ crear_tareas = true
 instancias_fijas_encendidas = true
 
 # Almacenamiento de archivos (KAN-250, ADR-10): bucket privado con CMEK, URLs firmadas y avisos por Pub/Sub. Requiere
-# crear_cloud_sql (base `almacenamiento`). Encenderlo es un PR que pone true aquí y los orígenes reales del frontend.
-crear_almacenamiento = false
+# crear_cloud_sql (base `almacenamiento`). Encendido para el onboarding de HU-M01 (las 4 piezas suben al bucket antes de
+# ir a Didit). ~USD 0,02/GB-mes, con 5 GB gratis en EE. UU.
+crear_almacenamiento = true
 
 # Firma, pago y avisos de HU-W03 (F-B8). Origen del front web (Vercel, sin barra final): de aquí salen el Origin permitido
 # del stream de avisos, la lista de regreso de la pasarela de prueba y la URL de POLICY (enlace de firma) y del BFF.
 url_front = "https://solventa-frontend-pink.vercel.app"
-# Mismo origen para las URLs firmadas del bucket. `crear_almacenamiento` sigue en false (cobra por GB y CMEK): encenderlo
-# es un PR aparte.
+# Mismo origen para las URLs firmadas del bucket (CORS del navegador; la app Android sube sin CORS).
 almacenamiento_origenes_cors = ["https://solventa-frontend-pink.vercel.app"]

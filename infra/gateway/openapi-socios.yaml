@@ -1,0 +1,323 @@
+# Especificación OpenAPI 2.0 (Swagger) del API Gateway de los socios de distribución (HU-W07, KAN-30).
+# Es un gateway aparte del de los usuarios (`openapi.yaml`): valida en el borde el token ES256 del socio
+# con el JWKS de AUTH y reenvía al BFF privado con el mismo corte duro de 700 ms (W07-25).
+# Las rutas salen del contrato `contracts/openapi/socios-v1.json`; en local las replica Envoy
+# (`envoy.yaml`) y `scripts/validar_gateway.py` verifica que las tres coincidan.
+# Se crea solo con `crear_gateway_socios = true` (infra/gateway.tf).
+swagger: "2.0"
+info:
+  title: Solventa API de socios
+  description: API exclusiva de los socios de distribución, con token ES256 validado en el borde.
+  version: "1.0.0"
+schemes:
+  - https
+produces:
+  - application/json
+consumes:
+  - application/json
+securityDefinitions:
+  socios_jwt:
+    authorizationUrl: ""
+    flow: implicit
+    type: oauth2
+    x-google-issuer: solventa-auth
+    x-google-jwks_uri: ${jwks_url}
+    x-google-audiences: solventa-socios
+paths:
+  /v1/token:
+    post:
+      summary: "Cambia la clave del socio por un token de 15 minutos"
+      operationId: crearToken
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/.well-known/jwks.json:
+    get:
+      summary: "Claves públicas para validar los tokens (ES256)"
+      operationId: jwks
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/openapi.json:
+    get:
+      summary: "Este contrato"
+      operationId: openapi
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/docs:
+    get:
+      summary: "Documentación navegable (Swagger UI)"
+      operationId: docs
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/consentimientos:
+    post:
+      summary: "Registra el consentimiento del titular antes de cotizar"
+      operationId: registrarConsentimiento
+      security:
+        - socios_jwt: []
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/consentimientos/{consentimientoId}/revocar:
+    post:
+      summary: "Revoca el consentimiento"
+      operationId: revocarConsentimiento
+      security:
+        - socios_jwt: []
+      parameters:
+        - name: consentimientoId
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/cotizaciones:
+    post:
+      summary: "Cotiza la póliza (descuenta presupuesto)"
+      operationId: cotizar
+      security:
+        - socios_jwt: []
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/propuestas:
+    post:
+      summary: "Acepta una oferta COMPLETA con el contacto del titular"
+      operationId: crearPropuesta
+      security:
+        - socios_jwt: []
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/propuestas/{propuestaId}:
+    get:
+      summary: "Estado de la propuesta (seguimiento por consulta periódica)"
+      operationId: obtenerPropuesta
+      security:
+        - socios_jwt: []
+      parameters:
+        - name: propuestaId
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/propuestas/{propuestaId}/codigo:
+    post:
+      summary: "Envía al correo del titular el código de verificación"
+      operationId: enviarCodigo
+      security:
+        - socios_jwt: []
+      parameters:
+        - name: propuestaId
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/propuestas/{propuestaId}/codigo/verificar:
+    post:
+      summary: "Verifica el código que dictó el titular"
+      operationId: verificarCodigo
+      security:
+        - socios_jwt: []
+      parameters:
+        - name: propuestaId
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/propuestas/{propuestaId}/emitir:
+    post:
+      summary: "Decide la suscripción y envía al titular el enlace de firma y pago"
+      operationId: emitir
+      security:
+        - socios_jwt: []
+      parameters:
+        - name: propuestaId
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/propuestas/{propuestaId}/reenviar-enlace:
+    post:
+      summary: "Envía un enlace nuevo y anula el anterior"
+      operationId: reenviarEnlace
+      security:
+        - socios_jwt: []
+      parameters:
+        - name: propuestaId
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/polizas/{polizaId}:
+    get:
+      summary: "Póliza emitida"
+      operationId: obtenerPoliza
+      security:
+        - socios_jwt: []
+      parameters:
+        - name: polizaId
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/polizas/{polizaId}/documento:
+    get:
+      summary: "PDF de la póliza firmada"
+      operationId: documentoPoliza
+      security:
+        - socios_jwt: []
+      parameters:
+        - name: polizaId
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/estado:
+    get:
+      summary: "Salud del sistema y de cada API"
+      operationId: estado
+      security:
+        - socios_jwt: []
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/consumo:
+    get:
+      summary: "Consumo por API y presupuesto de cotizaciones"
+      operationId: consumo
+      security:
+        - socios_jwt: []
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/ventas:
+    get:
+      summary: "Propuestas, pólizas emitidas, primas y comisión por mes"
+      operationId: ventas
+      security:
+        - socios_jwt: []
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/credenciales:
+    get:
+      summary: "Las claves vigentes del socio"
+      operationId: credenciales
+      security:
+        - socios_jwt: []
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/credenciales/{entorno}/rotar:
+    post:
+      summary: "Genera una clave nueva para el entorno y revoca la anterior"
+      operationId: rotarCredencial
+      security:
+        - socios_jwt: []
+      parameters:
+        - name: entorno
+          in: path
+          required: true
+          type: string
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK

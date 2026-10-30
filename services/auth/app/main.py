@@ -4,6 +4,8 @@
   `app/consentimientos.py`).
 - Usuarios y sesiones (HU-M02): PostgreSQL, base `auth` (ver `app/usuarios.py` y
   `app/sesiones.py`).
+- Socios de distribución (HU-W07): credenciales, tokens ES256 y su JWKS, presupuesto de cotizaciones
+  y consumo (ver `app/socios.py` y `app/tokens_socio.py`).
 
 Estos endpoints son **internos**: solo los llama el BFF, que valida el JWT y el rol antes
 (en Cloud Run AUTH es privado). Por eso AUTH no vuelve a autorizar aquí."""
@@ -11,11 +13,11 @@ Estos endpoints son **internos**: solo los llama el BFF, que valida el JWT y el 
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from argon2 import PasswordHasher
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from prometheus_fastapi_instrumentator import Instrumentator
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel
@@ -26,6 +28,14 @@ from app.consentimientos import AlmacenConsentimientos, AlmacenConsentimientosPo
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.observabilidad import configurar_trazas
 from app.sesiones import CredencialesInvalidas, ServicioSesiones, VerificacionPendiente
+from app.socios import (
+    CredencialesSocioInvalidas,
+    DatoSocioInvalido,
+    PresupuestoAgotado,
+    RepositorioSociosPostgres,
+    ServicioSocios,
+)
+from app.tokens_socio import FirmadorTokensSocio
 from app.usuarios import (
     DatoInvalido,
     RepositorioUsuariosPostgres,
@@ -40,7 +50,9 @@ configurar_trazas("auth", instrumentos=("httpx", "psycopg"))
 logger = logging.getLogger("auth.consentimientos")
 logger_usuarios = logging.getLogger("auth.usuarios")
 
-RolUsuario = Literal["CLIENTE", "ASESOR", "BACKOFFICE"]
+# SOCIO (HU-W07, W07-20): el socio de distribución otorga el consentimiento en nombre del titular, y
+# entonces `usuario_id` es el id del socio.
+RolUsuario = Literal["CLIENTE", "ASESOR", "BACKOFFICE", "SOCIO"]
 
 
 class Actor(BaseModel):
@@ -174,11 +186,83 @@ class SesionResponse(BaseModel):
     usuario: UsuarioResponse
 
 
+# ---------- Socios (HU-W07) ----------
+
+Entorno = Literal["PRODUCCION", "PRUEBAS"]
+
+
+class SolicitudTokenSocio(BaseModel):
+    client_id: str
+    clave: str
+
+
+class TokenSocioResponse(BaseModel):
+    token: str
+    expira_en: datetime
+    entorno: Entorno
+    socio_id: str
+
+
+class SocioResponse(BaseModel):
+    id: str
+    nombre: str
+    estado: str
+    tasa_comision: str  # decimal como texto, p. ej. "0.1000"
+
+
+class CredencialSocioResponse(BaseModel):
+    """La clave en claro: solo la pide el BFF para el portal del propio socio. Nunca se loguea."""
+
+    entorno: Entorno
+    client_id: str
+    clave: str
+    creada_en: datetime
+
+
+class PresupuestoResponse(BaseModel):
+    restantes: int
+
+
+class SolicitudConsumoSocio(BaseModel):
+    entorno: Entorno
+    api: str
+    resultado: Literal["OK", "ERROR_CLIENTE", "ERROR"]
+    latencia_ms: int
+
+
+class ConsumoApiResponse(BaseModel):
+    api: str
+    llamadas: int
+    errores: int
+    latencia_media_ms: int | None = None
+
+
+class ConsumoDiaResponse(BaseModel):
+    fecha: date
+    llamadas: int
+
+
+class PresupuestoConsumoResponse(BaseModel):
+    asignadas: int
+    consumidas: int
+    restantes: int
+
+
+class ConsumoSocioResponse(BaseModel):
+    entorno: Entorno
+    desde: date
+    hasta: date
+    presupuesto: PresupuestoConsumoResponse
+    por_api: list[ConsumoApiResponse]
+    diario: list[ConsumoDiaResponse]
+
+
 def create_app(
     almacen: AlmacenConsentimientos | None = None,
     servicio_usuarios: ServicioUsuarios | None = None,
     servicio_sesiones: ServicioSesiones | None = None,
     config: Configuracion | None = None,
+    servicio_socios: ServicioSocios | None = None,
 ) -> FastAPI:
     """Los parámetros permiten inyectar dobles de prueba (ver `tests/fakes.py`) sin
     levantar PostgreSQL. Si se omiten, el lifespan arma todo desde `Configuracion`
@@ -210,6 +294,13 @@ def create_app(
                 config.jwt_vigencia_minutos,
                 clave_correo=config.cliente_id_clave,
             )
+        # Con todo lo demás inyectado (pruebas) no hay pool: las de socios inyectan el suyo.
+        if servicio_socios is None and pool is not None:
+            app.state.socios = ServicioSocios(
+                RepositorioSociosPostgres(pool),
+                construir_cifrador(config),
+                FirmadorTokensSocio(config.socios_clave_firma),
+            )
         try:
             yield
         finally:
@@ -220,6 +311,8 @@ def create_app(
     if almacen is not None:
         # Un doble inyectado sirve aunque el lifespan no corra (TestClient sin `with`).
         app.state.consentimientos = almacen
+    if servicio_socios is not None:
+        app.state.socios = servicio_socios
 
     @app.get("/health", tags=["operacion"])
     def health() -> dict[str, str]:
@@ -460,6 +553,105 @@ def create_app(
         if contacto is None:
             raise HTTPException(status_code=404, detail="usuario no encontrado")
         return ContactoResponse(**contacto)
+
+    # ---------- Socios de distribución (HU-W07) ----------
+    # Internos, como el resto: solo los llama el BFF, que ya validó el token del socio y pasa su id.
+
+    @app.post("/socios/tokens", tags=["socios"], response_model=TokenSocioResponse)
+    def emitir_token_socio(body: SolicitudTokenSocio) -> TokenSocioResponse:
+        try:
+            return TokenSocioResponse(**app.state.socios.emitir_token(body.client_id, body.clave))
+        except CredencialesSocioInvalidas as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+
+    @app.get("/.well-known/jwks.json", tags=["socios"])
+    def jwks_socios() -> dict:
+        """Claves públicas de los tokens de socios: las lee el API Gateway y el BFF."""
+        return app.state.socios.jwks()
+
+    @app.post("/socios/nombres", tags=["socios"], response_model=dict[str, str])
+    def nombres_de_socios(body: SolicitudNombres) -> dict[str, str]:
+        """Nombre comercial de los socios pedidos, para la lista del BACKOFFICE (no es dato
+        personal)."""
+        try:
+            return app.state.socios.nombres(body.ids)
+        except DatoSocioInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/socios/{socio_id}", tags=["socios"], response_model=SocioResponse)
+    def obtener_socio(socio_id: str) -> SocioResponse:
+        socio = app.state.socios.obtener(socio_id)
+        if socio is None:
+            raise HTTPException(status_code=404, detail="socio no encontrado")
+        return SocioResponse(**socio)
+
+    @app.get(
+        "/socios/{socio_id}/credenciales",
+        tags=["socios"],
+        response_model=list[CredencialSocioResponse],
+    )
+    def credenciales_socio(socio_id: str) -> list[CredencialSocioResponse]:
+        credenciales = app.state.socios.credenciales(socio_id)
+        if credenciales is None:
+            raise HTTPException(status_code=404, detail="socio no encontrado")
+        return [CredencialSocioResponse(**c) for c in credenciales]
+
+    @app.post(
+        "/socios/{socio_id}/credenciales/{entorno}/rotar",
+        tags=["socios"],
+        response_model=CredencialSocioResponse,
+    )
+    def rotar_credencial_socio(socio_id: str, entorno: Entorno) -> CredencialSocioResponse:
+        credencial = app.state.socios.rotar(socio_id, entorno)
+        if credencial is None:
+            raise HTTPException(status_code=404, detail="socio no encontrado")
+        return CredencialSocioResponse(**credencial)
+
+    @app.post(
+        "/socios/{socio_id}/presupuesto/{entorno}/{api}/reservar",
+        tags=["socios"],
+        response_model=PresupuestoResponse,
+        responses={429: {"description": "presupuesto agotado"}},
+    )
+    def reservar_presupuesto(socio_id: str, entorno: Entorno, api: str) -> PresupuestoResponse:
+        try:
+            return PresupuestoResponse(restantes=app.state.socios.reservar(socio_id, entorno, api))
+        except PresupuestoAgotado as error:
+            raise HTTPException(status_code=429, detail="PRESUPUESTO_AGOTADO") from error
+        except DatoSocioInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post(
+        "/socios/{socio_id}/presupuesto/{entorno}/{api}/devolver",
+        tags=["socios"],
+        response_model=PresupuestoResponse,
+    )
+    def devolver_presupuesto(socio_id: str, entorno: Entorno, api: str) -> PresupuestoResponse:
+        try:
+            return PresupuestoResponse(restantes=app.state.socios.devolver(socio_id, entorno, api))
+        except DatoSocioInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/socios/{socio_id}/consumos", tags=["socios"], status_code=204)
+    def registrar_consumo_socio(socio_id: str, body: SolicitudConsumoSocio) -> Response:
+        try:
+            app.state.socios.registrar_consumo(
+                socio_id, body.entorno, body.api, body.resultado, body.latencia_ms
+            )
+        except DatoSocioInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return Response(status_code=204)
+
+    @app.get(
+        "/socios/{socio_id}/consumo", tags=["socios"], response_model=ConsumoSocioResponse
+    )
+    def consumo_socio(
+        socio_id: str, entorno: Entorno, desde: date | None = None, hasta: date | None = None
+    ) -> ConsumoSocioResponse:
+        try:
+            return ConsumoSocioResponse(**app.state.socios.consumo(socio_id, entorno, desde, hasta))
+        except DatoSocioInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app

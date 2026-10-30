@@ -300,3 +300,26 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Afecta al frontend: sí, cuando la web cambie del dummy al BFF. Pasos documentados en
   `solventa-frontend-web/docs/plan-ejecucion-hu-w04-siniestros.md` («Conexión al backend real»). `siniestros.graphql`
   se conserva para el dummy, que sigue funcionando sin cambios.
+- **2026-10-29 (KAN-27, W04-13):** se retira `contracts/graphql/siniestros.graphql` junto con el dummy `stubs/siniestros`:
+  la web ya consume la mesa de siniestros del contrato principal por `/v1/graphql/web`. Afecta al frontend: no (la web
+  dejó de copiar ese contrato en `solventa-frontend-web` #94).
+
+## v0.22 — 2026-10-29
+
+- KAN-30 (HU-W07, socios de distribución; plan `docs/plan-completar-hu-w07.md`). **La v0.19 deja de estar reservada
+  y no se usa:** W07 toma la siguiente libre (decisión W07-23). **Solo cambios aditivos.**
+  - **API REST nueva para socios:** `contracts/openapi/socios-v1.json` (OpenAPI 3.1, en JSON). Rutas bajo `/v1/`,
+    fuera de `/v1/graphql/*`, que sigue igual (W07-24). Token ES256 de 15 min (`POST /v1/token`, JWKS público),
+    consentimiento, cotización (la única que descuenta presupuesto), propuesta con el contacto del titular, código de
+    verificación, emitir y reenviar el enlace (la URL nunca vuelve al socio), póliza y su PDF, y la cuenta (estado,
+    consumo, ventas y credenciales). Errores con `ErrorPublico` (`codigo` estable); nunca un 5xx crudo.
+  - **GraphQL:** consulta `estadoSistema(ventana)`, solo BACKOFFICE, con los tipos `EstadoSistema`, `SaludApi`,
+    `SaludMicro`, `SaludExterna` y los enums `ColorSalud` y `EstadoCircuito`. `Propuesta` suma `nombreSocio` (solo
+    BACKOFFICE).
+  - **`contracts/salud.json`:** pesos, objetivos de latencia, ventanas, umbrales de color y las APIs del socio. Una API
+    queda en ROJO si uno de sus micros no responde, y la barra general no es VERDE si alguna API está en ROJO.
+- **Estado en el BFF:** implementado (2026-10-29). La API `/v1` de socios (con el modo prueba), `estadoSistema` y
+  `nombreSocio`. El contrato REST ajustó `plazoMeses` (1 a 60) y el documento (al menos 6 dígitos) a lo que ya valida
+  W01.
+- Afecta al frontend: sí. El portal de socios (W07) genera sus tipos de `socios-v1.json`; la web del BACKOFFICE puede
+  copiar el esquema y usar `estadoSistema` y `nombreSocio` cuando el BFF los implemente.

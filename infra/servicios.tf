@@ -109,6 +109,15 @@ resource "google_project_iam_member" "trazas" {
   member   = "serviceAccount:${google_service_account.runtime[each.key].email}"
 }
 
+# Salud del sistema (HU-W07, bloque 6): el BFF lee las métricas nativas de Cloud Run y del API Gateway para la
+# barra del portal de socios y el estado del sistema del BACKOFFICE. Solo lectura.
+resource "google_project_iam_member" "bff_lee_metricas" {
+  for_each = contains(keys(local.activos), "bff") ? toset(["bff"]) : toset([])
+  project  = var.project_id
+  role     = "roles/monitoring.viewer"
+  member   = "serviceAccount:${google_service_account.runtime[each.key].email}"
+}
+
 # --------------------------------------------------------------------------------------------- secretos
 # Terraform crea el contenedor del secreto (y una versión marcadora) pero NUNCA su valor real: este se carga
 # a mano con `gcloud secrets versions add` (infra/README.md) y no pasa por el estado de Terraform. La
@@ -235,6 +244,15 @@ resource "google_cloud_run_v2_service" "servicio" {
         for_each = contains(tolist(local.servicios_con_kms), each.key) ? {
           KMS_KEY_NAME = google_kms_crypto_key.campos_personales[0].id
         } : {}
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      # Salud del sistema (HU-W07): el BFF lee las métricas de Cloud Monitoring de este proyecto.
+      dynamic "env" {
+        for_each = each.key == "bff" ? { GCP_PROYECTO = var.project_id } : {}
         content {
           name  = env.key
           value = env.value

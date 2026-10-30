@@ -1,0 +1,2192 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Solventa · API de socios de distribución",
+    "version": "1.0.0",
+    "description": "API exclusiva para socios que revenden la póliza de Vida Hipotecario (HU-W07, KAN-30). Contrato v0.22 (`contracts/CHANGELOG.md`). Reglas: montos como texto decimal; errores con `ErrorPublico` en es o en; nunca un 5xx crudo; un socio solo ve lo que vendió (404 si no es suyo)."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "API Gateway de socios"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Acceso"
+    },
+    {
+      "name": "Consentimiento"
+    },
+    {
+      "name": "Cotización"
+    },
+    {
+      "name": "Propuesta"
+    },
+    {
+      "name": "Identidad"
+    },
+    {
+      "name": "Emisión"
+    },
+    {
+      "name": "Póliza"
+    },
+    {
+      "name": "Cuenta"
+    }
+  ],
+  "paths": {
+    "/v1/token": {
+      "post": {
+        "operationId": "crearToken",
+        "summary": "Cambia la clave del socio por un token de 15 minutos",
+        "tags": [
+          "Acceso"
+        ],
+        "responses": {
+          "200": {
+            "description": "Token emitido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "422": {
+            "description": "Datos inválidos (`DATOS_INVALIDOS`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credenciales inválidas (`CREDENCIALES_INVALIDAS`). Mensaje genérico.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "description": "El entorno del token (PRODUCCION o PRUEBAS) es el de la clave usada.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SolicitudToken"
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/.well-known/jwks.json": {
+      "get": {
+        "operationId": "jwks",
+        "summary": "Claves públicas para validar los tokens (ES256)",
+        "tags": [
+          "Acceso"
+        ],
+        "responses": {
+          "200": {
+            "description": "JWKS.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Jwks"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "security": []
+      }
+    },
+    "/v1/openapi.json": {
+      "get": {
+        "operationId": "openapi",
+        "summary": "Este contrato",
+        "tags": [
+          "Acceso"
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "security": []
+      }
+    },
+    "/v1/docs": {
+      "get": {
+        "operationId": "docs",
+        "summary": "Documentación navegable (Swagger UI)",
+        "tags": [
+          "Acceso"
+        ],
+        "responses": {
+          "200": {
+            "description": "Página HTML.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "security": []
+      }
+    },
+    "/v1/consentimientos": {
+      "post": {
+        "operationId": "registrarConsentimiento",
+        "summary": "Registra el consentimiento del titular antes de cotizar",
+        "tags": [
+          "Consentimiento"
+        ],
+        "responses": {
+          "201": {
+            "description": "Consentimiento vigente por 30 días.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Consentimiento"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "422": {
+            "description": "Datos inválidos (`DATOS_INVALIDOS`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "description": "Regla 7: sin consentimiento vigente no se consulta ninguna fuente. Queda registrado que lo otorgó el socio. Con un token de PRUEBAS responde el modo prueba: datos simulados, sin consultar fuentes ni cobrar.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SolicitudConsentimiento"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/consentimientos/{consentimientoId}/revocar": {
+      "post": {
+        "operationId": "revocarConsentimiento",
+        "summary": "Revoca el consentimiento",
+        "tags": [
+          "Consentimiento"
+        ],
+        "responses": {
+          "200": {
+            "description": "Consentimiento revocado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Consentimiento"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "404": {
+            "description": "No existe o no es de este socio (`NO_ENCONTRADO`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "description": "Rechaza nuevas consultas y borra el contacto de las propuestas no emitidas. Con un token de PRUEBAS responde el modo prueba: datos simulados, sin consultar fuentes ni cobrar.",
+        "parameters": [
+          {
+            "name": "consentimientoId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ]
+      }
+    },
+    "/v1/cotizaciones": {
+      "post": {
+        "operationId": "cotizar",
+        "summary": "Cotiza la póliza (descuenta presupuesto)",
+        "tags": [
+          "Cotización"
+        ],
+        "responses": {
+          "200": {
+            "description": "Oferta COMPLETA o PRELIMINAR.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cotizacion"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "422": {
+            "description": "Datos inválidos (`DATOS_INVALIDOS`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Sin consentimiento vigente (`CONSENTIMIENTO_NO_VIGENTE`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Presupuesto agotado (`PRESUPUESTO_AGOTADO`).",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "description": "Única operación que descuenta presupuesto (W07-9). Si las fuentes fallan, la oferta es PRELIMINAR (no es un error). Con un token de PRUEBAS responde el modo prueba: datos simulados, sin consultar fuentes ni cobrar.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SolicitudCotizacion"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/propuestas": {
+      "post": {
+        "operationId": "crearPropuesta",
+        "summary": "Acepta una oferta COMPLETA con el contacto del titular",
+        "tags": [
+          "Propuesta"
+        ],
+        "responses": {
+          "201": {
+            "description": "Propuesta ACEPTADA. Aceptar otra vez la misma oferta devuelve la misma propuesta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Propuesta"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "422": {
+            "description": "`CONTACTO_INVALIDO` o `DATOS_INVALIDOS`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`OFERTA_PRELIMINAR`, `OFERTA_VENCIDA` o `CONSENTIMIENTO_NO_VIGENTE`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`OFERTA_NO_ENCONTRADA`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "description": "Con un token de PRUEBAS responde el modo prueba: datos simulados, sin consultar fuentes ni cobrar.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SolicitudPropuesta"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/propuestas/{propuestaId}": {
+      "get": {
+        "operationId": "obtenerPropuesta",
+        "summary": "Estado de la propuesta (seguimiento por consulta periódica)",
+        "tags": [
+          "Propuesta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Propuesta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Propuesta"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "404": {
+            "description": "No existe o no es de este socio (`NO_ENCONTRADO`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "description": "W07-8: el socio consulta hasta un estado final (EMITIDA, NO_EMITIDA o CANCELADA).",
+        "parameters": [
+          {
+            "name": "propuestaId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ]
+      }
+    },
+    "/v1/propuestas/{propuestaId}/codigo": {
+      "post": {
+        "operationId": "enviarCodigo",
+        "summary": "Envía al correo del titular el código de verificación",
+        "tags": [
+          "Identidad"
+        ],
+        "responses": {
+          "200": {
+            "description": "Código enviado; vence a los 10 minutos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodigoEnviado"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "422": {
+            "description": "Datos inválidos (`DATOS_INVALIDOS`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe o no es de este socio (`NO_ENCONTRADO`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`PROPUESTA_NO_VALIDA`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "description": "W07-15: el titular le dicta el código al socio. En modo prueba el código es `000000`.",
+        "parameters": [
+          {
+            "name": "propuestaId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SolicitudCodigo"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/propuestas/{propuestaId}/codigo/verificar": {
+      "post": {
+        "operationId": "verificarCodigo",
+        "summary": "Verifica el código que dictó el titular",
+        "tags": [
+          "Identidad"
+        ],
+        "responses": {
+          "200": {
+            "description": "Propuesta en IDENTIDAD_VERIFICADA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Propuesta"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "422": {
+            "description": "Datos inválidos (`DATOS_INVALIDOS`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe o no es de este socio (`NO_ENCONTRADO`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`CODIGO_INVALIDO` (con `intentosRestantes`), `CODIGO_VENCIDO`, `INTENTOS_AGOTADOS` o `PROPUESTA_NO_VALIDA`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "propuestaId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerificacionCodigo"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/propuestas/{propuestaId}/emitir": {
+      "post": {
+        "operationId": "emitir",
+        "summary": "Decide la suscripción y envía al titular el enlace de firma y pago",
+        "tags": [
+          "Emisión"
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado de la suscripción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Emision"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "404": {
+            "description": "No existe o no es de este socio (`NO_ENCONTRADO`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`PROPUESTA_NO_VALIDA`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "description": "Exige la identidad verificada. El titular firma y paga con el enlace (30 min); la URL nunca vuelve al socio. Repetir la llamada no vuelve a decidir.",
+        "parameters": [
+          {
+            "name": "propuestaId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ]
+      }
+    },
+    "/v1/propuestas/{propuestaId}/reenviar-enlace": {
+      "post": {
+        "operationId": "reenviarEnlace",
+        "summary": "Envía un enlace nuevo y anula el anterior",
+        "tags": [
+          "Emisión"
+        ],
+        "responses": {
+          "200": {
+            "description": "Enlace reenviado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnlaceEnviado"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "404": {
+            "description": "No existe o no es de este socio (`NO_ENCONTRADO`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`PROPUESTA_NO_VALIDA`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "propuestaId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ]
+      }
+    },
+    "/v1/polizas/{polizaId}": {
+      "get": {
+        "operationId": "obtenerPoliza",
+        "summary": "Póliza emitida",
+        "tags": [
+          "Póliza"
+        ],
+        "responses": {
+          "200": {
+            "description": "Póliza.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Poliza"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "404": {
+            "description": "No existe o no es de este socio (`NO_ENCONTRADO`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "polizaId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ]
+      }
+    },
+    "/v1/polizas/{polizaId}/documento": {
+      "get": {
+        "operationId": "documentoPoliza",
+        "summary": "PDF de la póliza firmada",
+        "tags": [
+          "Póliza"
+        ],
+        "responses": {
+          "200": {
+            "description": "PDF.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "404": {
+            "description": "No existe o no es de este socio (`NO_ENCONTRADO`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "polizaId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ]
+      }
+    },
+    "/v1/estado": {
+      "get": {
+        "operationId": "estado",
+        "summary": "Salud del sistema y de cada API",
+        "tags": [
+          "Cuenta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstadoSistema"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          }
+        },
+        "parameters": [
+          {
+            "name": "ventana",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Ventana",
+              "default": "1h"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ]
+      }
+    },
+    "/v1/consumo": {
+      "get": {
+        "operationId": "consumo",
+        "summary": "Consumo por API y presupuesto de cotizaciones",
+        "tags": [
+          "Cuenta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Consumo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Consumo"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          }
+        },
+        "description": "Del entorno del token. Sin fechas: los últimos 30 días.",
+        "parameters": [
+          {
+            "name": "desde",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "hasta",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ]
+      }
+    },
+    "/v1/ventas": {
+      "get": {
+        "operationId": "ventas",
+        "summary": "Propuestas, pólizas emitidas, primas y comisión por mes",
+        "tags": [
+          "Cuenta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Ventas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ventas"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          }
+        },
+        "description": "Sin fechas: los últimos 12 meses. Con un token de PRUEBAS responde el modo prueba: datos simulados, sin consultar fuentes ni cobrar.",
+        "parameters": [
+          {
+            "name": "desde",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "hasta",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ]
+      }
+    },
+    "/v1/credenciales": {
+      "get": {
+        "operationId": "credenciales",
+        "summary": "Las claves vigentes del socio",
+        "tags": [
+          "Cuenta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Credenciales.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credenciales"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "403": {
+            "description": "Solo con un token de PRODUCCION (`PROHIBIDO`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ]
+      }
+    },
+    "/v1/credenciales/{entorno}/rotar": {
+      "post": {
+        "operationId": "rotarCredencial",
+        "summary": "Genera una clave nueva para el entorno y revoca la anterior",
+        "tags": [
+          "Cuenta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Credencial nueva.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credencial"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "403": {
+            "description": "Solo con un token de PRODUCCION (`PROHIBIDO`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "description": "Los tokens ya emitidos con la clave anterior siguen valiendo hasta vencer (15 min).",
+        "parameters": [
+          {
+            "name": "entorno",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Entorno"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "AcceptLanguage": {
+        "name": "Accept-Language",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "es",
+            "en"
+          ],
+          "default": "es"
+        }
+      }
+    },
+    "responses": {
+      "NoAutenticado": {
+        "description": "Sin token o token inválido (`TOKEN_INVALIDO`).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorPublico"
+            }
+          }
+        }
+      },
+      "NoDisponible": {
+        "description": "Falla interna controlada (`SERVICIO_NO_DISPONIBLE`), con `Retry-After`.",
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorPublico"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ErrorPublico": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "enum": [
+              "CREDENCIALES_INVALIDAS",
+              "TOKEN_INVALIDO",
+              "PROHIBIDO",
+              "NO_ENCONTRADO",
+              "DATOS_INVALIDOS",
+              "CONSENTIMIENTO_NO_VIGENTE",
+              "OFERTA_NO_ENCONTRADA",
+              "OFERTA_PRELIMINAR",
+              "OFERTA_VENCIDA",
+              "CONTACTO_INVALIDO",
+              "CODIGO_INVALIDO",
+              "CODIGO_VENCIDO",
+              "INTENTOS_AGOTADOS",
+              "PROPUESTA_NO_VALIDA",
+              "PRESUPUESTO_AGOTADO",
+              "SERVICIO_NO_DISPONIBLE"
+            ]
+          },
+          "mensaje": {
+            "type": "string",
+            "description": "En el idioma de `Accept-Language` (es o en)."
+          },
+          "puedeReintentar": {
+            "type": "boolean"
+          },
+          "intentosRestantes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "codigo",
+          "mensaje",
+          "puedeReintentar"
+        ],
+        "description": "Error controlado. Nunca un 5xx crudo (regla 4): ante una falla interna se responde 503 con este cuerpo, `puedeReintentar = true` y `Retry-After`."
+      },
+      "Monto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "valor": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d+)?$",
+            "examples": [
+              "1500000.00"
+            ]
+          },
+          "moneda": {
+            "type": "string",
+            "examples": [
+              "COP"
+            ]
+          }
+        },
+        "required": [
+          "valor",
+          "moneda"
+        ]
+      },
+      "SolicitudToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "clientId": {
+            "type": "string"
+          },
+          "clave": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "clientId",
+          "clave"
+        ]
+      },
+      "Token": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "JWT ES256, 15 minutos."
+          },
+          "tokenType": {
+            "type": "string",
+            "const": "Bearer"
+          },
+          "expiraEn": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "entorno": {
+            "$ref": "#/components/schemas/Entorno"
+          }
+        },
+        "required": [
+          "accessToken",
+          "tokenType",
+          "expiraEn",
+          "entorno"
+        ]
+      },
+      "Entorno": {
+        "type": "string",
+        "enum": [
+          "PRODUCCION",
+          "PRUEBAS"
+        ]
+      },
+      "Jwks": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "keys"
+        ]
+      },
+      "SolicitudConsentimiento": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "documentoIdentidad": {
+            "type": "string",
+            "minLength": 6,
+            "maxLength": 20,
+            "description": "Al menos 6 dígitos."
+          },
+          "finalidad": {
+            "type": "string",
+            "examples": [
+              "cotizacion-seguro-vida-hipotecario"
+            ]
+          },
+          "versionTexto": {
+            "type": "string",
+            "examples": [
+              "v1"
+            ]
+          }
+        },
+        "required": [
+          "documentoIdentidad",
+          "finalidad",
+          "versionTexto"
+        ]
+      },
+      "Consentimiento": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "finalidad": {
+            "type": "string"
+          },
+          "versionTexto": {
+            "type": "string"
+          },
+          "otorgadoEn": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "venceEn": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revocadoEn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vigente": {
+            "type": "boolean"
+          },
+          "estado": {
+            "type": "string",
+            "enum": [
+              "VIGENTE",
+              "REVOCADO",
+              "VENCIDO"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "finalidad",
+          "versionTexto",
+          "otorgadoEn",
+          "venceEn",
+          "vigente",
+          "estado"
+        ]
+      },
+      "SolicitudCotizacion": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "consentimientoId": {
+            "type": "string"
+          },
+          "documentoIdentidad": {
+            "type": "string",
+            "minLength": 6,
+            "maxLength": 20,
+            "description": "Al menos 6 dígitos."
+          },
+          "valorCredito": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d+)?$",
+            "examples": [
+              "1500000.00"
+            ]
+          },
+          "plazoMeses": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "direccionInmueble": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "consentimientoId",
+          "documentoIdentidad",
+          "valorCredito",
+          "plazoMeses",
+          "direccionInmueble"
+        ]
+      },
+      "FuenteConsultada": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "nombre": {
+            "type": "string"
+          },
+          "estado": {
+            "type": "string",
+            "enum": [
+              "OK",
+              "CACHE",
+              "FALLO"
+            ]
+          }
+        },
+        "required": [
+          "nombre",
+          "estado"
+        ]
+      },
+      "Oferta": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "COMPLETA",
+              "PRELIMINAR"
+            ]
+          },
+          "prima": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Monto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rangoPrima": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "minima": {
+                    "$ref": "#/components/schemas/Monto"
+                  },
+                  "maxima": {
+                    "$ref": "#/components/schemas/Monto"
+                  }
+                },
+                "required": [
+                  "minima",
+                  "maxima"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cobertura": {
+            "$ref": "#/components/schemas/Monto"
+          },
+          "nivelRiesgo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "BAJO",
+                  "MEDIO",
+                  "ALTO"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fuentes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FuenteConsultada"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "tipo",
+          "cobertura",
+          "fuentes"
+        ],
+        "description": "COMPLETA trae `prima`; PRELIMINAR (fuentes degradadas) trae `rangoPrima` y no se puede aceptar."
+      },
+      "Cotizacion": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "oferta": {
+            "$ref": "#/components/schemas/Oferta"
+          },
+          "presupuestoRestante": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "oferta",
+          "presupuestoRestante"
+        ]
+      },
+      "Contacto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "nombre": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 100
+          },
+          "correo": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          }
+        },
+        "required": [
+          "nombre",
+          "correo"
+        ],
+        "description": "Del titular. POLICY lo guarda cifrado y lo borra con el consentimiento si no se emite."
+      },
+      "SolicitudPropuesta": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ofertaId": {
+            "type": "string"
+          },
+          "contacto": {
+            "$ref": "#/components/schemas/Contacto"
+          }
+        },
+        "required": [
+          "ofertaId",
+          "contacto"
+        ]
+      },
+      "EstadoEnlace": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "vigente": {
+            "type": "boolean"
+          },
+          "venceEn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "vigente"
+        ],
+        "description": "El enlace de firma del titular. La URL nunca se entrega al socio (W07-17)."
+      },
+      "Propuesta": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "ofertaId": {
+            "type": "string"
+          },
+          "estado": {
+            "type": "string",
+            "enum": [
+              "ACEPTADA",
+              "IDENTIDAD_VERIFICADA",
+              "EN_FIRMA",
+              "FIRMADA",
+              "EN_EMISION",
+              "PENDIENTE_PAGO",
+              "PAGO_RECHAZADO",
+              "EN_REVISION",
+              "NO_EMITIDA",
+              "EMITIDA",
+              "CANCELADA"
+            ]
+          },
+          "estadoVisible": {
+            "type": "string",
+            "enum": [
+              "EMITIENDO",
+              "EMITIDA",
+              "NO_EMITIDA"
+            ]
+          },
+          "mensajeEstado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prima": {
+            "$ref": "#/components/schemas/Monto"
+          },
+          "cobertura": {
+            "$ref": "#/components/schemas/Monto"
+          },
+          "plazoMeses": {
+            "type": "integer"
+          },
+          "polizaId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enlace": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EstadoEnlace"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "creadaEn": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actualizadoEn": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "ofertaId",
+          "estado",
+          "estadoVisible",
+          "prima",
+          "cobertura",
+          "plazoMeses",
+          "creadaEn",
+          "actualizadoEn"
+        ]
+      },
+      "SolicitudCodigo": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "correo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "description": "`correo` corrige el del contacto antes de enviar el código; si falta, se usa el guardado."
+      },
+      "CodigoEnviado": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "correoEnmascarado": {
+            "type": "string"
+          },
+          "venceEn": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "correoEnmascarado",
+          "venceEn"
+        ]
+      },
+      "VerificacionCodigo": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "pattern": "^\\d{6}$"
+          }
+        },
+        "required": [
+          "codigo"
+        ]
+      },
+      "EnlaceEnviado": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "correoEnmascarado": {
+            "type": "string"
+          },
+          "venceEn": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "correoEnmascarado",
+          "venceEn"
+        ]
+      },
+      "Emision": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "propuesta": {
+            "$ref": "#/components/schemas/Propuesta"
+          },
+          "enlace": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnlaceEnviado"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "propuesta"
+        ],
+        "description": "Si la suscripción aprueba, `propuesta.estado = EN_FIRMA` y `enlace` dice a qué correo se envió. Si no, la propuesta queda EN_REVISION o NO_EMITIDA con `mensajeEstado`."
+      },
+      "Poliza": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "numero": {
+            "type": "string"
+          },
+          "estado": {
+            "type": "string",
+            "enum": [
+              "EMITIDA"
+            ]
+          },
+          "ramo": {
+            "type": "string"
+          },
+          "vigenciaDesde": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "vigenciaHasta": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "prima": {
+            "$ref": "#/components/schemas/Monto"
+          },
+          "cobertura": {
+            "$ref": "#/components/schemas/Monto"
+          }
+        },
+        "required": [
+          "id",
+          "numero",
+          "estado",
+          "ramo",
+          "vigenciaDesde",
+          "vigenciaHasta",
+          "prima",
+          "cobertura"
+        ]
+      },
+      "Color": {
+        "type": "string",
+        "enum": [
+          "VERDE",
+          "AMARILLO",
+          "ROJO"
+        ]
+      },
+      "SaludApi": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "nombre": {
+            "type": "string",
+            "enum": [
+              "COTIZACION",
+              "EMISION"
+            ]
+          },
+          "porcentaje": {
+            "type": "integer"
+          },
+          "color": {
+            "$ref": "#/components/schemas/Color"
+          }
+        },
+        "required": [
+          "nombre",
+          "porcentaje",
+          "color"
+        ]
+      },
+      "EstadoSistema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "porcentaje": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "color": {
+            "$ref": "#/components/schemas/Color"
+          },
+          "disponibilidad": {
+            "anyOf": [
+              {
+                "type": "number",
+                "description": "% de peticiones sin 5xx en el gateway"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latenciaMediaMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ventana": {
+            "$ref": "#/components/schemas/Ventana"
+          },
+          "calculadoEn": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "apis": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SaludApi"
+            }
+          }
+        },
+        "required": [
+          "porcentaje",
+          "color",
+          "ventana",
+          "calculadoEn",
+          "apis"
+        ],
+        "description": "Sin nombres de microservicios internos (W07-14)."
+      },
+      "Ventana": {
+        "type": "string",
+        "enum": [
+          "15m",
+          "1h",
+          "24h",
+          "7d"
+        ]
+      },
+      "ConsumoApi": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "api": {
+            "type": "string"
+          },
+          "llamadas": {
+            "type": "integer"
+          },
+          "errores": {
+            "type": "integer"
+          },
+          "latenciaMediaMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "api",
+          "llamadas",
+          "errores"
+        ]
+      },
+      "Consumo": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entorno": {
+            "$ref": "#/components/schemas/Entorno"
+          },
+          "desde": {
+            "type": "string",
+            "format": "date"
+          },
+          "hasta": {
+            "type": "string",
+            "format": "date"
+          },
+          "presupuesto": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "asignadas": {
+                "type": "integer"
+              },
+              "consumidas": {
+                "type": "integer"
+              },
+              "restantes": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "asignadas",
+              "consumidas",
+              "restantes"
+            ],
+            "description": "Solo cotizaciones descuenta presupuesto (W07-9)."
+          },
+          "porApi": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsumoApi"
+            }
+          },
+          "diario": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "fecha": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "llamadas": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "fecha",
+                "llamadas"
+              ]
+            }
+          }
+        },
+        "required": [
+          "entorno",
+          "desde",
+          "hasta",
+          "presupuesto",
+          "porApi",
+          "diario"
+        ]
+      },
+      "VentasMes": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mes": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}$"
+          },
+          "propuestas": {
+            "type": "integer"
+          },
+          "emitidas": {
+            "type": "integer"
+          },
+          "primas": {
+            "$ref": "#/components/schemas/Monto"
+          },
+          "comision": {
+            "$ref": "#/components/schemas/Monto"
+          }
+        },
+        "required": [
+          "mes",
+          "propuestas",
+          "emitidas",
+          "primas",
+          "comision"
+        ]
+      },
+      "Ventas": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "desde": {
+            "type": "string",
+            "format": "date"
+          },
+          "hasta": {
+            "type": "string",
+            "format": "date"
+          },
+          "tasaComision": {
+            "type": "string",
+            "pattern": "^0(\\.\\d{1,4})?$",
+            "examples": [
+              "0.1000"
+            ]
+          },
+          "meses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VentasMes"
+            }
+          },
+          "totales": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "propuestas": {
+                "type": "integer"
+              },
+              "emitidas": {
+                "type": "integer"
+              },
+              "primas": {
+                "$ref": "#/components/schemas/Monto"
+              },
+              "comision": {
+                "$ref": "#/components/schemas/Monto"
+              }
+            },
+            "required": [
+              "propuestas",
+              "emitidas",
+              "primas",
+              "comision"
+            ]
+          }
+        },
+        "required": [
+          "desde",
+          "hasta",
+          "tasaComision",
+          "meses",
+          "totales"
+        ],
+        "description": "La comisión se causa al emitir: prima × tasa congelada al aceptar (W07-7)."
+      },
+      "Credencial": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entorno": {
+            "$ref": "#/components/schemas/Entorno"
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "clave": {
+            "type": "string"
+          },
+          "creadaEn": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "entorno",
+          "clientId",
+          "clave",
+          "creadaEn"
+        ]
+      },
+      "Credenciales": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "socio": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "nombre": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "nombre"
+            ]
+          },
+          "credenciales": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Credencial"
+            }
+          }
+        },
+        "required": [
+          "socio",
+          "credenciales"
+        ]
+      }
+    }
+  }
+}

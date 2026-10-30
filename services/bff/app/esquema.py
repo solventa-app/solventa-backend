@@ -444,6 +444,7 @@ class Propuesta:
     # Datos personales: solo para el ASESOR que la aceptó y el BACKOFFICE.
     nombre_titular: str | None = None
     nombre_asesor: str | None = None  # solo para el BACKOFFICE
+    nombre_socio: str | None = None  # v0.22 (HU-W07): solo para el BACKOFFICE
 
 
 @strawberry.type
@@ -769,6 +770,7 @@ def _propuesta(
     poliza: Poliza | None = None,
     nombre_titular: str | None = None,
     nombre_asesor: str | None = None,
+    nombre_socio: str | None = None,
 ) -> Propuesta:
     explicacion = explicar_estado(datos)
     return Propuesta(
@@ -788,6 +790,7 @@ def _propuesta(
         poliza=poliza,
         nombre_titular=nombre_titular,
         nombre_asesor=nombre_asesor,
+        nombre_socio=nombre_socio,
     )
 
 
@@ -1327,6 +1330,67 @@ class ErrorSiniestro:
 ResultadoResolucion = Annotated[Siniestro | ErrorSiniestro, strawberry.union("ResultadoResolucion")]
 
 MENSAJE_SINIESTROS = "No pudimos consultar los siniestros. Intenta de nuevo."
+
+# ---------- Estado del sistema (v0.22, HU-W07) ----------
+
+
+@strawberry.enum
+class ColorSalud(Enum):
+    VERDE = "VERDE"
+    AMARILLO = "AMARILLO"
+    ROJO = "ROJO"
+
+
+@strawberry.enum
+class EstadoCircuito(Enum):
+    CERRADO = "CERRADO"
+    SEMIABIERTO = "SEMIABIERTO"
+    ABIERTO = "ABIERTO"
+    DESCONOCIDO = "DESCONOCIDO"
+
+
+@strawberry.type
+class SaludMicro:
+    nombre: str
+    peso: int
+    porcentaje: int
+    color: ColorSalud
+    responde: bool
+    sin_trafico: bool
+    disponibilidad: float | None = None
+    latencia_media_ms: int | None = None
+    latencia_p95_ms: int | None = None
+
+
+@strawberry.type
+class SaludExterna:
+    nombre: str
+    estado: EstadoCircuito
+
+
+@strawberry.type
+class SaludApi:
+    nombre: str
+    porcentaje: int
+    color: ColorSalud
+    micros: list[str]
+    externas: list[SaludExterna]
+
+
+@strawberry.type
+class EstadoSistema:
+    porcentaje: int
+    color: ColorSalud
+    ventana: str
+    calculado_en: datetime
+    apis: list[SaludApi]
+    micros: list[SaludMicro]
+    disponibilidad: float | None = None
+    latencia_media_ms: int | None = None
+
+
+MENSAJE_ESTADO_SISTEMA = "No pudimos calcular el estado del sistema. Intenta de nuevo."
+MENSAJE_VENTANA_INVALIDA = "La ventana debe ser 15m, 1h, 24h o 7d."
 MENSAJE_POLIZA_SINIESTRO = "No pudimos consultar la póliza del siniestro. Intenta de nuevo."
 MENSAJE_ACCION_SINIESTRO = "No pudimos completar la acción sobre el siniestro. Intenta de nuevo."
 
@@ -1639,10 +1703,13 @@ class Query:
             datos = await servicio.listar_propuestas(
                 usuario, filtro, max(1, pagina or 1), max(1, min(tamano or 10, 50))
             )
-            asesores = (
-                await servicio.nombres_de_asesores(datos["propuestas"])
+            asesores, socios = (
+                await asyncio.gather(
+                    servicio.nombres_de_asesores(datos["propuestas"]),
+                    servicio.nombres_de_socios(datos["propuestas"]),
+                )
                 if usuario.rol == "BACKOFFICE"
-                else {}
+                else ({}, {})
             )
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_PROPUESTAS_NO_DISPONIBLES) from error
@@ -1654,6 +1721,11 @@ class Query:
                     poliza=_poliza_de_resumen(p.get("poliza"), p),
                     nombre_titular=p.get("nombre_titular") if ve_personales else None,
                     nombre_asesor=asesores.get(p.get("actor_usuario_id") or ""),
+                    nombre_socio=(
+                        socios.get(p.get("actor_usuario_id") or "")
+                        if p.get("actor_rol") == "SOCIO"
+                        else None
+                    ),
                 )
                 for p in datos["propuestas"]
             ],
@@ -1731,6 +1803,57 @@ class Query:
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_SINIESTROS) from error
         return [_perito(p) for p in datos]
+
+    @strawberry.field
+    async def estado_sistema(self, info: Info, ventana: str | None = "1h") -> EstadoSistema:
+        """v0.22 (HU-W07), solo BACKOFFICE: la salud general, por API y por micro
+        (`app/salud.py`)."""
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        salud = info.context.get("salud")
+        ventana = ventana or "1h"
+        if salud is None:
+            raise ErrorPublico(MENSAJE_ESTADO_SISTEMA)
+        if ventana not in salud.ventanas:
+            raise ErrorPublico(MENSAJE_VENTANA_INVALIDA)
+        try:
+            datos = await salud.calcular(ventana)
+        except Exception as error:  # noqa: BLE001 - nunca un 5xx crudo (regla 4)
+            raise ErrorPublico(MENSAJE_ESTADO_SISTEMA) from error
+        return EstadoSistema(
+            porcentaje=datos["porcentaje"],
+            color=ColorSalud(datos["color"]),
+            ventana=datos["ventana"],
+            calculado_en=datos["calculado_en"],
+            disponibilidad=datos["disponibilidad"],
+            latencia_media_ms=datos["latencia_media_ms"],
+            apis=[
+                SaludApi(
+                    nombre=a["nombre"],
+                    porcentaje=a["porcentaje"],
+                    color=ColorSalud(a["color"]),
+                    micros=a["micros"],
+                    externas=[
+                        SaludExterna(nombre=x["nombre"], estado=EstadoCircuito(x["estado"]))
+                        for x in a["externas"]
+                    ],
+                )
+                for a in datos["apis"]
+            ],
+            micros=[
+                SaludMicro(
+                    nombre=m["nombre"],
+                    peso=m["peso"],
+                    porcentaje=m["porcentaje"],
+                    color=ColorSalud(m["color"]),
+                    responde=m["responde"],
+                    sin_trafico=m["sin_trafico"],
+                    disponibilidad=m["disponibilidad"],
+                    latencia_media_ms=m["latencia_media_ms"],
+                    latencia_p95_ms=m["latencia_p95_ms"],
+                )
+                for m in datos["micros"]
+            ],
+        )
 
     @strawberry.field
     async def cobros(

@@ -4,9 +4,14 @@ Comprueba que ambos archivos declaren las mismas rutas HTTP, el mismo método po
 corte duro de 700 ms (`deadline: 0.7` en OpenAPI 2.0 y `timeout: 0.7s` en Envoy), y que Envoy
 escuche en el puerto 8080 hacia `bff:8000`.
 
+La API de los socios (HU-W07) va en otro gateway de la nube (`openapi-socios.yaml`) y en el mismo
+Envoy local: sus rutas (`/v1/...` fuera de `/v1/graphql`) deben ser las mismas en el contrato
+(`contracts/openapi/socios-v1.json`), en `openapi-socios.yaml` y en Envoy, con el mismo corte.
+
 Solo usa la biblioteca estándar. Uso: `python scripts/validar_gateway.py`
 """
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -14,6 +19,8 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 OPENAPI = RAIZ / "infra" / "gateway" / "openapi.yaml"
 ENVOY = RAIZ / "infra" / "gateway" / "envoy.yaml"
+OPENAPI_SOCIOS = RAIZ / "infra" / "gateway" / "openapi-socios.yaml"
+CONTRATO_SOCIOS = RAIZ / "contracts" / "openapi" / "socios-v1.json"
 
 PLAZO_SEGUNDOS = 0.7
 RUTAS_ESPERADAS = {
@@ -69,6 +76,9 @@ def extraer_openapi(texto: str) -> dict[tuple[str, str], float]:
 def extraer_envoy(texto: str) -> dict[tuple[str, str], float]:
     """Extrae {(METODO, ruta): timeout_segundos} de la lista `routes:` de Envoy."""
     rutas: dict[tuple[str, str], float] = {}
+    # Solo la lista de rutas: después vienen las respuestas locales y los filtros (las reglas de
+    # `jwt_authn` también tienen `match` y `path`).
+    texto = re.split(r"\n\s*(?:local_reply_config|http_filters):", texto, maxsplit=1)[0]
     bloques = re.split(r"\n\s*-\s+match:\s*\n", texto)
     for bloque in bloques[1:]:
         m_path = re.search(r'path:\s*"([^"]+)"', bloque)
@@ -83,6 +93,48 @@ def extraer_envoy(texto: str) -> dict[tuple[str, str], float]:
         if m_path and m_metodo and m_timeout:
             rutas[(m_metodo.group(1), m_path.group(1))] = float(m_timeout.group(1))
     return rutas
+
+
+def es_de_socios(ruta: str) -> bool:
+    return ruta.startswith("/v1/") and not ruta.startswith("/v1/graphql")
+
+
+def rutas_del_contrato_de_socios() -> set[tuple[str, str]]:
+    contrato = json.loads(CONTRATO_SOCIOS.read_text(encoding="utf-8"))
+    return {
+        (metodo.upper(), re.sub(r"\{[^}]+\}", PARAMETRO, camino))
+        for camino, operaciones in contrato["paths"].items()
+        for metodo in operaciones
+    }
+
+
+def validar_socios(rutas_ev_socios: dict[tuple[str, str], float]) -> list[str]:
+    errores: list[str] = []
+    if not OPENAPI_SOCIOS.is_file():
+        return [f"No existe {OPENAPI_SOCIOS.relative_to(RAIZ)}"]
+    texto = OPENAPI_SOCIOS.read_text(encoding="utf-8")
+    rutas_oa = extraer_openapi(texto)
+    contrato = rutas_del_contrato_de_socios()
+    for origen, rutas in (("openapi-socios.yaml", rutas_oa), ("envoy.yaml", rutas_ev_socios)):
+        if set(rutas) != contrato:
+            sobran, faltan = sorted(set(rutas) - contrato), sorted(contrato - set(rutas))
+            errores.append(
+                f"{origen} no tiene las rutas de socios del contrato: sobran {sobran}, "
+                f"faltan {faltan}"
+            )
+    for origen, rutas in (("openapi-socios.yaml", rutas_oa), ("envoy.yaml", rutas_ev_socios)):
+        for clave, plazo in sorted(rutas.items()):
+            if abs(plazo - PLAZO_SEGUNDOS) > 1e-6:
+                errores.append(
+                    f"{origen} {clave[0]} {clave[1]}: plazo={plazo}s (debe ser {PLAZO_SEGUNDOS}s)"
+                )
+    if "x-google-jwks_uri" not in texto or "envoy.filters.http.jwt_authn" not in ENVOY.read_text(
+        encoding="utf-8"
+    ):
+        errores.append(
+            "el token del socio debe validarse en el borde (x-google-jwks_uri y jwt_authn)"
+        )
+    return errores
 
 
 def validar(texto_openapi: str | None = None, texto_envoy: str | None = None) -> list[str]:
@@ -100,7 +152,10 @@ def validar(texto_openapi: str | None = None, texto_envoy: str | None = None) ->
         errores.append('openapi.yaml debe ser OpenAPI 2.0 (swagger: "2.0") para GCP API Gateway')
 
     rutas_oa = extraer_openapi(texto_openapi)
-    rutas_ev = extraer_envoy(texto_envoy)
+    todas_ev = extraer_envoy(texto_envoy)
+    rutas_ev = {k: v for k, v in todas_ev.items() if not es_de_socios(k[1])}
+    if texto_envoy == (ENVOY.read_text(encoding="utf-8") if ENVOY.is_file() else None):
+        errores.extend(validar_socios({k: v for k, v in todas_ev.items() if es_de_socios(k[1])}))
 
     if set(rutas_oa.keys()) != set(rutas_ev.keys()):
         errores.append(
@@ -141,7 +196,8 @@ def main() -> int:
         return 1
     print(
         f"API Gateway consistente: {len(RUTAS_ESPERADAS)} rutas sincronizadas entre "
-        f"openapi.yaml y envoy.yaml con corte duro de {PLAZO_SEGUNDOS}s (700 ms)."
+        f"openapi.yaml y envoy.yaml, y {len(rutas_del_contrato_de_socios())} de socios entre el "
+        f"contrato, openapi-socios.yaml y envoy.yaml, con corte duro de {PLAZO_SEGUNDOS}s (700 ms)."
     )
     return 0
 
