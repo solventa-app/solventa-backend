@@ -12,6 +12,14 @@ CIFRADO_CLAVE_LOCAL = "c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE="
 # Clave local para calcular el `titular_id` (HMAC-SHA256 del documento). Debe ser la misma del
 # BFF (`CLIENTE_ID_CLAVE`): en compose ambos usan el mismo valor; en Cloud Run, `clave-cliente-id`.
 CLIENTE_ID_CLAVE_LOCAL = "dev-cliente-id-clave-local"
+# Clave ES256 de los tokens de socios (HU-W07, W07-26), solo para local y pruebas: DER PKCS#8 en
+# base64. El repo es público, así que NO es secreta. En Cloud Run llega de Secret Manager
+# (`clave-firma-socios`).
+SOCIOS_CLAVE_FIRMA_LOCAL = (
+    "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgz8m0FhNRi5jz+ZJZ"
+    "OEL+WI9sA86sSOnnzCwCzLMLKK6hRANCAATI4t/bJXE3sAMp24CJyTykuROOmf34"
+    "Zpp6BGqhsuYJYVIKID3R8q88FTdnt7LG6WlD8tXqduK9mRJZPdhHuXOq"
+)
 # Valor con el que Terraform crea cada secreto (infra/README.md, "Cargar los secretos").
 VALOR_MARCADOR = "pendiente-de-cargar"
 # HS256 exige al menos 32 bytes de clave (RFC 7518, sección 3.2).
@@ -28,6 +36,7 @@ class Configuracion:
     cifrado_clave_envuelta: str | None = None
     consentimiento_vigencia_dias: int = 30
     cliente_id_clave: str = CLIENTE_ID_CLAVE_LOCAL
+    socios_clave_firma: str = SOCIOS_CLAVE_FIRMA_LOCAL
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -37,6 +46,7 @@ class Configuracion:
         cifrado_clave_envuelta = os.getenv("CIFRADO_CLAVE_ENVUELTA") or None
         consentimiento_vigencia_dias = int(os.getenv("CONSENTIMIENTO_VIGENCIA_DIAS", "30"))
         cliente_id_clave = os.getenv("CLIENTE_ID_CLAVE", CLIENTE_ID_CLAVE_LOCAL)
+        socios_clave_firma = os.getenv("SOCIOS_CLAVE_FIRMA", SOCIOS_CLAVE_FIRMA_LOCAL)
         # Cloud Run define `K_SERVICE` en todo contenedor: así se sabe que no es local
         # sin agregar otra variable. En la nube nunca se firma con un secreto conocido.
         if os.getenv("K_SERVICE"):
@@ -51,6 +61,8 @@ class Configuracion:
                 raise ValueError("CIFRADO_CLAVE no se ha cargado en Secret Manager")
             if cliente_id_clave in (CLIENTE_ID_CLAVE_LOCAL, VALOR_MARCADOR):
                 raise ValueError("CLIENTE_ID_CLAVE no se ha cargado en Secret Manager")
+            if socios_clave_firma in (SOCIOS_CLAVE_FIRMA_LOCAL, VALOR_MARCADOR):
+                raise ValueError("SOCIOS_CLAVE_FIRMA no se ha cargado en Secret Manager")
         return cls(
             # Sin valor por defecto: compose y Cloud Run fijan DATABASE_URL completa, y una URL
             # escrita aquí llevaría la contraseña (o ninguna). `construir_pool` falla claro.
@@ -62,4 +74,5 @@ class Configuracion:
             cifrado_clave_envuelta=cifrado_clave_envuelta,
             consentimiento_vigencia_dias=consentimiento_vigencia_dias,
             cliente_id_clave=cliente_id_clave,
+            socios_clave_firma=socios_clave_firma,
         )

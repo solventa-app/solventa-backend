@@ -17,22 +17,28 @@ Bloque 9 (W03-19 a W03-37): el contacto que da el ASESOR (`nombre_cifrado`, `cor
 texto del modo «nombre» (`firma_texto_cifrado`) van cifrados por campo con su propio contexto
 (`nombre:<id>`, `correo:<id>`, `firma:<id>`) y **no salen en el dict de la propuesta**: solo los
 devuelve `contacto` a quien los necesita para avisar o armar el PDF. El código y el token del
-enlace se guardan solo como huella."""
+enlace se guardan solo como huella.
+
+HU-W07 (socios, migración `0008`): con `actor_rol = SOCIO`, `actor_usuario_id` es el id del socio y
+`tasa_comision` su tasa congelada al aceptar. Emitir la póliza de un socio causa su comisión en la
+misma transacción (`comisiones`, una por póliza, con la prima y la comisión cifradas)."""
 
 import json
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from app.application.cifrado import CifradorCampos
+from app.application.comisiones import calcular_comision, mes
 
 _COLUMNAS = (
     "id, oferta_id, cliente_id, consentimiento_id, version_reglas, actor_usuario_id, estado, "
     "oferta_cifrada, intentos_emision, motivo_estado, creado_en, actualizado_en, "
-    "origen_contacto, actor_rol, contacto_borrado_en"
+    "origen_contacto, actor_rol, contacto_borrado_en, tasa_comision"
 )
 _PRIVADAS = ("nombre_cifrado", "correo_cifrado", "firma_texto_cifrado")
 # La póliza de la propuesta, si ya se emitió (una subconsulta: `polizas.propuesta_id` es UNIQUE).
@@ -104,11 +110,12 @@ class RepositorioPropuestasPostgres:
                 INSERT INTO propuestas
                     (id, oferta_id, cliente_id, consentimiento_id, version_reglas,
                      actor_usuario_id, estado, oferta_cifrada, actor_rol, origen_contacto,
-                     nombre_cifrado, correo_cifrado)
+                     nombre_cifrado, correo_cifrado, tasa_comision)
                 VALUES
                     (%(id)s, %(oferta_id)s, %(cliente_id)s, %(consentimiento_id)s,
                      %(version_reglas)s, %(actor_usuario_id)s, 'ACEPTADA', %(oferta_cifrada)s,
-                     %(actor_rol)s, %(origen_contacto)s, %(nombre_cifrado)s, %(correo_cifrado)s)
+                     %(actor_rol)s, %(origen_contacto)s, %(nombre_cifrado)s, %(correo_cifrado)s,
+                     %(tasa_comision)s)
                 ON CONFLICT (oferta_id) DO NOTHING
                 RETURNING {_COLUMNAS}, NULL::text AS poliza_id
                 """,
@@ -122,6 +129,7 @@ class RepositorioPropuestasPostgres:
                     "oferta_cifrada": cifrada,
                     "actor_rol": datos.get("actor_rol"),
                     "origen_contacto": datos.get("origen_contacto"),
+                    "tasa_comision": datos.get("tasa_comision"),
                     "nombre_cifrado": self._cifrar_opcional(
                         contacto and contacto["nombre"], f"nombre:{propuesta_id}"
                     ),
@@ -228,7 +236,85 @@ class RepositorioPropuestasPostgres:
                     "vigencia_hasta": vigencia_hasta,
                 },
             ).fetchone()
+            self._causar_comision(conexion, propuesta_id, poliza["id"])
         return poliza, True
+
+    def _causar_comision(self, conexion: Any, propuesta_id: str, poliza_id: str) -> None:
+        """W07-7: si la vendió un socio, su comisión, en la transacción de la emisión. `poliza_id`
+        es único en `comisiones`: una segunda emisión no la duplica."""
+        fila = conexion.execute(
+            "SELECT id, actor_rol, actor_usuario_id, tasa_comision, oferta_cifrada "
+            "FROM propuestas WHERE id = %(id)s",
+            {"id": propuesta_id},
+        ).fetchone()
+        if fila["actor_rol"] != "SOCIO" or fila["tasa_comision"] is None:
+            return
+        prima = json.loads(self._cifrador.descifrar(fila["oferta_cifrada"], fila["id"]))["prima"]
+        comision_id = str(uuid.uuid4())
+        montos = {
+            "prima": prima["valor"],
+            "comision": calcular_comision(prima["valor"], fila["tasa_comision"]),
+        }
+        conexion.execute(
+            """
+            INSERT INTO comisiones
+                (id, socio_id, poliza_id, propuesta_id, tasa, moneda, montos_cifrados)
+            VALUES (%(id)s, %(socio)s, %(poliza)s, %(propuesta)s, %(tasa)s, %(moneda)s, %(montos)s)
+            ON CONFLICT (poliza_id) DO NOTHING
+            """,
+            {
+                "id": comision_id,
+                "socio": fila["actor_usuario_id"],
+                "poliza": poliza_id,
+                "propuesta": propuesta_id,
+                "tasa": fila["tasa_comision"],
+                "moneda": prima["moneda"],
+                "montos": self._cifrador.cifrar(json.dumps(montos), comision_id),
+            },
+        )
+
+    def propuestas_de_socio_por_mes(
+        self, socio_id: str, desde: date, hasta: date
+    ) -> dict[str, int]:
+        """Cuántas propuestas aceptó el socio cada mes (W07, `GET /socios/{id}/ventas`)."""
+        with self._pool.connection() as conexion:
+            filas = conexion.execute(
+                """
+                SELECT date_trunc('month', creado_en AT TIME ZONE 'UTC')::date AS mes, count(*) AS n
+                FROM propuestas
+                WHERE actor_rol = 'SOCIO' AND actor_usuario_id = %(socio)s
+                  AND creado_en >= %(desde)s AND creado_en < %(hasta)s::date + 1
+                GROUP BY 1
+                """,
+                {"socio": socio_id, "desde": desde, "hasta": hasta},
+            ).fetchall()
+        return {mes(f["mes"]): f["n"] for f in filas}
+
+    def comisiones_de_socio(self, socio_id: str, desde: date, hasta: date) -> list[dict[str, Any]]:
+        """Las comisiones causadas en el rango, con la prima y la comisión descifradas."""
+        with self._pool.connection() as conexion:
+            filas = conexion.execute(
+                """
+                SELECT id, poliza_id, tasa, moneda, montos_cifrados, causada_en FROM comisiones
+                WHERE socio_id = %(socio)s
+                  AND causada_en >= %(desde)s AND causada_en < %(hasta)s::date + 1
+                ORDER BY causada_en
+                """,
+                {"socio": socio_id, "desde": desde, "hasta": hasta},
+            ).fetchall()
+        resultado = []
+        for fila in filas:
+            montos = json.loads(self._cifrador.descifrar(fila["montos_cifrados"], fila["id"]))
+            resultado.append(
+                {
+                    "poliza_id": fila["poliza_id"],
+                    "tasa": Decimal(fila["tasa"]),
+                    "moneda": fila["moneda"],
+                    "causada_en": fila["causada_en"],
+                    **montos,
+                }
+            )
+        return resultado
 
     def obtener_poliza(self, poliza_id: str) -> dict[str, Any] | None:
         """La póliza con la prima, la cobertura y el dueño de su propuesta."""
@@ -542,6 +628,7 @@ class RepositorioPropuestasPostgres:
         estado_visible: str | None,
         pagina: int,
         tamano: int,
+        actor_rol: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         """Las propuestas del titular, las que aceptó un usuario o todas (W03-35), de la más
         reciente a la más antigua, con su póliza si existe. Quién ve qué lo decide el BFF por el
@@ -551,11 +638,13 @@ class RepositorioPropuestasPostgres:
             FROM propuestas
             WHERE (%(cliente)s::text IS NULL OR cliente_id = %(cliente)s)
               AND (%(actor)s::text IS NULL OR actor_usuario_id = %(actor)s)
+              AND (%(rol)s::text IS NULL OR actor_rol = %(rol)s)
               AND (%(estados)s::text[] IS NULL OR estado = ANY(%(estados)s))
         """
         parametros = {
             "cliente": cliente_id,
             "actor": actor_usuario_id,
+            "rol": actor_rol,
             "estados": estados,
             "limite": tamano,
             "desde": (pagina - 1) * tamano,

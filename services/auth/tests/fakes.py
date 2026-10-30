@@ -234,3 +234,136 @@ class AlmacenConsentimientosMemoria:
         if consentimiento is not None and consentimiento.revocado_en is None:
             consentimiento.revocado_en = datetime.now(UTC).isoformat()
         return consentimiento
+
+
+class RepositorioSociosMemoria:
+    """Cumple el `Protocol` `RepositorioSocios` de `app/socios.py` (HU-W07)."""
+
+    def __init__(self) -> None:
+        self.socios: dict[str, dict] = {}
+        self.credenciales: list[dict] = []
+        self.presupuestos: dict[tuple[str, str, str], dict] = {}
+        self.consumos: list[dict] = []
+
+    def obtener(self, socio_id):
+        socio = self.socios.get(socio_id)
+        return dict(socio) if socio else None
+
+    def nombres(self, ids):
+        return {i: self.socios[i]["nombre"] for i in ids if i in self.socios}
+
+    def guardar_socio(self, socio_id, nombre, tasa):
+        socio = self.socios.setdefault(socio_id, {"id": socio_id, "estado": "ACTIVO"})
+        socio.update(nombre=nombre, tasa_comision=tasa)
+        return dict(socio)
+
+    def credencial_por_client_id(self, client_id):
+        for c in self.credenciales:
+            if c["client_id"] == client_id:
+                return {**c, "estado_socio": self.socios[c["socio_id"]]["estado"]}
+        return None
+
+    def credenciales_vigentes(self, socio_id):
+        return [
+            dict(c)
+            for c in self.credenciales
+            if c["socio_id"] == socio_id and c["revocada_en"] is None
+        ]
+
+    def crear_credencial(self, socio_id, entorno, client_id, clave_cifrada):
+        fila = {
+            "id": str(uuid.uuid4()),
+            "socio_id": socio_id,
+            "entorno": entorno,
+            "client_id": client_id,
+            "clave_cifrada": clave_cifrada,
+            "intentos_fallidos": 0,
+            "bloqueado_hasta": None,
+            "creada_en": datetime.now(UTC),
+            "revocada_en": None,
+        }
+        self.credenciales.append(fila)
+        return dict(fila)
+
+    def rotar_credencial(self, socio_id, entorno, client_id, clave_cifrada):
+        for c in self.credenciales:
+            if c["socio_id"] == socio_id and c["entorno"] == entorno and c["revocada_en"] is None:
+                c["revocada_en"] = datetime.now(UTC)
+        return self.crear_credencial(socio_id, entorno, client_id, clave_cifrada)
+
+    def _credencial(self, credencial_id):
+        return next(c for c in self.credenciales if c["id"] == credencial_id)
+
+    def registrar_fallo(self, credencial_id, bloquear_hasta):
+        c = self._credencial(credencial_id)
+        if bloquear_hasta is None:
+            c["intentos_fallidos"] += 1
+        else:
+            c["intentos_fallidos"], c["bloqueado_hasta"] = 0, bloquear_hasta
+
+    def registrar_exito(self, credencial_id):
+        c = self._credencial(credencial_id)
+        c["intentos_fallidos"], c["bloqueado_hasta"] = 0, None
+
+    def fijar_presupuesto(self, socio_id, entorno, api, asignadas):
+        fila = self.presupuestos.setdefault((socio_id, entorno, api), {"consumidas": 0})
+        fila["asignadas"] = asignadas
+
+    def presupuesto(self, socio_id, entorno, api):
+        fila = self.presupuestos.get((socio_id, entorno, api))
+        return dict(fila) if fila else None
+
+    def reservar(self, socio_id, entorno, api):
+        fila = self.presupuestos.get((socio_id, entorno, api))
+        if fila is None or fila["consumidas"] >= fila["asignadas"]:
+            return None
+        fila["consumidas"] += 1
+        return dict(fila)
+
+    def devolver(self, socio_id, entorno, api):
+        fila = self.presupuestos.get((socio_id, entorno, api))
+        if fila is None or fila["consumidas"] <= 0:
+            return None
+        fila["consumidas"] -= 1
+        return dict(fila)
+
+    def registrar_consumo(self, socio_id, entorno, api, resultado, latencia_ms):
+        self.consumos.append(
+            {
+                "socio_id": socio_id,
+                "entorno": entorno,
+                "api": api,
+                "resultado": resultado,
+                "latencia_ms": latencia_ms,
+                "fecha": datetime.now(UTC).date(),
+            }
+        )
+
+    def _en_rango(self, socio_id, entorno, desde, hasta):
+        return [
+            c
+            for c in self.consumos
+            if c["socio_id"] == socio_id
+            and c["entorno"] == entorno
+            and desde <= c["fecha"] <= hasta
+        ]
+
+    def consumo_por_api(self, socio_id, entorno, desde, hasta):
+        por_api: dict[str, list[dict]] = {}
+        for c in self._en_rango(socio_id, entorno, desde, hasta):
+            por_api.setdefault(c["api"], []).append(c)
+        return [
+            {
+                "api": api,
+                "llamadas": len(filas),
+                "errores": sum(1 for f in filas if f["resultado"] != "OK"),
+                "latencia_media_ms": round(sum(f["latencia_ms"] for f in filas) / len(filas)),
+            }
+            for api, filas in sorted(por_api.items())
+        ]
+
+    def consumo_diario(self, socio_id, entorno, desde, hasta):
+        por_dia: dict = {}
+        for c in self._en_rango(socio_id, entorno, desde, hasta):
+            por_dia[c["fecha"]] = por_dia.get(c["fecha"], 0) + 1
+        return [{"fecha": d, "llamadas": n} for d, n in sorted(por_dia.items())]

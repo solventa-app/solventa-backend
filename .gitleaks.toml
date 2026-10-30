@@ -4,4 +4,9 @@ title = "Solventa backend - configuración de gitleaks"
 description = "Secretos falsos de fixtures de pruebas (no son credenciales reales, KAN-24)"
 regexes = [
   '''otro-secreto-de-32-bytes-o-mas-xx''',
+  # Clave ES256 SOLO LOCAL de los tokens de socios (HU-W07, W07-26): pública en el repo, como
+  # `JWT_SECRETO` y `CIFRADO_CLAVE` locales. En la nube AUTH no arranca con ella.
+  '''MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgz8m0FhNRi5jz''',
+  # Claves SOLO LOCALES de los socios demo (docker-compose y el entorno de Newman).
+  '''solo-local-socio-demo-[12]-(produccion|pruebas)''',
 ]

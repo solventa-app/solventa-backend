@@ -444,6 +444,7 @@ class Propuesta:
     # Datos personales: solo para el ASESOR que la aceptó y el BACKOFFICE.
     nombre_titular: str | None = None
     nombre_asesor: str | None = None  # solo para el BACKOFFICE
+    nombre_socio: str | None = None  # v0.22 (HU-W07): solo para el BACKOFFICE
 
 
 @strawberry.type
@@ -1327,6 +1328,66 @@ class ErrorSiniestro:
 ResultadoResolucion = Annotated[Siniestro | ErrorSiniestro, strawberry.union("ResultadoResolucion")]
 
 MENSAJE_SINIESTROS = "No pudimos consultar los siniestros. Intenta de nuevo."
+
+# ---------- Estado del sistema (v0.22, HU-W07) ----------
+
+
+@strawberry.enum
+class ColorSalud(Enum):
+    VERDE = "VERDE"
+    AMARILLO = "AMARILLO"
+    ROJO = "ROJO"
+
+
+@strawberry.enum
+class EstadoCircuito(Enum):
+    CERRADO = "CERRADO"
+    SEMIABIERTO = "SEMIABIERTO"
+    ABIERTO = "ABIERTO"
+    DESCONOCIDO = "DESCONOCIDO"
+
+
+@strawberry.type
+class SaludMicro:
+    nombre: str
+    peso: int
+    porcentaje: int
+    color: ColorSalud
+    responde: bool
+    sin_trafico: bool
+    disponibilidad: float | None = None
+    latencia_media_ms: int | None = None
+    latencia_p95_ms: int | None = None
+
+
+@strawberry.type
+class SaludExterna:
+    nombre: str
+    estado: EstadoCircuito
+
+
+@strawberry.type
+class SaludApi:
+    nombre: str
+    porcentaje: int
+    color: ColorSalud
+    micros: list[str]
+    externas: list[SaludExterna]
+
+
+@strawberry.type
+class EstadoSistema:
+    porcentaje: int
+    color: ColorSalud
+    ventana: str
+    calculado_en: datetime
+    apis: list[SaludApi]
+    micros: list[SaludMicro]
+    disponibilidad: float | None = None
+    latencia_media_ms: int | None = None
+
+
+MENSAJE_ESTADO_SISTEMA = "No pudimos calcular el estado del sistema. Intenta de nuevo."
 MENSAJE_POLIZA_SINIESTRO = "No pudimos consultar la póliza del siniestro. Intenta de nuevo."
 MENSAJE_ACCION_SINIESTRO = "No pudimos completar la acción sobre el siniestro. Intenta de nuevo."
 
@@ -1731,6 +1792,12 @@ class Query:
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_SINIESTROS) from error
         return [_perito(p) for p in datos]
+
+    @strawberry.field
+    async def estado_sistema(self, info: Info, ventana: str | None = "1h") -> EstadoSistema:
+        """v0.22 (HU-W07), solo BACKOFFICE. El cálculo llega con el bloque 6 del plan de W07."""
+        exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
+        raise ErrorPublico(MENSAJE_ESTADO_SISTEMA)
 
     @strawberry.field
     async def cobros(

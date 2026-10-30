@@ -8,7 +8,7 @@ pasan por el ACL Worker en los bloques siguientes.
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response
@@ -59,6 +59,7 @@ from app.application.servicio_propuestas import (
     OFERTA_NO_ENCONTRADA,
     OfertaNoAceptable,
     ServicioPropuestas,
+    TasaInvalida,
 )
 from app.application.servicio_purga import ServicioPurga
 from app.observabilidad import configurar_trazas
@@ -81,9 +82,11 @@ class AceptarOfertaRequest(BaseModel):
     oferta_id: str = Field(min_length=1)
     # El usuario (CLIENTE o ASESOR) que aceptó; solo su id opaco, para el rastro de quién hizo qué.
     actor_usuario_id: str | None = Field(default=None, min_length=1)
-    # Bloque 9: el rol de quien aceptó y, si es ASESOR, el contacto del titular (W03-25).
-    actor_rol: str | None = Field(default=None, pattern="^(CLIENTE|ASESOR)$")
+    # Bloque 9: el rol de quien aceptó y, si es ASESOR o SOCIO, el contacto del titular (W03-25).
+    actor_rol: str | None = Field(default=None, pattern="^(CLIENTE|ASESOR|SOCIO)$")
     contacto: ContactoTitularRequest | None = None
+    # HU-W07: la tasa del socio, congelada en la propuesta (W07-7). Solo con `actor_rol = SOCIO`.
+    tasa_comision: str | None = Field(default=None, pattern=r"^0(\.\d{1,4})?$")
 
 
 class MontoResponse(BaseModel):
@@ -132,6 +135,30 @@ class PaginaPropuestasResponse(BaseModel):
     tamano: int
 
 
+class VentasMesResponse(BaseModel):
+    mes: str  # AAAA-MM
+    propuestas: int
+    emitidas: int
+    primas: MontoResponse
+    comision: MontoResponse
+
+
+class VentasTotalesResponse(BaseModel):
+    propuestas: int
+    emitidas: int
+    primas: MontoResponse
+    comision: MontoResponse
+
+
+class VentasSocioResponse(BaseModel):
+    """HU-W07: lo que vendió un socio, por mes. Sin datos de los titulares."""
+
+    desde: date
+    hasta: date
+    meses: list[VentasMesResponse]
+    totales: VentasTotalesResponse
+
+
 class CodigoRequest(BaseModel):
     correo: str | None = Field(default=None, max_length=254)
 
@@ -147,7 +174,7 @@ class VerificarCodigoRequest(BaseModel):
 
 
 class EmitirRequest(BaseModel):
-    rol: str = Field(pattern="^(CLIENTE|ASESOR)$")
+    rol: str = Field(pattern="^(CLIENTE|ASESOR|SOCIO)$")
     titular_id: str | None = Field(default=None, min_length=1)
 
 
@@ -501,7 +528,10 @@ def create_app(
                 body.actor_usuario_id,
                 body.actor_rol,
                 body.contacto.model_dump() if body.contacto else None,
+                body.tasa_comision,
             )
+        except TasaInvalida as error:
+            raise HTTPException(status_code=422, detail="TASA_COMISION_INVALIDA") from error
         except OfertaNoAceptable as error:
             codigo = 404 if error.motivo == OFERTA_NO_ENCONTRADA else 422
             raise HTTPException(status_code=codigo, detail=error.motivo) from error
@@ -669,14 +699,16 @@ def create_app(
         estado_visible: str | None = None,
         pagina: int = 1,
         tamano: int = 10,
+        actor_rol: str | None = None,
     ) -> PaginaPropuestasResponse:
         """W03-35. Quién ve qué lo decide el BFF por el rol del token: CLIENTE por `cliente_id` (su
-        titular), ASESOR por `actor_usuario_id`, BACKOFFICE sin filtro."""
+        titular), ASESOR por `actor_usuario_id`, BACKOFFICE sin filtro. Un SOCIO (HU-W07), por
+        `actor_rol=SOCIO` y su id en `actor_usuario_id`."""
         if estado_visible not in (None, "EMITIENDO", "EMITIDA", "NO_EMITIDA"):
             raise HTTPException(status_code=422, detail="estado_visible inválido")
         pagina, tamano = max(1, pagina), max(1, min(tamano, 50))
         propuestas, total = app.state.servicio_propuestas.listar(
-            cliente_id, actor_usuario_id, estado_visible, pagina, tamano
+            cliente_id, actor_usuario_id, estado_visible, pagina, tamano, actor_rol
         )
         return PaginaPropuestasResponse(
             propuestas=[
@@ -693,6 +725,19 @@ def create_app(
         )
 
     estado_visible_de = estado_visible
+
+    @app.get("/socios/{socio_id}/ventas", tags=["socios"], response_model=VentasSocioResponse)
+    def ventas_socio(
+        socio_id: str, desde: date | None = None, hasta: date | None = None
+    ) -> VentasSocioResponse:
+        """HU-W07 (`GET /v1/ventas`): propuestas, pólizas emitidas, primas y comisión por mes. Solo
+        lo llama el BFF con el id del socio del token."""
+        try:
+            return VentasSocioResponse(
+                **app.state.servicio_propuestas.ventas_socio(socio_id, desde, hasta)
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.post("/propuestas/{propuesta_id}/codigo", tags=["firma"], response_model=CodigoResponse)
     def enviar_codigo(propuesta_id: str, body: CodigoRequest) -> CodigoResponse:

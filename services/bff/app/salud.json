@@ -1,0 +1,40 @@
+{
+  "descripcion": "Salud del sistema para el portal de socios y el BACKOFFICE (HU-W07, bloque 6 del plan). Fuente de verdad; el BFF lleva una copia en services/bff/app/salud.json (scripts/sincronizar_socios.py).",
+  "version": 1,
+  "ventanas": ["15m", "1h", "24h", "7d"],
+  "ventana_por_defecto": "1h",
+  "formula": {
+    "peso_disponibilidad": 70,
+    "peso_latencia": 30,
+    "nota": "Salud de un micro: 0 si /health no responde; si responde, peso_disponibilidad % de la disponibilidad más peso_latencia % del puntaje de latencia (100 en el objetivo, 0 al doble, lineal entre los dos). Sin tráfico en la ventana: 100."
+  },
+  "colores": {"verde": 90, "amarillo": 70},
+  "reglas": {
+    "api_en_rojo_si_un_micro_no_responde": true,
+    "general_no_verde_si_una_api_en_rojo": true
+  },
+  "micros": [
+    {"nombre": "bff", "peso": 18, "objetivo_latencia_ms": 500},
+    {"nombre": "auth", "peso": 14, "objetivo_latencia_ms": 120},
+    {"nombre": "acl-worker", "peso": 14, "objetivo_latencia_ms": 300},
+    {"nombre": "policy", "peso": 12, "objetivo_latencia_ms": 300},
+    {"nombre": "rating", "peso": 10, "objetivo_latencia_ms": 120},
+    {"nombre": "risk", "peso": 8, "objetivo_latencia_ms": 120},
+    {"nombre": "under", "peso": 7, "objetivo_latencia_ms": 300},
+    {"nombre": "payments", "peso": 7, "objetivo_latencia_ms": 400},
+    {"nombre": "almacenamiento", "peso": 6, "objetivo_latencia_ms": 300},
+    {"nombre": "consolidador-fuentes", "peso": 4, "objetivo_latencia_ms": 1000}
+  ],
+  "apis": [
+    {
+      "nombre": "COTIZACION",
+      "micros": ["bff", "auth", "acl-worker", "risk", "rating"],
+      "externas": ["open-finance", "open-data"]
+    },
+    {
+      "nombre": "EMISION",
+      "micros": ["bff", "auth", "policy", "under", "payments", "almacenamiento"],
+      "externas": ["firma", "kyc", "pasarela", "notificaciones"]
+    }
+  ]
+}

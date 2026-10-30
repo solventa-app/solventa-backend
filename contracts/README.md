@@ -7,6 +7,8 @@ Aquí vive todo lo que otro componente (o el repo `solventa-frontend`) necesita 
 |---|---|---|
 | `graphql/schema.graphql` | Contrato del BFF (web y móvil) | `solventa-frontend` (codegen) y `services/bff` |
 | `events/*.schema.json` | Eventos del bus (Pub/Sub), JSON Schema 2020-12 | Servicios productores y consumidores |
+| `openapi/socios-v1.json` | API REST de los socios de distribución (`/v1`, HU-W07), OpenAPI 3.1 | El portal de socios (codegen), los socios y `services/bff` (copia en `app/socios-v1.json`) |
+| `salud.json` | Pesos y reglas de la salud del sistema (HU-W07) | `services/bff` (copia en `app/salud.json`) |
 | `CHANGELOG.md` | Bitácora de cambios de contrato | Todos |
 
 ## Reglas
@@ -25,4 +27,6 @@ pip install -r ../requirements-dev.txt
 python ../scripts/validar_contratos.py
 ```
 
-El CI corre el mismo script cuando cambia algo en `contracts/`.
+El CI corre el mismo script cuando cambia algo en `contracts/`. Valida también el OpenAPI de socios (las `$ref`
+resuelven y los `operationId` son únicos) y `salud.json` (los pesos suman 100 y cada micro existe en
+`.github/servicios.json`). Las copias del BFF se mantienen con `python scripts/sincronizar_socios.py`.

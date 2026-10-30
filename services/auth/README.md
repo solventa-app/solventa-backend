@@ -82,6 +82,28 @@ los llama el BFF, que ya validó el token y el rol.
 - `POST /sesiones/renovar {usuario_id, expira_en}`: `actualizarSesion`. Un token con los scopes del estado actual y **la
   misma expiración** (no alarga la sesión). El BFF lo llama con un token que ya validó.
 
+## Socios de distribución (HU-W07)
+
+Endpoints internos, como el resto: solo los llama el BFF, que ya validó el token del socio. Plan:
+`docs/plan-completar-hu-w07.md`.
+
+- **Alta sin API (W07-21):** `python -m app.crear_socio --id … --nombre … --tasa-comision 0.10
+  --presupuesto-cotizaciones N --presupuesto-cotizaciones-pruebas M`. Idempotente: fija el presupuesto y crea la
+  credencial de cada entorno solo si no hay una vigente. Las claves al azar se imprimen una vez por la salida
+  estándar; `SOCIO_CLIENT_ID_<ENTORNO>` y `SOCIO_CLAVE_<ENTORNO>` las fijan. En compose, `crear-socios-demo` crea
+  `socio-demo-1` y `socio-demo-2` con claves **solo locales** (el 2 tiene 3 cotizaciones de producción, para el 429).
+- `POST /socios/tokens {client_id, clave}`: JWT **ES256** de 15 min (`iss=solventa-auth`, `aud=solventa-socios`,
+  `rol=SOCIO`, `entorno`). `401` genérico; 5 fallos seguidos bloquean la credencial 15 min.
+  `GET /.well-known/jwks.json`: la clave pública, para el API Gateway y el BFF.
+- `GET /socios/{id}` (con la `tasa_comision`), `POST /socios/nombres {ids}`, `GET /socios/{id}/credenciales` (la clave
+  en claro, para el portal) y `POST /socios/{id}/credenciales/{entorno}/rotar`.
+- `POST /socios/{id}/presupuesto/{entorno}/cotizaciones/reservar` (`429` si se agotó; un solo `UPDATE` atómico) y
+  `…/devolver` (la unidad de una cotización que falló por un error nuestro).
+- `POST /socios/{id}/consumos` (append-only, sin datos personales) y `GET /socios/{id}/consumo?entorno=&desde=&hasta=`.
+- **Secretos:** la clave del socio se guarda cifrada (AES-GCM, contexto = id del socio). La clave de firma llega en
+  `SOCIOS_CLAVE_FIRMA` (DER PKCS#8 en base64 o PEM); en local hay una fija y pública, como `JWT_SECRETO`, y en Cloud
+  Run sale de Secret Manager (`clave-firma-socios`) y no arranca con la local (W07-26).
+
 ## Operación
 
 - Puerto local: `8001`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.
@@ -95,4 +117,4 @@ PostgreSQL `auth` (este servicio es su único escritor). Alembic con SQL explíc
 - Aplicar: `alembic upgrade head` (necesita `DATABASE_URL`). En `docker compose` lo hace `migrar-auth` antes de arrancar el servicio; en staging, el Cloud Run Job `migrar-auth` con la misma imagen.
 - Nueva migración: `alembic revision -m "texto" --rev-id 0002`, escribir `upgrade` **y** `downgrade`, y verificar con `bash ../../scripts/verificar-migraciones.sh auth` (una sola cabeza; subir, bajar a base y subir).
 - Compatibles hacia atrás: agregar sí; renombrar o borrar en dos despliegues (ADR-07). Nunca edites una migración ya integrada a `main`.
-- `0002_usuarios` crea la tabla de usuarios (HU-M02), `0004_consentimientos` la de consentimiento (append-only, T-W01-4) y `0005_consentimiento_titular_y_vencimiento` agrega `titular_id`, `tipo_dato`, `fuente_datos`, `canal` y `vence_en`. `0008_titular_y_documento` agrega a `usuarios` el `titular_id` (único) y el `documento_cifrado` del CLIENTE (W03-27); los usuarios anteriores quedan sin ellos y los de prueba se recrean. `0009_cuentas_onboarding` (HU-M01) amplía los estados con `PENDIENTE_VERIFICACION` y `RECHAZADA` y agrega `correo_hmac` (login por correo).
+- `0002_usuarios` crea la tabla de usuarios (HU-M02), `0004_consentimientos` la de consentimiento (append-only, T-W01-4) y `0005_consentimiento_titular_y_vencimiento` agrega `titular_id`, `tipo_dato`, `fuente_datos`, `canal` y `vence_en`. `0008_titular_y_documento` agrega a `usuarios` el `titular_id` (único) y el `documento_cifrado` del CLIENTE (W03-27); los usuarios anteriores quedan sin ellos y los de prueba se recrean. `0009_cuentas_onboarding` (HU-M01) amplía los estados con `PENDIENTE_VERIFICACION` y `RECHAZADA` y agrega `correo_hmac` (login por correo). `0010_socios` (HU-W07) crea `socios`, `credenciales_socio`, `presupuestos_socio` y `consumos_socio` (append-only), y suma `SOCIO` a `ck_consentimientos_actor_rol`.
