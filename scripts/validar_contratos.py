@@ -1,5 +1,6 @@
-"""Valida los contratos: el esquema GraphQL compila, cada evento es un JSON Schema válido, el OpenAPI de
-socios (HU-W07) es coherente y `salud.json` suma 100 con micros que existen en `.github/servicios.json`."""
+"""Valida los contratos: el esquema GraphQL compila, cada evento es un JSON Schema válido, el
+OpenAPI de socios (HU-W07) es coherente y `salud.json` suma 100 con micros que existen en
+`.github/servicios.json`."""
 
 import json
 import sys
