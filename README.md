@@ -74,6 +74,7 @@ PR ─► CI ─► merge a develop ─► construir (imagen = SHA) ─► migra
 - [`docs/pruebas-manuales.md`](docs/pruebas-manuales.md) — paso a paso para probar todo el backend a mano en tu terminal.
 - [`docs/sprint-1.md`](docs/sprint-1.md) — alcance, habilitadoras, escenarios y decisiones abiertas del Sprint 1.
 - [`docs/sprint-3.md`](docs/sprint-3.md) — alcance, subtareas, pesos y datos de los gráficos de cierre del Sprint 3 (planeación, 2026-10-31).
+- [`docs/detalle-historias-sprint-3.md`](docs/detalle-historias-sprint-3.md) — detalle de historias del Sprint 3 según el plan oficial (M01, W04, M04, M06): tareas T-xx con peso y criterios `CA-*` propuestos.
 - [`docs/refinamiento-sprint-3.md`](docs/refinamiento-sprint-3.md) — refinamiento del Sprint 3: tareas con peso por HU, criterios propuestos, dependencias y preguntas abiertas.
 - [`docs/convenciones.md`](docs/convenciones.md) — ramas (git-flow), commits, PR y definición de hecho.
 - [`docs/adr/ADR-08-git-flow.md`](docs/adr/ADR-08-git-flow.md) — decisión del flujo `main → develop → feature`.

@@ -2,6 +2,7 @@
 
 > **Estado:** documentación de planeación, 2026-10-31. Solo lectura de Jira: no se creó el sprint ni se movió ningún issue.  
 > **Fuentes:** Jira (proyecto KAN) para pesos, estados y fechas; `Solventa_Prototipado_Jira_Subtareas_v2.0.xlsx` (hoja «Subtareas v24», v24 del Excel de prototipado) para el detalle de cada pantalla.  
+> **Alcance oficial del plan (M01, W04, M04, M06) y criterios `CA-*`:** [`detalle-historias-sprint-3.md`](detalle-historias-sprint-3.md); donde difiera de este documento, gana aquel.
 > **Libro de trabajo:** `Solventa_Sprint3_Cierre.xlsx` (no versionado; ver la sección 8). **Refinamiento y pesos por tarea:** [`refinamiento-sprint-3.md`](refinamiento-sprint-3.md).
 
 ## 1. Alcance y fechas
