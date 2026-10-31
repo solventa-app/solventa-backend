@@ -1,5 +1,7 @@
 # Especificación OpenAPI 2.0 (Swagger) para Google Cloud API Gateway (HA-LAT-004: EC001, EC002, EC008).
-# El plazo duro de extremo a extremo es de 700 ms (deadline: 0.7).
+# El plazo duro de extremo a extremo es de 700 ms (deadline: 0.7), salvo el canal móvil (/graphql/app y
+# /v1/graphql/app): 2 s, porque crear la cuenta del onboarding (hash de la clave) tarda ~1 s y el corte a
+# los 700 ms dejaba la cuenta creada con un 504 que la app reintentaba.
 # En local se replica con Envoy (infra/gateway/envoy.yaml) y se valida en CI con scripts/validar_gateway.py.
 swagger: "2.0"
 info:
@@ -49,7 +51,7 @@ paths:
       operationId: graphqlApp
       x-google-backend:
         address: ${bff_url}/graphql/app
-        deadline: 0.7
+        deadline: 2.0
       responses:
         "200":
           description: Respuesta GraphQL
@@ -79,7 +81,7 @@ paths:
       operationId: graphqlAppV1
       x-google-backend:
         address: ${bff_url}/v1/graphql/app
-        deadline: 0.7
+        deadline: 2.0
       responses:
         "200":
           description: Respuesta GraphQL
