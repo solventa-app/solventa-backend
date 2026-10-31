@@ -328,6 +328,45 @@ resource "google_cloud_scheduler_job" "reconciliacion_cobros_policy" {
   }
 }
 
+# ------------------------------------------------------------------ cobro recurrente (Cloud Scheduler)
+# W05-A7: cada hora genera los cobros de los ciclos vencidos, para que sirva también con un intervalo de 1 día. Idempotente
+# por ciclo. Misma cuenta `programador`; PAYMENTS es privado.
+resource "google_cloud_run_v2_service_iam_member" "programador_invoca_payments" {
+  count    = local.hay_tareas ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.servicio["payments"].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.programador[0].email}"
+}
+
+resource "google_cloud_scheduler_job" "cobros_recurrentes" {
+  count       = local.hay_tareas ? 1 : 0
+  depends_on  = [google_project_service.tareas_apis]
+  project     = var.project_id
+  region      = var.region
+  name        = "cobros-recurrentes"
+  description = "Una pasada del cobro recurrente de PAYMENTS: cobra los ciclos vencidos con el medio guardado"
+  schedule    = var.cobros_recurrentes_cron
+  time_zone   = "America/Bogota"
+
+  attempt_deadline = "300s"
+
+  retry_config {
+    retry_count = 0
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.url["payments"]}/cobros/_generar-recurrentes"
+
+    oidc_token {
+      service_account_email = google_service_account.programador[0].email
+      audience              = local.url["payments"]
+    }
+  }
+}
+
 # ------------------------------------------------------------------ purga de perfiles de RISK (Cloud Scheduler)
 # W01-A4: pasada diaria que borra los perfiles cuyo consentimiento venció, y recoge los avisos de revocación perdidos.
 # Idempotente. Misma cuenta `programador`; RISK es privado.
