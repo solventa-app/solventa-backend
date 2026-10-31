@@ -138,6 +138,9 @@ def create_app(reloj: Callable[[], datetime] = lambda: datetime.now(UTC)) -> Fas
     # Sesiones de pago por id, y su id por `referencia_comercio` (idempotencia).
     sesiones: dict[str, dict] = {}
     sesion_por_referencia: dict[str, str] = {}
+    # Token -> motivo de rechazo, solo de las tarjetas que fallan al cobrar con token. En memoria,
+    # como los cobros: un token desconocido (el del convenio, o tras reiniciar el stub) sigue el modo.
+    rechazos_por_token: dict[str, str] = {}
     candado = asyncio.Lock()
     vigencia = timedelta(seconds=int(os.getenv("SESION_VIGENCIA_SEGUNDOS", "600")))
     url_publica = os.getenv("PASARELA_URL_PUBLICA", "http://localhost:8103").rstrip("/")
@@ -193,7 +196,7 @@ def create_app(reloj: Callable[[], datetime] = lambda: datetime.now(UTC)) -> Fas
         estado["modo"] = body.modo
         return {"modo": estado["modo"]}
 
-    async def _registrar_cobro(referencia: str, modo: str) -> dict:
+    async def _registrar_cobro(referencia: str, modo: str, token: str) -> dict:
         """Registra el cobro por su referencia (una vez) y espera la respuesta simulada. Lo
         comparten las dos APIs del stub: repetir la referencia devuelve el resultado original."""
         await _fallar_si_corresponde(modo)
@@ -202,12 +205,9 @@ def create_app(reloj: Callable[[], datetime] = lambda: datetime.now(UTC)) -> Fas
             if resultado is None:
                 # Cobro nuevo. Se registra ANTES de la espera de `lento`: si el
                 # cliente corta, el cobro igual quedó hecho (como en la vida real).
-                if modo == "rechaza":
-                    resultado = {
-                        "estado": "rechazado",
-                        "referencia": None,
-                        "motivo": MOTIVO_RECHAZO,
-                    }
+                motivo = MOTIVO_RECHAZO if modo == "rechaza" else rechazos_por_token.get(token)
+                if motivo:
+                    resultado = {"estado": "rechazado", "referencia": None, "motivo": motivo}
                 else:
                     resultado = {
                         "estado": "cobrado",
@@ -226,7 +226,9 @@ def create_app(reloj: Callable[[], datetime] = lambda: datetime.now(UTC)) -> Fas
         x_modo_simulado: str | None = Header(default=None),
     ) -> dict:
         modo_efectivo = _modo_efectivo(modo, x_modo_simulado)
-        return await _registrar_cobro(body.referencia_comercio, modo_efectivo)
+        return await _registrar_cobro(
+            body.referencia_comercio, modo_efectivo, body.token_medio_pago
+        )
 
     @app.get("/v1/cobros/{referencia_comercio}", tags=["proveedor"])
     async def consultar_cobro(
@@ -259,7 +261,7 @@ def create_app(reloj: Callable[[], datetime] = lambda: datetime.now(UTC)) -> Fas
         x_modo_simulado: str | None = Header(default=None),
     ) -> dict:
         modo_efectivo = _modo_efectivo(modo, x_modo_simulado)
-        resultado = await _registrar_cobro(body.reference, modo_efectivo)
+        resultado = await _registrar_cobro(body.reference, modo_efectivo, body.payment_token)
         return _a_alterna(body.reference, resultado)
 
     @app.get("/alterna/v2/charges/{reference}", tags=["proveedor-alterno"])
@@ -433,6 +435,8 @@ def create_app(reloj: Callable[[], datetime] = lambda: datetime.now(UTC)) -> Fas
             elif modo_efectivo == "rechaza":
                 resultado, motivo = "rechazado", MOTIVO_RECHAZO
             medio = tarjetas.tokenizar(numero, tipo)
+            if rechazo := tarjetas.rechazo_con_token(numero):
+                rechazos_por_token[medio.token] = rechazo
             del numero, datos  # la tarjeta no sale de esta función
             if resultado == "aprobado":
                 sesion.update(estado="COBRADA", medio=medio, referencia_cobro=f"pg-{uuid.uuid4()}")

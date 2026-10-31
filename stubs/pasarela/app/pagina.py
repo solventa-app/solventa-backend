@@ -45,6 +45,7 @@ TEXTOS: dict[str, dict[str, str]] = {
         "motivo.fondos_insuficientes": "Fondos insuficientes.",
         "motivo.tarjeta_vencida": "La tarjeta está vencida.",
         "motivo.error_procesamiento": "Error de procesamiento.",
+        "motivo.rechazo_recurrente": "Se rechaza al cobrar con el token.",
         "campo.numero": "Revisa el número de la tarjeta.",
         "campo.nombre": "Escribe el nombre que aparece en la tarjeta.",
         "campo.vencimiento": "Revisa la fecha de vencimiento.",
@@ -84,6 +85,7 @@ TEXTOS: dict[str, dict[str, str]] = {
         "motivo.fondos_insuficientes": "Insufficient funds.",
         "motivo.tarjeta_vencida": "The card has expired.",
         "motivo.error_procesamiento": "Processing error.",
+        "motivo.rechazo_recurrente": "Declined when charged with its token.",
         "campo.numero": "Check the card number.",
         "campo.nombre": "Enter the name on the card.",
         "campo.vencimiento": "Check the expiry date.",
@@ -102,6 +104,7 @@ TARJETAS_PANTALLA = (
     ("4000 0000 0000 0002", "Visa", "rechazado", "fondos_insuficientes"),
     ("4000 0000 0000 0069", "Visa", "rechazado", "tarjeta_vencida"),
     ("4000 0000 0000 0119", "Visa", "fallido", "error_procesamiento"),
+    ("4000 0000 0000 0341", "Visa", "aprobado", "rechazo_recurrente"),
 )
 
 
