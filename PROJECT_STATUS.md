@@ -131,4 +131,4 @@ Contrato en **v0.22**; la siguiente libre es **v0.23**. Últimas migraciones: AU
 5. **Medir en staging** con k6, empezando por EC003/EC004 y EC005/EC007, y guardar la evidencia en `docs/evidencias/`.
 6. **Atacar EC004:** decidir procesos o instancias del BFF y la cancelación del trabajo cortado por el gateway.
 7. **Encender el gateway de socios** en staging e integrar el portal de Daniel.
-8. **Ajustes W01/W05 en curso:** plan aprobado el 2026-10-31. W01-A2 a A5 hechos en `feat/KAN-24-ajustes-retencion-perfil`; W05-A6 y A7 en `feat/KAN-28-ajustes-cobro-recurrente` (apilada). Falta el front (`useAvisos`, W05-01 por SSE) y abrir los PR.
+8. **Ajustes W01/W05 en curso:** plan aprobado el 2026-10-31. W01-A2 a A5 hechos en `feat/KAN-24-ajustes-retencion-perfil`; W05-A6 y A7 en `feat/KAN-28-ajustes-cobro-recurrente` (apilada). Front en `solventa-frontend-web`: `feat/KAN-28-ajustes-w05-sse`. Faltan los PR, Cypress y la validación con infraestructura.
