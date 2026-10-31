@@ -2,7 +2,7 @@
 
 > **Estado:** documentación de planeación, 2026-10-31. Solo lectura de Jira: no se creó el sprint ni se movió ningún issue.  
 > **Fuentes:** Jira (proyecto KAN) para pesos, estados y fechas; `Solventa_Prototipado_Jira_Subtareas_v2.0.xlsx` (hoja «Subtareas v24», v24 del Excel de prototipado) para el detalle de cada pantalla.  
-> **Libro de trabajo:** `Solventa_Sprint3_Cierre.xlsx` (mismos números; no versionado, ver la sección 7).
+> **Libro de trabajo:** `Solventa_Sprint3_Cierre.xlsx` (mismos números; no versionado, ver la sección 8).
 
 ## 1. Alcance y fechas
 
@@ -309,7 +309,7 @@ Sale a: W07-02
 - **Wireframe de referencia:** Adjuntar el wireframe W07-03 del archivo de baja fidelidad (Solventa-web, nodo 30:66). · [baja fidelidad](https://www.figma.com/design/2vfK0e8t62OvvDk4c7QnK5/Solventa-web?node-id=30-66) · [prototipo final](https://www.figma.com/design/yKWD8jrwERtJkuSj0mk0Gz/Solventa-web-Final?node-id=2001-3434)
 - **Frente al plano v21:** Existía en v21 · sin cambios
 
-**Notas de la HU:** asignada a Daniel; sin avance en el Sprint 2. Si se cierra antes del 2/11, sale del alcance.
+**Notas de la HU:** asignada a Daniel. El **backend ya está cerrado en código y en local** (plan de HU-W07, bloques 0 a 9, 29/10); en Jira la HU y sus tres subtareas —las pantallas del portal del socio— siguen en «Tareas por hacer», y esas pantallas son lo que pesa aquí. Si se cierra antes del 2/11, sale del alcance.
 
 ### HU-M02 · KAN-32 · Autenticación biométrica nativa (Huella / Rostro)
 
@@ -838,7 +838,7 @@ Seis gráficos, todos en la hoja «Gráficos» del libro y alimentados por fórm
 | Sprint | Fechas | Comprometido | Completado | Nota |
 |---|---|---:|---:|---|
 | KAN Sprint 1 | 5–19 oct | 26 | 26 | HU-W01 (20) y HU-W05 (6), finalizadas. Cerrado. |
-| KAN Sprint 2 | 19 oct–2 nov | 45 | 26 | HU-W04 (13) y HU-M01 (13) hechas; HU-W03 (13) en curso y HU-W07 (6) sin avance. **Provisional hasta el cierre.** |
+| KAN Sprint 2 | 19 oct–2 nov | 45 | 26 | HU-W04 (13) y HU-M01 (13) hechas; HU-W03 (13) en curso y HU-W07 (6) con el backend cerrado pero las pantallas sin hacer. **Provisional hasta el cierre.** |
 | KAN Sprint 3 | 2–22 nov | 41,8 | 0 | Compromiso calculado desde las subtareas. |
 
 ## 5. Trabajo técnico pendiente de HU-W03 (propuesta, sin peso)
@@ -859,7 +859,32 @@ Las subtareas de Jira de estas HU son pantallas. Lo siguiente es trabajo real de
 | OPS-3 | Correo real con Resend (necesita un dominio verificado; la llave ya está cargada) | S | Bloqueado |
 | OPS-4 | Medición en staging (Newman carpeta 6, EC005, EC007) | M | Pendiente |
 
-## 6. Supuestos y límites
+## 6. Estado de refinamiento (¿están listas para comprometerse?)
+
+**Respuesta corta: solo en parte.** No hay una «definición de listo» escrita en los repos; se evaluó con una lista mínima: (a) criterios de aceptación funcionales, (b) criterios de UI por pantalla, (c) estimación, (d) responsable, (e) plan técnico y dependencias, (f) diseño enlazado y (g) sin bloqueantes. Fuentes revisadas el 2026-10-31: Jira (descripciones, subtareas e historial), Confluence (sin páginas), los repos y el Excel de prototipado v24.
+
+| HU | (a) Criterios funcionales | (b) Criterios UI | (c) Estimación | (d) Responsable | (e) Plan técnico y dependencias | Veredicto |
+|---|---|---|---|---|---|---|
+| HU-W03 · KAN-26 | **Sí**: CA-W03-01 a 09 del documento «Detalle de historias del Sprint 2» (ese documento no está en los repos ni en Confluence; `plan-completar-hu-w03.md` y los PR los citan) | Sí (6 pantallas, v24) | 13 pts; sin horas | f.taboada | **Sí**: plan de HU-W03 (F-B/F-F); el trabajo técnico restante no está en Jira (sección 5) | Refinada en lo funcional; falta reflejarla en Jira |
+| HU-W07 · KAN-30 | **Parcial**: la descripción de Jira trae el flujo, pero el 21/10 se reemplazaron los criterios originales (p95 ≤ 250 ms, autoescalado, integración en ≤ 1 semana) por el flujo; el plan dice «criterios no cambian» con una propuesta opcional | Sí (3 pantallas) | 6 pts (bajó de 13 el 25/10); sin horas | Daniel | **Sí**: `plan-completar-hu-w07.md` v3; backend cerrado en local; pendientes: staging y el portal | Lista para el front; confirmar los criterios con Felipe |
+| HU-M02 · KAN-32 | **Mínimos**: un solo criterio en Jira («inicia sesión validando la biometría… Keystore / Keychain») | Sí (5 pantallas) | 6 pts; sin horas | **Sin asignar** | **No**: no hay plan; la historia de seguridad relacionada (HA-SEG-005, KAN-115) está sin refinar | **No refinada** |
+| HU-M04 · KAN-38 | **No**: solo narrativa; sin criterios de aceptación ni umbral paramétrico | Sí (3 pantallas) | 13 pts; sin horas | **Sin asignar** | **No**: depende de la ingesta de eventos paramétricos (HA-ESC-002, KAN-55), que no existe; sin plan | **No refinada** |
+| HU-M06 · KAN-36 | **No**: solo narrativa | Sí (8 pantallas) | 6 pts; sin horas | **Sin asignar** | **No**: no hay plan ni backend de geolocalización de prestadores; ya es condicional | **No refinada** |
+
+**Lo que sí está para todas:** los criterios de **UI** de las 24 subtareas (INTERFAZ, RETROALIMENTACIÓN, ACCESIBILIDAD, RESPONSIVE o ADAPTATIVO), la navegación, los componentes y los enlaces al wireframe y al prototipo final (sección 3). Pesos en puntos de historia y valor de negocio en las cinco HU.
+
+**Brechas comunes que hay que cerrar antes de comprometer el sprint:**
+
+1. **Las subtareas de Jira no tienen los criterios.** Su descripción es la línea corta de la versión anterior del Excel (v23) y no tienen adjuntos; los criterios de la v24 viven solo en el Excel y en este documento. Habría que pegarlos en cada subtarea (el Excel ya trae la plantilla).
+2. **Criterios funcionales de M02, M04 y M06** (y los de W07 a confirmar): no existe ningún `CA-M*` ni `CA-W07` en los repos. Alguien con rol de producto tiene que escribirlos.
+3. **Sin responsable** M02, M04 y M06.
+4. **Sin horas:** Jira no tiene estimación de tiempo en estas HU; el Excel solo trae horas para 5 filas. Los gráficos se basan en puntos.
+5. **Dependencias de backend sin plan** para M04 (eventos paramétricos) y M06 (prestadores y geolocalización).
+6. **El Sprint 3 no existe en Jira** (el Sprint 2 cierra el 2/11).
+
+> `docs/evidencias/release-burndown.md` (19/10) todavía lista a HU-W07 con 13 puntos y a HU-W03 con 6; en Jira hoy son 6 y 13 (cambio del 25/10). Este documento usa los de Jira.
+
+## 7. Supuestos y límites
 
 - Los pesos son los de Jira al 2026-10-31; si cambian, se actualizan en la hoja «Alcance HU».
 - El reparto de puntos entre subtareas es igual por omisión; es una convención de este documento, no un dato de Jira.
@@ -867,9 +892,9 @@ Las subtareas de Jira de estas HU son pantallas. Lo siguiente es trabajo real de
 - La velocidad del Sprint 2 es provisional hasta su cierre.
 - El libro no se abrió en Excel ni en LibreOffice al construirlo (no estaban disponibles en el equipo): las fórmulas se evaluaron con un evaluador independiente y con una simulación de cierre parcial, y los gráficos no se vieron renderizados. Se recalculan al abrirlo.
 
-## 7. Archivos de apoyo
+## 8. Archivos de apoyo
 
 El libro de trabajo (`Solventa_Sprint3_Cierre.xlsx`), el script de exportación de Jira (`exportar_jira_sprint3.py`) y los que regeneran el libro y este
 documento **no están versionados en este repo**: viven en la carpeta `sprint-3/` de quien armó la planeación (Frans, 2026-10-31). Este documento tiene todo lo
-necesario para recrearlos: las fuentes (sección 2 y 4), el cálculo de los pesos y los pasos del cierre. Si el equipo quiere versionarlos, el lugar natural es
+necesario para recrearlos: las fuentes (secciones 2 y 4), el cálculo de los pesos y los pasos del cierre. Si el equipo quiere versionarlos, el lugar natural es
 `scripts/` (el exportador, que solo usa `acli`) y `docs/evidencias/` (el libro de cada cierre).
