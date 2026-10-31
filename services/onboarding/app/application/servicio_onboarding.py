@@ -174,6 +174,7 @@ class ServicioOnboarding:
             "motivo": sesion["motivo"],
             "intento": sesion["intento"],
             "intentos_restantes": max(0, restantes),
+            "tiene_cuenta": sesion["usuario_id"] is not None,
         }
 
     def _cambiar(

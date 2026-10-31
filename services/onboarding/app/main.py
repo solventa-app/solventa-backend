@@ -83,6 +83,8 @@ class OnboardingResponse(BaseModel):
     motivo: str | None = None
     intento: int
     intentos_restantes: int
+    # Si la sesión ya tiene cuenta: el BFF no crea otra en AUTH (quedaría huérfana).
+    tiene_cuenta: bool = False
 
 
 class ErrorResponse(BaseModel):
