@@ -52,7 +52,7 @@ HU-W05 — Recaudo (11 h):
 - **CA-W01-05:** sin datos suficientes ni caché → mensaje de error con reintentar y asesor; **nunca un 5xx crudo**.
 - **CA-W01-06:** se listan las 5 fuentes (2 Open Finance + 3 Open Data) con su estado y la fecha de captura si el dato viene de caché.
 - **CA-W01-07:** contacto con asesor (llamar, chatear o agendar) con confirmación y resumen del trámite.
-- **CA-W01-08:** revocación del consentimiento: rechaza nuevas consultas e invalida la caché en ≤ 5 min.
+- **CA-W01-08:** revocación del consentimiento: rechaza nuevas consultas, invalida la caché y borra el perfil de riesgo del titular y el contacto de sus propuestas en ≤ 5 min (ampliado con W01-A2 y A3; Jira pendiente).
 - **CA-W01-09:** RATING usa el perfil recién escrito por RISK (read-your-writes).
 - **CA-W01-10:** campos sensibles cifrados en reposo y en tránsito; logs sin datos personales.
 - **CA-W01-11:** el asesor comercial autenticado ve la tarjeta de nueva cotización y usa el mismo formulario y flujo que el cliente.
