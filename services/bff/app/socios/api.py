@@ -30,6 +30,7 @@ from app.clientes import CredencialesSocioInvalidas, ErrorServicio, PresupuestoA
 from app.esquema import RAMO_POLIZA, estado_visible
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.idioma import idioma_de, traducir
+from app.revocacion import avisar_revocacion
 from app.servicio_firma_pago import ErrorFlujoDatos
 from app.servicio_oferta import ErrorOfertaDatos, validar_solicitud
 from app.servicio_suscripcion import (
@@ -343,13 +344,8 @@ def construir_router() -> APIRouter:
             raise no_encontrado()
         titular_id = datos.get("titular_id")
         if titular_id:
-            # Como en `revocarConsentimiento` de GraphQL: ninguno de los dos avisos hace fallar.
-            await asyncio.gather(
-                clientes.acl.invalidar_cache_cliente(titular_id),
-                estado(request).servicio_firma_pago.consentimiento_revocado(
-                    titular_id, consentimiento_id
-                ),
-                return_exceptions=True,
+            await avisar_revocacion(
+                clientes, estado(request).servicio_firma_pago, titular_id, consentimiento_id
             )
         return consentimiento_rest(datos)
 

@@ -146,7 +146,15 @@ class PuertoAcl(Protocol):
 
 
 class PuertoRisk(Protocol):
-    async def registrar_perfil(self, cliente_id: str, fuentes: list[dict]) -> dict: ...
+    async def registrar_perfil(
+        self,
+        cliente_id: str,
+        fuentes: list[dict],
+        consentimiento_id: str | None = None,
+        consentimiento_vence_en: str | None = None,
+    ) -> dict: ...
+
+    async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None: ...
 
 
 class PuertoRating(Protocol):
@@ -736,13 +744,31 @@ class ClienteRiskHttp:
     def __init__(self, cliente: httpx.AsyncClient) -> None:
         self._cliente = cliente
 
-    async def registrar_perfil(self, cliente_id: str, fuentes: list[dict]) -> dict:
-        respuesta = await _pedir(
-            self._cliente, "POST", "/perfiles", {"cliente_id": cliente_id, "fuentes": fuentes}
-        )
+    async def registrar_perfil(
+        self,
+        cliente_id: str,
+        fuentes: list[dict],
+        consentimiento_id: str | None = None,
+        consentimiento_vence_en: str | None = None,
+    ) -> dict:
+        cuerpo = {
+            "cliente_id": cliente_id,
+            "fuentes": fuentes,
+            "consentimiento_id": consentimiento_id,
+            "consentimiento_vence_en": consentimiento_vence_en,
+        }
+        respuesta = await _pedir(self._cliente, "POST", "/perfiles", cuerpo)
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
+
+    async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None:
+        cuerpo = {"titular_id": titular_id, "consentimiento_id": consentimiento_id}
+        respuesta = await _pedir(
+            self._cliente, "POST", "/perfiles/consentimiento-revocado", cuerpo
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
 
 
 # Mismo valor que `DETALLE_DATOS_INSUFICIENTES` de services/rating/app/main.py.

@@ -163,7 +163,9 @@ class ServicioOferta:
 
         # 4. RISK escribe el perfil y devuelve `operation_time` (D-02).
         try:
-            perfil = await self._clientes.risk.registrar_perfil(cliente_id, list(fuentes))
+            perfil = await self._clientes.risk.registrar_perfil(
+                cliente_id, list(fuentes), consentimiento_id, consentimiento.get("vence_en")
+            )
         except ErrorServicio as error:
             logger.warning("RISK no disponible cliente=%s error=%s", id_opaco(cliente_id), error)
             return ErrorOfertaDatos(
