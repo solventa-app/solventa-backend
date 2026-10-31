@@ -2,7 +2,7 @@
 
 > **Estado:** documentación de planeación, 2026-10-31. Solo lectura de Jira: no se creó el sprint ni se movió ningún issue.  
 > **Fuentes:** Jira (proyecto KAN) para pesos, estados y fechas; `Solventa_Prototipado_Jira_Subtareas_v2.0.xlsx` (hoja «Subtareas v24», v24 del Excel de prototipado) para el detalle de cada pantalla.  
-> **Libro de trabajo:** `Solventa_Sprint3_Cierre.xlsx` (mismos números; no versionado, ver la sección 8).
+> **Libro de trabajo:** `Solventa_Sprint3_Cierre.xlsx` (no versionado; ver la sección 8). **Refinamiento y pesos por tarea:** [`refinamiento-sprint-3.md`](refinamiento-sprint-3.md).
 
 ## 1. Alcance y fechas
 
@@ -11,6 +11,8 @@
 - **Fuera del alcance:** HU-W04 (KAN-27) y HU-M01 (KAN-31). El Excel las ubicaba en el Sprint 3, pero en Jira están *Finalizadas dentro del Sprint 2* con todas sus subtareas cerradas. Tampoco entra el backlog sin sprint: HU-W02 (6 pts), HU-W06 (6), HU-M03 (13) y HU-M05 (6).
 
 ## 2. Pesos
+
+> **Aproximación.** Los pesos de esta sección reparten los puntos de cada HU en partes iguales entre sus pantallas. El equipo pesa por **tarea** (puntos, horas a 8,7 h/pt y valor proporcional; ver [`refinamiento-sprint-3.md`](refinamiento-sprint-3.md), sección 1.1). Para el burndown y la velocidad **valen los pesos por tarea**; esta sección sirve para el detalle por pantalla.
 
 - **Peso de la HU:** campos de Jira «Puntos de historia» y «Valor de negocio» (este último como fracción del total del producto).
 - **Peso de la subtarea:** `puntos de la HU × factor ÷ suma de los factores de la HU`. Jira no tiene puntos por subtarea; el factor vale 1 por omisión (reparto igual) y se puede subir o bajar en el libro para una pantalla más o menos pesada. El peso de la HU no cambia, solo cómo se reparte.
@@ -861,26 +863,28 @@ Las subtareas de Jira de estas HU son pantallas. Lo siguiente es trabajo real de
 
 ## 6. Estado de refinamiento (¿están listas para comprometerse?)
 
-**Respuesta corta: solo en parte.** No hay una «definición de listo» escrita en los repos; se evaluó con una lista mínima: (a) criterios de aceptación funcionales, (b) criterios de UI por pantalla, (c) estimación, (d) responsable, (e) plan técnico y dependencias, (f) diseño enlazado y (g) sin bloqueantes. Fuentes revisadas el 2026-10-31: Jira (descripciones, subtareas e historial), Confluence (sin páginas), los repos y el Excel de prototipado v24.
+**Respuesta corta: solo en parte (W03 y W07 sí; M02, M04 y M06 no del todo).** No hay una «definición de listo» escrita en los repos; se evaluó con una lista mínima: (a) criterios de aceptación funcionales, (b) criterios de UI por pantalla, (c) estimación, (d) responsable, (e) plan técnico y dependencias, (f) diseño enlazado y (g) sin bloqueantes. Fuentes revisadas el 2026-10-31: Jira (descripciones, subtareas e historial), Confluence (sin páginas), los repos y el Excel de prototipado v24.
 
 | HU | (a) Criterios funcionales | (b) Criterios UI | (c) Estimación | (d) Responsable | (e) Plan técnico y dependencias | Veredicto |
 |---|---|---|---|---|---|---|
 | HU-W03 · KAN-26 | **Sí**: CA-W03-01 a 09 del documento «Detalle de historias del Sprint 2» (ese documento no está en los repos ni en Confluence; `plan-completar-hu-w03.md` y los PR los citan) | Sí (6 pantallas, v24) | 13 pts; sin horas | f.taboada | **Sí**: plan de HU-W03 (F-B/F-F); el trabajo técnico restante no está en Jira (sección 5) | Refinada en lo funcional; falta reflejarla en Jira |
 | HU-W07 · KAN-30 | **Parcial**: la descripción de Jira trae el flujo, pero el 21/10 se reemplazaron los criterios originales (p95 ≤ 250 ms, autoescalado, integración en ≤ 1 semana) por el flujo; el plan dice «criterios no cambian» con una propuesta opcional | Sí (3 pantallas) | 6 pts (bajó de 13 el 25/10); sin horas | Daniel | **Sí**: `plan-completar-hu-w07.md` v3; backend cerrado en local; pendientes: staging y el portal | Lista para el front; confirmar los criterios con Felipe |
-| HU-M02 · KAN-32 | **Mínimos**: un solo criterio en Jira («inicia sesión validando la biometría… Keystore / Keychain») | Sí (5 pantallas) | 6 pts; sin horas | **Sin asignar** | **No**: no hay plan; la historia de seguridad relacionada (HA-SEG-005, KAN-115) está sin refinar | **No refinada** |
-| HU-M04 · KAN-38 | **No**: solo narrativa; sin criterios de aceptación ni umbral paramétrico | Sí (3 pantallas) | 13 pts; sin horas | **Sin asignar** | **No**: depende de la ingesta de eventos paramétricos (HA-ESC-002, KAN-55), que no existe; sin plan | **No refinada** |
-| HU-M06 · KAN-36 | **No**: solo narrativa | Sí (8 pantallas) | 6 pts; sin horas | **Sin asignar** | **No**: no hay plan ni backend de geolocalización de prestadores; ya es condicional | **No refinada** |
+| HU-M02 · KAN-32 | **Oficiales con ID** (`CA-M02-01` a `07`, citados por sus tareas) en un documento que no se pudo leer; en Jira, un solo criterio | Sí (5 pantallas) | 6 pts; sin horas | **Sin asignar** | **Parcial**: tiene 5 tareas con peso (KAN-225 a 229) pero sin responsable ni sprint; ver el refinamiento | **Parcialmente refinada** |
+| HU-M04 · KAN-38 | **No**: solo narrativa y 2 viñetas; sin `CA-*` ni tareas en Jira; criterios propuestos en el refinamiento | Sí (3 pantallas) | 13 pts; sin horas | **Sin asignar** | **No**: depende de la ingesta de eventos paramétricos (HA-ESC-002, KAN-55), que no existe; sin plan | **No refinada** |
+| HU-M06 · KAN-36 | **No**: solo narrativa; sin `CA-*` ni tareas en Jira; criterios propuestos en el refinamiento | Sí (8 pantallas) | 6 pts; sin horas | **Sin asignar** | **No**: no hay plan ni backend de geolocalización de prestadores; ya es condicional | **No refinada** |
 
 **Lo que sí está para todas:** los criterios de **UI** de las 24 subtareas (INTERFAZ, RETROALIMENTACIÓN, ACCESIBILIDAD, RESPONSIVE o ADAPTATIVO), la navegación, los componentes y los enlaces al wireframe y al prototipo final (sección 3). Pesos en puntos de historia y valor de negocio en las cinco HU.
 
 **Brechas comunes que hay que cerrar antes de comprometer el sprint:**
 
 1. **Las subtareas de Jira no tienen los criterios.** Su descripción es la línea corta de la versión anterior del Excel (v23) y no tienen adjuntos; los criterios de la v24 viven solo en el Excel y en este documento. Habría que pegarlos en cada subtarea (el Excel ya trae la plantilla).
-2. **Criterios funcionales de M02, M04 y M06** (y los de W07 a confirmar): no existe ningún `CA-M*` ni `CA-W07` en los repos. Alguien con rol de producto tiene que escribirlos.
+2. **Criterios oficiales:** los `CA-*` de M02, W07 y W03 existen (las tareas de Jira los citan) en el documento «Detalle de historias del Sprint 2», que no está en los repos ni en Confluence. **M04 y M06 no tienen ninguno ni tareas en Jira.** El refinamiento propone criterios y un desglose para validar.
 3. **Sin responsable** M02, M04 y M06.
-4. **Sin horas:** Jira no tiene estimación de tiempo en estas HU; el Excel solo trae horas para 5 filas. Los gráficos se basan en puntos.
-5. **Dependencias de backend sin plan** para M04 (eventos paramétricos) y M06 (prestadores y geolocalización).
+4. **Horas:** las tareas existentes traen su estimación (8,7 h por punto); M04 y M06 no tienen tareas, así que tampoco horas.
+5. **Dependencias de backend sin plan** para M04 (fuente de eventos, regla paramétrica, dispersión de indemnizaciones, push) y M06 (prestadores y mapas): no existen en el código (ver el refinamiento, 1.4).
 6. **El Sprint 3 no existe en Jira** (el Sprint 2 cierra el 2/11).
+
+**Detalle completo, tareas con peso y criterios propuestos: [`refinamiento-sprint-3.md`](refinamiento-sprint-3.md).**
 
 > `docs/evidencias/release-burndown.md` (19/10) todavía lista a HU-W07 con 13 puntos y a HU-W03 con 6; en Jira hoy son 6 y 13 (cambio del 25/10). Este documento usa los de Jira.
 
@@ -895,6 +899,6 @@ Las subtareas de Jira de estas HU son pantallas. Lo siguiente es trabajo real de
 ## 8. Archivos de apoyo
 
 El libro de trabajo (`Solventa_Sprint3_Cierre.xlsx`), el script de exportación de Jira (`exportar_jira_sprint3.py`) y los que regeneran el libro y este
-documento **no están versionados en este repo**: viven en la carpeta `sprint-3/` de quien armó la planeación (Frans, 2026-10-31). Este documento tiene todo lo
-necesario para recrearlos: las fuentes (secciones 2 y 4), el cálculo de los pesos y los pasos del cierre. Si el equipo quiere versionarlos, el lugar natural es
-`scripts/` (el exportador, que solo usa `acli`) y `docs/evidencias/` (el libro de cada cierre).
+documento **no están versionados en este repo**: viven en la carpeta `sprint-3/` de quien armó la planeación (Frans, 2026-10-31). El libro reparte los puntos
+por pantalla (la aproximación de la sección 2) y **hay que rehacerlo con los pesos por tarea** del refinamiento antes de usarlo para los gráficos de cierre. Si el
+equipo quiere versionar el exportador, el lugar natural es `scripts/`.
