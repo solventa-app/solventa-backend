@@ -144,6 +144,15 @@ class PuertoAcl(Protocol):
     # HU-W07: el estado de cada circuito (`closed`, `half-opened` u `opened`), para la salud.
     async def circuitos(self) -> dict[str, str]: ...
 
+    async def enviar_notificacion(
+        self,
+        id_notificacion: str,
+        plantilla: str,
+        destinatario_id: str,
+        datos: dict[str, str],
+        correo: str,
+    ) -> dict: ...
+
 
 class PuertoRisk(Protocol):
     async def registrar_perfil(self, cliente_id: str, fuentes: list[dict]) -> dict: ...
@@ -731,6 +740,30 @@ class ClienteAclHttp:
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
 
+    async def enviar_notificacion(
+        self,
+        id_notificacion: str,
+        plantilla: str,
+        destinatario_id: str,
+        datos: dict[str, str],
+        correo: str,
+    ) -> dict:
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            "/notificaciones/enviar",
+            {
+                "id_notificacion": id_notificacion,
+                "plantilla": plantilla,
+                "destinatario_id": destinatario_id,
+                "datos": datos,
+                "correo": correo,
+            },
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
 
 class ClienteRiskHttp:
     def __init__(self, cliente: httpx.AsyncClient) -> None:
@@ -1252,9 +1285,7 @@ class ClienteClaimsHttp:
         return respuesta.json()
 
     async def aprobar(self, siniestro_id: str, actor_usuario_id: str) -> dict:
-        return await self._resolver(
-            siniestro_id, "aprobar", {"actor_usuario_id": actor_usuario_id}
-        )
+        return await self._resolver(siniestro_id, "aprobar", {"actor_usuario_id": actor_usuario_id})
 
     async def rechazar(
         self, siniestro_id: str, motivo: str, comentario: str | None, actor_usuario_id: str

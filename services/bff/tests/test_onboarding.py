@@ -215,3 +215,52 @@ def test_token_pendiente_no_crea_ni_consulta_ofertas() -> None:
     token = token_de_prueba("CLIENTE", "u-x", scopes=["verificacion-pendiente"])
     respuesta = _gql(cliente, '{ oferta(id: "o-1") { id } }', token=token)
     assert "verificando tu identidad" in respuesta["errors"][0]["message"]
+
+
+def test_reintentar_crear_cuenta_en_el_mismo_recorrido_es_idempotente() -> None:
+    cliente, _, onboarding = _pila()
+    oid, tok = _iniciar(cliente)
+    primera = _gql(cliente, CREAR, {"o": oid}, onb=tok)["data"]["crearCuentaOnboarding"]
+    segunda = _gql(cliente, CREAR, {"o": oid}, onb=tok)["data"]["crearCuentaOnboarding"]
+    assert primera["sesion"]["usuario"]["id"] == segunda["sesion"]["usuario"]["id"]
+    assert onboarding.sesiones[oid]["usuario_id"] == primera["sesion"]["usuario"]["id"]
+
+
+def test_enviar_y_verificar_codigo_onboarding() -> None:
+    from fakes import AclFalso
+
+    acl = AclFalso()
+    auth, onboarding = AuthFalso(), OnboardingFalso()
+    cliente = TestClient(
+        create_app(
+            config=Configuracion.desde_entorno(),
+            clientes=clientes_falsos(auth=auth, acl=acl, onboarding=onboarding),
+        )
+    )
+    cliente.__enter__()
+    q_envio = (
+        'mutation { enviarCodigoOnboarding(correo: "ana.prueba@ejemplo.com") { '
+        "... on CodigoOnboardingEnviado { correoEnmascarado venceEn } "
+        "... on ErrorOnboarding { codigo } } }"
+    )
+    envio = _gql(cliente, q_envio)["data"]["enviarCodigoOnboarding"]
+    assert envio["correoEnmascarado"] == "a•••@ejemplo.com"
+    assert len(acl.notificaciones) == 1
+    codigo = acl.notificaciones[0]["datos"]["codigo"]
+    assert len(codigo) == 6
+
+    q_verif = (
+        "mutation($c: String!) { verificarCodigoOnboarding("
+        'correo: "ana.prueba@ejemplo.com", codigo: $c) { '
+        "... on CodigoOnboardingEnviado { correoEnmascarado venceEn } "
+        "... on ErrorOnboarding { codigo mensaje } } }"
+    )
+    malo = _gql(
+        cliente,
+        q_verif,
+        {"c": "000000" if codigo != "000000" else "999999"},
+    )["data"]["verificarCodigoOnboarding"]
+    assert malo["codigo"] == "CODIGO_INVALIDO"
+
+    ok = _gql(cliente, q_verif, {"c": codigo})["data"]["verificarCodigoOnboarding"]
+    assert ok["correoEnmascarado"] == "a•••@ejemplo.com"
