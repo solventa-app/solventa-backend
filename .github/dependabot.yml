@@ -1,47 +1,49 @@
 version: 2
 updates:
   # --- Python: una entrada por servicio ---
-  - { package-ecosystem: pip, directory: /services/bff, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /services/auth, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /services/risk, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /services/rating, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /services/payments, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /services/policy, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /services/almacenamiento, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /services/onboarding, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /services/avisos, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /services/claims, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /services/under, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /services/acl-worker, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /services/consolidador-fuentes, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /stubs/open-finance, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /stubs/open-data, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /stubs/pasarela, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /stubs/firma, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /stubs/kyc, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /stubs/notificaciones, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: pip, directory: /, target-branch: develop, schedule: { interval: weekly } }  # requirements-dev.in / .txt
+  - { package-ecosystem: pip, directory: /services/bff, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /services/auth, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /services/risk, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /services/rating, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /services/payments, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /services/policy, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /services/almacenamiento, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /services/onboarding, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /services/avisos, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /services/claims, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /services/under, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /services/acl-worker, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /services/consolidador-fuentes, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /stubs/open-finance, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /stubs/open-data, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /stubs/pasarela, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /stubs/firma, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /stubs/kyc, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /stubs/notificaciones, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }  # requirements-dev.in / .txt
 
   # --- Imágenes base de Docker ---
-  - { package-ecosystem: docker, directory: /services/bff, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /services/auth, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /services/risk, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /services/rating, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /services/payments, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /services/policy, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /services/almacenamiento, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /services/onboarding, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /services/avisos, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /services/claims, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /services/under, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /services/acl-worker, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /services/consolidador-fuentes, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /stubs/open-finance, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /stubs/open-data, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /stubs/pasarela, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /stubs/firma, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /stubs/kyc, target-branch: develop, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /stubs/notificaciones, target-branch: develop, schedule: { interval: weekly } }
+  # La versión de Python se sube a mano (convenciones: Python 3.14, imagen por digest); Dependabot solo
+  # refresca el digest y los parches.
+  - { package-ecosystem: docker, directory: /services/bff, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /services/auth, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /services/risk, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /services/rating, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /services/payments, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /services/policy, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /services/almacenamiento, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /services/onboarding, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /services/avisos, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /services/claims, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /services/under, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /services/acl-worker, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /services/consolidador-fuentes, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /stubs/open-finance, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /stubs/open-data, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /stubs/pasarela, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /stubs/firma, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /stubs/kyc, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /stubs/notificaciones, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
 
   # --- Infraestructura y automatización ---
   - { package-ecosystem: terraform, directory: /infra, target-branch: develop, schedule: { interval: monthly } }
