@@ -62,7 +62,7 @@ static_resources:
                                   exact: "POST"
                           route:
                             cluster: bff_cluster
-                            timeout: 0.7s
+                            timeout: 2s
                         # Versión explícita (HA-MOD-003, W04-10): las rutas sin versión son alias de v1.
                         - match:
                             path: "/v1/graphql/web"
@@ -90,7 +90,7 @@ static_resources:
                                   exact: "POST"
                           route:
                             cluster: bff_cluster
-                            timeout: 0.7s
+                            timeout: 2s
                         # PDF de la póliza (HU-W03): una ruta con parámetro, igual que en OpenAPI.
                         - match:
                             safe_regex:
