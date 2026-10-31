@@ -122,13 +122,24 @@ Contrato en **v0.22**; la siguiente libre es **v0.23**. Últimas migraciones: AU
 
 ## Próximos pasos exactos
 
-1. **Antes de reintentar:** confirmar que `clave-firma-socios` tiene versión en Secret Manager; sin ella AUTH no arranca
-   (`infra/README.md`, «API Gateway de los socios»).
-2. **Encender:** Actions > `Costos staging` > `encender` (Cloud SQL y Redis facturan por hora; se apaga solo a las 2:00
-   a.m. de Colombia).
-3. **Redesplegar:** volver a lanzar `Deploy staging` desde `main` y comprobar que `migrar` y `desplegar` terminan bien.
-4. **Verificar en vivo** el almacenamiento (firma IAM, avisos, CORS) y el onboarding móvil.
-5. **Medir en staging** con k6, empezando por EC003/EC004 y EC005/EC007, y guardar la evidencia en `docs/evidencias/`.
-6. **Atacar EC004:** decidir procesos o instancias del BFF y la cancelación del trabajo cortado por el gateway.
-7. **Encender el gateway de socios** en staging e integrar el portal de Daniel.
-8. **Ajustes W01/W05 en curso:** plan aprobado el 2026-10-31. W01-A2 a A5 hechos en `feat/KAN-24-ajustes-retencion-perfil`; W05-A6 y A7 en `feat/KAN-28-ajustes-cobro-recurrente` (apilada). Front en `solventa-frontend-web`: `feat/KAN-28-ajustes-w05-sse`. Faltan los PR, Cypress y la validación con infraestructura.
+Punto de retoma (2026-10-31): los ajustes de W01 y W05 están hechos en código, con el CI en verde y **sin integrar**.
+
+| PR | Contenido | Estado |
+|---|---|---|
+| backend #459 | W01-A2 a A5 | Espera revisión |
+| backend #460 | W05-A6 y A7, apilado sobre #459 | Espera revisión |
+| web #110 | `PROJECT_STATUS.md` | Espera revisión |
+| web #111 | W05-01 por SSE, apilado sobre #110 | Espera revisión |
+
+**W01 no está integrada:** falta lo que dice su criterio de cierre.
+
+1. **Integrar** en orden: #459 → #460 y #110 → #111. Reconstruir la imagen de PAYMENTS (ahora usa Redis).
+2. **Validación local con compose:** D-B4 (revocar y comprobar Mongo y Redis, ≤ 5 min) y migración RISK `0004` contra Mongo real.
+3. **D-F0:** Cypress de W01 y W05 contra el backend real, y el recorrido por la web.
+4. **W05 de punta a punta:** intervalo 1, `POST /cobros/_generar-recurrentes`, W05-01 por SSE y rechazo de un recurrente.
+5. **Staging**, cuando se decida: Cloud SQL detenida es lo que frenó el último despliegue. Confirmar `clave-firma-socios`, `Costos staging` > `encender`, `Deploy staging`, secreto `redis-url-w03` en PAYMENTS y mediciones k6.
+6. **Atacar EC004** y encender el gateway de socios con el portal de Daniel.
+
+**Decisión pendiente de Felipe:** que el stub de la pasarela recuerde cada token. Hoy `POST /v1/cobros` no lo consulta y el resultado depende solo del modo, así que una tarjeta de prueba mala no falla en un cobro recurrente.
+
+**Acuerdos de trabajo:** por ahora solo validación por código, sin lanzar infraestructura. Commit, push y PR sin pedir aprobación, sin coautoría; el título del PR debe cumplir `tipo(alcance): KAN-N descripción` (`gh pr edit` falla por Projects classic: usar `gh api -X PATCH`). Antes de un PR de la web, correr `npm run formato:verificar`. Jira lo actualiza Felipe (CA-W01-08 ampliado y criterio nuevo de KAN-28).
