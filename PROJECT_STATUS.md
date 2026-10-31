@@ -52,7 +52,7 @@ Todo esto está en código y verificado **en local**; nada tiene medición de st
 | HU-M01 / KAN-31 | Onboarding móvil con verificación de identidad | [`services/onboarding/README.md`](services/onboarding/README.md) |
 | KAN-250 | Almacenamiento de archivos | [ADR-10](docs/adr/ADR-10-almacenamiento-de-archivos.md) |
 
-Contrato en **v0.22**; la siguiente libre es **v0.23**. Últimas migraciones: AUTH `0010`, POLICY `0008`, PAYMENTS `0009`.
+Contrato en **v0.22**; la siguiente libre es **v0.23**. Últimas migraciones: AUTH `0010`, POLICY `0008`, PAYMENTS `0010`, RISK `0004`.
 
 ## Estado actual
 
@@ -102,6 +102,8 @@ Contrato en **v0.22**; la siguiente libre es **v0.23**. Últimas migraciones: AU
 - Cobros atascados: falta `FOR UPDATE SKIP LOCKED`; no hay doble cobro, pero pueden contarse dos intentos.
 - EC031: falta correr el stack con `PROVEEDOR_PASARELA=alterna`.
 - `ruff` apunta a `py312` pero las imágenes usan 3.14.
+- `cobros.poliza_id` guarda el id de la **propuesta**: la tabla no muestra el número de póliza y el balance por póliza real no ve esos cobros.
+- `contactarAsesor` (CA-W01-07) sigue siendo un mock que solo confirma.
 - Memorias locales viejas: almacenamiento y M01 («borrador») y W07 («sin PR»).
 
 ## Decisiones importantes
@@ -129,4 +131,4 @@ Contrato en **v0.22**; la siguiente libre es **v0.23**. Últimas migraciones: AU
 5. **Medir en staging** con k6, empezando por EC003/EC004 y EC005/EC007, y guardar la evidencia en `docs/evidencias/`.
 6. **Atacar EC004:** decidir procesos o instancias del BFF y la cancelación del trabajo cortado por el gateway.
 7. **Encender el gateway de socios** en staging e integrar el portal de Daniel.
-8. **Ajustes W01/W05 en curso:** plan aprobado el 2026-10-31. W01-A2 a A5 hechos en `feat/KAN-24-ajustes-retencion-perfil`.
+8. **Ajustes W01/W05 en curso:** plan aprobado el 2026-10-31. W01-A2 a A5 hechos en `feat/KAN-24-ajustes-retencion-perfil`; W05-A6 y A7 en `feat/KAN-28-ajustes-cobro-recurrente` (apilada). Falta el front (`useAvisos`, W05-01 por SSE) y abrir los PR.

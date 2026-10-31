@@ -57,6 +57,7 @@ HU-W05 — Recaudo (11 h):
 - **CA-W01-10:** campos sensibles cifrados en reposo y en tránsito; logs sin datos personales.
 - **CA-W01-11:** el asesor comercial autenticado ve la tarjeta de nueva cotización y usa el mismo formulario y flujo que el cliente.
 - **CA-W05-01/02:** tabla de cobros por póliza con su estado; reintentar relanza el cobro con el mismo `id_intento_cobro`.
+- **CA-W05 nuevo (W05-A7, Jira pendiente):** la prima se cobra en cada ciclo (mensual por defecto, configurable por entorno, hasta el fin de la vigencia) con el medio guardado al emitir, sin intervención del cliente.
 - **CA-W05-03/04/05:** captura de tarjeta con componente tokenizado del proveedor PCI-DSS; un mismo intento de cobro se ejecuta una sola vez; si la pasarela supera 700 ms el cobro queda pendiente (sin 5xx) y se reintenta con Cloud Tasks.
 - **CA-W05-06/07:** cambiar de pasarela no toca el Core; la orden de pago de indemnización (Sprint 3) actualiza el balance.
 
@@ -196,7 +197,7 @@ EC005/EC007 (emisión) se miden en el Sprint 2; EC008 tiene una ambigüedad de i
   pasarela es idempotente por referencia, cada reintento va con la suya (`{idIntentoCobro}-rN`, migración `0006` de
   PAYMENTS). Contrato v0.6: `Cobro.reintentosRestantes`. No se construye captura de tarjeta (CA-W05-03): el prototipo no
   la tiene y la prima se factura con la cuota del crédito (W03-02b). `scripts/sembrar_cobros.py` deja los datos de la demo.
-- **Cierre de HU-W05 (KAN-28, 2026-10-18, plan de HU-W05):** CA-W05-03 se entiende como «PAYMENTS solo recibe un token
+- **Cierre de HU-W05 (KAN-28, 2026-10-18, plan de HU-W05; **CA-W05-03 ya cubierto tal cual** desde W03 por la página tokenizada de la pasarela):** CA-W05-03 se entendía entonces como «PAYMENTS solo recibe un token
   opaco del proveedor y nunca datos de tarjeta» (sin pantalla de captura, como el prototipo); CA-W05-07 (orden de pago de
   indemnización y balance en GraphQL) pasa al Sprint 3 con siniestros. Se agregan: token del medio de pago cifrado en la
   base (HA-SEG-002, migración `0007`), reintento de cobros por Cloud Tasks y recuperación de cobros atascados (CA-W05-05),

@@ -54,7 +54,7 @@ Arquitectura: [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md). Co
 ## CI/CD y migraciones (ADR-07)
 
 - **Mismo camino en local, CI y staging:** construir la imagen una vez (etiqueta = SHA) → **migrar** → arrancar. Nada de migrar al arrancar la app.
-- **Cada servicio migra solo su almacén** (escritor único): `auth`, `payments`, `policy`, `almacenamiento`, `onboarding`, `risk` y `claims`. RATING no migra. Última de AUTH: `0010`; de POLICY: `0008`; de PAYMENTS: `0009`.
+- **Cada servicio migra solo su almacén** (escritor único): `auth`, `payments`, `policy`, `almacenamiento`, `onboarding`, `risk` y `claims`. RATING no migra. Última de AUTH: `0010`; de POLICY: `0008`; de PAYMENTS: `0010`; de RISK: `0004`.
 - **Migraciones compatibles hacia atrás** (expandir/contraer): corren mientras la revisión anterior aún atiende. Postgres con `downgrade` probado en CI; MongoDB idempotentes. Hacia adelante en staging, nunca bajar el esquema.
 - **`.github/servicios.json` es la fuente única de servicios.** Un servicio nuevo se agrega ahí y `python scripts/validar_servicios.py` dice qué más falta.
 - **Terraform se aplica desde el pipeline** (ADR-09): un merge a `main` (release u hotfix; `develop` no despliega) que cambia `infra/` o `.github/servicios.json` aplica antes de construir y desplegar, con un guardia que bloquea destrucciones (`scripts/revisar_plan.py`). Las banderas de costo viven en `infra/staging.tfvars`. El despliegue sigue apagado hasta que existan las variables de `infra/README.md` (incluida `GCP_PROTECCION_GASTO`). El agente no aplica a mano sin confirmación.
