@@ -23,6 +23,19 @@ class RepositorioPerfilesFalso:
         self.guardados: list[tuple[str, list[dict[str, Any]]]] = []
         self.metadatos_guardados: list[dict[str, Any]] = []
         self.evaluaciones: list[tuple[str, dict[str, Any] | None]] = []
+        self.borrables: list[dict[str, Any]] = []
+        self.pedidos_borrado: list[tuple[str, str]] = []
+
+    def borrar_de_consentimiento(
+        self, cliente_id: str, consentimiento_id: str
+    ) -> list[dict[str, Any]]:
+        self.pedidos_borrado.append((cliente_id, consentimiento_id))
+        borrados, self.borrables = self.borrables, []
+        return borrados
+
+    def borrar_vencidos(self, ahora: Any) -> list[dict[str, Any]]:
+        borrados, self.borrables = self.borrables, []
+        return borrados
 
     def guardar(
         self,
@@ -42,6 +55,8 @@ class RepositorioPerfilesFalso:
                 "nivel_riesgo": kwargs.get("nivel_riesgo", "MEDIO"),
                 "fecha_vigencia": kwargs.get("fecha_vigencia", "2026-11-07T12:00:00+00:00"),
                 "version_reglas": kwargs.get("version_reglas", "v1"),
+                "consentimiento_id": kwargs.get("consentimiento_id"),
+                "consentimiento_vence_en": kwargs.get("consentimiento_vence_en"),
             }
         )
         self.evaluaciones.append((cliente_id, evaluacion))
@@ -61,6 +76,10 @@ class AlmacenClaveValorFalso:
     def set(self, nombre: str, valor: str, ex: int | None = None) -> None:
         self.valores[nombre] = valor
         self.ttls[nombre] = ex
+
+    def delete(self, *nombres: str) -> None:
+        for nombre in nombres:
+            self.valores.pop(nombre, None)
 
 
 class BusEventosFalso:
