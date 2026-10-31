@@ -20,6 +20,8 @@ class PuertoAlmacenClaveValor(Protocol):
 
     def set(self, nombre: str, valor: str, ex: int | None = None) -> object: ...
 
+    def delete(self, *nombres: str) -> object: ...
+
 
 @dataclass(frozen=True)
 class ScoreCacheado:
@@ -73,6 +75,18 @@ class CacheScore:
         payload = valor.como_dict() if isinstance(valor, ScoreCacheado) else valor
         try:
             self._almacen.set(clave, json.dumps(payload), ex=self._ttl_segundos)
+        except Exception:
+            pass
+
+    def borrar_perfil(self, cliente_id: str, perfil_version: int, version_reglas: str) -> None:
+        """Quita el score y la entrada de esa versión (W01-A3). Si Redis falla, vencen por TTL."""
+        if self._almacen is None:
+            return
+        try:
+            self._almacen.delete(
+                clave_score(cliente_id, version_reglas),
+                clave_oferta(cliente_id, perfil_version, version_reglas),
+            )
         except Exception:
             pass
 

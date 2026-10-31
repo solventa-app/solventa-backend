@@ -380,6 +380,13 @@ Queda escrito para que nadie lo construya antes de tiempo ni lo olvide:
 - **D-03**: cobro antes o después de emitir, con HU-W03.
 - **Pantalla de revocar consentimiento**: cuando el diseño esté en Figma (el backend ya la soporta desde el Sprint 1).
 
+## Ajustes posteriores (2026-10-31, W01-A2 a A5)
+
+Hechos en código en `feat/KAN-24-ajustes-retencion-perfil`. RISK guarda el consentimiento en el perfil y lo borra con su
+caché al revocar o al vencer; el batch omite los vencidos; el BFF avisa a ACL, POLICY y RISK desde un solo sitio
+(`app/revocacion.py`), también por la API de socios. Los perfiles viejos vencen por `creado_en`, porque el documento no
+guarda `operation_time`. Evidencia: `docs/evidencias/CA-W01-08-revocacion-2026-10-31.md`.
+
 ## Decisiones abiertas
 
 No queda ninguna decisión técnica abierta del plan. Del Planning solo sigue abierta **D-01** (base de velocidad), que es

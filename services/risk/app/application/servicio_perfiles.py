@@ -12,6 +12,7 @@ Depende de `RepositorioPerfiles` (`Protocol` estructural, no un puerto
 hexagonal formal) para poder probarse con un doble sin levantar MongoDB."""
 
 import logging
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Protocol
 
@@ -38,6 +39,12 @@ class RepositorioPerfiles(Protocol):
         **kwargs: Any,
     ) -> tuple[int, ComponentesTiempo]: ...
 
+    def borrar_de_consentimiento(
+        self, cliente_id: str, consentimiento_id: str
+    ) -> list[dict[str, Any]]: ...
+
+    def borrar_vencidos(self, ahora: datetime) -> list[dict[str, Any]]: ...
+
 
 class ServicioPerfiles:
     def __init__(
@@ -50,7 +57,13 @@ class ServicioPerfiles:
         self._bus = bus
         self._cache_score = cache_score
 
-    def registrar(self, cliente_id: str, fuentes: list[dict[str, Any]]) -> dict[str, Any]:
+    def registrar(
+        self,
+        cliente_id: str,
+        fuentes: list[dict[str, Any]],
+        consentimiento_id: str | None = None,
+        consentimiento_vence_en: datetime | None = None,
+    ) -> dict[str, Any]:
         resultado_score = calcular_resultado_score(fuentes)
 
         # Evaluación con motor de scoring (HU-W02): se guarda completa en el perfil.
@@ -78,6 +91,8 @@ class ServicioPerfiles:
                 nivel_riesgo=resultado_score["nivel_riesgo"],
                 fecha_vigencia=resultado_score["fecha_vigencia"],
                 version_reglas=resultado_score["version_reglas"],
+                consentimiento_id=consentimiento_id,
+                consentimiento_vence_en=consentimiento_vence_en,
             )
         except TypeError:
             perfil_version, operation_time = self._repositorio.guardar(cliente_id, fuentes)
@@ -114,6 +129,33 @@ class ServicioPerfiles:
             "fecha_vigencia": resultado_score["fecha_vigencia"],
             "clasificacion": resultado_motor.clasificacion,
         }
+
+    def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> int:
+        """W01-A3: borra el perfil y su caché. Idempotente: sin perfil no hace nada. Las pólizas
+        emitidas no se tocan, porque la propuesta ya copió el nivel de riesgo."""
+        borrados = self._repositorio.borrar_de_consentimiento(titular_id, consentimiento_id)
+        self._limpiar_cache(borrados)
+        logger.info(
+            "perfil borrado por revocación cliente=%s perfiles=%d",
+            id_opaco(titular_id),
+            len(borrados),
+        )
+        return len(borrados)
+
+    def purgar_vencidos(self, ahora: datetime | None = None) -> int:
+        """W01-A4: una pasada de la purga diaria. Idempotente."""
+        borrados = self._repositorio.borrar_vencidos(ahora or datetime.now(UTC))
+        self._limpiar_cache(borrados)
+        logger.info("purga de perfiles vencidos perfiles=%d", len(borrados))
+        return len(borrados)
+
+    def _limpiar_cache(self, perfiles: list[dict[str, Any]]) -> None:
+        if self._cache_score is None:
+            return
+        for perfil in perfiles:
+            self._cache_score.borrar_perfil(
+                perfil["cliente_id"], perfil["perfil_version"], perfil["version_reglas"]
+            )
 
     def evaluar_preaprobacion(
         self,

@@ -81,8 +81,8 @@
     "migracion": ["alembic", "upgrade", "head"],
     "llama": ["acl-worker"],
     "disparador_externo": true,
-    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
-    "secretos": { "DATABASE_URL": "database-url-payments", "CIFRADO_CLAVE": "clave-cifrado" }
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "COBRO_RECURRENTE_INTERVALO_DIAS": "30" },
+    "secretos": { "DATABASE_URL": "database-url-payments", "CIFRADO_CLAVE": "clave-cifrado", "REDIS_URL": "redis-url-w03" }
   },
   {
     "nombre": "policy",

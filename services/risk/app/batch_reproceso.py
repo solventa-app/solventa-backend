@@ -16,7 +16,10 @@ trabajo y el caudal crece casi lineal con N (es lo que usa la proyección de EC0
 
 Idempotente: si el job se interrumpe a mitad de camino y vuelve a correr, la
 consulta `{"version_reglas": {"$ne": version_objetivo}}` omite los perfiles que
-ya quedaron actualizados en `version_objetivo` y retoma desde donde iba."""
+ya quedaron actualizados en `version_objetivo` y retoma desde donde iba.
+
+W01-A5: no recalcula perfiles sin consentimiento vigente, que quedan para la purga diaria. Lo decide
+con los campos del perfil, sin preguntar a AUTH, para no frenar EC017."""
 
 import json
 import logging
@@ -32,7 +35,11 @@ from app.application.cache_score import CacheScore
 from app.application.calculo_score import VERSION_REGLAS, calcular_resultado_score
 from app.application.cifrado import CifradorAesGcm, CifradorCampos
 from app.application.configuracion import Configuracion
-from app.application.repositorio_perfiles import COLECCION_PERFILES, NOMBRE_BASE
+from app.application.repositorio_perfiles import (
+    COLECCION_PERFILES,
+    NOMBRE_BASE,
+    condiciones_vencido,
+)
 
 try:
     import redis  # type: ignore[import-untyped]
@@ -57,12 +64,19 @@ def _descifrar_fuentes_en_memoria(
     return resultado
 
 
-def construir_filtro(objetivo: str, particion: tuple[int, int] | None = None) -> dict[str, Any]:
+def construir_filtro(
+    objetivo: str,
+    particion: tuple[int, int] | None = None,
+    ahora: datetime | None = None,
+) -> dict[str, Any]:
     """Perfiles pendientes de `objetivo`; con `particion=(indice, total)`, solo los de esa tarea.
 
     La partición se calcula en MongoDB con el hash del `cliente_id` (`$toHashedIndexKey`, MongoDB
     4.4+): las N particiones son disjuntas y cubren todos los perfiles."""
-    filtro: dict[str, Any] = {"version_reglas": {"$ne": objetivo}}
+    filtro: dict[str, Any] = {
+        "version_reglas": {"$ne": objetivo},
+        "$nor": condiciones_vencido(ahora or datetime.now(UTC)),
+    }
     if particion is not None and particion[1] > 1:
         indice, total = particion
         if not 0 <= indice < total:

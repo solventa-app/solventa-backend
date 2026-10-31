@@ -19,7 +19,7 @@ en MongoDB, el diccionario `datos` de cada fuente se cifra con AES-256-GCM en
 M0 nunca quede en disco un solo campo personal o financiero en claro."""
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from bson import Timestamp
@@ -31,6 +31,22 @@ from app.application.cifrado import CifradorAesGcm, CifradorCampos
 NOMBRE_BASE = "risk"
 COLECCION_PERFILES = "perfiles"
 COLECCION_CONTADORES = "contadores_version"
+
+# W01-A4: un perfil anterior al cambio no sabe cuándo vence su consentimiento. El consentimiento
+# dura 30 días, así que se toma ese plazo desde que se creó el perfil.
+DIAS_PERFIL_SIN_VENCIMIENTO = 30
+
+
+def condiciones_vencido(ahora: datetime) -> list[dict[str, Any]]:
+    """Cuándo un perfil ya no tiene consentimiento vigente. La comparten la purga y el batch, sin
+    preguntar a AUTH perfil por perfil. `None` en Mongo también casa con el campo ausente."""
+    return [
+        {"consentimiento_vence_en": {"$lte": ahora}},
+        {
+            "consentimiento_vence_en": None,
+            "creado_en": {"$lte": ahora - timedelta(days=DIAS_PERFIL_SIN_VENCIMIENTO)},
+        },
+    ]
 
 
 def cifrar_fuentes_perfil(
@@ -81,6 +97,8 @@ class RepositorioPerfilesMongo:
         fecha_vigencia: str | None = None,
         version_reglas: str | None = None,
         creado_en: datetime | None = None,
+        consentimiento_id: str | None = None,
+        consentimiento_vence_en: datetime | None = None,
     ) -> tuple[int, Timestamp]:
         ahora = creado_en or datetime.now(UTC)
         if (
@@ -119,6 +137,10 @@ class RepositorioPerfilesMongo:
                 "version_reglas": version_reglas,
                 "creado_en": ahora,
             }
+            if consentimiento_id is not None:
+                documento["consentimiento_id"] = consentimiento_id
+            if consentimiento_vence_en is not None:
+                documento["consentimiento_vence_en"] = consentimiento_vence_en
             if evaluacion is not None:
                 documento["evaluacion"] = evaluacion
                 documento["score"] = evaluacion.get("score")
@@ -129,3 +151,29 @@ class RepositorioPerfilesMongo:
             operation_time = session.operation_time
 
         return perfil_version, operation_time
+
+    def borrar_de_consentimiento(
+        self, cliente_id: str, consentimiento_id: str
+    ) -> list[dict[str, Any]]:
+        """W01-A3: borra los perfiles de ese consentimiento y los anteriores al cambio, que no
+        dicen de cuál vienen. Un perfil de otro consentimiento vigente del titular no se toca."""
+        return self._borrar(
+            {
+                "cliente_id": cliente_id,
+                "$or": [{"consentimiento_id": consentimiento_id}, {"consentimiento_id": None}],
+            }
+        )
+
+    def borrar_vencidos(self, ahora: datetime) -> list[dict[str, Any]]:
+        """W01-A4: borra los perfiles sin consentimiento vigente."""
+        return self._borrar({"$or": condiciones_vencido(ahora)})
+
+    def _borrar(self, filtro: dict[str, Any]) -> list[dict[str, Any]]:
+        """Devuelve lo borrado para limpiar la caché. `contadores_version` se conserva: la
+        versión de un titular no retrocede y solo guarda su id opaco."""
+        borrados = list(
+            self._perfiles.find(filtro, {"cliente_id": 1, "perfil_version": 1, "version_reglas": 1})
+        )
+        if borrados:
+            self._perfiles.delete_many({"_id": {"$in": [p["_id"] for p in borrados]}})
+        return borrados

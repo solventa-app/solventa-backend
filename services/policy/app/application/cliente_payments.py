@@ -61,6 +61,8 @@ class SesionRechazada(Exception):
 class PuertoPayments(Protocol):
     def crear_cobro(self, orden: OrdenPrimerCobro) -> ResultadoCobro: ...
 
+    def programar_cobros(self, propuesta_id: str, poliza_id: str, vigencia_hasta: str) -> None: ...
+
 
 class PuertoSesionesPago(Protocol):
     def abrir_sesion(
@@ -114,6 +116,21 @@ class ClientePayments:
         except CobroEnConflicto:
             raise
         except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as error:
+            raise PaymentsNoDisponible(type(error).__name__) from error
+
+    def programar_cobros(self, propuesta_id: str, poliza_id: str, vigencia_hasta: str) -> None:
+        """W05-A7: idempotente por propuesta. Lanza `PaymentsNoDisponible` si no responde."""
+        try:
+            respuesta = self._cliente.post(
+                "/programaciones-cobro",
+                json={
+                    "propuesta_id": propuesta_id,
+                    "poliza_id": poliza_id,
+                    "vigencia_hasta": vigencia_hasta,
+                },
+            )
+            respuesta.raise_for_status()
+        except httpx.HTTPError as error:
             raise PaymentsNoDisponible(type(error).__name__) from error
 
     def abrir_sesion(

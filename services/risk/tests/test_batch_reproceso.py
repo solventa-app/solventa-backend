@@ -12,6 +12,18 @@ from app.application.repositorio_perfiles import COLECCION_PERFILES, cifrar_fuen
 from app.batch_reproceso import ejecutar_reproceso
 
 
+def _vencido(documento: dict[str, Any], condiciones: list[dict[str, Any]]) -> bool:
+    """Evalúa `condiciones_vencido` como MongoDB: `None` también casa con el campo ausente."""
+
+    def casa(campo: str, condicion: Any) -> bool:
+        valor = documento.get(campo)
+        if isinstance(condicion, dict):
+            return valor is not None and valor <= condicion["$lte"]
+        return valor == condicion
+
+    return any(all(casa(c, v) for c, v in grupo.items()) for grupo in condiciones)
+
+
 class CursorFalso:
     def __init__(self, docs: list[dict[str, Any]]) -> None:
         self._docs = list(docs)
@@ -42,6 +54,7 @@ class ColeccionPerfilesBatchFalsa:
         if isinstance(condicion, dict) and "$ne" in condicion:
             objetivo = condicion["$ne"]
             filtrados = [d for d in self.documentos if d.get("version_reglas") != objetivo]
+            filtrados = [d for d in filtrados if not _vencido(d, filtro.get("$nor", []))]
         else:
             filtrados = list(self.documentos)
         return CursorFalso(filtrados)
@@ -175,11 +188,31 @@ def test_reproceso_es_idempotente_al_interrumpir_y_reanudar() -> None:
 # ---------- reparto entre tareas del Cloud Run Job
 
 
-def test_sin_particion_el_filtro_es_el_de_siempre() -> None:
+def test_sin_particion_el_filtro_no_reparte() -> None:
     from app.batch_reproceso import construir_filtro
 
-    assert construir_filtro("v1") == {"version_reglas": {"$ne": "v1"}}
-    assert construir_filtro("v1", (0, 1)) == {"version_reglas": {"$ne": "v1"}}
+    for filtro in (construir_filtro("v1"), construir_filtro("v1", (0, 1))):
+        assert filtro["version_reglas"] == {"$ne": "v1"}
+        assert "$expr" not in filtro
+
+
+def test_el_batch_omite_los_perfiles_sin_consentimiento_vigente() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from app.batch_reproceso import construir_filtro
+
+    ahora = datetime(2026, 10, 31, tzinfo=UTC)
+    documentos = {
+        "vigente": {"consentimiento_vence_en": ahora + timedelta(days=1), "creado_en": ahora},
+        "vencido": {"consentimiento_vence_en": ahora - timedelta(days=1), "creado_en": ahora},
+        "viejo_reciente": {"creado_en": ahora - timedelta(days=29)},
+        "viejo_vencido": {"creado_en": ahora - timedelta(days=31)},
+    }
+    condiciones = construir_filtro("v1", ahora=ahora)["$nor"]
+
+    pendientes = {n for n, d in documentos.items() if not _vencido(d, condiciones)}
+
+    assert pendientes == {"vigente", "viejo_reciente"}
 
 
 def test_con_particion_el_filtro_suma_el_modulo_del_hash_del_cliente() -> None:

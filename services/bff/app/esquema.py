@@ -55,6 +55,7 @@ from app.monedas import (
     ConversionInvalida,
     convertir,
 )
+from app.revocacion import avisar_revocacion
 from app.servicio_firma_pago import (
     MENSAJE_AVISOS_NO_DISPONIBLES,
     MENSAJE_POLIZA_YA_EMITIDA,
@@ -1994,14 +1995,9 @@ class Mutation:
             raise ErrorPublico("Consentimiento no encontrado.")
         titular_id = datos.get("titular_id")
         if titular_id:
-            # Las dos avisos van en paralelo y ninguno hace fallar la revocación.
-            resultados = await asyncio.gather(
-                info.context["clientes"].acl.invalidar_cache_cliente(titular_id),
-                _firma_pago(info).consentimiento_revocado(titular_id, str(id)),
-                return_exceptions=True,
+            await avisar_revocacion(
+                info.context["clientes"], _firma_pago(info), titular_id, str(id)
             )
-            if isinstance(resultados[0], Exception):
-                logger.warning("no se pudo invalidar cache del titular al revocar consentimiento")
         return _consentimiento(datos)
 
     @strawberry.mutation

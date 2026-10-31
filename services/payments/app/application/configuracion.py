@@ -28,6 +28,9 @@ class Configuracion:
     tareas_cola: str = "reintento-cobros"
     tareas_cuenta: str = ""
     url_propia: str = ""
+    # W05-A7: cada cuántos días se cobra una póliza nueva, y dónde se publican los avisos (W05-A6).
+    cobro_recurrente_intervalo_dias: int = 30
+    redis_url: str = ""
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -42,6 +45,9 @@ class Configuracion:
             ]
             if faltan:
                 raise ValueError(f"DISPARADOR=externo exige {', '.join(faltan)}")
+        intervalo = int(os.getenv("COBRO_RECURRENTE_INTERVALO_DIAS", "30"))
+        if not 1 <= intervalo <= 31:
+            raise ValueError("COBRO_RECURRENTE_INTERVALO_DIAS debe estar entre 1 y 31")
         return cls(
             # Sin valor por defecto: compose y Cloud Run fijan DATABASE_URL completa, y una URL
             # escrita aquí llevaría la contraseña (o ninguna). `construir_pool` falla claro.
@@ -71,4 +77,6 @@ class Configuracion:
             tareas_cola=os.getenv("TAREAS_COLA", "reintento-cobros"),
             tareas_cuenta=os.getenv("TAREAS_CUENTA", ""),
             url_propia=os.getenv("URL_PROPIA", ""),
+            cobro_recurrente_intervalo_dias=intervalo,
+            redis_url=os.getenv("REDIS_URL", ""),
         )

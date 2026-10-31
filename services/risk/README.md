@@ -84,7 +84,12 @@ que nunca se construyó.
 ## Operación
 
 - Puerto local: `8002`. Salud: `GET /health`. Métricas Prometheus: `GET /metrics`.
-- `POST /perfiles` `{cliente_id, fuentes: [{fuente, datos, capturado_en, de_cache, degradado}, ...]}`
+- `POST /perfiles/consentimiento-revocado` `{titular_id, consentimiento_id}`: borra los perfiles de ese consentimiento
+  (y los anteriores al cambio, sin `consentimiento_id`) con su caché. 204 siempre, idempotente (W01-A3). Un perfil de otro
+  consentimiento vigente del titular no se toca.
+- `POST /perfiles/_purgar`: lo llama Cloud Scheduler a diario. Borra los perfiles con `consentimiento_vence_en` vencido y
+  los que no lo tienen a los 30 días de `creado_en` (W01-A4). El batch aplica el mismo criterio y los omite (W01-A5).
+- `POST /perfiles` `{cliente_id, fuentes: [{fuente, datos, capturado_en, de_cache, degradado}, ...], consentimiento_id?, consentimiento_vence_en?}`
   → `{cliente_id, perfil_version, operation_time, score_total, nivel_riesgo, fecha_vigencia, version_reglas}`.
 - Batch nocturno: `python -m app.batch_reproceso` (variables opcionales `BATCH_LIMITE`, `BATCH_TAMANO_LOTE`, `BATCH_PAUSA_MS`).
 - Variables de entorno: `MONGO_URI`, `MONGO_DB` (`risk`), `REDIS_URL`, `OFERTA_CACHE_TTL_SEGUNDOS`

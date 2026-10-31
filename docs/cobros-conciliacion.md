@@ -135,6 +135,13 @@ Cómo produce cada estado el mock de la pasarela, por modo:
 | **Token cifrado, reintento externo y atascados (2026-10-18)** | `token_medio_pago` se guarda cifrado (AES-256-GCM, `enc:v1:...`, el id del cobro como dato asociado; migración `0007` cifra lo ya guardado) y se descifra solo al cobrar; `DISPARADOR=externo` con Cloud Tasks (`POST /cobros/_reintentar`); recuperación de cobros atascados |
 | **Ajustes (2026-10-17)** | Contrato v0.3/v0.4: `crearCobro` en el BFF y evento v2 con `idIntentoCobro`; renombre a `id_intento_cobro` (mock: `referencia_comercio`); PAYMENTS responde 409 si el mismo intento llega con otros datos y 422 si falta un campo |
 
+### Ajustes de 2026-10-31 (W05-A6 y A7)
+
+- PAYMENTS publica cada cambio de estado en `avisos:cobros`; W05-01 lo recibe por SSE sin recargar.
+- Cobro recurrente: el cobro del ciclo se crea en `cobrando` en la misma transacción que avanza la programación, así que
+  una caída antes de ir a la pasarela no pierde el ciclo: lo recupera el reintento de atascados.
+- Los recurrentes guardan como `poliza_id` el id de la propuesta, igual que el primer cobro.
+
 ## 6. Pruebas
 
 | Nivel | Resultado |
