@@ -418,12 +418,26 @@ class RiskFalso:
     def __init__(self, falla: bool = False) -> None:
         self.falla = falla
         self.llamadas: list[tuple[str, list[dict]]] = []
+        self.consentimientos: list[tuple[str | None, str | None]] = []
+        self.revocados: list[tuple[str, str]] = []
 
-    async def registrar_perfil(self, cliente_id: str, fuentes: list[dict]) -> dict:
+    async def registrar_perfil(
+        self,
+        cliente_id: str,
+        fuentes: list[dict],
+        consentimiento_id: str | None = None,
+        consentimiento_vence_en: str | None = None,
+    ) -> dict:
         self.llamadas.append((cliente_id, fuentes))
+        self.consentimientos.append((consentimiento_id, consentimiento_vence_en))
         if self.falla:
             raise ErrorServicio("HTTP 503")
         return {"cliente_id": cliente_id, "perfil_version": 1, "operation_time": "1700000000.1"}
+
+    async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None:
+        if self.falla:
+            raise ErrorServicio("HTTP 503")
+        self.revocados.append((titular_id, consentimiento_id))
 
 
 class RatingFalso:
@@ -960,7 +974,8 @@ class OnboardingFalso:
         return self.sesiones[onboarding_id]
 
     def _vista(self, sesion: dict) -> dict:
-        return {k: sesion[k] for k in ("id", "estado", "motivo", "intento", "intentos_restantes")}
+        vista = {k: sesion[k] for k in ("id", "estado", "motivo", "intento", "intentos_restantes")}
+        return {**vista, "tiene_cuenta": sesion.get("usuario_id") is not None}
 
     async def iniciar(self, jurisdiccion: str, tipo_documento: str) -> dict:
         if self.falla:

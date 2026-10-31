@@ -361,8 +361,11 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/payments
       ACL_URL: http://acl-worker:8005
+      REDIS_URL: redis://redis:6379/3
+      COBRO_RECURRENTE_INTERVALO_DIAS: ${COBRO_RECURRENTE_INTERVALO_DIAS:-30}
     depends_on:
       postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
       migrar-payments: { condition: service_completed_successfully }
 
   migrar-policy:

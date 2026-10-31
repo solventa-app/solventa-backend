@@ -18,6 +18,8 @@ PAYMENTS procesa el cobro de primas e indemnizaciones con **pasarela tokenizada*
   cobrar de nuevo** (evita el doble cobro cuando la pasarela cobró pero respondió tarde). El bucle automático y el botón
   usan la misma función (`app/application/conciliacion.py`). Ver [`docs/cobros-conciliacion.md`](../../docs/cobros-conciliacion.md).
 - La pasarela se alcanza **solo** a través del `acl-worker` (Circuit Breaker + Retry, 700 ms). PAYMENTS nunca llama a la pasarela directamente ni guarda estado del circuito — eso es responsabilidad exclusiva del ACL Worker.
+- **Cobro recurrente (W05-A7):** POLICY pide `POST /programaciones-cobro` con la póliza emitida; `POST /cobros/_generar-recurrentes` (Cloud Scheduler cada hora, o a mano en una demo) cobra los ciclos vencidos con el medio guardado, hasta `vigencia_hasta`. `COBRO_RECURRENTE_INTERVALO_DIAS` (1 a 31, 30 por omisión) se copia al crear: cambiarla no mueve las pólizas existentes. Migración `0010`.
+- **Avisos (W05-A6):** con `REDIS_URL`, cada cambio de estado se publica en `avisos:cobros` para W05-01. De mejor esfuerzo.
 - Emite `cobro.estado-cambiado` por un bus de eventos **placeholder** (ver huecos) en cada cambio de estado real: al crear (`cobrando`) y al actualizar (`cobrado`/`rechazado`/`pendiente`).
 
 ## Diseño (decisiones no escritas en el plan)

@@ -186,6 +186,7 @@ class ServicioEmision:
         estado = propuesta["estado"]
         if estado == "EMITIDA":
             self._completar_aviso(propuesta)  # si el aviso quedó sin enviar, se reintenta
+            self._programar_cobros(propuesta)
             return estado
         if estado not in DESDE_COBRO:
             return estado  # en un estado final, o todavía sin firmar
@@ -208,6 +209,20 @@ class ServicioEmision:
             if cerrada is not None:
                 return cerrada
         return self._cobrar_y_emitir(propuesta, evidencia, intentos)
+
+    def _programar_cobros(self, propuesta: dict[str, Any]) -> None:
+        """W05-A7: va en la tarea y no en la respuesta del pago, para no sumar latencia. PAYMENTS
+        es idempotente y solo programa si hubo un primer cobro con medio guardado; si no responde,
+        la tarea se reintenta. La póliza ya emitida no se deshace."""
+        poliza = self._repositorio.obtener_poliza(propuesta["poliza_id"])
+        if poliza is None:
+            return
+        try:
+            self._payments.programar_cobros(
+                propuesta["id"], poliza["id"], poliza["vigencia_hasta"].isoformat()
+            )
+        except PaymentsNoDisponible as error:
+            raise EmisionPendiente("PAYMENTS no disponible") from error
 
     def _decidir(self, propuesta: dict[str, Any]) -> str | None:
         """UNDER decide. `None` si se aprobó y sigue el cobro; el estado final si no."""

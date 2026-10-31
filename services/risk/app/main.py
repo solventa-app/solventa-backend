@@ -3,9 +3,10 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 from decimal import Decimal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 from pymongo import MongoClient
@@ -45,6 +46,20 @@ class DatosFuenteEntrada(BaseModel):
 class CrearPerfilRequest(BaseModel):
     cliente_id: str
     fuentes: list[DatosFuenteEntrada]
+    # W01-A3: opcionales para no romper a la revisión anterior del BFF durante el despliegue.
+    consentimiento_id: str | None = None
+    consentimiento_vence_en: datetime | None = None
+
+
+class ConsentimientoRevocadoRequest(BaseModel):
+    """Mismo cuerpo que `POST /propuestas/consentimiento-revocado` de POLICY."""
+
+    titular_id: str
+    consentimiento_id: str
+
+
+class PurgaResponse(BaseModel):
+    perfiles_borrados: int
 
 
 class CrearPerfilResponse(BaseModel):
@@ -123,8 +138,20 @@ def create_app(
         resultado = app.state.servicio_perfiles.registrar(
             body.cliente_id,
             [fuente.model_dump() for fuente in body.fuentes],
+            consentimiento_id=body.consentimiento_id,
+            consentimiento_vence_en=body.consentimiento_vence_en,
         )
         return CrearPerfilResponse(**resultado)
+
+    @app.post("/perfiles/consentimiento-revocado", tags=["perfiles"], status_code=204)
+    def consentimiento_revocado(body: ConsentimientoRevocadoRequest) -> Response:
+        app.state.servicio_perfiles.consentimiento_revocado(body.titular_id, body.consentimiento_id)
+        return Response(status_code=204)
+
+    @app.post("/perfiles/_purgar", tags=["operacion"], response_model=PurgaResponse)
+    def purgar_perfiles() -> PurgaResponse:
+        """Lo llama Cloud Scheduler una vez al día."""
+        return PurgaResponse(perfiles_borrados=app.state.servicio_perfiles.purgar_vencidos())
 
     @app.post(
         "/preaprobaciones/evaluar", tags=["preaprobaciones"], response_model=ResultadoDecision

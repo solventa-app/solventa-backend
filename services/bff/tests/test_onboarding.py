@@ -170,6 +170,17 @@ def test_cuenta_pendiente_solo_entra_a_su_verificacion() -> None:
     assert repetida["codigo"] == "CORREO_YA_REGISTRADO"
 
 
+def test_segunda_cuenta_en_la_misma_sesion_no_deja_una_cuenta_huerfana_en_auth() -> None:
+    cliente, auth, onboarding = _pila()
+    oid, tok = _iniciar(cliente)
+    _gql(cliente, CREAR, {"o": oid}, onb=tok)
+    cuentas = len(auth.usuarios)
+    otra = CREAR.replace("ana@example.com", "luis@example.com")
+    repetida = _gql(cliente, otra, {"o": oid}, onb=tok)["data"]["crearCuentaOnboarding"]
+    assert repetida["codigo"] == "SESION_CON_CUENTA"
+    assert len(auth.usuarios) == cuentas  # no se creó nada en AUTH: el correo sigue libre
+
+
 LOGIN = """mutation { iniciarSesion(
     entrada: {usuario: "ana@example.com", clave: "clave-segura-123"}) {
     ... on Sesion { usuario { estado } } ... on ErrorAutenticacion { mensaje codigo } } }"""

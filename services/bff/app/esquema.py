@@ -55,6 +55,7 @@ from app.monedas import (
     ConversionInvalida,
     convertir,
 )
+from app.revocacion import avisar_revocacion
 from app.servicio_firma_pago import (
     MENSAJE_AVISOS_NO_DISPONIBLES,
     MENSAJE_POLIZA_YA_EMITIDA,
@@ -2008,14 +2009,9 @@ class Mutation:
             raise ErrorPublico("Consentimiento no encontrado.")
         titular_id = datos.get("titular_id")
         if titular_id:
-            # Las dos avisos van en paralelo y ninguno hace fallar la revocación.
-            resultados = await asyncio.gather(
-                info.context["clientes"].acl.invalidar_cache_cliente(titular_id),
-                _firma_pago(info).consentimiento_revocado(titular_id, str(id)),
-                return_exceptions=True,
+            await avisar_revocacion(
+                info.context["clientes"], _firma_pago(info), titular_id, str(id)
             )
-            if isinstance(resultados[0], Exception):
-                logger.warning("no se pudo invalidar cache del titular al revocar consentimiento")
         return _consentimiento(datos)
 
     @strawberry.mutation
@@ -2599,7 +2595,10 @@ class Mutation:
             token = _token_onboarding(info)
             servicio = _onboarding(info)
             # Valida el token antes de crear nada en AUTH.
-            await servicio.consultar(str(onboarding_id), token)
+            actual = await servicio.consultar(str(onboarding_id), token)
+            if actual.get("tiene_cuenta"):
+                # Crear otra en AUTH la dejaría huérfana y gastaría el correo del cliente.
+                return _error_onboarding("SESION_CON_CUENTA")
             try:
                 cuenta = await _auth(info).crear_cuenta_onboarding(entrada.correo, entrada.clave)
                 sesion = await _auth(info).iniciar_sesion(entrada.correo, entrada.clave, CANAL_APP)
