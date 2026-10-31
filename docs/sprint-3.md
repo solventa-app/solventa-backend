@@ -3,7 +3,7 @@
 > **Estado:** documentación de planeación, 2026-10-31. Solo lectura de Jira: no se creó el sprint ni se movió ningún issue.  
 > **Fuentes:** Jira (proyecto KAN) para pesos, estados y fechas; `Solventa_Prototipado_Jira_Subtareas_v2.0.xlsx` (hoja «Subtareas v24», v24 del Excel de prototipado) para el detalle de cada pantalla.  
 > **Alcance oficial del plan (M01, W04, M04, M06) y criterios `CA-*`:** [`detalle-historias-sprint-3.md`](detalle-historias-sprint-3.md); donde difiera de este documento, gana aquel.
-> **Libro de trabajo:** `Solventa_Sprint3_Cierre.xlsx` (no versionado; ver la sección 8). **Refinamiento y pesos por tarea:** [`refinamiento-sprint-3.md`](refinamiento-sprint-3.md).
+> **Libro de trabajo:** `Solventa_Sprint3_Cierre_v2.xlsx` (pesos por tarea y alcance oficial; el `Solventa_Sprint3_Cierre.xlsx` anterior está obsoleto; no versionado, ver la sección 8). **Refinamiento y pesos por tarea:** [`refinamiento-sprint-3.md`](refinamiento-sprint-3.md).
 
 ## 1. Alcance y fechas
 
@@ -899,7 +899,7 @@ Las subtareas de Jira de estas HU son pantallas. Lo siguiente es trabajo real de
 
 ## 8. Archivos de apoyo
 
-El libro de trabajo (`Solventa_Sprint3_Cierre.xlsx`), el script de exportación de Jira (`exportar_jira_sprint3.py`) y los que regeneran el libro y este
+El libro de trabajo (`Solventa_Sprint3_Cierre_v2.xlsx`, generado por `construir_libro_v2.py`), el script de exportación de Jira (`exportar_jira_sprint3.py`) y los que regeneran el libro y este
 documento **no están versionados en este repo**: viven en la carpeta `sprint-3/` de quien armó la planeación (Frans, 2026-10-31). El libro reparte los puntos
 por pantalla (la aproximación de la sección 2) y **hay que rehacerlo con los pesos por tarea** del refinamiento antes de usarlo para los gráficos de cierre. Si el
 equipo quiere versionar el exportador, el lugar natural es `scripts/`.
