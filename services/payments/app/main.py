@@ -9,7 +9,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -17,9 +17,14 @@ from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, Field
 
 from app.application.autenticacion_servicios import autenticacion_para
+from app.application.avisos import BusConAvisos, redis_de_avisos
 from app.application.bus_eventos import BusEventosLog
 from app.application.cifrado import cifrador_desde_entorno
 from app.application.cliente_acl import ClienteAcl
+from app.application.cobro_recurrente import (
+    RepositorioProgramacionesPostgres,
+    ServicioCobroRecurrente,
+)
 from app.application.configuracion import Configuracion
 from app.application.disparador import (
     BusConReintento,
@@ -126,6 +131,20 @@ class SolicitudSesionPagoRequest(BaseModel):
     idioma: str = "es"
 
 
+class ProgramarCobrosRequest(BaseModel):
+    propuesta_id: str = Field(min_length=1)
+    poliza_id: str = Field(min_length=1)
+    vigencia_hasta: datetime
+
+
+class ProgramarCobrosResponse(BaseModel):
+    creada: bool
+
+
+class RecurrentesResponse(BaseModel):
+    generados: int
+
+
 class ConfirmarSesionRequest(BaseModel):
     # La sesión debe ser de esta propuesta: si no, 404 igual que una inexistente.
     propuesta_id: str = Field(min_length=1)
@@ -190,6 +209,7 @@ def create_app(
     servicio_sesiones: ServicioSesionesPago | None = None,
     medios=None,
     servicio_indemnizaciones: ServicioIndemnizaciones | None = None,
+    cobro_recurrente: ServicioCobroRecurrente | None = None,
 ) -> FastAPI:
     """`servicio_cobros`/`reintento` permiten inyectar dobles de prueba ya
     construidos sin levantar PostgreSQL ni el ACL Worker reales (ver
@@ -209,6 +229,7 @@ def create_app(
             app.state.servicio_sesiones = servicio_sesiones
             app.state.medios = medios
             app.state.servicio_indemnizaciones = servicio_indemnizaciones
+            app.state.cobro_recurrente = cobro_recurrente
         else:
             pool = construir_pool(config.database_url)
             repositorio = RepositorioCobrosPostgres(pool, cifrador_desde_entorno())
@@ -218,7 +239,9 @@ def create_app(
                 autenticacion_para(config.autenticacion_servicios, "acl-worker"),
             )
             planificador = _planificador(config)
-            bus = BusEventosLog()
+            bus: Any = BusEventosLog()
+            if config.redis_url:
+                bus = BusConAvisos(bus, redis_de_avisos(config.redis_url))
             if config.disparador == "externo":
                 # Un cobro que queda `pendiente` programa su reintento en Cloud Tasks.
                 bus = BusConReintento(bus, planificador, config.reintento_intervalo_segundos)
@@ -232,6 +255,11 @@ def create_app(
             )
             app.state.servicio_indemnizaciones = ServicioIndemnizaciones(
                 RepositorioIndemnizacionesPostgres(pool)
+            )
+            app.state.cobro_recurrente = ServicioCobroRecurrente(
+                RepositorioProgramacionesPostgres(pool, cifrador_desde_entorno()),
+                app.state.servicio_cobros,
+                config.cobro_recurrente_intervalo_dias,
             )
             app.state.reintento = ReintentoCobrosPendientes(
                 repositorio,
@@ -304,6 +332,26 @@ def create_app(
         if reintento is None:
             raise HTTPException(status_code=404, detail="reintento no disponible")
         return PasadaResponse(**reintento.una_pasada_externa())
+
+    @app.post(
+        "/cobros/_generar-recurrentes", tags=["operacion"], response_model=RecurrentesResponse
+    )
+    def generar_recurrentes() -> RecurrentesResponse:
+        """Una pasada del cobro recurrente (W05-A7). La llama Cloud Scheduler cada hora, y a mano en
+        una demostración para no esperar el ciclo. Privada e idempotente por ciclo."""
+        servicio = app.state.cobro_recurrente
+        if servicio is None:
+            raise HTTPException(status_code=404, detail="cobro recurrente no disponible")
+        return RecurrentesResponse(generados=servicio.generar())
+
+    @app.post("/programaciones-cobro", tags=["cobros"], response_model=ProgramarCobrosResponse)
+    def programar_cobros(body: ProgramarCobrosRequest) -> ProgramarCobrosResponse:
+        """POLICY la llama con la póliza emitida. Idempotente por propuesta."""
+        servicio = app.state.cobro_recurrente
+        if servicio is None:
+            raise HTTPException(status_code=404, detail="cobro recurrente no disponible")
+        creada = servicio.programar(body.propuesta_id, body.poliza_id, body.vigencia_hasta)
+        return ProgramarCobrosResponse(creada=creada)
 
     @app.post("/cobros/buscar", tags=["cobros"], response_model=list[CobroResponse])
     def buscar_cobros(filtro: FiltroCobros) -> list[CobroResponse]:

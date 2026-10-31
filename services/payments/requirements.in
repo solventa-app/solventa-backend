@@ -13,3 +13,4 @@ requests==2.34.2
 opentelemetry-instrumentation-httpx==0.66b1
 opentelemetry-instrumentation-psycopg==0.66b1
 cryptography==50.0.2
+redis==8.1.0

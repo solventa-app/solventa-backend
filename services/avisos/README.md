@@ -28,12 +28,12 @@ negocio**: solo valida el ticket, revisa el `Origin` y empuja mensajes.
 |---|---|---|
 | ASESOR | `avisos:asesor:<usuario>` | POLICY (propuestas que aceptó) |
 | CLIENTE (con titular verificado) | `avisos:titular:<titular>` | POLICY |
-| BACKOFFICE | `avisos:todos` y `avisos:cobros` | POLICY (`todos`); PAYMENTS (`cobros`, W05-A6, aún no publica) |
+| BACKOFFICE | `avisos:todos` y `avisos:cobros` | POLICY (`todos`); PAYMENTS (`cobros`, W05-A6) |
 
 Un CLIENTE sin identidad verificada no se suscribe a nada (recibe solo latidos). Eventos:
 `propuesta` → `{"propuestaId", "estado", "estadoVisible", "polizaId", "numero"}`; `cobro` → `{"cobroId", "polizaId",
-"estado"}`. `avisos:cobros` queda reservado para W05-01 (W05-A6): quien publique allí debe incluir `"tipo": "cobro"` (si
-falta, el canal lo da).
+"estado"}`. `avisos:cobros` alimenta W05-01 (W05-A6): PAYMENTS publica `"tipo": "cobro"` en cada cambio de estado, con el
+`estado` en mayúsculas, igual que `EstadoCobro` del contrato.
 
 ## Variables de entorno
 
