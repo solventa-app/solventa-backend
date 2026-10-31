@@ -73,6 +73,7 @@ PR ─► CI ─► merge a develop ─► construir (imagen = SHA) ─► migra
 - [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md) — servicios, almacenes y flujo del caso insignia.
 - [`docs/pruebas-manuales.md`](docs/pruebas-manuales.md) — paso a paso para probar todo el backend a mano en tu terminal.
 - [`docs/sprint-1.md`](docs/sprint-1.md) — alcance, habilitadoras, escenarios y decisiones abiertas del Sprint 1.
+- [`docs/sprint-3.md`](docs/sprint-3.md) — alcance, subtareas, pesos y datos de los gráficos de cierre del Sprint 3 (planeación, 2026-10-31).
 - [`docs/convenciones.md`](docs/convenciones.md) — ramas (git-flow), commits, PR y definición de hecho.
 - [`docs/adr/ADR-08-git-flow.md`](docs/adr/ADR-08-git-flow.md) — decisión del flujo `main → develop → feature`.
 - [`docs/adr/ADR-07-cicd-y-migraciones.md`](docs/adr/ADR-07-cicd-y-migraciones.md) — CI/CD y migraciones: principios y límites de lo probado.
