@@ -328,6 +328,45 @@ resource "google_cloud_scheduler_job" "reconciliacion_cobros_policy" {
   }
 }
 
+# ------------------------------------------------------------------ purga de perfiles de RISK (Cloud Scheduler)
+# W01-A4: pasada diaria que borra los perfiles cuyo consentimiento venció, y recoge los avisos de revocación perdidos.
+# Idempotente. Misma cuenta `programador`; RISK es privado.
+resource "google_cloud_run_v2_service_iam_member" "programador_invoca_risk" {
+  count    = local.hay_tareas ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.servicio["risk"].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.programador[0].email}"
+}
+
+resource "google_cloud_scheduler_job" "purgar_perfiles_risk" {
+  count       = local.hay_tareas ? 1 : 0
+  depends_on  = [google_project_service.tareas_apis]
+  project     = var.project_id
+  region      = var.region
+  name        = "purgar-perfiles-risk"
+  description = "Una pasada de la purga de RISK: borra los perfiles sin consentimiento vigente y su caché"
+  schedule    = var.purgar_perfiles_cron
+  time_zone   = "America/Bogota"
+
+  attempt_deadline = "300s"
+
+  retry_config {
+    retry_count = 0
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.url["risk"]}/perfiles/_purgar"
+
+    oidc_token {
+      service_account_email = google_service_account.programador[0].email
+      audience              = local.url["risk"]
+    }
+  }
+}
+
 # ------------------------------------------------------------------ purga de contactos de POLICY (Cloud Scheduler)
 # W03-26: pasada diaria que borra el nombre, el correo y la imagen de la firma de las propuestas cuyo consentimiento
 # venció (la revocación a mano la avisa el BFF al instante). Idempotente: una pasada que no termina la retoma la del día

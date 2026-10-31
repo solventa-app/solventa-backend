@@ -271,6 +271,12 @@ variable "url_front" {
   default     = "http://localhost:5173"
 }
 
+variable "purgar_perfiles_cron" {
+  description = "Cada cuánto el trabajo de Cloud Scheduler `purgar-perfiles-risk` llama a `POST /perfiles/_purgar` de RISK: borra los perfiles cuyo consentimiento venció (W01-A4). Formato cron, zona America/Bogota. Solo aplica con `crear_tareas = true`."
+  type        = string
+  default     = "30 3 * * *"
+}
+
 variable "purgar_contactos_cron" {
   description = "Cada cuánto el trabajo de Cloud Scheduler `purgar-contactos-policy` llama a `POST /_purgar-contactos` de POLICY: borra nombre, correo e imagen de la firma de las propuestas cuyo consentimiento venció (W03-26). Formato cron, zona America/Bogota. Solo aplica con `crear_tareas = true`."
   type        = string
