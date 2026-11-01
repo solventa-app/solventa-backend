@@ -9,9 +9,29 @@
     "monto_max": 80000000,
     "plazo_min": 6,
     "plazo_max": 200,
-    "dti_maximo": 0.40,
+    "dti_maximo": 0.4,
     "paso_monto": 10000,
-    "regimen_open_finance": "Finanzas abiertas obligatorias (Decreto 1297/2022, Decreto 0368/2026, SFC)"
+    "regimen_open_finance": "Finanzas abiertas obligatorias (Decreto 1297/2022, Decreto 0368/2026, SFC)",
+    "tipos_documento": [
+      {
+        "codigo": "CC",
+        "etiqueta_es": "Cédula de ciudadanía",
+        "etiqueta_en": "Citizenship ID",
+        "formato": "^[0-9]{6,10}$"
+      },
+      {
+        "codigo": "CE",
+        "etiqueta_es": "Cédula de extranjería",
+        "etiqueta_en": "Foreigner ID",
+        "formato": "^[0-9]{6,10}$"
+      },
+      {
+        "codigo": "PASAPORTE",
+        "etiqueta_es": "Pasaporte",
+        "etiqueta_en": "Passport",
+        "formato": "^[A-Z0-9]{5,20}$"
+      }
+    ]
   },
   {
     "codigo": "MX",
@@ -23,9 +43,23 @@
     "monto_max": 400000,
     "plazo_min": 6,
     "plazo_max": 200,
-    "dti_maximo": 0.40,
+    "dti_maximo": 0.4,
     "paso_monto": 100,
-    "regimen_open_finance": "Ley Fintech, art. 76 (APIs abiertas)"
+    "regimen_open_finance": "Ley Fintech, art. 76 (APIs abiertas)",
+    "tipos_documento": [
+      {
+        "codigo": "CURP",
+        "etiqueta_es": "CURP",
+        "etiqueta_en": "CURP",
+        "formato": "^[A-Z]{4}[0-9]{6}[A-Z]{6}[A-Z0-9]{2}$"
+      },
+      {
+        "codigo": "PASAPORTE",
+        "etiqueta_es": "Pasaporte",
+        "etiqueta_en": "Passport",
+        "formato": "^[A-Z0-9]{5,20}$"
+      }
+    ]
   },
   {
     "codigo": "BR",
@@ -37,9 +71,23 @@
     "monto_max": 100000,
     "plazo_min": 6,
     "plazo_max": 200,
-    "dti_maximo": 0.40,
+    "dti_maximo": 0.4,
     "paso_monto": 50,
-    "regimen_open_finance": "Open Finance Brasil (BCB)"
+    "regimen_open_finance": "Open Finance Brasil (BCB)",
+    "tipos_documento": [
+      {
+        "codigo": "CPF",
+        "etiqueta_es": "CPF",
+        "etiqueta_en": "CPF",
+        "formato": "^[0-9]{11}$"
+      },
+      {
+        "codigo": "PASAPORTE",
+        "etiqueta_es": "Pasaporte",
+        "etiqueta_en": "Passport",
+        "formato": "^[A-Z0-9]{5,20}$"
+      }
+    ]
   },
   {
     "codigo": "CL",
@@ -51,9 +99,23 @@
     "monto_max": 30000000,
     "plazo_min": 6,
     "plazo_max": 200,
-    "dti_maximo": 0.40,
+    "dti_maximo": 0.4,
     "paso_monto": 10000,
-    "regimen_open_finance": "Ley Fintec 21.521 (SFA)"
+    "regimen_open_finance": "Ley Fintec 21.521 (SFA)",
+    "tipos_documento": [
+      {
+        "codigo": "RUT",
+        "etiqueta_es": "RUT",
+        "etiqueta_en": "RUT",
+        "formato": "^[0-9]{7,8}[0-9K]$"
+      },
+      {
+        "codigo": "PASAPORTE",
+        "etiqueta_es": "Pasaporte",
+        "etiqueta_en": "Passport",
+        "formato": "^[A-Z0-9]{5,20}$"
+      }
+    ]
   },
   {
     "codigo": "PE",
@@ -65,9 +127,23 @@
     "monto_max": 80000,
     "plazo_min": 6,
     "plazo_max": 200,
-    "dti_maximo": 0.40,
+    "dti_maximo": 0.4,
     "paso_monto": 50,
-    "regimen_open_finance": "Marco en desarrollo (SBS)"
+    "regimen_open_finance": "Marco en desarrollo (SBS)",
+    "tipos_documento": [
+      {
+        "codigo": "DNI",
+        "etiqueta_es": "DNI",
+        "etiqueta_en": "National ID (DNI)",
+        "formato": "^[0-9]{8}$"
+      },
+      {
+        "codigo": "PASAPORTE",
+        "etiqueta_es": "Pasaporte",
+        "etiqueta_en": "Passport",
+        "formato": "^[A-Z0-9]{5,20}$"
+      }
+    ]
   },
   {
     "codigo": "US",
@@ -79,9 +155,23 @@
     "monto_max": 50000,
     "plazo_min": 6,
     "plazo_max": 200,
-    "dti_maximo": 0.40,
+    "dti_maximo": 0.4,
     "paso_monto": 50,
-    "regimen_open_finance": "CFPB Section 1033"
+    "regimen_open_finance": "CFPB Section 1033",
+    "tipos_documento": [
+      {
+        "codigo": "SSN",
+        "etiqueta_es": "SSN",
+        "etiqueta_en": "SSN",
+        "formato": "^[0-9]{9}$"
+      },
+      {
+        "codigo": "PASAPORTE",
+        "etiqueta_es": "Pasaporte",
+        "etiqueta_en": "Passport",
+        "formato": "^[A-Z0-9]{5,20}$"
+      }
+    ]
   },
   {
     "codigo": "ES",
@@ -93,8 +183,22 @@
     "monto_max": 60000,
     "plazo_min": 6,
     "plazo_max": 200,
-    "dti_maximo": 0.40,
+    "dti_maximo": 0.4,
     "paso_monto": 50,
-    "regimen_open_finance": "PSD2 / Berlin Group (UE)"
+    "regimen_open_finance": "PSD2 / Berlin Group (UE)",
+    "tipos_documento": [
+      {
+        "codigo": "DNI_NIE",
+        "etiqueta_es": "DNI / NIE",
+        "etiqueta_en": "DNI / NIE",
+        "formato": "^[XYZ0-9][0-9]{7}[A-Z]$"
+      },
+      {
+        "codigo": "PASAPORTE",
+        "etiqueta_es": "Pasaporte",
+        "etiqueta_en": "Passport",
+        "formato": "^[A-Z0-9]{5,20}$"
+      }
+    ]
   }
 ]

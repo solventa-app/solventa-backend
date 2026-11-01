@@ -3,6 +3,7 @@
 los límites, el servicio no arranca con un error claro en vez de validar con un número viejo."""
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +16,7 @@ class Jurisdiccion:
     nombre: str
     moneda: str
     tipo_documento: str
+    tipos_documento: tuple[dict, ...]
     plazo_min: int
     plazo_max: int
 
@@ -28,6 +30,7 @@ def cargar(ruta: Path = RUTA) -> list[Jurisdiccion]:
                 nombre=j["nombre"],
                 moneda=j["moneda"],
                 tipo_documento=j["tipo_documento"],
+                tipos_documento=tuple(j["tipos_documento"]),
                 plazo_min=int(j["plazo_min"]),
                 plazo_max=int(j["plazo_max"]),
             )
@@ -48,3 +51,18 @@ JURISDICCIONES = cargar()
 # motor de RISK/RATING aplica después el límite de la jurisdicción.
 PLAZO_MINIMO_MESES = min(j.plazo_min for j in JURISDICCIONES)
 PLAZO_MAXIMO_MESES = max(j.plazo_max for j in JURISDICCIONES)
+
+
+def validar_documento(pais: str, tipo: str, numero: str) -> bool:
+    """T20: el tipo existe en el país y el número cumple su formato (catálogo de
+    jurisdicciones.json). Los separadores (puntos, guiones, espacios) se ignoran."""
+    jurisdiccion = next((x for x in JURISDICCIONES if x.codigo == pais.upper()), None)
+    if jurisdiccion is None:
+        return False
+    definicion = next(
+        (t for t in jurisdiccion.tipos_documento if t["codigo"] == tipo.upper()), None
+    )
+    if definicion is None:
+        return False
+    limpio = re.sub(r"[\s.\-]", "", numero).upper()
+    return re.fullmatch(definicion["formato"], limpio) is not None

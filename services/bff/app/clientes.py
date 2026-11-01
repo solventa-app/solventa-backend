@@ -147,6 +147,11 @@ class PuertoAcl(Protocol):
 
     async def tasas_cambio(self) -> dict[str, str]: ...
 
+    # T19: Places detrás del ACL. Si falla, el BFF degrada a «sin verificar».
+    async def autocompletar_direccion(self, texto: str, pais: str | None) -> list[dict]: ...
+
+    async def validar_direccion(self, place_id: str) -> dict: ...
+
     # HU-W07: el estado de cada circuito (`closed`, `half-opened` u `opened`), para la salud.
     async def circuitos(self) -> dict[str, str]: ...
 
@@ -765,6 +770,21 @@ class ClienteAclHttp:
         self._tasas_vencen = ahora + TTL_TASAS_SEGUNDOS
         return self._tasas
 
+    async def autocompletar_direccion(self, texto: str, pais: str | None) -> list[dict]:
+        params = {"texto": texto, **({"pais": pais} if pais else {})}
+        respuesta = await _pedir(self._cliente, "GET", "/lugares/autocompletar", params=params)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return list(respuesta.json()["sugerencias"])
+
+    async def validar_direccion(self, place_id: str) -> dict:
+        respuesta = await _pedir(
+            self._cliente, "GET", "/lugares/validar", params={"place_id": place_id}
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return dict(respuesta.json())
+
     async def consultar_fuente(self, cliente_id: str, consentimiento_id: str, fuente: str) -> dict:
         respuesta = await _pedir(
             self._cliente,
@@ -835,9 +855,7 @@ class ClienteRiskHttp:
 
     async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None:
         cuerpo = {"titular_id": titular_id, "consentimiento_id": consentimiento_id}
-        respuesta = await _pedir(
-            self._cliente, "POST", "/perfiles/consentimiento-revocado", cuerpo
-        )
+        respuesta = await _pedir(self._cliente, "POST", "/perfiles/consentimiento-revocado", cuerpo)
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
 
