@@ -275,3 +275,53 @@ def test_enviar_y_verificar_codigo_onboarding() -> None:
 
     ok = _gql(cliente, q_verif, {"c": codigo})["data"]["verificarCodigoOnboarding"]
     assert ok["correoEnmascarado"] == "a•••@ejemplo.com"
+
+
+def test_registrar_cuenta_sin_token_con_otp() -> None:
+    from fakes import AclFalso
+
+    acl = AclFalso()
+    auth, onboarding = AuthFalso(), OnboardingFalso()
+    cliente = TestClient(
+        create_app(
+            config=Configuracion.desde_entorno(),
+            clientes=clientes_falsos(auth=auth, acl=acl, onboarding=onboarding),
+        )
+    )
+    cliente.__enter__()
+    # 1. Envía el código al correo
+    q_envio = (
+        'mutation { enviarCodigoOnboarding(correo: "carlos.nuevo@ejemplo.com") { '
+        "... on CodigoOnboardingEnviado { correoEnmascarado venceEn } } }"
+    )
+    _gql(cliente, q_envio)
+    codigo = acl.notificaciones[0]["datos"]["codigo"]
+
+    # 2. Código incorrecto
+    q_reg = (
+        "mutation($c: String!) { registrarCuenta("
+        'correo: "carlos.nuevo@ejemplo.com", clave: "ClaveSegura123!", codigo: $c) { '
+        "... on Sesion { token usuario { id rol estado } } "
+        "... on ErrorAutenticacion { codigo mensaje } } }"
+    )
+    malo = _gql(cliente, q_reg, {"c": "000000" if codigo != "000000" else "999999"})
+    assert malo["data"]["registrarCuenta"]["codigo"] == "CODIGO_INVALIDO"
+
+    # 3. Código correcto crea la cuenta y devuelve sesión PENDIENTE_VERIFICACION
+    bueno = _gql(cliente, q_reg, {"c": codigo})
+    sesion = bueno["data"]["registrarCuenta"]
+    assert sesion["usuario"]["rol"] == "CLIENTE"
+    assert sesion["usuario"]["estado"] == "PENDIENTE_VERIFICACION"
+    assert sesion["token"] is not None
+
+    # 4. Iniciar onboarding autenticado vincula la cuenta inmediatamente
+    token_jwt = sesion["token"]
+    q_onb = (
+        "mutation { iniciarOnboarding(entrada: { tipoDocumento: CC }) { "
+        "... on InicioOnboarding { onboarding { id estado } token } } }"
+    )
+    res_onb = _gql(cliente, q_onb, token=token_jwt)["data"]["iniciarOnboarding"]
+    assert res_onb["onboarding"]["estado"] == "INICIADO"
+    oid = res_onb["onboarding"]["id"]
+    assert onboarding.sesiones[oid]["usuario_id"] == sesion["usuario"]["id"]
+

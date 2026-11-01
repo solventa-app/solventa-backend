@@ -2495,11 +2495,17 @@ class Mutation:
     async def iniciar_onboarding(
         self, info: Info, entrada: IniciarOnboardingInput
     ) -> ResultadoInicioOnboarding:
-        """Pública, como `iniciarSesion`: aún no hay cuenta."""
+        """Inicia el recorrido de verificación de identidad. Si el usuario ya inició sesión
+        (CLIENTE en PENDIENTE_VERIFICACION), vincula el onboarding a su cuenta inmediatamente."""
+        usuario = exigir_rol(info, "CLIENTE", siempre=False, admite_pendiente=True)
         try:
             datos = await _onboarding(info).iniciar(
                 entrada.jurisdiccion.upper(), entrada.tipo_documento.value
             )
+            if usuario is not None:
+                await _onboarding(info).vincular_cuenta(
+                    datos["onboarding_id"], datos["token"], usuario.id
+                )
             estado = await _onboarding(info).consultar(datos["onboarding_id"], datos["token"])
         except ErrorOnboardingServicio as error:
             return _error_onboarding(error.codigo)
@@ -2611,6 +2617,52 @@ class Mutation:
             correo_enmascarado=str(datos["correo_enmascarado"]),
             vence_en=datos["vence_en"],
         )
+
+    @strawberry.mutation
+    async def registrar_cuenta(
+        self, info: Info, correo: str, clave: str, codigo: str
+    ) -> ResultadoSesion:
+        """Crea la cuenta CLIENTE en PENDIENTE_VERIFICACION validando el código OTP del correo,
+        y devuelve su sesión (scope `verificacion-pendiente`) para el canal móvil (HU-M01).
+        Pública: no exige token previo ni sesión."""
+        try:
+            await info.context["servicio_codigo_onboarding"].verificar(correo, codigo)
+        except ErrorOnboardingServicio as error:
+            mensaje = MENSAJES_ONBOARDING.get(error.codigo, "El código no es correcto o venció.")
+            return ErrorAutenticacion(mensaje=mensaje, codigo=error.codigo)
+        except ErrorServicio:
+            return ErrorAutenticacion(
+                mensaje="No pudimos verificar el código. Intenta de nuevo.",
+                codigo="NO_DISPONIBLE",
+            )
+
+        try:
+            cuenta = await _auth(info).crear_cuenta_onboarding(correo, clave)
+            usuario_id = cuenta["id"]
+        except ErrorOnboardingServicio as error:
+            if error.codigo == "CORREO_YA_REGISTRADO":
+                return ErrorAutenticacion(
+                    mensaje="Ya existe una cuenta con ese correo.",
+                    codigo="CORREO_YA_REGISTRADO",
+                )
+            return ErrorAutenticacion(
+                mensaje="No se pudo registrar la cuenta.",
+                codigo=error.codigo,
+            )
+        except (ErrorServicio, SolicitudInvalida, VerificacionPendiente):
+            return ErrorAutenticacion(
+                mensaje="No pudimos registrar tu cuenta. Intenta de nuevo.",
+                codigo="NO_DISPONIBLE",
+            )
+
+        sesion = await _auth(info).iniciar_sesion(correo, clave, CANAL_APP)
+        if sesion is None:
+            return ErrorAutenticacion(
+                mensaje="No se pudo iniciar la sesión.",
+                codigo="NO_DISPONIBLE",
+            )
+        logger.info("cuenta registrada con otp usuario=%s", id_opaco(usuario_id))
+        return _sesion(sesion)
 
     @strawberry.mutation
     async def crear_cuenta_onboarding(
