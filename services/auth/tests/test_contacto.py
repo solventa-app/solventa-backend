@@ -26,7 +26,7 @@ from app.usuarios import (
     normalizar_telefono,
 )
 
-CLAVE = "clave-segura-1"
+CLAVE = "Clave-segura-1"
 CORREO = "maria.gomez@ejemplo.co"
 TELEFONO = "+573001234567"
 

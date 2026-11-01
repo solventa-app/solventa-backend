@@ -144,7 +144,7 @@ class AuthFalso:
             "u-1": _usuario_publico("u-1", "asesor.uno", "ASESOR"),
             "u-bo": _usuario_publico("u-bo", "admin.solventa", "BACKOFFICE"),
         }
-        self.claves = {"asesor.uno": "clave-segura-1", "admin.solventa": "clave-segura-1"}
+        self.claves = {"asesor.uno": "Clave-segura-1", "admin.solventa": "Clave-segura-1"}
         self.canales: list[str | None] = []
         self.renovaciones: list[tuple[str, str]] = []
         # T22: refresh vigentes -> (usuario_id, canal); rotan en cada uso, como en AUTH.
@@ -228,13 +228,15 @@ class AuthFalso:
         return revocado
 
     async def iniciar_sesion(
-        self, usuario: str, clave: str, canal: str | None = None
+        self, usuario: str, clave: str, canal: str | None = None, rol: str | None = None
     ) -> dict | None:
         if self.falla:
             raise ErrorServicio("caido")
         self.canales.append(canal)
         datos = next((u for u in self.usuarios.values() if u["usuario"] == usuario), None)
         if datos is None or self.claves.get(usuario) != clave:
+            return None
+        if rol is not None and rol != datos["rol"]:
             return None
         if datos["estado"] in ("PENDIENTE_VERIFICACION", "RECHAZADA"):
             if canal != "app":
@@ -1264,9 +1266,9 @@ class SociosFalso:
                         "tasa_comision": "0.0800"},
         }  # fmt: skip
         self.claves = {
-            "sol_prod_1": ("socio-1", "PRODUCCION", "clave-prod-1"),
+            "sol_prod_1": ("socio-1", "PRODUCCION", "Clave-prod-1"),
             "sol_test_1": ("socio-1", "PRUEBAS", "clave-test-1"),
-            "sol_prod_2": ("socio-2", "PRODUCCION", "clave-prod-2"),
+            "sol_prod_2": ("socio-2", "PRODUCCION", "Clave-prod-2"),
         }
         self.presupuesto = {
             ("socio-1", "PRODUCCION"): presupuesto,
@@ -1330,11 +1332,11 @@ class SociosFalso:
             if s == socio_id and e == entorno:
                 del self.claves[client_id]
         nuevo = f"sol_nuevo_{len(self.claves)}"
-        self.claves[nuevo] = (socio_id, entorno, "clave-nueva")
+        self.claves[nuevo] = (socio_id, entorno, "Clave-nueva")
         return {
             "entorno": entorno,
             "client_id": nuevo,
-            "clave": "clave-nueva",
+            "clave": "Clave-nueva",
             "creada_en": "2026-10-29T00:00:00+00:00",
         }
 

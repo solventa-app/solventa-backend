@@ -220,7 +220,7 @@ modo() { curl -s -X POST "$PASARELA/control/modo" -H 'Content-Type: application/
 
 ```bash
 POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose --profile servicios up -d --build --wait
-TOKEN_BO=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"admin.solventa\", clave:\"admin-local-solventa\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
+TOKEN_BO=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"admin.solventa\", clave:\"Admin-local-solventa\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
 echo "${TOKEN_BO:0:20}..."
 ALIAS="cliente.demo.$(python3 -c "import random,string;print(''.join(random.choices(string.ascii_lowercase,k=8)))")"
 ID_CL=$(gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"'"$ALIAS"'\", clave:\"clave-demo-0001\", rol:CLIENTE, nombre:\"Ana Pérez Demo\"}) { ... on Usuario { id } } }"}' "$TOKEN_BO" | campo data.crearUsuario.id)

@@ -101,7 +101,7 @@ def test_crear_cliente_manda_el_documento_a_auth_y_yo_lo_trae_enmascarado() -> N
     }"""
     entrada = {
         "usuario": "cliente.doc",
-        "clave": "clave-segura-1",
+        "clave": "Clave-segura-1",
         "rol": "CLIENTE",
         "correo": "c@ejemplo.co",
         "documentoIdentidad": "1020304050",

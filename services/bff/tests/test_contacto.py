@@ -50,7 +50,7 @@ def _post(client, query, variables=None, rol="BACKOFFICE", uid="u-bo", idioma=No
 
 
 def _nuevo_cliente(client, **contacto) -> str:
-    entrada = {"usuario": "cliente.uno", "clave": "clave-segura-1", "rol": "CLIENTE", **contacto}
+    entrada = {"usuario": "cliente.uno", "clave": "Clave-segura-1", "rol": "CLIENTE", **contacto}
     return _post(client, CREAR, {"e": entrada})["data"]["crearUsuario"]["id"]
 
 
@@ -66,7 +66,7 @@ def test_crear_un_cliente_con_contacto_se_lo_entrega_a_auth_y_no_lo_devuelve() -
             {
                 "e": {
                     "usuario": "cliente.uno",
-                    "clave": "clave-segura-1",
+                    "clave": "Clave-segura-1",
                     "rol": "CLIENTE",
                     "correo": CORREO,
                     "telefono": TELEFONO,
@@ -85,7 +85,7 @@ def test_crear_un_cliente_sin_contacto_dice_que_no_lo_tiene() -> None:
         cuerpo = _post(
             client,
             CREAR,
-            {"e": {"usuario": "cliente.uno", "clave": "clave-segura-1", "rol": "CLIENTE"}},
+            {"e": {"usuario": "cliente.uno", "clave": "Clave-segura-1", "rol": "CLIENTE"}},
         )
 
     assert cuerpo["data"]["crearUsuario"]["tieneContacto"] is False
@@ -99,7 +99,7 @@ def test_un_asesor_con_contacto_se_rechaza_con_el_mensaje_de_auth() -> None:
             {
                 "e": {
                     "usuario": "asesor.dos",
-                    "clave": "clave-segura-1",
+                    "clave": "Clave-segura-1",
                     "rol": "ASESOR",
                     "correo": CORREO,
                 }

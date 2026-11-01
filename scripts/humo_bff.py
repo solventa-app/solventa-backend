@@ -40,7 +40,7 @@ ACL = os.getenv("ACL_URL", "http://localhost:8005")
 PAYMENTS = os.getenv("PAYMENTS_URL", "http://localhost:8004")
 STUB_PASARELA = os.getenv("STUB_PASARELA_URL", "http://localhost:8103")
 USUARIO_BACKOFFICE = os.getenv("USUARIO_BACKOFFICE", "admin.solventa")
-CLAVE_BACKOFFICE = os.getenv("CLAVE_BACKOFFICE", "admin-local-solventa")
+CLAVE_BACKOFFICE = os.getenv("CLAVE_BACKOFFICE", "Admin-local-solventa")
 
 # Datos ficticios (sin datos reales).
 ENTRADA = {
@@ -50,7 +50,7 @@ ENTRADA = {
     "plazoMeses": 60,
     "direccionInmueble": "Direccion de prueba",
 }
-CLAVE_ASESOR = "clave-humo-0001"
+CLAVE_ASESOR = "Clave-humo-0001"
 
 INICIAR_SESION = """mutation($entrada: CredencialesInput!) { iniciarSesion(entrada: $entrada) {
   __typename ... on Sesion { token usuario { id rol nombre } }
@@ -258,7 +258,7 @@ def main() -> int:
     print(f"   -> rechazado: {mensaje}")
 
     print("6. crearCobro con la pasarela lenta y reintento conciliado (back-office)")
-    clave = "cobro-humo-" + "".join(random.choices(string.ascii_lowercase, k=8))
+    clave = "Cobro-humo-" + "".join(random.choices(string.ascii_lowercase, k=8))
     nombre_cliente = "Cliente Humo Prueba"
     cliente = _graphql(
         CREAR_USUARIO,

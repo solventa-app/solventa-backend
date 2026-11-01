@@ -94,7 +94,7 @@ def _es_error_publico(respuesta, estado: int, codigo: str) -> dict:
 
 def test_token_con_la_clave_del_socio(e) -> None:
     with e.cliente() as client:
-        bien = client.post("/v1/token", json={"clientId": "sol_prod_1", "clave": "clave-prod-1"})
+        bien = client.post("/v1/token", json={"clientId": "sol_prod_1", "clave": "Clave-prod-1"})
         mal = client.post("/v1/token", json={"clientId": "sol_prod_1", "clave": "otra"})
         incompleto = client.post("/v1/token", json={"clientId": "sol_prod_1"})
 
@@ -319,7 +319,7 @@ def test_credenciales_y_rotar_solo_con_token_de_produccion(e) -> None:
     assert lista.json()["socio"] == {"id": "socio-1", "nombre": "Banco Demo"}
     assert {c["clientId"] for c in lista.json()["credenciales"]} == {"sol_prod_1", "sol_test_1"}
     _es_error_publico(de_pruebas, 403, "PROHIBIDO")
-    assert rotada.json()["entorno"] == "PRUEBAS" and rotada.json()["clave"] == "clave-nueva"
+    assert rotada.json()["entorno"] == "PRUEBAS" and rotada.json()["clave"] == "Clave-nueva"
 
 
 def test_consumo_y_ventas(e) -> None:

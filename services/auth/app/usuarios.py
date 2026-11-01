@@ -101,12 +101,37 @@ def validar_alias(alias: str) -> None:
         )
 
 
+def faltantes_de_clave(clave: str) -> list[str]:
+    """Requisitos de composición que no cumple la clave (T17). Global y con Unicode: mayúscula =
+    categoría `Lu` (Ñ, Á, Ç, Ł...), minúscula = `Ll` (ñ, é, ß...), especial = cualquier carácter
+    que no sea letra ni número (`¿`, `€`, `_`, espacio, emoji...). Las letras sin caso (chino,
+    árabe, hindi) cuentan como letras pero no como mayúscula ni minúscula."""
+    categorias = [unicodedata.category(c) for c in clave]
+    faltan = []
+    if "Lu" not in categorias:
+        faltan.append("una mayúscula")
+    if "Ll" not in categorias:
+        faltan.append("una minúscula")
+    if not any(c[0] not in "LN" for c in categorias):
+        faltan.append("un carácter especial")
+    return faltan
+
+
+def mensaje_clave_debil(faltan: list[str]) -> str:
+    lista = faltan[0] if len(faltan) == 1 else ", ".join(faltan[:-1]) + " y " + faltan[-1]
+    return f"La clave no es segura: falta {lista}."
+
+
 def validar_clave(clave: str) -> None:
+    """Solo en altas (onboarding y `crearUsuario`); el login no la exige."""
     if not CLAVE_LONGITUD_MINIMA <= len(clave) <= CLAVE_LONGITUD_MAXIMA:
         raise DatoInvalido(
             f"La clave debe tener entre {CLAVE_LONGITUD_MINIMA} y {CLAVE_LONGITUD_MAXIMA} "
             "caracteres."
         )
+    faltan = faltantes_de_clave(clave)
+    if faltan:
+        raise DatoInvalido(mensaje_clave_debil(faltan))
 
 
 def validar_rol(rol: str) -> None:

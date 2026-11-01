@@ -113,7 +113,9 @@ class ServicioSesiones:
             return None
         return self._repositorio.obtener_por_correo_hmac(correo_hmac(limpio, self._clave_correo))
 
-    def iniciar_sesion(self, alias: str, clave: str, canal: str | None = None) -> dict:
+    def iniciar_sesion(
+        self, alias: str, clave: str, canal: str | None = None, rol: str | None = None
+    ) -> dict:
         """Devuelve `{token, expira_en, usuario}` o lanza `CredencialesInvalidas` o
         `VerificacionPendiente`. `alias` puede ser el alias o el correo (cuentas de M01)."""
         fila = self._buscar(alias)
@@ -124,6 +126,12 @@ class ServicioSesiones:
         ahora = self._reloj()
         clave_correcta = self._verificar(fila["hash_clave"], clave)
         bloqueado = fila["bloqueado_hasta"] is not None and ahora < fila["bloqueado_hasta"]
+        # T17: un rol pedido que no es el de la cuenta, o un rol que no entra por la app, se
+        # trata exactamente como una clave errada (mismo mensaje, mismo trabajo, mismo conteo).
+        rol_no_permitido = (rol is not None and rol != fila["rol"]) or (
+            canal == CANAL_APP and fila["rol"] != "CLIENTE"
+        )
+        clave_correcta = clave_correcta and not rol_no_permitido
 
         if bloqueado:
             logger.info("inicio de sesión rechazado: bloqueado usuario=%s", id_opaco(fila["id"]))

@@ -180,7 +180,7 @@ services:
     command: ["python", "-m", "app.crear_usuario", "--usuario", "admin.solventa", "--rol", "BACKOFFICE"]
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/auth
-      CLAVE_INICIAL: admin-local-solventa
+      CLAVE_INICIAL: Admin-local-solventa
     depends_on:
       migrar-auth: { condition: service_completed_successfully }
 
