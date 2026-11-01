@@ -64,7 +64,6 @@ def test_al_socio_no_le_llegan_los_avisos_del_asesor(e) -> None:
     assert f"avisos:titular:{TITULAR}" in canales
     plantillas = [s.plantilla for s in e.notificador.solicitudes]
     assert "poliza-emitida" in plantillas  # el titular sí recibe su póliza
-    assert "poliza-emitida-asesor" not in plantillas
 
 
 def test_una_venta_del_asesor_no_causa_comision(e) -> None:

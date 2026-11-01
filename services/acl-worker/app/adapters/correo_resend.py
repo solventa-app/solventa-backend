@@ -36,10 +36,6 @@ PLANTILLAS: dict[str, tuple[str, str]] = {
         "Tu póliza de Solventa {numero_poliza} está emitida",
         "Tu póliza <b>{numero_poliza}</b> quedó emitida. Adjuntamos el documento en PDF.",
     ),
-    "poliza-emitida-asesor": (
-        "Póliza {numero_poliza} emitida",
-        "La póliza <b>{numero_poliza}</b> que vendiste quedó emitida.",
-    ),
 }
 MOTIVO_SIN_CORREO = "sin_correo"
 MOTIVO_PLANTILLA_DESCONOCIDA = "plantilla_desconocida"

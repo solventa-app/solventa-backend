@@ -505,7 +505,7 @@ def test_pagar_antes_de_firmar_no_se_puede(e) -> None:
     assert error.motivo == "PROPUESTA_NO_VALIDA" and e.pagos.aperturas == 0
 
 
-def test_el_aviso_usa_el_contacto_de_la_propuesta_y_avisa_al_asesor(e) -> None:
+def test_el_aviso_usa_el_contacto_de_la_propuesta_y_no_hay_correo_al_asesor(e) -> None:
     propuesta, token = e.hasta_en_firma()
     auth = Autorizacion(enlace_token=token)
     e.firmar_nombre(propuesta["id"], auth)
@@ -518,8 +518,7 @@ def test_el_aviso_usa_el_contacto_de_la_propuesta_y_avisa_al_asesor(e) -> None:
     plantillas = {s.plantilla: s for s in e.notificador.solicitudes}
     assert plantillas["poliza-emitida"].correo == CONTACTO["correo"]
     assert plantillas["poliza-emitida"].adjuntos[0].tipo == "application/pdf"
-    assert plantillas["poliza-emitida-asesor"].destinatario_id == "asesor-1"
-    assert plantillas["poliza-emitida-asesor"].correo is None  # sin datos del titular
+    assert "poliza-emitida-asesor" not in plantillas  # el asesor ve la póliza en «Pólizas emitidas»
 
 
 # ---------- purga (W03-26)
