@@ -998,6 +998,8 @@ type Mutation {
   enviarCodigoOnboarding(correo: String!): ResultadoCodigoOnboarding!
   # Verifica el código de 6 dígitos enviado al correo en el onboarding.
   verificarCodigoOnboarding(correo: String!, codigo: String!): ResultadoCodigoOnboarding!
+  # Crea la cuenta CLIENTE en PENDIENTE_VERIFICACION validando el código OTP del correo, y devuelve su sesión.
+  registrarCuenta(correo: String!, clave: String!, codigo: String!): ResultadoSesion!
   # Con `X-Onboarding-Token`. Crea la cuenta CLIENTE en PENDIENTE_VERIFICACION, la liga al recorrido y abre su sesión.
   crearCuentaOnboarding(onboardingId: ID!, entrada: CuentaOnboardingInput!): ResultadoCuentaOnboarding!
   # Con `X-Onboarding-Token` y las cuatro piezas confirmadas: responde EN_VERIFICACION y el resultado llega después
