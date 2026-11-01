@@ -31,6 +31,7 @@ Con un caso PENDIENTE (`sin-12`) y uno derivado (`sin-13`), ambos con el plazo v
 | Prueba | Resultado |
 |---|---|
 | `cypress/integracion/operador-socio.cy.ts`, navegador contra el stack real | 6 de 6 |
+| Specs ajustados de Cypress | `w07-02` 6 de 6, `w07-03` y `w04-02` en verde |
 | Vitest web | 426 |
 | pytest: claims 56 y BFF 486 | En verde |
 | Newman `hu-w04` | 52 de 52 |
@@ -43,4 +44,3 @@ Con un caso PENDIENTE (`sin-12`) y uno derivado (`sin-13`), ambos con el plazo v
 - **En local no hay disparador del plazo:** la bandeja muestra «Vencido» hasta llamar a mano
   `POST http://localhost:8012/siniestros/_aprobar-vencidos`.
 - **Aviso de conversión fallida:** cubierto en Vitest, no provocado en vivo.
-- **Cypress con mocks:** los specs de W04 y W07 se ajustaron y no se corrieron en local.
