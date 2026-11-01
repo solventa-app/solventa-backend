@@ -679,6 +679,8 @@ class Usuario:
     tiene_contacto: bool = False
     # v0.18 (W03-34): solo en `iniciarSesion` y `yo`; nunca el documento completo.
     documento_enmascarado: str | None = None
+    # v0.24: el correo del propio usuario (perfil común); solo en `iniciarSesion` y `yo`.
+    correo: str | None = None
 
 
 @strawberry.type
@@ -936,6 +938,7 @@ def _usuario(datos: dict) -> Usuario:
         moneda=datos.get("moneda", "COP"),
         tiene_contacto=bool(datos.get("tiene_contacto", False)),
         documento_enmascarado=datos.get("documento_enmascarado"),
+        correo=datos.get("correo"),
     )
 
 

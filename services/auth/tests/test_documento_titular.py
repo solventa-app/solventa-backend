@@ -242,3 +242,27 @@ def test_los_logs_no_llevan_el_documento(caplog) -> None:
         client.post("/sesiones", json={"usuario": "cliente.uno", "clave": CLAVE})
 
     assert DOCUMENTO not in caplog.text and "4050" not in caplog.text
+
+
+# ---------- correo propio (contrato v0.24)
+
+
+def test_http_el_correo_sale_solo_al_propio_usuario() -> None:
+    with _http() as client:
+        creado = _crear(client, documento_identidad=DOCUMENTO).json()
+        sesion = client.post("/sesiones", json={"usuario": "cliente.uno", "clave": CLAVE}).json()
+        propio = client.get(f"/usuarios/{creado['id']}").json()
+        lista = client.get("/usuarios").json()
+
+    assert creado["correo"] is None
+    assert sesion["usuario"]["correo"] == CORREO.lower()
+    assert propio["correo"] == CORREO.lower()
+    assert all(u["correo"] is None for u in lista)
+
+
+def test_el_correo_no_existe_para_quien_no_es_cliente() -> None:
+    servicio, _ = _servicio()
+    asesor = servicio.crear("asesor.uno", CLAVE, "ASESOR")
+
+    assert servicio.correo_de(asesor["id"]) is None
+    assert servicio.correo_de("no-existe") is None
