@@ -173,7 +173,14 @@
         "cumple": true
       }
     ],
-    "resolucion": null
+    "resolucion": {
+      "tipo": "DERIVACION",
+      "resuelta_en": "2026-10-17T09:30:00-05:00",
+      "notificacion": "Se informó al asegurado por correo y app móvil que su reclamación fue derivada a peritaje externo.",
+      "perito_id": "per-01",
+      "instrucciones": "Verificar el daño reportado y estimar el costo real de reparación.",
+      "vence_informe_horas": 70
+    }
   },
   {
     "id": "sin-03",
@@ -364,7 +371,7 @@
       "notificacion": "Se informó al asegurado por correo y app móvil que su reclamación fue derivada a peritaje externo.",
       "perito_id": "per-04",
       "instrucciones": "Valorar el daño estructural frontal y confirmar si el costo de reparación supera el 50% del valor comercial; contrastar el relato con el croquis IPAT y las cuatro fotos.",
-      "vencimiento_informe": "2026-10-28T17:00:00-05:00"
+      "vence_informe_horas": 96
     }
   },
   {
@@ -594,7 +601,14 @@
         "cumple": true
       }
     ],
-    "resolucion": null
+    "resolucion": {
+      "tipo": "DERIVACION",
+      "resuelta_en": "2026-10-13T11:15:00-05:00",
+      "notificacion": "Se informó al asegurado por correo y app móvil que su reclamación fue derivada a peritaje externo.",
+      "perito_id": "per-01",
+      "instrucciones": "Verificar el daño reportado y estimar el costo real de reparación.",
+      "vence_informe_horas": 34
+    }
   },
   {
     "id": "sin-08",

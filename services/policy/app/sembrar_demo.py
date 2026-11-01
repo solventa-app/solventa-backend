@@ -3,9 +3,9 @@
 Uso: `python -m app.sembrar_demo` (tarea `sembrar-polizas-demo` de docker compose). Solo para local
 y pruebas.
 
-POLICY sigue siendo el escritor único de sus tablas: la semilla usa su propio repositorio. Crea 10
+POLICY sigue siendo el escritor único de sus tablas: la semilla usa su propio repositorio. Crea 20
 propuestas y sus pólizas `EMITIDA` con la prima, la cobertura y el plazo cifrados, como una emisión
-normal, con los datos de `semilla_polizas_demo.json` (tomados del dummy de siniestros). Es
+normal, con los datos de `semilla_polizas_demo.json`. Es
 idempotente: los ids de propuesta y de oferta son fijos, así que una segunda corrida devuelve las
 mismas pólizas sin duplicar nada.
 
