@@ -157,7 +157,7 @@
     "url_env": "ACL_URL",
     "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela", "stub-firma", "stub-kyc", "stub-notificaciones", "consolidador-fuentes"],
     "disparador_externo": true,
-    "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "NOTIFICACIONES_PROVEEDOR": "resend", "CORREO_REMITENTE": "Solventa <avisos@solventa.globalspark.io>" },
+    "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "NOTIFICACIONES_PROVEEDOR": "resend", "IDENTIDAD_URL": "https://verification.didit.me", "CORREO_REMITENTE": "Solventa <avisos@solventa.globalspark.io>" },
     "secretos": {
       "REDIS_URL": "redis-url-acl",
       "COLA_RECONCILIACION_REDIS_URL": "redis-url-cola-reconciliacion",

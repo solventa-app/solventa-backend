@@ -121,6 +121,10 @@ def _con_nombre(usuario: dict, nombres: dict[str, str]) -> dict:
     return {**usuario, "nombre": nombres.get(usuario["id"])}
 
 
+def _enmascarar(documento: str) -> str:
+    return documento[:2] + "•" * (len(documento) - 6) + documento[-4:]
+
+
 class AuthFalso:
     def __init__(self, consentimientos: dict | None = None, falla: bool = False) -> None:
         self.consentimientos = dict(
@@ -140,9 +144,13 @@ class AuthFalso:
             "u-1": _usuario_publico("u-1", "asesor.uno", "ASESOR"),
             "u-bo": _usuario_publico("u-bo", "admin.solventa", "BACKOFFICE"),
         }
-        self.claves = {"asesor.uno": "clave-segura-1", "admin.solventa": "clave-segura-1"}
+        self.claves = {"asesor.uno": "Clave-segura-1", "admin.solventa": "Clave-segura-1"}
         self.canales: list[str | None] = []
         self.renovaciones: list[tuple[str, str]] = []
+        # T22: refresh vigentes -> (usuario_id, canal); rotan en cada uso, como en AUTH.
+        self.refrescos: dict[str, tuple[str, str]] = {}
+        self.refrescos_cerrados: list[str] = []
+        self._contador_refresh = 0
 
     async def correo_registrado(self, correo: str) -> bool:
         if self.falla:
@@ -220,7 +228,7 @@ class AuthFalso:
         return revocado
 
     async def iniciar_sesion(
-        self, usuario: str, clave: str, canal: str | None = None
+        self, usuario: str, clave: str, canal: str | None = None, rol: str | None = None
     ) -> dict | None:
         if self.falla:
             raise ErrorServicio("caido")
@@ -228,12 +236,43 @@ class AuthFalso:
         datos = next((u for u in self.usuarios.values() if u["usuario"] == usuario), None)
         if datos is None or self.claves.get(usuario) != clave:
             return None
+        if rol is not None and rol != datos["rol"]:
+            return None
         if datos["estado"] in ("PENDIENTE_VERIFICACION", "RECHAZADA"):
             if canal != "app":
                 raise VerificacionPendiente()
         elif datos["estado"] != "ACTIVO":
             return None
-        return self._sesion(datos)
+        return self._con_refresh(self._sesion(datos), datos["id"], canal)
+
+    def _con_refresh(self, sesion: dict, usuario_id: str, canal: str | None) -> dict:
+        self._contador_refresh += 1
+        refresh = f"refresh-{self._contador_refresh}"
+        self.refrescos[refresh] = (usuario_id, canal or "web")
+        return {
+            **sesion,
+            "refresh_token": refresh,
+            "refresh_expira_en": "2099-01-09T12:00:00+00:00",
+        }
+
+    async def renovar_con_refresh(self, refresh_token: str, canal: str | None) -> dict | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        dueno = self.refrescos.pop(refresh_token, None)  # rota: el anterior deja de servir
+        if dueno is None or dueno[1] != (canal or "web"):
+            return None
+        datos = self.usuarios.get(dueno[0])
+        if datos is None or datos["estado"] == "SUSPENDIDO":
+            return None
+        if datos["estado"] != "ACTIVO" and canal != "app":
+            return None
+        return self._con_refresh(self._sesion(datos), datos["id"], canal)
+
+    async def cerrar_sesion(self, refresh_token: str) -> None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        self.refrescos_cerrados.append(refresh_token)
+        self.refrescos.pop(refresh_token, None)
 
     def _sesion(self, datos: dict) -> dict:
         pendiente = datos["estado"] != "ACTIVO"
@@ -244,8 +283,12 @@ class AuthFalso:
                 scopes=["verificacion-pendiente"] if pendiente else ["sesion"],
             ),
             "expira_en": "2026-10-14T13:00:00+00:00",
-            "usuario": _con_nombre(datos, self.nombres),
+            "usuario": {**_con_nombre(datos, self.nombres), "correo": self._correo(datos["id"])},
         }
+
+    def _correo(self, usuario_id: str) -> str | None:
+        """Como AUTH (v0.24): el correo propio, solo en el login y en `GET /usuarios/{id}`."""
+        return self.contactos.get(usuario_id, {}).get("correo")
 
     async def obtener_usuario(self, usuario_id: str) -> dict | None:
         datos = self.usuarios.get(usuario_id)
@@ -254,7 +297,8 @@ class AuthFalso:
         documento = self.documentos.get(usuario_id)
         return {
             **_con_nombre(datos, self.nombres),
-            "documento_enmascarado": f"•••• {documento[-4:]}" if documento else None,
+            "correo": self._correo(usuario_id),
+            "documento_enmascarado": _enmascarar(documento) if documento else None,
         }
 
     async def obtener_identidad(self, usuario_id: str) -> dict | None:
@@ -392,6 +436,17 @@ class AclFalso:
 
     async def invalidar_cache_cliente(self, cliente_id: str) -> None:
         self.invalidaciones.append(cliente_id)
+
+    async def autocompletar_direccion(self, texto: str, pais: str | None) -> list[dict]:
+        if "lugares" in self.fallan:
+            raise ErrorServicio("timeout")
+        return [{"place_id": f"stub:{pais or 'CO'}:{texto}", "descripcion": texto}]
+
+    async def validar_direccion(self, place_id: str) -> dict:
+        if "lugares" in self.fallan:
+            raise ErrorServicio("timeout")
+        _, pais, texto = place_id.split(":", 2)
+        return {"verificado": True, "direccion": texto, "ciudad": None, "pais": pais}
 
     async def tasas_cambio(self) -> dict[str, str]:
         if "tasas" in self.fallan:
@@ -1211,9 +1266,9 @@ class SociosFalso:
                         "tasa_comision": "0.0800"},
         }  # fmt: skip
         self.claves = {
-            "sol_prod_1": ("socio-1", "PRODUCCION", "clave-prod-1"),
+            "sol_prod_1": ("socio-1", "PRODUCCION", "Clave-prod-1"),
             "sol_test_1": ("socio-1", "PRUEBAS", "clave-test-1"),
-            "sol_prod_2": ("socio-2", "PRODUCCION", "clave-prod-2"),
+            "sol_prod_2": ("socio-2", "PRODUCCION", "Clave-prod-2"),
         }
         self.presupuesto = {
             ("socio-1", "PRODUCCION"): presupuesto,
@@ -1277,11 +1332,11 @@ class SociosFalso:
             if s == socio_id and e == entorno:
                 del self.claves[client_id]
         nuevo = f"sol_nuevo_{len(self.claves)}"
-        self.claves[nuevo] = (socio_id, entorno, "clave-nueva")
+        self.claves[nuevo] = (socio_id, entorno, "Clave-nueva")
         return {
             "entorno": entorno,
             "client_id": nuevo,
-            "clave": "clave-nueva",
+            "clave": "Clave-nueva",
             "creada_en": "2026-10-29T00:00:00+00:00",
         }
 

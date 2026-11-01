@@ -38,11 +38,11 @@ los llama el BFF, que ya validó el token y el rol.
 
 | Método | Ruta | Respuesta |
 |---|---|---|
-| `POST` | `/sesiones` `{usuario, clave}` | `{token, expira_en, usuario}` (con el `nombre` y el `documento_enmascarado` propios, o `null`; el JWT no los lleva), o `401` con mensaje genérico |
+| `POST` | `/sesiones` `{usuario, clave}` | `{token, expira_en, usuario}` (con el `nombre`, el `documento_enmascarado` y el `correo` propios, o `null`; el JWT no los lleva), o `401` con mensaje genérico |
 | `POST` | `/usuarios` `{usuario, clave, rol, nombre?, correo?, telefono?, documento_identidad?}` | el usuario (sin hash, nombre, contacto ni documento; con `tiene_contacto`); `400` alias, clave, nombre, contacto o documento inválidos (el nombre se admite en cualquier rol; el contacto y el documento solo en CLIENTE, y **un CLIENTE exige documento y correo**, W03-27); `409` alias repetido o documento de otro CLIENTE |
 | `POST` | `/usuarios/nombres` `{ids}` | `{id: nombre}` de los CLIENTE pedidos (hasta 200; ids en el cuerpo). Dato personal: solo lo llama el BFF para un BACKOFFICE |
 | `GET` | `/usuarios?rol=` | lista de usuarios (el `nombre` siempre en `null`) |
-| `GET` | `/usuarios/{id}` | el usuario con su `nombre` y su `documento_enmascarado` (`•••• 4050`; el BFF solo lo llama con el id del propio usuario, para `yo`), o `404` |
+| `GET` | `/usuarios/{id}` | el usuario con su `nombre`, su `correo` y su `documento_enmascarado` (`10••••4050`; el BFF solo lo llama con el id del propio usuario, para `yo`), o `404` |
 | `GET` | `/usuarios/{id}/identidad` | `{titular_id, documento}` **en claro** de un CLIENTE con la identidad verificada, o `404`. Dato personal: solo lo llama el BFF con el id del token, para cotizar sin pedirle la cédula (W03-34) y autorizar por titular (W03-33); nunca se loguea |
 | `POST` | `/usuarios/{id}/rol` `{rol}` | el usuario con el rol nuevo, o `404` |
 | `POST` | `/usuarios/{id}/suspender` | baja lógica (`estado = SUSPENDIDO`), o `404` |
@@ -63,7 +63,7 @@ los llama el BFF, que ya validó el token y el rol.
   - **Cifrado por sobre (envelope encryption) con KMS (HA-SEG-002, EC022):** si se configuran `KMS_KEY_NAME` y `CIFRADO_CLAVE_ENVUELTA` (DEK envuelta en base64 desde Secret Manager), AUTH desenvuelve la DEK al iniciar mediante Cloud KMS (`DesenvolvedorGoogleKms`). Si la versión de llave en KMS está deshabilitada o inaccesible, falla de inmediato con `ErrorDeCifrado` sin degradar a texto plano ni clave local.
   - **Fallback local:** sin configuración KMS, usa `CIFRADO_CLAVE` (local no secreta; en Cloud Run exige sobre KMS válido o `CIFRADO_CLAVE` de producción). Rotarla sin re-cifrar deja los nombres ilegibles.
 - Primer BACKOFFICE: `CLAVE_INICIAL=... python -m app.crear_usuario --usuario <alias> --rol BACKOFFICE` (idempotente).
-  En compose lo hace la tarea `crear-backoffice` con credenciales **solo locales**: `admin.solventa` / `admin-local-solventa`.
+  En compose lo hace la tarea `crear-backoffice` con credenciales **solo locales**: `admin.solventa` / `Admin-local-solventa`.
 - Un CLIENTE, un ASESOR y un operador de prueba, por el BFF: `python scripts/crear_usuarios.py`. El primer BACKOFFICE de
   staging se crea directo en AUTH con `--auth <url-de-auth>` (ver `infra/README.md`, «Usuarios de staging»).
 - Logs: solo el id opaco del usuario; nunca el alias, la clave ni el token.

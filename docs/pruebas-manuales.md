@@ -89,17 +89,17 @@ usando normalmente).
 ## 3. Sesión y roles (HU-M02)
 
 El backend solo reconoce tres roles: `CLIENTE`, `ASESOR` y `BACKOFFICE`. El primer BACKOFFICE lo crea el arranque
-(`admin.solventa` / `admin-local-solventa`, **solo local**); desde ahí se crean los demás.
+(`admin.solventa` / `Admin-local-solventa`, **solo local**); desde ahí se crean los demás.
 
 ### Paso 3. Entrar como BACKOFFICE y crear un ASESOR
 
 ```bash
-TOKEN_BO=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"admin.solventa\", clave:\"admin-local-solventa\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
+TOKEN_BO=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"admin.solventa\", clave:\"Admin-local-solventa\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
 echo "${TOKEN_BO:0:20}..."
 # Sufijo de letras: un alias con 6 o más dígitos seguidos se rechaza por parecer un documento.
 SUFIJO=$(python3 -c "import random,string;print(''.join(random.choices(string.ascii_lowercase,k=8)))")
-gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"asesor.'"$SUFIJO"'\", clave:\"clave-demo-0001\", rol:ASESOR, nombre:\"Asesora Demo\"}) { __typename ... on Usuario { id rol estado } ... on ErrorUsuario { mensaje } } }"}' "$TOKEN_BO"
-TOKEN_ASESOR=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"asesor.'"$SUFIJO"'\", clave:\"clave-demo-0001\"}) { ... on Sesion { token usuario { rol } } } }"}' | campo data.iniciarSesion.token)
+gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"asesor.'"$SUFIJO"'\", clave:\"Clave-demo-0001\", rol:ASESOR, nombre:\"Asesora Demo\"}) { __typename ... on Usuario { id rol estado } ... on ErrorUsuario { mensaje } } }"}' "$TOKEN_BO"
+TOKEN_ASESOR=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"asesor.'"$SUFIJO"'\", clave:\"Clave-demo-0001\"}) { ... on Sesion { token usuario { rol } } } }"}' | campo data.iniciarSesion.token)
 gql '{"query":"{ yo { usuario rol estado nombre } }"}' "$TOKEN_ASESOR"
 ```
 
@@ -185,7 +185,7 @@ gql '{"query":"mutation { revocarConsentimiento(id:\"'"$CONSENTIMIENTO"'\") { vi
 gql "$OFERTA" "$TOKEN_ASESOR"
 ```
 
-**Esperado:** en orden: `ErrorOferta` por el plazo (sin reintento), la confirmación del contacto
+**Esperado:** en orden: `ErrorOferta` por el plazo (0 está fuera del rango de 6 a 200 meses de `contracts/jurisdicciones.json`; sin reintento), la confirmación del contacto
 (`contactarAsesor` hoy solo confirma, no hay servicio de asesores), el consentimiento con `"vigente":false` y, al pedir
 la oferta otra vez, `ErrorOferta`: **revocar corta el acceso a las fuentes**.
 
@@ -198,7 +198,7 @@ Todo cobro lo ordena un BACKOFFICE. Aquí va el recorrido corto; el detalle comp
 
 ```bash
 ALIAS="cliente.$SUFIJO"
-ID_CL=$(gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"'"$ALIAS"'\", clave:\"clave-demo-0001\", rol:CLIENTE, nombre:\"Ana Pérez Demo\"}) { ... on Usuario { id } } }"}' "$TOKEN_BO" | campo data.crearUsuario.id)
+ID_CL=$(gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"'"$ALIAS"'\", clave:\"Clave-demo-0001\", rol:CLIENTE, nombre:\"Ana Pérez Demo\"}) { ... on Usuario { id } } }"}' "$TOKEN_BO" | campo data.crearUsuario.id)
 CLAVE="manual-$(date +%s)"
 CREAR='mutation($e: CrearCobroInput!) { crearCobro(entrada: $e) { __typename ... on Cobro { id estado cliente { nombre } } ... on ErrorCobro { mensaje } } }'
 entrada() { echo '{"query":"'"$CREAR"'","variables":{"e":{"idIntentoCobro":"'"$1"'","polizaId":"POL-MANUAL-1","monto":{"valor":"'"$2"'","moneda":"COP"},"tokenMedioPago":"tok_demo","clienteId":"'"$ID_CL"'"}}}'; }
@@ -244,7 +244,7 @@ tienes abiertos para depurar.
 
 ```bash
 docker compose logs bff payments acl-worker --no-color --tail 40     # lo que hizo cada servicio
-docker compose logs auth --no-color | grep -c "clave-demo-0001"      # esperado: 0
+docker compose logs auth --no-color | grep -c "Clave-demo-0001"      # esperado: 0
 ```
 
 Los logs **no llevan datos personales** (regla 6): ni claves, ni tokens, ni nombres, ni pólizas en crudo; solo ids opacos.

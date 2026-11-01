@@ -46,8 +46,15 @@ from app.clientes import (
     SolicitudInvalida,
     VerificacionPendiente,
 )
+from app.cookie_refresh import (
+    borrar_cookie,
+    csrf_valido,
+    es_web,
+    poner_cookie,
+)
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.idioma import TraducirMensajes
+from app.jurisdicciones import JURISDICCIONES, validar_documento
 from app.monedas import (
     MAXIMO_MONTOS,
     MENSAJE_DEMASIADOS_MONTOS,
@@ -55,6 +62,7 @@ from app.monedas import (
     ConversionInvalida,
     convertir,
 )
+from app.reglas_clave import motivo_clave_invalida
 from app.revocacion import avisar_revocacion
 from app.servicio_firma_pago import (
     MENSAJE_AVISOS_NO_DISPONIBLES,
@@ -82,7 +90,14 @@ TAMANO_LOTE_NOMBRES = 200  # el máximo de ids por llamada que admite AUTH
 
 class ErrorPublico(Exception):
     """Error cuyo mensaje SÍ puede ver el cliente. Cualquier otra excepción se
-    enmascara como "Unexpected error." (sin detalles internos)."""
+    enmascara como "Unexpected error." (sin detalles internos).
+
+    v0.34: `codigo` opcional viaja en `extensions.code` para que el cliente no compare el texto."""
+
+    def __init__(self, mensaje: str, codigo: str | None = None) -> None:
+        super().__init__(mensaje)
+        if codigo:
+            self.extensions = {"code": codigo}
 
 
 def _mostrar_solo_errores_publicos(error: GraphQLError) -> bool:
@@ -106,11 +121,11 @@ def exigir_rol(
       `admite_pendiente` (`yo`, `miVerificacion`, `actualizarSesion`)."""
     contexto = info.context
     if contexto["error_token"]:
-        raise ErrorPublico(contexto["error_token"])
+        raise ErrorPublico(contexto["error_token"], "SESION_INVALIDA")
     usuario = contexto["usuario"]
     if usuario is None:
         if siempre or contexto["modo_autenticacion"] == "obligatoria":
-            raise ErrorPublico(MENSAJE_SIN_SESION)
+            raise ErrorPublico(MENSAJE_SIN_SESION, "SIN_SESION")
         return None
     if usuario.rol not in roles:
         raise ErrorPublico(MENSAJE_SIN_PERMISO)
@@ -204,6 +219,47 @@ class ConsentimientoInput:
     tipo_dato: str | None = None
     fuente_datos: str | None = None
     canal: str | None = None
+
+
+@strawberry.type
+class Jurisdiccion:
+    """v0.25 (T18): límites por país, de jurisdicciones.json."""
+
+    codigo: str
+    nombre: str
+    moneda: str
+    tipo_documento: str
+    plazo_min: int
+    plazo_max: int
+    tipos_documento: list["TipoDocumentoPais"]
+
+
+@strawberry.type
+class TipoDocumentoPais:
+    """v0.33 (T20): tipo de documento de un país, con su etiqueta en español e inglés."""
+
+    codigo: str
+    etiqueta_es: str
+    etiqueta_en: str
+
+
+@strawberry.type
+class SugerenciaDireccion:
+    """v0.32 (T19)."""
+
+    place_id: str
+    descripcion: str
+
+
+@strawberry.type
+class DireccionValidada:
+    """v0.32 (T19). `verificado = false`: Google no respondió o el lugar no es válido; la web
+    deja escribir la dirección «sin verificar» y no bloquea la cotización."""
+
+    verificado: bool
+    direccion: str | None
+    ciudad: str | None
+    pais: str | None
 
 
 @strawberry.type
@@ -666,6 +722,8 @@ class Usuario:
     tiene_contacto: bool = False
     # v0.18 (W03-34): solo en `iniciarSesion` y `yo`; nunca el documento completo.
     documento_enmascarado: str | None = None
+    # v0.24: el correo del propio usuario (perfil común); solo en `iniciarSesion` y `yo`.
+    correo: str | None = None
 
 
 @strawberry.type
@@ -673,6 +731,11 @@ class Sesion:
     token: str
     expira_en: datetime
     usuario: Usuario
+    # v0.26 (T22): solo en el canal `app`. En la web el refresh viaja en una cookie httpOnly que
+    # pone el BFF y estos campos vienen null (el JavaScript nunca lo ve).
+    refresh_token: str | None = None
+    # Vencimiento del refresh (se informa en ambos canales).
+    refresh_expira_en: datetime | None = None
 
 
 @strawberry.type
@@ -697,6 +760,9 @@ ResultadoUsuario = Annotated[Usuario | ErrorUsuario, strawberry.union("Resultado
 class CredencialesInput:
     usuario: str
     clave: str
+    # T17: rol del chip elegido en la web. Si no es el de la cuenta, la respuesta es la misma que
+    # con una clave errada (no se revela qué rol tiene el usuario).
+    rol: RolUsuario | None = None
 
 
 @strawberry.input
@@ -923,6 +989,7 @@ def _usuario(datos: dict) -> Usuario:
         moneda=datos.get("moneda", "COP"),
         tiene_contacto=bool(datos.get("tiene_contacto", False)),
         documento_enmascarado=datos.get("documento_enmascarado"),
+        correo=datos.get("correo"),
     )
 
 
@@ -1100,6 +1167,8 @@ class CodigoOnboardingEnviado:
 class ErrorOnboarding:
     codigo: str
     mensaje: str
+    # Solo con `ESPERA_REQUERIDA`: segundos que faltan para poder pedir otro código.
+    segundos_restantes: int | None = None
 
 
 ResultadoInicioOnboarding = Annotated[
@@ -1147,6 +1216,7 @@ MENSAJES_ONBOARDING = {
     "CODIGO_INVALIDO": "El código no es correcto. Revísalo e intenta de nuevo.",
     "CODIGO_VENCIDO": "El código venció. Pide uno nuevo.",
     "INTENTOS_AGOTADOS": "Agotaste los intentos. Pide un código nuevo.",
+    "ESPERA_REQUERIDA": "Espera un momento antes de pedir otro código.",
     "JURISDICCION_NO_SOPORTADA": "Aún no verificamos documentos de ese país.",
     "TIPO_DOCUMENTO_NO_SOPORTADO": "Ese tipo de documento no se admite.",
     "PASO_INVALIDO": "Ese paso no existe.",
@@ -1155,11 +1225,11 @@ MENSAJES_ONBOARDING = {
 }
 
 
-def _error_onboarding(codigo: str) -> ErrorOnboarding:
+def _error_onboarding(codigo: str, segundos_restantes: int | None = None) -> ErrorOnboarding:
     mensaje = MENSAJES_ONBOARDING.get(codigo) or MENSAJES_ARCHIVO.get(
         codigo, MENSAJES_ONBOARDING["NO_DISPONIBLE"]
     )
-    return ErrorOnboarding(codigo=codigo, mensaje=mensaje)
+    return ErrorOnboarding(codigo=codigo, mensaje=mensaje, segundos_restantes=segundos_restantes)
 
 
 def _onboarding_de(datos: dict) -> Onboarding:
@@ -1195,11 +1265,30 @@ async def _paso_onboarding(llamada) -> Onboarding | ErrorOnboarding:
         return _error_onboarding("NO_DISPONIBLE")
 
 
-def _sesion(datos: dict) -> Sesion:
+def _sesion_vencida(contexto: dict) -> "ErrorAutenticacion":
+    """Respuesta única a cualquier fallo del refresh; en la web además borra la cookie."""
+    if es_web(contexto):
+        borrar_cookie(contexto)
+    return ErrorAutenticacion(
+        mensaje="Tu sesión ya no es válida. Inicia sesión de nuevo.", codigo="SESION_VENCIDA"
+    )
+
+
+def _sesion(datos: dict, contexto: dict | None = None) -> Sesion:
+    """`contexto` (T22): en la web el refresh se pasa a la cookie y no sale en la respuesta."""
+    refresh = datos.get("refresh_token")
+    vence = datos.get("refresh_expira_en")
+    vence_en = datetime.fromisoformat(vence) if vence else None
+    if refresh and contexto is not None and es_web(contexto):
+        segundos = int((vence_en - datetime.now(UTC)).total_seconds()) if vence_en else 0
+        poner_cookie(contexto, refresh, segundos)
+        refresh = None
     return Sesion(
         token=datos["token"],
         expira_en=datetime.fromisoformat(datos["expira_en"]),
         usuario=_usuario(datos["usuario"]),
+        refresh_token=refresh,
+        refresh_expira_en=vence_en,
     )
 
 
@@ -1573,11 +1662,7 @@ async def _nombres_de_titulares(
     """El titular que dio un ASESOR no tiene cuenta: su nombre está en la propuesta de POLICY, y
     `poliza_id` es el id de la propuesta. Si POLICY falla, esos cobros salen sin nombre."""
     ids = sorted(
-        {
-            c["poliza_id"]
-            for c in cobros
-            if c.get("cliente_id") and c["cliente_id"] not in conocidos
-        }
+        {c["poliza_id"] for c in cobros if c.get("cliente_id") and c["cliente_id"] not in conocidos}
     )
     nombres: dict[str, str] = {}
     try:
@@ -1957,6 +2042,66 @@ class Query:
         return _usuario(datos) if datos else None
 
     @strawberry.field
+    def jurisdicciones(self) -> list[Jurisdiccion]:
+        """v0.25 (T18): plazo mínimo y máximo, moneda y tipo de documento por país. Son
+        parámetros del producto, sin datos personales."""
+        return [
+            Jurisdiccion(
+                codigo=j.codigo,
+                nombre=j.nombre,
+                moneda=j.moneda,
+                tipo_documento=j.tipo_documento,
+                plazo_min=j.plazo_min,
+                plazo_max=j.plazo_max,
+                tipos_documento=[
+                    TipoDocumentoPais(
+                        codigo=t["codigo"],
+                        etiqueta_es=t["etiqueta_es"],
+                        etiqueta_en=t["etiqueta_en"],
+                    )
+                    for t in j.tipos_documento
+                ],
+            )
+            for j in JURISDICCIONES
+        ]
+
+    @strawberry.field
+    def documento_valido(self, pais: str, tipo_documento: str, numero: str) -> bool:
+        """v0.33 (T20): el tipo existe en el país y el número cumple su formato. Pública y sin
+        persistir nada: el número no se registra."""
+        return validar_documento(pais, tipo_documento, numero)
+
+    @strawberry.field
+    async def autocompletar_direccion(
+        self, info: Info, texto: str, pais: str | None = None
+    ) -> list[SugerenciaDireccion]:
+        """v0.32 (T19): sugerencias de dirección (Places detrás del ACL). Si el ACL no responde,
+        lista vacía: nunca un error técnico."""
+        exigir_rol(info, "CLIENTE", "ASESOR", "BACKOFFICE", "SOCIO")
+        try:
+            lista = await info.context["clientes"].acl.autocompletar_direccion(texto[:200], pais)
+        except ErrorServicio:
+            return []
+        return [
+            SugerenciaDireccion(place_id=x["place_id"], descripcion=x["descripcion"]) for x in lista
+        ]
+
+    @strawberry.field
+    async def validar_direccion(self, info: Info, place_id: str) -> DireccionValidada:
+        """v0.32 (T19): dirección normalizada, ciudad y país. Un país no soportado no es
+        verificado. Si el ACL no responde, `verificado = false` (se permite «sin verificar»)."""
+        exigir_rol(info, "CLIENTE", "ASESOR", "BACKOFFICE", "SOCIO")
+        try:
+            r = await info.context["clientes"].acl.validar_direccion(place_id)
+        except ErrorServicio:
+            return DireccionValidada(verificado=False, direccion=None, ciudad=None, pais=None)
+        if r.get("pais") not in {j.codigo for j in JURISDICCIONES}:
+            r = {"verificado": False, "direccion": None, "ciudad": None, "pais": None}
+        return DireccionValidada(
+            **{k: r.get(k) for k in ("verificado", "direccion", "ciudad", "pais")}
+        )
+
+    @strawberry.field
     async def convertir_montos(
         self, info: Info, montos: list[MontoInput], moneda: str
     ) -> list[Monto]:
@@ -2184,7 +2329,10 @@ class Mutation:
         # un token `verificacion-pendiente`; en la web, VERIFICACION_PENDIENTE.
         try:
             sesion = await _auth(info).iniciar_sesion(
-                entrada.usuario, entrada.clave, info.context.get("canal")
+                entrada.usuario,
+                entrada.clave,
+                info.context.get("canal"),
+                entrada.rol.value if entrada.rol else None,
             )
         except VerificacionPendiente:
             return ErrorAutenticacion(
@@ -2195,7 +2343,46 @@ class Mutation:
             raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
         if sesion is None:
             return ErrorAutenticacion(mensaje="Usuario o clave incorrectos.")
-        return _sesion(sesion)
+        return _sesion(sesion, info.context)
+
+    @strawberry.mutation
+    async def renovar_sesion(self, info: Info, refresh_token: str | None = None) -> ResultadoSesion:
+        """T22: cambia el refresh por un acceso y un refresh nuevos (el anterior queda inválido).
+        Pública: el refresh es la credencial. En la web lo lee de la cookie (y exige la cabecera
+        anti-CSRF); en la app llega como argumento. Cualquier fallo responde lo mismo, con el
+        código `SESION_VENCIDA`, sin decir el motivo."""
+        contexto = info.context
+        web = es_web(contexto)
+        if web and not csrf_valido(contexto):
+            return _sesion_vencida(contexto)
+        refresh = contexto.get("cookie_refresh") if web else refresh_token
+        if not refresh:
+            return _sesion_vencida(contexto)
+        try:
+            sesion = await _auth(info).renovar_con_refresh(refresh, contexto.get("canal"))
+        except ErrorServicio as error:
+            # No es un refresh inválido (red, 5xx): la cookie se conserva para reintentar.
+            raise ErrorPublico("No pudimos renovar tu sesión. Intenta de nuevo.") from error
+        if sesion is None:
+            return _sesion_vencida(contexto)
+        return _sesion(sesion, contexto)
+
+    @strawberry.mutation
+    async def cerrar_sesion(self, info: Info, refresh_token: str | None = None) -> bool:
+        """T22: revoca la cadena del refresh y borra la cookie de la web. Idempotente."""
+        contexto = info.context
+        web = es_web(contexto)
+        if web and not csrf_valido(contexto):
+            return False
+        refresh = contexto.get("cookie_refresh") if web else refresh_token
+        if web:
+            borrar_cookie(contexto)
+        if refresh:
+            try:
+                await _auth(info).cerrar_sesion(refresh)
+            except ErrorServicio as error:
+                raise ErrorPublico("No pudimos cerrar tu sesión. Intenta de nuevo.") from error
+        return True
 
     @strawberry.mutation
     async def crear_usuario(self, info: Info, entrada: CrearUsuarioInput) -> ResultadoUsuario:
@@ -2596,7 +2783,7 @@ class Mutation:
         try:
             datos = await info.context["servicio_codigo_onboarding"].enviar(correo)
         except ErrorOnboardingServicio as error:
-            return _error_onboarding(error.codigo)
+            return _error_onboarding(error.codigo, error.segundos_restantes)
         except ErrorServicio:
             return _error_onboarding("NO_DISPONIBLE")
         return CodigoOnboardingEnviado(
@@ -2627,6 +2814,10 @@ class Mutation:
         """Crea la cuenta CLIENTE en PENDIENTE_VERIFICACION validando el código OTP del correo,
         y devuelve su sesión (scope `verificacion-pendiente`) para el canal móvil (HU-M01).
         Pública: no exige token previo ni sesión."""
+        # T17: la clave se valida antes del OTP para no gastar el código con una clave débil.
+        motivo = motivo_clave_invalida(clave)
+        if motivo is not None:
+            return ErrorAutenticacion(mensaje=motivo, codigo="CLAVE_DEBIL")
         try:
             await info.context["servicio_codigo_onboarding"].verificar(correo, codigo)
         except ErrorOnboardingServicio as error:
@@ -2697,6 +2888,9 @@ class Mutation:
                     pass
                 # Si es otra cuenta diferente o las credenciales no corresponden:
                 return _error_onboarding("SESION_CON_CUENTA")
+            motivo = motivo_clave_invalida(entrada.clave)
+            if motivo is not None:
+                return ErrorOnboarding(codigo="CLAVE_DEBIL", mensaje=motivo)
             try:
                 cuenta = await _auth(info).crear_cuenta_onboarding(entrada.correo, entrada.clave)
                 sesion = await _auth(info).iniciar_sesion(entrada.correo, entrada.clave, CANAL_APP)

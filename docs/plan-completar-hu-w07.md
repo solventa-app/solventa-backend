@@ -78,7 +78,7 @@ RISK.
 
 | # | Tema | Decisión | Estado |
 |---|---|---|---|
-| W07-20 | **Rol propio `SOCIO`** | El socio es un intermediario como el ASESOR, pero con rol propio. POLICY guarda `actor_rol = SOCIO` y `socio_id`; AUTH registra el consentimiento con `actor_rol = SOCIO`. En POLICY, las ramas del intermediario pasan a `rol in ROLES_INTERMEDIARIO` (ASESOR y SOCIO). **Los avisos al asesor** (SSE `avisos:asesor:<id>` y el correo `poliza-emitida-asesor`) **excluyen al socio sin cambios**, porque ya comparan con `"ASESOR"`. Se descartó «ASESOR con canal SOCIO» porque obligaba a excluir a mano los avisos y la lista, y dejaba «ASESOR» en POLICY y «SOCIO» en AUTH para la misma venta | **Cerrada** |
+| W07-20 | **Rol propio `SOCIO`** | El socio es un intermediario como el ASESOR, pero con rol propio. POLICY guarda `actor_rol = SOCIO` y `socio_id`; AUTH registra el consentimiento con `actor_rol = SOCIO`. En POLICY, las ramas del intermediario pasan a `rol in ROLES_INTERMEDIARIO` (ASESOR y SOCIO). **Los avisos al asesor** (SSE `avisos:asesor:<id>`; el correo `poliza-emitida-asesor` se retiró) **excluyen al socio sin cambios**, porque ya comparan con `"ASESOR"`. Se descartó «ASESOR con canal SOCIO» porque obligaba a excluir a mano los avisos y la lista, y dejaba «ASESOR» en POLICY y «SOCIO» en AUTH para la misma venta | **Cerrada** |
 | W07-21 | **Alta de socios sin interfaz** | En este MVP no hay pantalla ni endpoint de alta. Los socios se crean con la CLI `crear-socio` de AUTH, idempotente. En local corre como tarea del compose en el perfil `semilla`. En staging, después, con un *job* puntual o en la base. La rotación de claves desde el portal sí entra, porque es criterio de Jira | **Cerrada** |
 | W07-22 | **Dos socios demo** | `socio-demo-1` y `socio-demo-2`, con ids fijos, tasas distintas y presupuesto. Con dos, Newman prueba que un socio no ve lo del otro (404). Sus claves locales son fijas y **solo locales**, en el entorno de Newman, como las del BACKOFFICE | **Cerrada** |
 | W07-23 | Contrato | **GraphQL v0.22** (`estadoSistema`) y el archivo nuevo `contracts/openapi/socios-v1.yaml`. La reserva de la v0.19 se libera en `contracts/CHANGELOG.md` y en `CLAUDE.md` | **Cerrada** |
@@ -298,7 +298,7 @@ liberación, por el pipeline (ADR-09).
   (`scripts/sincronizar_socios.py`, verificado en el CI), igual que `salud.json`.
 - **POLICY no suma `socio_id`:** con `actor_rol = SOCIO`, el socio es `actor_usuario_id`, que ya tiene índice.
 - **`CLAUDE.md` se actualiza al cierre** (bloque 9): el PR #387 cambia la misma línea.
-- **El contrato se ajustó a lo que ya valida W01:** `plazoMeses` de 1 a 60 y el documento con al menos 6 dígitos
+- **El contrato se ajustó a lo que ya valida W01:** `plazoMeses` de 1 a 60 (desde T18, 2026-11-01: de 6 a 200, configurable en `contracts/jurisdicciones.json`) y el documento con al menos 6 dígitos
   (el borrador del bloque 1 decía de 12 a 360).
 - **POLICY devuelve `enlace_vence_en`** en `GET /propuestas/{id}` (aditivo): así el socio sigue el enlace por su
   vencimiento sin ver nunca el token (W07-17).

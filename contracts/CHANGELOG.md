@@ -350,3 +350,76 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Afecta al frontend: sí (aditivo; W04-02 lo muestra).
 - KAN-30 (SO-02): API de socios `POST /v1/conversiones`, con los montos en otra moneda solo para mostrar. No descuenta
   presupuesto. Con un token de PRUEBAS usa tasas fijas (W07-10). Afecta al frontend: sí (aditivo; el panel del socio).
+
+## v0.24 — 2026-11-01
+
+- KAN-26 (T9 del plan de cierre de HU-W03, perfil común): `Usuario.correo: String`, solo en `iniciarSesion` y `yo` y solo
+  del propio usuario; en `usuarios`, `crearUsuario` y los demás cambios va en null, y null si no tiene (solo los CLIENTE
+  guardan correo). Nunca viaja dentro del JWT.
+- Privacidad (EC022, W03-16): cambia que el correo no volvía por GraphQL. El **teléfono sigue sin volver** y el contacto
+  completo (`GET /usuarios/{id}/contacto`) sigue siendo solo para POLICY. AUTH cifra el correo en reposo y lo descifra
+  únicamente con el id del token; no se registra en logs.
+- Afecta al frontend: sí (aditivo; el perfil común de web y mobile, T10).
+- KAN-26 (HU-W03, T24): cambia el comportamiento de `Usuario.documentoEnmascarado`, sin cambio de esquema. Antes
+  `•••• 5678`; ahora conserva la longitud con 2 iniciales y 4 finales (`10••••3040`). Con menos de 7 caracteres solo se
+  ven los últimos 4 (`••3456`). Aplica igual a pasaportes con letras. Afecta al frontend: sí (solo lectura del perfil y
+  de la cotización del CLIENTE; web y mobile).
+
+## v0.25 — 2026-11-01
+
+- KAN-26 (T18, W01-01): plazo del crédito de **6 a 200 meses**, configurable. Fuente única:
+  `contracts/jurisdicciones.json` (`plazo_min` = 6, `plazo_max` = 200 en los siete países); cada imagen
+  (BFF, RISK, RATING) lleva su copia `app/jurisdicciones.json` (`scripts/sincronizar_jurisdicciones.py`,
+  verificado en el CI) y falla con un error claro si falta, sin valor por defecto en el código.
+- Aditivo: tipo `Jurisdiccion` y consulta `jurisdicciones` (código, nombre, moneda, tipo de documento, plazo
+  mínimo y máximo). `plazoMeses` de `SolicitudOfertaInput` y de `POST /v1/cotizaciones` se valida de 6 a 200
+  (antes 1 a 60); el OpenAPI de socios lo refleja.
+- Afecta al frontend: sí (W01-01 deja de llevar el 1 a 60 escrito y lee el límite de `jurisdicciones`).
+  PR gemelo en `solventa-frontend`.
+
+## v0.31 — 2026-11-01
+
+- KAN-26 (T23, HU-M01): límite de reenvío del código OTP del correo. `enviarCodigoOnboarding` rechaza un
+  segundo envío al mismo correo antes de 60 s con `ErrorOnboarding.codigo = ESPERA_REQUERIDA`; un envío
+  aceptado invalida el código anterior (ya ocurría). Se valida en el servidor.
+- Aditivo: campo opcional `ErrorOnboarding.segundosRestantes: Int` (solo con `ESPERA_REQUERIDA`) y el código
+  nuevo en la lista estable. Mensaje en ES y EN (`idioma.py`).
+- Afecta al frontend: sí, pero sin romper nada (el cooldown de 60 s de la web y del móvil queda como ayuda
+  visual; pueden leer `segundosRestantes`). Alcance: solo el flujo A (correo del registro móvil); los flujos B y C
+  de la tabla del plan quedan para su tarea.
+
+
+## v0.29 — 2026-11-01
+
+- KAN-26 (T17): contraseña segura y login sin revelar el rol. Aditivo: `CredencialesInput.rol` (opcional) y el código
+  `CLAVE_DEBIL` de `ErrorAutenticacion` en `registrarCuenta`. En altas (onboarding y `crearUsuario`) la clave lleva de 8
+  a 128 caracteres, una mayúscula, una minúscula y un carácter especial (Unicode: categorías `Lu`, `Ll` y todo lo que no
+  sea letra ni número). El login no exige la regla: las cuentas existentes siguen entrando.
+- `iniciarSesion` con un `rol` distinto al de la cuenta responde igual que con una clave errada. La app (`/graphql/app`)
+  solo admite cuentas CLIENTE; ASESOR y BACKOFFICE reciben el mismo «Usuario o clave incorrectos.».
+- Afecta al frontend: sí (la web manda `rol`; el móvil muestra el checklist). PR gemelo en `solventa-frontend`.
+
+## v0.32 — 2026-11-01
+
+- KAN-26 (T19): consultas `autocompletarDireccion` y `validarDireccion` (Places detrás del ACL Worker, timeout 700 ms, stub sin llave). Si Google no responde, `verificado = false` y la dirección se permite «sin verificar». Afecta al frontend: sí (aditivo).
+
+## v0.33 — 2026-11-01
+
+- KAN-26 (T20): `Jurisdiccion.tiposDocumento` (código y etiquetas es/en, de `contracts/jurisdicciones.json`) y la consulta `documentoValido(pais, tipoDocumento, numero)`. No cambia aún el enum `TipoDocumentoOnboarding`, ni AUTH ni el `titular_id` (pendiente). Afecta al frontend: sí (aditivo).
+
+## v0.34 — 2026-11-01
+
+- KAN-26: los errores de sesión llevan `extensions.code` (`SIN_SESION`, `SESION_INVALIDA`); el cliente deja de comparar el mensaje. El texto no cambia. Afecta al frontend: sí (aditivo).
+
+## v0.26 — 2026-11-01
+
+- KAN-26 (T22, `plan-cierre-HU-W03.md`): sesión con token de acceso corto y refresh largo. Aditivo:
+  - `Sesion.refreshToken: String` (solo canal `app`; en la web viaja en la cookie `solventa_refresh`, `httpOnly; Secure;
+    SameSite=Strict`, y aquí viene null) y `Sesion.refreshExpiraEn: DateTime`.
+  - `Mutation.renovarSesion(refreshToken: String): ResultadoSesion!` y `Mutation.cerrarSesion(refreshToken: String): Boolean!`.
+    El refresh rota en cada uso; reusar uno ya usado revoca la cadena. Web: cabecera `X-Solventa-Csrf: 1` obligatoria.
+  - `ErrorAutenticacion.codigo = SESION_VENCIDA` para cualquier fallo de la renovación.
+  - Duraciones en `contracts/sesion.json` (`acceso_minutos: 60`, `refresh_dias: 8`), leídas por AUTH (copia en
+    `services/auth/app/sesion.json`, verificada por `scripts/sincronizar_fuentes.py --verificar`); el cliente las recibe en
+    `expiraEn` y `refreshExpiraEn`.
+- Afecta al frontend: sí (web: temporizador y cookie; móvil: almacenamiento seguro e interceptor). Aditivo.

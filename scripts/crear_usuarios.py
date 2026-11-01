@@ -23,7 +23,7 @@ Después, el CLIENTE y el ASESOR por el BFF, con ese operador:
     python scripts/crear_usuarios.py --bff https://<url-del-bff> --vault solventa-511815
 
 Uso en local (con `docker compose up -d --wait`; el BACKOFFICE local es público, no es secreto):
-    export USUARIO_BACKOFFICE=admin.solventa CLAVE_BACKOFFICE=admin-local-solventa
+    export USUARIO_BACKOFFICE=admin.solventa CLAVE_BACKOFFICE=Admin-local-solventa
     python scripts/crear_usuarios.py
 
 Es idempotente: un alias que ya existe se deja como está (no se toca su clave) y no es un error.
@@ -161,8 +161,17 @@ def crear_usuario_en_auth(
 
 
 def generar_clave() -> str:
+    # T17: AUTH exige mayúscula, minúscula y un carácter especial; se garantizan uno de cada uno.
     alfabeto = string.ascii_letters + string.digits
-    return "".join(secrets.choice(alfabeto) for _ in range(LONGITUD_CLAVE))
+    especiales = "!@#$%^&*-_=+"
+    clave = [
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(especiales),
+    ]
+    clave += [secrets.choice(alfabeto) for _ in range(LONGITUD_CLAVE - len(clave))]
+    secrets.SystemRandom().shuffle(clave)
+    return "".join(clave)
 
 
 def nombre_secreto(alias: str) -> str:

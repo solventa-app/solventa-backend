@@ -13,7 +13,7 @@ from app import (
     servicio_suscripcion,
 )
 from app.configuracion import Configuracion
-from app.idioma import EN, idioma_de, traducir
+from app.idioma import idioma_de, traducir
 from app.main import create_app
 from app.socios import errores as errores_socios
 from app.socios import modo_prueba as modo_prueba_socios
@@ -67,7 +67,7 @@ def test_todos_los_mensajes_del_bff_tienen_traduccion() -> None:
         if nombre.startswith("MENSAJE_") and isinstance(valor, str)
     ]
     assert mensajes
-    assert [m for m in mensajes if m not in EN] == []
+    assert [m for m in mensajes if traducir(m, "en") == m] == []
 
 
 def test_mensaje_con_numero_y_texto_desconocido() -> None:

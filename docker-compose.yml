@@ -56,9 +56,10 @@ services:
   # Emulador de Cloud Storage para el servicio `almacenamiento` (KAN-250). No revisa firmas ni rangos de tamaño y no
   # emite notificaciones: el servicio vuelve a medir todo al confirmar (ver services/almacenamiento/README.md).
   # `-public-host` es la dirección con la que el cliente (navegador, emulador móvil) llega a las URLs firmadas.
+  # `-cors-headers` deja pasar el preflight de la subida desde el navegador (PUT con Content-Type); sin él da 403.
   fake-gcs:
     image: fsouza/fake-gcs-server:1.52.2
-    command: ["-scheme", "http", "-port", "4443", "-public-host", "localhost:4443", "-external-url", "http://localhost:4443"]
+    command: ["-scheme", "http", "-port", "4443", "-public-host", "localhost:4443", "-external-url", "http://localhost:4443", "-cors-headers", "Content-Type,x-goog-content-length-range"]
     ports:
       - "${FAKE_GCS_PORT:-4443}:4443"
 
@@ -179,7 +180,7 @@ services:
     command: ["python", "-m", "app.crear_usuario", "--usuario", "admin.solventa", "--rol", "BACKOFFICE"]
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/auth
-      CLAVE_INICIAL: admin-local-solventa
+      CLAVE_INICIAL: Admin-local-solventa
     depends_on:
       migrar-auth: { condition: service_completed_successfully }
 

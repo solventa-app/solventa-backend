@@ -87,8 +87,8 @@ def test_sin_database_url_no_hay_valor_por_defecto_y_el_pool_falla_claro(monkeyp
 def test_crear_usuario_es_idempotente() -> None:
     repositorio = RepositorioUsuariosMemoria()
 
-    primera = crear_si_no_existe(repositorio, "admin.solventa", "clave-segura-1", "BACKOFFICE")
-    segunda = crear_si_no_existe(repositorio, "admin.solventa", "clave-segura-1", "BACKOFFICE")
+    primera = crear_si_no_existe(repositorio, "admin.solventa", "Clave-segura-1", "BACKOFFICE")
+    segunda = crear_si_no_existe(repositorio, "admin.solventa", "Clave-segura-1", "BACKOFFICE")
 
     assert (primera, segunda) == (True, False)
     assert len(repositorio.filas) == 1

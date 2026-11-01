@@ -4,6 +4,8 @@
 > tomadas (sección 2).
 > Cubre backend y web. Las causas se contrastaron con `develop` y, donde se indica, con el stack local.
 > **Ya resuelto:** la semilla de siniestros (OP-06) está en el PR #472.
+> **Desarrollador B: B1 a B8 hechos** (2026-11-01, [evidencia](evidencias/revision-qa-desarrollador-b-2026-11-01.md)). A2 ya
+> puede empezar. **Contrato:** la v0.23 quedó tomada; A usa la v0.24.
 
 ## 1. Reparto
 

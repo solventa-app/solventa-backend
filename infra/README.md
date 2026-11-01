@@ -239,7 +239,8 @@ Una migración con el valor marcador falla fuerte y a propósito. `mongo-uri-rat
 
 ### Didit (verificación de identidad de HU-M01)
 
-El ACL Worker usa `stubs/kyc` mientras `IDENTIDAD_URL` no esté definida, también en staging. Para pasar a Didit:
+El ACL Worker usa `stubs/kyc` mientras `IDENTIDAD_URL` no esté definida, también en staging. **Staging usa Didit desde
+el 1-nov** (pasos 1 a 3 hechos; hasta entonces Didit no había recibido ninguna petición). Para pasar a Didit:
 
 1. Crea la cuenta y una aplicación en `business.didit.me` y copia su **API key** (la de *sandbox* responde siempre
    aprobado con datos ficticios y no cobra; la real cobra cada llamada que responde 200).
@@ -465,7 +466,7 @@ y `$env:CLAVE_BACKOFFICE = gcloud secrets versions access latest --secret usuari
 
 Los alias por defecto son `cliente.demo`, `asesor.demo` y `operador.demo` (`--cliente`, `--asesor`, `--operador` los
 cambian; un alias no puede ser un correo ni tener 6 o más dígitos seguidos). En local no hace falta el paso 1: el compose
-ya crea un BACKOFFICE público (`admin.solventa` / `admin-local-solventa`), con el que sirve `python scripts/crear_usuarios.py`.
+ya crea un BACKOFFICE público (`admin.solventa` / `Admin-local-solventa`), con el que sirve `python scripts/crear_usuarios.py`.
 
 ## Apagar y encender lo que cuesta (sin depender de nadie)
 

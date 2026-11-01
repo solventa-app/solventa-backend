@@ -101,7 +101,7 @@ def test_crear_cliente_manda_el_documento_a_auth_y_yo_lo_trae_enmascarado() -> N
     }"""
     entrada = {
         "usuario": "cliente.doc",
-        "clave": "clave-segura-1",
+        "clave": "Clave-segura-1",
         "rol": "CLIENTE",
         "correo": "c@ejemplo.co",
         "documentoIdentidad": "1020304050",
@@ -117,4 +117,4 @@ def test_crear_cliente_manda_el_documento_a_auth_y_yo_lo_trae_enmascarado() -> N
 
     assert auth.documentos[creado["id"]] == "1020304050"
     assert creado["documentoEnmascarado"] is None  # al crear no se devuelve
-    assert r.json()["data"]["yo"] == {"documentoEnmascarado": "•••• 4050"}
+    assert r.json()["data"]["yo"] == {"documentoEnmascarado": "10••••4050"}

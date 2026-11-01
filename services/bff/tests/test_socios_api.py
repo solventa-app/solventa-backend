@@ -94,7 +94,7 @@ def _es_error_publico(respuesta, estado: int, codigo: str) -> dict:
 
 def test_token_con_la_clave_del_socio(e) -> None:
     with e.cliente() as client:
-        bien = client.post("/v1/token", json={"clientId": "sol_prod_1", "clave": "clave-prod-1"})
+        bien = client.post("/v1/token", json={"clientId": "sol_prod_1", "clave": "Clave-prod-1"})
         mal = client.post("/v1/token", json={"clientId": "sol_prod_1", "clave": "otra"})
         incompleto = client.post("/v1/token", json={"clientId": "sol_prod_1"})
 
@@ -203,7 +203,7 @@ def test_el_presupuesto_agotado_es_429_con_retry_after(e) -> None:
 def test_datos_invalidos_no_gastan_presupuesto(e) -> None:
     with e.cliente() as client:
         respuesta = client.post(
-            "/v1/cotizaciones", json={**COTIZACION, "plazoMeses": 61}, headers=e.cabeceras()
+            "/v1/cotizaciones", json={**COTIZACION, "plazoMeses": 201}, headers=e.cabeceras()
         )
 
     _es_error_publico(respuesta, 422, "DATOS_INVALIDOS")
@@ -291,9 +291,7 @@ def test_codigo_verificar_y_emitir_sin_devolver_la_url(e) -> None:
 def test_un_codigo_invalido_dice_cuantos_intentos_quedan(e) -> None:
     from app.clientes import FlujoRechazado
 
-    e.policy.rechazos["verificar_codigo"] = FlujoRechazado(
-        "CODIGO_INVALIDO", intentos_restantes=3
-    )
+    e.policy.rechazos["verificar_codigo"] = FlujoRechazado("CODIGO_INVALIDO", intentos_restantes=3)
     with e.cliente() as client:
         pid = client.post(
             "/v1/propuestas", json={"ofertaId": "o-1", "contacto": CONTACTO}, headers=e.cabeceras()
@@ -319,7 +317,7 @@ def test_credenciales_y_rotar_solo_con_token_de_produccion(e) -> None:
     assert lista.json()["socio"] == {"id": "socio-1", "nombre": "Banco Demo"}
     assert {c["clientId"] for c in lista.json()["credenciales"]} == {"sol_prod_1", "sol_test_1"}
     _es_error_publico(de_pruebas, 403, "PROHIBIDO")
-    assert rotada.json()["entorno"] == "PRUEBAS" and rotada.json()["clave"] == "clave-nueva"
+    assert rotada.json()["entorno"] == "PRUEBAS" and rotada.json()["clave"] == "Clave-nueva"
 
 
 def test_consumo_y_ventas(e) -> None:
@@ -370,6 +368,7 @@ def test_la_api_de_socios_no_tapa_v1_graphql(e) -> None:
 def test_el_contrato_y_las_rutas_coinciden(e) -> None:
     """Contrato primero (regla 8): cada operación del OpenAPI de socios tiene su ruta en el BFF y
     al revés."""
+
     # Los nombres de los parámetros cambian de estilo (`propuestaId` en el contrato, `propuesta_id`
     # en Python): se compara la forma de la ruta.
     def forma(camino: str) -> str:

@@ -16,6 +16,8 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 FUENTE = RAIZ / "contracts" / "fuentes.json"
+SESION = RAIZ / "contracts" / "sesion.json"  # T22: duraciones de la sesión, la lee AUTH
+COPIAS_SESION = [RAIZ / "services" / "auth" / "app" / "sesion.json"]
 COPIAS = [
     RAIZ / "services" / servicio / "app" / "fuentes.json"
     for servicio in (
@@ -27,23 +29,32 @@ COPIAS = [
 ]
 
 
+PARES = [(FUENTE, COPIAS), (SESION, COPIAS_SESION)]
+
+
 def main(argumentos: list[str]) -> int:
     verificar = "--verificar" in argumentos
-    contenido = FUENTE.read_bytes()
-    distintas = [c for c in COPIAS if not c.is_file() or c.read_bytes() != contenido]
-    if verificar:
+    fallo = False
+    for origen, copias in PARES:
+        contenido = origen.read_bytes()
+        distintas = [c for c in copias if not c.is_file() or c.read_bytes() != contenido]
+        nombre = origen.relative_to(RAIZ)
+        if verificar:
+            for copia in distintas:
+                print(f"ERROR: {copia.relative_to(RAIZ)} difiere de {nombre}")
+            if distintas:
+                fallo = True
+            else:
+                print(f"OK  {len(copias)} copias de {origen.name} iguales al contrato")
+            continue
         for copia in distintas:
-            print(f"ERROR: {copia.relative_to(RAIZ)} difiere de contracts/fuentes.json")
-        if distintas:
-            print("Corre `python scripts/sincronizar_fuentes.py` y sube el cambio.")
-            return 1
-        print(f"OK  {len(COPIAS)} copias de fuentes.json iguales al contrato")
-        return 0
-    for copia in distintas:
-        shutil.copyfile(FUENTE, copia)
-        print(f"copiado -> {copia.relative_to(RAIZ)}")
-    if not distintas:
-        print("Sin cambios: las copias ya eran iguales")
+            shutil.copyfile(origen, copia)
+            print(f"copiado -> {copia.relative_to(RAIZ)}")
+        if not distintas:
+            print(f"Sin cambios: las copias de {origen.name} ya eran iguales")
+    if fallo:
+        print("Corre `python scripts/sincronizar_fuentes.py` y sube el cambio.")
+        return 1
     return 0
 
 

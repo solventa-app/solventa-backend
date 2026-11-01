@@ -67,10 +67,10 @@ def test_envia_el_correo_con_el_pdf_y_la_llave_de_idempotencia() -> None:
 
 
 def test_sin_correo_no_llama_a_resend_y_queda_rechazada() -> None:
-    """P. ej. el aviso al asesor, cuyo contacto no guarda AUTH: POLICY lo da por omitido."""
+    """P. ej. un cliente sin contacto en AUTH: POLICY lo da por omitido."""
     adaptador, pedidos = _adaptador(lambda r: httpx.Response(200, json={"id": "x"}))
 
-    resultado = adaptador.enviar(_solicitud(correo=None, plantilla="poliza-emitida-asesor"))
+    resultado = adaptador.enviar(_solicitud(correo=None, plantilla="poliza-emitida"))
 
     assert (resultado.estado, resultado.motivo) == ("rechazada", "sin_correo")
     assert pedidos == []
@@ -202,3 +202,11 @@ def test_resend_con_su_llave_y_remitente(monkeypatch) -> None:
         "re_abc",
         "Solventa <avisos@solventa.co>",
     )
+
+
+def test_el_codigo_de_registro_no_menciona_al_asesor() -> None:
+    from app.adapters.correo_resend import componer
+
+    asunto, cuerpo, texto = componer("codigo-registro", {"codigo": "123456", "minutos": "10"})
+    assert "123456" in cuerpo and "123456" in texto
+    assert "asesor" not in (asunto + cuerpo + texto).lower()

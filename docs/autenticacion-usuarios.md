@@ -54,7 +54,7 @@ Tabla `usuarios` en la base `auth`: `id`, `usuario` (alias único), `hash_clave`
 | `propuestas` (v0.18, W03-35: filtrada por el rol del token) | ✅ las suyas | ✅ las que aceptó | ✅ todas | ❌ siempre exige token |
 | `ticketAvisos` (v0.18, W03-37: ticket de 60 s para el stream de `avisos`) | ✅ | ✅ | ✅ | ❌ siempre exige token |
 | `GET /propuestas/{id}/contrato.pdf` (v0.18, W03-31: contrato a firmar; REST; token del enlace en `X-Enlace-Firma` **o** sesión del CLIENTE titular; sin acceso, 404) | ✅ titular | ❌ (404) | ❌ (404) | ✅ solo con `X-Enlace-Firma` |
-| `GET /polizas/{id}/documento` (PDF de la póliza; REST, no GraphQL; un CLIENTE solo descarga la suya, una ajena da 404) | ✅ | ✅ | ❌ (403) | ❌ siempre exige token (401) |
+| `GET /polizas/{id}/documento` (PDF de la póliza; REST, no GraphQL; un CLIENTE solo descarga la suya, una ajena da 404; también con el token del enlace en `X-Enlace-Firma`, solo para la póliza ya emitida de la propuesta de ese enlace, otra da 404) | ✅ | ✅ | ❌ (403) | ✅ solo con `X-Enlace-Firma`; sin él, 401 |
 | `cobros`, `crearCobro`, `reintentarCobro` (KAN-28, datos de pagos) | ❌ | ❌ | ✅ | ❌ siempre exige token |
 | `usuarios`, `crearUsuario` (con `nombre`, `correo` y `telefono` para CLIENTE; desde la v0.18 un CLIENTE **exige `documentoIdentidad` y `correo`**, W03-27), `cambiarRolUsuario`, `suspenderUsuario` | ❌ | ❌ | ✅ | ❌ siempre exige token |
 | `actualizarContacto` (HU-W03, bloque 8: correo y teléfono del propio CLIENTE; el id sale del token) | ✅ | ❌ | ❌ | ❌ siempre exige token |
@@ -75,7 +75,7 @@ otorgó en nombre del cliente (CA-W01-02 y CA-W01-11).
   el tiempo de respuesta tampoco lo revele.
 - **Bloqueo**: 5 fallos seguidos bloquean el usuario 15 minutos; un inicio de sesión correcto reinicia el contador.
 - **Nada sensible en logs**: ni el alias, ni la clave, ni el token. Solo el id opaco del usuario (`id_opaco`).
-- **Secretos**: en local, valores fijos y públicos (`solo-local-no-secreta-jwt-solventa-0001`, `admin-local-solventa`);
+- **Secretos**: en local, valores fijos y públicos (`solo-local-no-secreta-jwt-solventa-0001`, `Admin-local-solventa`);
   en Cloud Run, Secret Manager. AUTH y el BFF **se niegan a arrancar en la nube** con el valor local, el marcador de
   Terraform o un secreto de menos de 32 bytes.
 - **Errores**: nunca un 5xx. Los errores de permiso viajan como error de GraphQL con HTTP 200 y mensaje claro.
@@ -130,7 +130,7 @@ docker compose logs crear-backoffice --no-color | tail -1
 ### Paso 2. Iniciar sesión como BACKOFFICE
 
 ```bash
-TOKEN_BO=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"admin.solventa\", clave:\"admin-local-solventa\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
+TOKEN_BO=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"admin.solventa\", clave:\"Admin-local-solventa\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
 echo "${TOKEN_BO:0:25}..."
 ```
 
@@ -149,12 +149,12 @@ gql '{"query":"{ yo { usuario rol estado } }"}' "$TOKEN_BO"
 ### Paso 4. Crear un ASESOR y un CLIENTE
 
 ```bash
-gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"asesor.demo\", clave:\"clave-demo-0001\", rol:ASESOR, nombre:\"Asesora Demo\"}) { __typename ... on Usuario { id rol } ... on ErrorUsuario { mensaje } } }"}' "$TOKEN_BO"
-ID_CLIENTE=$(gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"cliente.demo\", clave:\"clave-demo-0001\", rol:CLIENTE}) { ... on Usuario { id } } }"}' "$TOKEN_BO" | campo data.crearUsuario.id)
+gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"asesor.demo\", clave:\"Clave-demo-0001\", rol:ASESOR, nombre:\"Asesora Demo\"}) { __typename ... on Usuario { id rol } ... on ErrorUsuario { mensaje } } }"}' "$TOKEN_BO"
+ID_CLIENTE=$(gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"cliente.demo\", clave:\"Clave-demo-0001\", rol:CLIENTE}) { ... on Usuario { id } } }"}' "$TOKEN_BO" | campo data.crearUsuario.id)
 echo "$ID_CLIENTE"
 
 # Un alias con forma de correo se rechaza:
-gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"persona@correo.com\", clave:\"clave-demo-0001\", rol:CLIENTE}) { __typename ... on ErrorUsuario { mensaje } } }"}' "$TOKEN_BO"
+gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"persona@correo.com\", clave:\"Clave-demo-0001\", rol:CLIENTE}) { __typename ... on ErrorUsuario { mensaje } } }"}' "$TOKEN_BO"
 ```
 
 **Esperado:** `"__typename":"Usuario"` con `"rol":"ASESOR"`; un id (UUID) para el cliente; y
@@ -164,7 +164,7 @@ gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"persona@correo.com\", 
 ### Paso 5. Iniciar sesión como ASESOR
 
 ```bash
-TOKEN_ASESOR=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"asesor.demo\", clave:\"clave-demo-0001\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
+TOKEN_ASESOR=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"asesor.demo\", clave:\"Clave-demo-0001\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
 gql '{"query":"{ yo { usuario rol nombre } }"}' "$TOKEN_ASESOR"
 ```
 
@@ -189,7 +189,7 @@ gql '{"query":"mutation($e: SolicitudOfertaInput!) { solicitarOferta(entrada:$e)
 ### Paso 7. Un intento prohibido
 
 ```bash
-TOKEN_CLIENTE=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"cliente.demo\", clave:\"clave-demo-0001\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
+TOKEN_CLIENTE=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"cliente.demo\", clave:\"Clave-demo-0001\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
 gql '{"query":"{ usuarios { usuario } }"}' "$TOKEN_CLIENTE"
 gql '{"query":"{ usuarios { usuario } }"}'
 ```
@@ -203,12 +203,12 @@ En ambos casos la respuesta HTTP es 200, nunca un 5xx.
 Se usa un usuario aparte para no bloquear a los de los pasos anteriores.
 
 ```bash
-gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"bloqueo.demo\", clave:\"clave-demo-0001\", rol:CLIENTE}) { __typename } }"}' "$TOKEN_BO"
+gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"bloqueo.demo\", clave:\"Clave-demo-0001\", rol:CLIENTE}) { __typename } }"}' "$TOKEN_BO"
 for i in 1 2 3 4 5; do
   gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"bloqueo.demo\", clave:\"no-es-la-clave\"}) { ... on ErrorAutenticacion { mensaje } } }"}'
 done
 # Ahora incluso con la clave correcta:
-gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"bloqueo.demo\", clave:\"clave-demo-0001\"}) { __typename ... on ErrorAutenticacion { mensaje } } }"}'
+gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"bloqueo.demo\", clave:\"Clave-demo-0001\"}) { __typename ... on ErrorAutenticacion { mensaje } } }"}'
 ```
 
 **Esperado:** cinco veces "Usuario o clave incorrectos."; y la sexta, con la clave correcta, **también**
@@ -219,7 +219,7 @@ gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"bloqueo.demo\", clave
 
 ```bash
 gql '{"query":"mutation($id: ID!) { suspenderUsuario(id:$id) { ... on Usuario { usuario estado } } }","variables":{"id":"'"$ID_CLIENTE"'"}}' "$TOKEN_BO"
-gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"cliente.demo\", clave:\"clave-demo-0001\"}) { __typename } }"}'
+gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"cliente.demo\", clave:\"Clave-demo-0001\"}) { __typename } }"}'
 ```
 
 **Esperado:** `"estado":"SUSPENDIDO"`, y después `"__typename":"ErrorAutenticacion"`.
@@ -242,7 +242,7 @@ sirve, porque en base64url solo lleva bits de relleno. El token **vencido** lo c
 
 ```bash
 docker compose logs auth bff --no-color | grep -E "auth.sesiones|auth.usuarios" | tail -5
-docker compose logs auth bff --no-color | grep -c -E "clave-demo-0001|admin-local-solventa|eyJ|asesor.demo" || true
+docker compose logs auth bff --no-color | grep -c -E "Clave-demo-0001|Admin-local-solventa|eyJ|asesor.demo" || true
 ```
 
 **Esperado:** líneas como `sesión iniciada usuario=3f9c2a1b7d4e rol=ASESOR` (id opaco, sin alias), y un conteo de `0`.
@@ -303,3 +303,16 @@ En el **Sprint 1** ya existe el API Gateway delante del BFF (`infra/gateway.tf`,
 - **Eventos de usuario** (`usuario.creado`, `usuario.suspendido`, `usuario.rol-cambiado`): no se publican porque nadie los consume todavía. Se definen en `contracts/events/` cuando exista un consumidor.
 - **Staging**: cargar `clave-jwt` y crear el primer BACKOFFICE (ver `infra/README.md`).
 
+
+## Sesión con acceso corto y refresh largo (T22, KAN-26, contrato v0.26)
+
+- Acceso: JWT de 60 minutos. Refresh: opaco, 8 días. Las duraciones salen de `contracts/sesion.json` (copia en
+  `services/auth/app/sesion.json`) y las variables `JWT_VIGENCIA_MINUTOS` y `REFRESH_VIGENCIA_DIAS` las sobrescriben por ambiente.
+- AUTH (`0011_refresh_tokens`) guarda solo el SHA-256 del refresh, atado al canal (`app` o `web`). Rota en cada uso; reusar uno
+  ya usado revoca la cadena (`familia_id`) y deja un `warning` sin datos personales. Se revoca al cerrar sesión (`POST /sesiones/cerrar`)
+  y al suspender la cuenta. `POST /sesiones/refresh` revalida estado y rol; un PENDIENTE_VERIFICACION o RECHAZADA renueva solo por `app`.
+- BFF: `renovarSesion` y `cerrarSesion`. En la web el refresh va en la cookie `solventa_refresh` (`httpOnly; Secure; SameSite=Strict`)
+  que pone y lee el BFF, con la cabecera `X-Solventa-Csrf: 1` obligatoria y `Origin` verificado contra `ORIGENES_WEB_PERMITIDOS`
+  (vacío en local). En la app viaja por el cuerpo. `COOKIE_REFRESH_SECURE=false` solo para HTTP local sin TLS.
+- Pendiente: cambiar la clave (hoy no existe el endpoint; al crearlo debe llamar `revocar_de_usuario`), verificación en vivo
+  contra Postgres/Docker y detrás del gateway.

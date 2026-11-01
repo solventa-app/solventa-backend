@@ -1,7 +1,9 @@
 """Configuración por variables de entorno de AUTH (sin secretos en el código)."""
 
+import json
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 # Solo para local y pruebas: el repo es público, así que este valor NO es secreto.
 # En Cloud Run, `JWT_SECRETO` llega de Secret Manager (`clave-jwt`), el mismo que usa el BFF.
@@ -20,6 +22,15 @@ SOCIOS_CLAVE_FIRMA_LOCAL = (
     "OEL+WI9sA86sSOnnzCwCzLMLKK6hRANCAATI4t/bJXE3sAMp24CJyTykuROOmf34"
     "Zpp6BGqhsuYJYVIKID3R8q88FTdnt7LG6WlD8tXqduK9mRJZPdhHuXOq"
 )
+# Duraciones de la sesión (T22): copia de `contracts/sesion.json` (la imagen no ve `contracts/`;
+# `scripts/sincronizar_fuentes.py` la mantiene igual). Las variables de entorno la sobrescriben.
+RUTA_SESION = Path(__file__).with_name("sesion.json")
+
+
+def _duraciones_sesion() -> dict:
+    return json.loads(RUTA_SESION.read_text(encoding="utf-8"))
+
+
 # Valor con el que Terraform crea cada secreto (infra/README.md, "Cargar los secretos").
 VALOR_MARCADOR = "pendiente-de-cargar"
 # HS256 exige al menos 32 bytes de clave (RFC 7518, sección 3.2).
@@ -37,6 +48,7 @@ class Configuracion:
     consentimiento_vigencia_dias: int = 30
     cliente_id_clave: str = CLIENTE_ID_CLAVE_LOCAL
     socios_clave_firma: str = SOCIOS_CLAVE_FIRMA_LOCAL
+    refresh_vigencia_dias: int = 8
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -68,11 +80,16 @@ class Configuracion:
             # escrita aquí llevaría la contraseña (o ninguna). `construir_pool` falla claro.
             database_url=os.getenv("DATABASE_URL", ""),
             jwt_secreto=secreto,
-            jwt_vigencia_minutos=int(os.getenv("JWT_VIGENCIA_MINUTOS", "60")),
+            jwt_vigencia_minutos=int(
+                os.getenv("JWT_VIGENCIA_MINUTOS") or _duraciones_sesion()["acceso_minutos"]
+            ),
             cifrado_clave=cifrado_clave,
             kms_key_name=kms_key_name,
             cifrado_clave_envuelta=cifrado_clave_envuelta,
             consentimiento_vigencia_dias=consentimiento_vigencia_dias,
             cliente_id_clave=cliente_id_clave,
             socios_clave_firma=socios_clave_firma,
+            refresh_vigencia_dias=int(
+                os.getenv("REFRESH_VIGENCIA_DIAS") or _duraciones_sesion()["refresh_dias"]
+            ),
         )

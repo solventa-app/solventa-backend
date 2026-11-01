@@ -114,7 +114,7 @@ los dos: EN_FIRMA ─firma (trazo, imagen o nombre)─► FIRMADA ─pago en la 
 
 - **Autorización doble (W03-33):** las rutas de la página del enlace reciben `X-Enlace-Firma` (el token; POLICY guarda solo su HMAC) o `X-Titular-Id` (el titular de la sesión del CLIENTE, que pone el BFF desde AUTH). Ajena, sin cabecera o con un token que no existe: `404`. Enlace vencido o anulado: `409 ENLACE_VENCIDO`, salvo al confirmar un pago (la sesión pudo abrirse antes).
 - **Huellas:** el código y el token se guardan como HMAC-SHA256 con una clave derivada de `CIFRADO_CLAVE`.
-- **Emisión y avisos:** confirmar el pago emite (desde `FIRMADA`) y deja a una tarea (`_emitir`) el correo con el PDF y el aviso al asesor (`poliza-emitida-asesor`, sin datos del titular). El PDF estampa la firma: la imagen se baja de ALMACENAMIENTO al generarlo (URL de minutos, nunca se guarda ni se registra) o el nombre con letra cursiva.
+- **Emisión y avisos:** confirmar el pago emite (desde `FIRMADA`) y deja a una tarea (`_emitir`) el correo con el PDF al titular (no hay correo al asesor: lo ve en «Pólizas emitidas»). El PDF estampa la firma: la imagen se baja de ALMACENAMIENTO al generarlo (URL de minutos, nunca se guarda ni se registra) o el nombre con letra cursiva.
 - **Avisos en vivo (W03-37):** cada cambio de estado del flujo nuevo publica en Redis (`avisos:asesor:<usuario>`, `avisos:titular:<hmac>`, `avisos:todos`) `{tipo, propuestaId, estado, estadoVisible, polizaId, numero}`, sin datos personales. Sin `REDIS_URL` no se publica (mejor esfuerzo).
 - **La imagen de la firma y la purga:** `evidencias_firma` es append-only, así que la purga no borra `imagen_firma_archivo_id`; pide la retención del archivo y el bucket lo borra en un día.
 
@@ -127,8 +127,7 @@ socio. Plan: `docs/plan-completar-hu-w07.md`.
   `tasa_comision` del socio, que queda **congelada** en la propuesta (W07-7). Con otro rol la tasa se ignora.
 - Código, verificación, `POST /propuestas/{id}/emitir {rol: SOCIO}` y el reenvío funcionan como para el ASESOR
   (`ROLES_INTERMEDIARIO`). El enlace va al correo del titular y nunca vuelve en la respuesta.
-- **Los avisos al asesor no le llegan al socio:** el SSE `avisos:asesor:<id>` y el correo `poliza-emitida-asesor`
-  siguen siendo solo del `ASESOR`. El titular sí recibe su póliza. El socio sigue la propuesta por consulta (W07-8).
+- **Los avisos al asesor no le llegan al socio:** el SSE `avisos:asesor:<id>` sigue siendo solo del `ASESOR`. El titular sí recibe su póliza. El socio sigue la propuesta por consulta (W07-8).
 - **Comisión al emitir:** `emitir_poliza` inserta en `comisiones` (append-only, `poliza_id` único) prima × tasa con los
   decimales de la prima, en la misma transacción. La prima y la comisión van cifradas.
 - `GET /propuestas?actor_rol=SOCIO&actor_usuario_id=<socio>` y `GET /socios/{id}/ventas?desde=&hasta=` (propuestas,

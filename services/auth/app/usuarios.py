@@ -101,12 +101,37 @@ def validar_alias(alias: str) -> None:
         )
 
 
+def faltantes_de_clave(clave: str) -> list[str]:
+    """Requisitos de composición que no cumple la clave (T17). Global y con Unicode: mayúscula =
+    categoría `Lu` (Ñ, Á, Ç, Ł...), minúscula = `Ll` (ñ, é, ß...), especial = cualquier carácter
+    que no sea letra ni número (`¿`, `€`, `_`, espacio, emoji...). Las letras sin caso (chino,
+    árabe, hindi) cuentan como letras pero no como mayúscula ni minúscula."""
+    categorias = [unicodedata.category(c) for c in clave]
+    faltan = []
+    if "Lu" not in categorias:
+        faltan.append("una mayúscula")
+    if "Ll" not in categorias:
+        faltan.append("una minúscula")
+    if not any(c[0] not in "LN" for c in categorias):
+        faltan.append("un carácter especial")
+    return faltan
+
+
+def mensaje_clave_debil(faltan: list[str]) -> str:
+    lista = faltan[0] if len(faltan) == 1 else ", ".join(faltan[:-1]) + " y " + faltan[-1]
+    return f"La clave no es segura: falta {lista}."
+
+
 def validar_clave(clave: str) -> None:
+    """Solo en altas (onboarding y `crearUsuario`); el login no la exige."""
     if not CLAVE_LONGITUD_MINIMA <= len(clave) <= CLAVE_LONGITUD_MAXIMA:
         raise DatoInvalido(
             f"La clave debe tener entre {CLAVE_LONGITUD_MINIMA} y {CLAVE_LONGITUD_MAXIMA} "
             "caracteres."
         )
+    faltan = faltantes_de_clave(clave)
+    if faltan:
+        raise DatoInvalido(mensaje_clave_debil(faltan))
 
 
 def validar_rol(rol: str) -> None:
@@ -163,8 +188,12 @@ def normalizar_documento(documento: str) -> str:
 
 
 def enmascarar_documento(documento: str) -> str:
-    """Solo los últimos 4 caracteres (W03-34): `•••• 5678`."""
-    return f"•••• {documento[-4:]}"
+    """Conserva la longitud (T24): 2 iniciales y 4 finales visibles, el resto `•` (`10••••3040`).
+    Con menos de 7 caracteres solo se ven los últimos 4, para no revelar el documento entero."""
+    n = len(documento)
+    if n < 7:
+        return "•" * (n - 4) + documento[-4:] if n > 4 else documento
+    return documento[:2] + "•" * (n - 6) + documento[-4:]
 
 
 def contexto_documento(usuario_id: str) -> str:
@@ -705,6 +734,12 @@ class ServicioUsuarios:
                 fila, "telefono_cifrado", contexto_telefono(usuario_id)
             ),
         }
+
+    def correo_de(self, usuario_id: str) -> str | None:
+        """El correo del propio usuario, para mostrárselo a él (`yo` e `iniciarSesion`, contrato
+        v0.24). Solo los CLIENTE tienen correo; el BFF lo pide únicamente con el id del token."""
+        contacto = self.contacto_de(usuario_id)
+        return contacto["correo"] if contacto else None
 
     def _descifrar_contacto(self, fila: dict, campo: str, contexto: str) -> str | None:
         if self._cifrador is None or not fila.get(campo):

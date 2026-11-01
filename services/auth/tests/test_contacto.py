@@ -26,7 +26,7 @@ from app.usuarios import (
     normalizar_telefono,
 )
 
-CLAVE = "clave-segura-1"
+CLAVE = "Clave-segura-1"
 CORREO = "maria.gomez@ejemplo.co"
 TELEFONO = "+573001234567"
 
@@ -344,8 +344,13 @@ def test_http_el_contacto_no_sale_por_ningun_otro_camino() -> None:
         lista = client.get("/usuarios")
         nombres = client.post("/usuarios/nombres", json={"ids": [creado["id"]]})
 
+    # Contrato v0.24: el correo vuelve solo al propio usuario (login y `GET /usuarios/{id}`).
+    for respuesta in (lista, nombres):
+        assert CORREO not in respuesta.text
     for respuesta in (sesion, propio, lista, nombres):
-        assert CORREO not in respuesta.text and "3001234567" not in respuesta.text
+        assert "3001234567" not in respuesta.text
+    assert sesion.json()["usuario"]["correo"] == CORREO.lower()
+    assert propio.json()["correo"] == CORREO.lower()
     assert sesion.json()["usuario"]["tiene_contacto"] is True
 
 

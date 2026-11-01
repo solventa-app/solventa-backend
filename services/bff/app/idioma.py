@@ -21,21 +21,15 @@ Idioma = Literal["es", "en"]
 
 EN: dict[str, str] = {
     # API de socios (HU-W07, contracts/openapi/socios-v1.json)
-    "Credenciales inválidas.": (
-        "Invalid credentials."
-    ),
-    "Falta el token de acceso o no es válido.": (
-        "The access token is missing or invalid."
-    ),
+    "Credenciales inválidas.": ("Invalid credentials."),
+    "Falta el token de acceso o no es válido.": ("The access token is missing or invalid."),
     "Esta operación requiere un token de producción.": (
         "This operation requires a production token."
     ),
     "No existe o no pertenece a este socio.": (
         "It does not exist or does not belong to this partner."
     ),
-    "Revisa los datos de la solicitud.": (
-        "Check the request data."
-    ),
+    "Revisa los datos de la solicitud.": ("Check the request data."),
     "No hay un consentimiento vigente de este socio para el titular.": (
         "This partner has no valid consent for the holder."
     ),
@@ -54,6 +48,12 @@ EN: dict[str, str] = {
     ),
     "No pudimos actualizar tu sesión. Intenta de nuevo.": (
         "We could not refresh your session. Please try again."
+    ),
+    "No pudimos renovar tu sesión. Intenta de nuevo.": (
+        "We could not renew your session. Please try again."
+    ),
+    "No pudimos cerrar tu sesión. Intenta de nuevo.": (
+        "We could not close your session. Please try again."
     ),
     "Tu sesión ya no es válida. Inicia sesión de nuevo.": (
         "Your session is no longer valid. Please sign in again."
@@ -196,6 +196,9 @@ EN: dict[str, str] = {
     "El código no es correcto. Revísalo e intenta de nuevo.": (
         "The code isn't correct. Check it and try again."
     ),
+    "Espera un momento antes de pedir otro código.": (
+        "Please wait a moment before requesting another code."
+    ),
     "El código venció. Pide uno nuevo.": "The code has expired. Request a new one.",
     "Agotaste los intentos. Pide un código nuevo.": (
         "You've used all your attempts. Request a new code."
@@ -246,9 +249,6 @@ EN: dict[str, str] = {
     ),
     "El valor del crédito no es válido.": "The loan amount is not valid.",
     "El documento de identidad no es válido.": "The ID number is not valid.",
-    "El plazo del crédito debe estar entre 1 y 60 meses.": (
-        "The loan term must be between 1 and 60 months."
-    ),
     "Ingresa la dirección del inmueble.": "Enter the property address.",
     "No pudimos consultar tu historial crediticio en este momento. "
     "Intenta de nuevo o habla con un asesor.": (
@@ -291,9 +291,7 @@ EN: dict[str, str] = {
     "No pudimos consultar los siniestros. Intenta de nuevo.": (
         "We couldn't load the claims. Please try again."
     ),
-    "La ventana debe ser 15m, 1h, 24h o 7d.": (
-        "The window must be 15m, 1h, 24h or 7d."
-    ),
+    "La ventana debe ser 15m, 1h, 24h o 7d.": ("The window must be 15m, 1h, 24h or 7d."),
     "No pudimos calcular el estado del sistema. Intenta de nuevo.": (
         "We couldn't compute the system status. Please try again."
     ),
@@ -317,8 +315,32 @@ EN: dict[str, str] = {
     ),
 }
 
+_REQUISITOS_CLAVE_EN = {
+    "una mayúscula": "an uppercase letter",
+    "una minúscula": "a lowercase letter",
+    "un carácter especial": "a special character",
+}
+
+
+def _clave_debil_en(coincidencia: re.Match[str]) -> str:
+    """«La clave no es segura: falta una mayúscula y un carácter especial.» (T17)."""
+    partes = re.split(r", | y ", coincidencia.group(1))
+    en = [_REQUISITOS_CLAVE_EN.get(p, p) for p in partes]
+    lista = en[0] if len(en) == 1 else ", ".join(en[:-1]) + " and " + en[-1]
+    return f"The password isn't secure: it is missing {lista}."
+
+
 # Mensajes con un número dentro (PAYMENTS, `mensaje_reintentos_agotados`).
-EN_PATRONES: list[tuple[re.Pattern[str], str]] = [
+EN_PATRONES: list[tuple[re.Pattern[str], Any]] = [
+    (re.compile(r"La clave no es segura: falta (.+)\."), _clave_debil_en),
+    (
+        re.compile(r"La clave debe tener entre (\d+) y (\d+) caracteres\."),
+        r"The password must be between \1 and \2 characters long.",
+    ),
+    (
+        re.compile(r"El plazo del crédito debe estar entre (\d+) y (\d+) meses\."),
+        r"The loan term must be between \1 and \2 months.",
+    ),
     (
         re.compile(r"Se agotaron los (\d+) reintentos: el cobro requiere otro medio de pago\."),
         r"All \1 retries were used: the payment needs another payment method.",

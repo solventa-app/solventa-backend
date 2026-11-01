@@ -31,6 +31,7 @@ from app.autenticacion_usuarios import (
 )
 from app.clientes import Clientes, ErrorServicio, construir_clientes, construir_sondas
 from app.configuracion import Configuracion
+from app.cookie_refresh import CABECERA_CSRF, NOMBRE_COOKIE_REFRESH
 from app.esquema import schema
 from app.idioma import idioma_de
 from app.observabilidad import configurar_trazas
@@ -142,7 +143,7 @@ def create_app(
         return {"servicio": "bff", "estado": "ok"}
 
     def contexto_para(canal: str) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
-        async def contexto(request: Request) -> dict[str, Any]:
+        async def contexto(request: Request, response: Response) -> dict[str, Any]:
             # El token se lee aquí, una vez por petición; cada resolutor decide con
             # `exigir_rol` (app/esquema.py) si lo exige y qué roles admite.
             # Si viene detrás de GCP API Gateway (ESPv2), lee `X-Forwarded-Authorization`.
@@ -170,6 +171,13 @@ def create_app(
                 "token_onboarding": request.headers.get("x-onboarding-token"),
                 # Salud del sistema (HU-W07): `estadoSistema` del BACKOFFICE.
                 "salud": getattr(app.state, "salud", None),
+                # Sesión web (T22): la cookie del refresh se lee y se escribe solo en el BFF.
+                "response": response,
+                "cookie_refresh": request.cookies.get(NOMBRE_COOKIE_REFRESH),
+                "cabecera_csrf": request.headers.get(CABECERA_CSRF),
+                "origen": request.headers.get("origin"),
+                "cookie_refresh_secure": config.cookie_refresh_secure,
+                "origenes_web": config.origenes_web,
             }
 
         return contexto
@@ -235,16 +243,29 @@ def create_app(
         """El PDF de la póliza (HU-W03, CA-W03-08). Es una ruta REST y no GraphQL porque entrega un
         archivo. Es un documento con datos personales: exige sesión SIEMPRE (aunque la autenticación
         de GraphQL esté en `opcional`), solo para CLIENTE y ASESOR, y un CLIENTE solo descarga el
-        suyo. Una póliza que no existe o que es de otro responde igual (404): no se revela cuál."""
+        suyo; o el token del enlace de firma (`X-Enlace-Firma`), que sirve solo para la póliza de
+        su propia propuesta ya emitida. Una póliza que no existe o que es de otro responde igual
+        (404): no se revela cuál."""
+        enlace = request.headers.get("x-enlace-firma")
         try:
             usuario = leer_usuario(
                 extraer_cabecera_autorizacion(request.headers), config.jwt_secreto
             )
         except TokenInvalido as error:
-            return JSONResponse({"mensaje": str(error)}, status_code=401)
-        if usuario is None:
+            # Detrás de GCP API Gateway una petición sin sesión llega con el ID token del gateway
+            # en `Authorization`: no es una sesión de Solventa. Con el token del enlace basta.
+            if not enlace:
+                return JSONResponse({"mensaje": str(error)}, status_code=401)
+            usuario = None
+        if usuario is None and enlace:
+            # El titular que abrió el enlace de firma descarga la póliza que ese enlace emitió.
+            servicio: ServicioFirmaPago = app.state.servicio_firma_pago
+            autorizado = await servicio.autorizar_poliza_por_enlace(enlace, poliza_id)
+            if isinstance(autorizado, ErrorFlujoDatos):
+                return _respuesta_de_error(autorizado)
+        elif usuario is None:
             return JSONResponse({"mensaje": MENSAJE_SIN_SESION}, status_code=401)
-        if usuario.rol not in ("CLIENTE", "ASESOR"):
+        elif usuario.rol not in ("CLIENTE", "ASESOR"):
             return JSONResponse({"mensaje": MENSAJE_SIN_PERMISO}, status_code=403)
         try:
             documento = await ServicioSuscripcion(app.state.clientes).documento_poliza(

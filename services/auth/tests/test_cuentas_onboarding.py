@@ -22,7 +22,7 @@ from app.usuarios import DatoInvalido, ServicioUsuarios, UsuarioDuplicado
 SECRETO = "secreto-de-prueba-con-32-bytes-o-mas"
 CLAVE_HMAC = "clave-hmac-de-prueba"
 CORREO = "Ana.Prueba@Ejemplo.com"
-CLAVE = "clave-segura-1"
+CLAVE = "Clave-segura-1"
 
 
 def _preparar():
@@ -54,7 +54,7 @@ def test_la_cuenta_nace_pendiente_con_el_correo_solo_cifrado_y_alias_opaco() -> 
 def test_un_correo_una_cuenta_sin_importar_mayusculas() -> None:
     _, _, usuarios, _, _ = _preparar()
     with pytest.raises(UsuarioDuplicado):
-        usuarios.crear_cuenta_onboarding("  ana.prueba@ejemplo.COM ", "otra-clave-9")
+        usuarios.crear_cuenta_onboarding("  ana.prueba@ejemplo.COM ", "Otra-clave-9")
 
 
 def test_correo_o_clave_invalidos() -> None:
@@ -169,7 +169,7 @@ def test_rutas_http_del_onboarding() -> None:
         )
         assert renovada.status_code == 200
         assert renovada.json()["usuario"]["nombre"] == "Ana Prueba"
-        assert renovada.json()["usuario"]["documento_enmascarado"] == "•••• 0001"
+        assert renovada.json()["usuario"]["documento_enmascarado"] == "10••••0001"
         otra = cliente.post(
             "/usuarios/onboarding", json={"correo": "b@ejemplo.com", "clave": CLAVE}
         )

@@ -27,6 +27,11 @@ PLANTILLAS: dict[str, tuple[str, str]] = {
         "Tu código para confirmar tu identidad con tu asesor es <b>{codigo}</b>. "
         "Vence en {minutos} minutos. Si no lo pediste, ignora este correo.",
     ),
+    "codigo-registro": (
+        "Tu código para crear tu cuenta en Solventa",
+        "Tu código para crear tu cuenta en Solventa es <b>{codigo}</b>. "
+        "Vence en {minutos} minutos. Si no lo pediste, ignora este correo.",
+    ),
     "enlace-firma": (
         "Firma tu póliza de Solventa",
         'Tu asesor preparó tu póliza. <a href="{enlace}">Revisa y firma aquí</a>. '
@@ -35,10 +40,6 @@ PLANTILLAS: dict[str, tuple[str, str]] = {
     "poliza-emitida": (
         "Tu póliza de Solventa {numero_poliza} está emitida",
         "Tu póliza <b>{numero_poliza}</b> quedó emitida. Adjuntamos el documento en PDF.",
-    ),
-    "poliza-emitida-asesor": (
-        "Póliza {numero_poliza} emitida",
-        "La póliza <b>{numero_poliza}</b> que vendiste quedó emitida.",
     ),
 }
 MOTIVO_SIN_CORREO = "sin_correo"

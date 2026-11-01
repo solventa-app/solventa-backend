@@ -71,9 +71,11 @@ class PresupuestoAgotado(Exception):
 class ErrorOnboardingServicio(Exception):
     """ONBOARDING (o AUTH al crear la cuenta) rechazó la solicitud con un código estable."""
 
-    def __init__(self, codigo: str) -> None:
+    def __init__(self, codigo: str, segundos_restantes: int | None = None) -> None:
         super().__init__(codigo)
         self.codigo = codigo
+        # Solo con `ESPERA_REQUERIDA`: lo que falta para poder pedir otro código.
+        self.segundos_restantes = segundos_restantes
 
 
 class PuertoAuth(Protocol):
@@ -93,10 +95,14 @@ class PuertoAuth(Protocol):
     async def revocar_consentimiento(self, consentimiento_id: str) -> dict | None: ...
 
     async def iniciar_sesion(
-        self, usuario: str, clave: str, canal: str | None = None
+        self, usuario: str, clave: str, canal: str | None = None, rol: str | None = None
     ) -> dict | None: ...
 
     async def renovar_sesion(self, usuario_id: str, expira_en: str) -> dict | None: ...
+
+    async def renovar_con_refresh(self, refresh_token: str, canal: str | None) -> dict | None: ...
+
+    async def cerrar_sesion(self, refresh_token: str) -> None: ...
 
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict: ...
 
@@ -142,6 +148,11 @@ class PuertoAcl(Protocol):
     async def invalidar_cache_cliente(self, cliente_id: str) -> None: ...
 
     async def tasas_cambio(self) -> dict[str, str]: ...
+
+    # T19: Places detrás del ACL. Si falla, el BFF degrada a «sin verificar».
+    async def autocompletar_direccion(self, texto: str, pais: str | None) -> list[dict]: ...
+
+    async def validar_direccion(self, place_id: str) -> dict: ...
 
     # HU-W07: el estado de cada circuito (`closed`, `half-opened` u `opened`), para la salud.
     async def circuitos(self) -> dict[str, str]: ...
@@ -573,7 +584,7 @@ class ClienteAuthHttp:
     # loguea la URL, nunca el cuerpo.
 
     async def iniciar_sesion(
-        self, usuario: str, clave: str, canal: str | None = None
+        self, usuario: str, clave: str, canal: str | None = None, rol: str | None = None
     ) -> dict | None:
         """`None` si AUTH rechaza las credenciales (401); `VerificacionPendiente` con el 403 de
         una cuenta del onboarding fuera de la app (HU-M01)."""
@@ -581,7 +592,7 @@ class ClienteAuthHttp:
             self._cliente,
             "POST",
             "/sesiones",
-            {"usuario": usuario, "clave": clave, "canal": canal},
+            {"usuario": usuario, "clave": clave, "canal": canal, "rol": rol},
         )
         if respuesta.status_code == 401:
             return None
@@ -600,6 +611,27 @@ class ClienteAuthHttp:
         if respuesta.status_code == 401:
             return None
         return _json_o_error(respuesta)
+
+    async def renovar_con_refresh(self, refresh_token: str, canal: str | None) -> dict | None:
+        """T22: cambia un refresh por un par nuevo. `None` si AUTH lo rechaza (401). El refresh
+        viaja solo en el cuerpo."""
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            "/sesiones/refresh",
+            {"refresh_token": refresh_token, "canal": canal},
+        )
+        if respuesta.status_code == 401:
+            return None
+        return _json_o_error(respuesta)
+
+    async def cerrar_sesion(self, refresh_token: str) -> None:
+        """T22: revoca la cadena del refresh en AUTH."""
+        respuesta = await _pedir(
+            self._cliente, "POST", "/sesiones/cerrar", {"refresh_token": refresh_token}
+        )
+        if respuesta.status_code >= 400:
+            raise ErrorServicio(f"AUTH respondió {respuesta.status_code}")
 
     async def correo_registrado(self, correo: str) -> bool:
         """¿Ya hay una cuenta con ese correo? El correo va solo en el cuerpo."""
@@ -740,6 +772,21 @@ class ClienteAclHttp:
         self._tasas_vencen = ahora + TTL_TASAS_SEGUNDOS
         return self._tasas
 
+    async def autocompletar_direccion(self, texto: str, pais: str | None) -> list[dict]:
+        params = {"texto": texto, **({"pais": pais} if pais else {})}
+        respuesta = await _pedir(self._cliente, "GET", "/lugares/autocompletar", params=params)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return list(respuesta.json()["sugerencias"])
+
+    async def validar_direccion(self, place_id: str) -> dict:
+        respuesta = await _pedir(
+            self._cliente, "GET", "/lugares/validar", params={"place_id": place_id}
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return dict(respuesta.json())
+
     async def consultar_fuente(self, cliente_id: str, consentimiento_id: str, fuente: str) -> dict:
         respuesta = await _pedir(
             self._cliente,
@@ -810,9 +857,7 @@ class ClienteRiskHttp:
 
     async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None:
         cuerpo = {"titular_id": titular_id, "consentimiento_id": consentimiento_id}
-        respuesta = await _pedir(
-            self._cliente, "POST", "/perfiles/consentimiento-revocado", cuerpo
-        )
+        respuesta = await _pedir(self._cliente, "POST", "/perfiles/consentimiento-revocado", cuerpo)
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
 
@@ -1038,11 +1083,13 @@ class ClientePolicyHttp:
         return await self._flujo("POST", f"/propuestas/{propuesta_id}/enlace")
 
     async def resolver_enlace(self, token: str) -> dict | None:
-        """El token va en el cuerpo, nunca en la URL (regla 6). `None` si no existe."""
+        """El token va en el cuerpo, nunca en la URL (regla 6). `None` si no existe o si ni siquiera
+        tiene la forma de un token (POLICY lo rechaza con 422): para quien llega con un enlace
+        mal copiado es lo mismo que uno desconocido."""
         try:
             return await self._flujo("POST", "/enlaces/resolver", {"token": token})
         except FlujoRechazado as rechazo:
-            if rechazo.motivo == "PROPUESTA_NO_ENCONTRADA":
+            if rechazo.motivo in ("PROPUESTA_NO_ENCONTRADA", "SOLICITUD_INVALIDA"):
                 return None
             raise
 

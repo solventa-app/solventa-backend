@@ -16,6 +16,7 @@ from pathlib import Path
 
 from app.clientes import Clientes, DatosInsuficientes, ErrorServicio, SolicitudInvalida
 from app.identificadores import cliente_id_desde_documento, id_opaco
+from app.jurisdicciones import PLAZO_MAXIMO_MESES, PLAZO_MINIMO_MESES
 
 logger = logging.getLogger("bff.oferta")
 
@@ -53,9 +54,12 @@ MENSAJE_SIN_CONSENTIMIENTO = "No hay un consentimiento vigente para consultar tu
 MENSAJE_REINTENTAR = (
     "No pudimos calcular tu oferta en este momento. Intenta de nuevo o habla con un asesor."
 )
+# T18: los límites del plazo salen de jurisdicciones.json, no de números escritos aquí.
+MENSAJE_PLAZO_INVALIDO = (
+    f"El plazo del crédito debe estar entre {PLAZO_MINIMO_MESES} y {PLAZO_MAXIMO_MESES} meses."
+)
 MENSAJE_VALOR_INVALIDO = "El valor del crédito no es válido."
 MENSAJE_DOCUMENTO_INVALIDO = "El documento de identidad no es válido."
-MENSAJE_PLAZO_INVALIDO = "El plazo del crédito debe estar entre 1 y 60 meses."
 MENSAJE_DIRECCION_INVALIDA = "Ingresa la dirección del inmueble."
 MENSAJE_DATOS_INSUFICIENTES = (
     "No pudimos consultar tu historial crediticio en este momento. "
@@ -69,8 +73,6 @@ MOTIVO_FUENTES_NO_DISPONIBLES = "FUENTES_NO_DISPONIBLES"
 # Mismos límites que el formulario W01-01 (solventa-frontend: SolicitudYConsentimiento.vue).
 MIN_DIGITOS_DOCUMENTO = 6
 MAX_LARGO_DOCUMENTO = 20
-PLAZO_MINIMO_MESES = 1
-PLAZO_MAXIMO_MESES = 60
 MAX_LARGO_DIRECCION = 200
 
 
