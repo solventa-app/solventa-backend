@@ -11,7 +11,7 @@
 // NO cuenta para el umbral.
 //
 // Variables de entorno (valores por defecto SOLO LOCALES, no secretos):
-//   USUARIO_BACKOFFICE / CLAVE_BACKOFFICE   admin.solventa / admin-local-solventa (crean los CLIENTES de prueba)
+//   USUARIO_BACKOFFICE / CLAVE_BACKOFFICE   admin.solventa / Admin-local-solventa (crean los CLIENTES de prueba)
 //   CLIENTES_PRUEBA                         cuántos CLIENTES crear (por defecto 20)
 //   STUB_PASARELA_URL                       la pasarela de prueba donde se paga (por defecto http://localhost:8103)
 
@@ -92,7 +92,7 @@ export function prepararClientes(graphqlUrl, cantidad, marca) {
   const backoffice = graphql(graphqlUrl, SESION, {
     e: {
       usuario: __ENV.USUARIO_BACKOFFICE || "admin.solventa",
-      clave: __ENV.CLAVE_BACKOFFICE || "admin-local-solventa",
+      clave: __ENV.CLAVE_BACKOFFICE || "Admin-local-solventa",
     },
   });
   const tokenBackoffice =

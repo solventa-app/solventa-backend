@@ -35,8 +35,8 @@ import urllib.request
 BFF = os.getenv("BFF_URL", "http://localhost:8000") + "/graphql/web"
 STUB_PASARELA = os.getenv("STUB_PASARELA_URL", "http://localhost:8103")
 USUARIO_BACKOFFICE = os.getenv("USUARIO_BACKOFFICE", "admin.solventa")
-CLAVE_BACKOFFICE = os.getenv("CLAVE_BACKOFFICE", "admin-local-solventa")
-CLAVE_CLIENTES = "clave-demo-cliente"
+CLAVE_BACKOFFICE = os.getenv("CLAVE_BACKOFFICE", "Admin-local-solventa")
+CLAVE_CLIENTES = "Clave-demo-cliente"
 SUFIJO = os.getenv("SUFIJO", "").strip()
 
 # (alias, nombre, póliza, prima mensual, modo de la pasarela) — como el prototipo W05-01.

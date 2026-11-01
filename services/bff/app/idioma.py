@@ -315,8 +315,28 @@ EN: dict[str, str] = {
     ),
 }
 
+_REQUISITOS_CLAVE_EN = {
+    "una mayúscula": "an uppercase letter",
+    "una minúscula": "a lowercase letter",
+    "un carácter especial": "a special character",
+}
+
+
+def _clave_debil_en(coincidencia: re.Match[str]) -> str:
+    """«La clave no es segura: falta una mayúscula y un carácter especial.» (T17)."""
+    partes = re.split(r", | y ", coincidencia.group(1))
+    en = [_REQUISITOS_CLAVE_EN.get(p, p) for p in partes]
+    lista = en[0] if len(en) == 1 else ", ".join(en[:-1]) + " and " + en[-1]
+    return f"The password isn't secure: it is missing {lista}."
+
+
 # Mensajes con un número dentro (PAYMENTS, `mensaje_reintentos_agotados`).
-EN_PATRONES: list[tuple[re.Pattern[str], str]] = [
+EN_PATRONES: list[tuple[re.Pattern[str], Any]] = [
+    (re.compile(r"La clave no es segura: falta (.+)\."), _clave_debil_en),
+    (
+        re.compile(r"La clave debe tener entre (\d+) y (\d+) caracteres\."),
+        r"The password must be between \1 and \2 characters long.",
+    ),
     (
         re.compile(r"El plazo del crédito debe estar entre (\d+) y (\d+) meses\."),
         r"The loan term must be between \1 and \2 months.",

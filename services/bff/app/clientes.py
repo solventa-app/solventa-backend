@@ -95,7 +95,7 @@ class PuertoAuth(Protocol):
     async def revocar_consentimiento(self, consentimiento_id: str) -> dict | None: ...
 
     async def iniciar_sesion(
-        self, usuario: str, clave: str, canal: str | None = None
+        self, usuario: str, clave: str, canal: str | None = None, rol: str | None = None
     ) -> dict | None: ...
 
     async def renovar_sesion(self, usuario_id: str, expira_en: str) -> dict | None: ...
@@ -584,7 +584,7 @@ class ClienteAuthHttp:
     # loguea la URL, nunca el cuerpo.
 
     async def iniciar_sesion(
-        self, usuario: str, clave: str, canal: str | None = None
+        self, usuario: str, clave: str, canal: str | None = None, rol: str | None = None
     ) -> dict | None:
         """`None` si AUTH rechaza las credenciales (401); `VerificacionPendiente` con el 403 de
         una cuenta del onboarding fuera de la app (HU-M01)."""
@@ -592,7 +592,7 @@ class ClienteAuthHttp:
             self._cliente,
             "POST",
             "/sesiones",
-            {"usuario": usuario, "clave": clave, "canal": canal},
+            {"usuario": usuario, "clave": clave, "canal": canal, "rol": rol},
         )
         if respuesta.status_code == 401:
             return None

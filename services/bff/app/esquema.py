@@ -62,6 +62,7 @@ from app.monedas import (
     ConversionInvalida,
     convertir,
 )
+from app.reglas_clave import motivo_clave_invalida
 from app.revocacion import avisar_revocacion
 from app.servicio_firma_pago import (
     MENSAJE_AVISOS_NO_DISPONIBLES,
@@ -759,6 +760,9 @@ ResultadoUsuario = Annotated[Usuario | ErrorUsuario, strawberry.union("Resultado
 class CredencialesInput:
     usuario: str
     clave: str
+    # T17: rol del chip elegido en la web. Si no es el de la cuenta, la respuesta es la misma que
+    # con una clave errada (no se revela qué rol tiene el usuario).
+    rol: RolUsuario | None = None
 
 
 @strawberry.input
@@ -2325,7 +2329,10 @@ class Mutation:
         # un token `verificacion-pendiente`; en la web, VERIFICACION_PENDIENTE.
         try:
             sesion = await _auth(info).iniciar_sesion(
-                entrada.usuario, entrada.clave, info.context.get("canal")
+                entrada.usuario,
+                entrada.clave,
+                info.context.get("canal"),
+                entrada.rol.value if entrada.rol else None,
             )
         except VerificacionPendiente:
             return ErrorAutenticacion(
@@ -2807,6 +2814,10 @@ class Mutation:
         """Crea la cuenta CLIENTE en PENDIENTE_VERIFICACION validando el código OTP del correo,
         y devuelve su sesión (scope `verificacion-pendiente`) para el canal móvil (HU-M01).
         Pública: no exige token previo ni sesión."""
+        # T17: la clave se valida antes del OTP para no gastar el código con una clave débil.
+        motivo = motivo_clave_invalida(clave)
+        if motivo is not None:
+            return ErrorAutenticacion(mensaje=motivo, codigo="CLAVE_DEBIL")
         try:
             await info.context["servicio_codigo_onboarding"].verificar(correo, codigo)
         except ErrorOnboardingServicio as error:
@@ -2877,6 +2888,9 @@ class Mutation:
                     pass
                 # Si es otra cuenta diferente o las credenciales no corresponden:
                 return _error_onboarding("SESION_CON_CUENTA")
+            motivo = motivo_clave_invalida(entrada.clave)
+            if motivo is not None:
+                return ErrorOnboarding(codigo="CLAVE_DEBIL", mensaje=motivo)
             try:
                 cuenta = await _auth(info).crear_cuenta_onboarding(entrada.correo, entrada.clave)
                 sesion = await _auth(info).iniciar_sesion(entrada.correo, entrada.clave, CANAL_APP)

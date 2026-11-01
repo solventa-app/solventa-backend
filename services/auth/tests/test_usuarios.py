@@ -22,7 +22,7 @@ def _servicio() -> tuple[ServicioUsuarios, RepositorioUsuariosMemoria]:
 def test_crear_devuelve_solo_datos_publicos() -> None:
     servicio, _ = _servicio()
 
-    usuario = servicio.crear("asesor.017", "clave-segura-1", "ASESOR")
+    usuario = servicio.crear("asesor.017", "Clave-segura-1", "ASESOR")
 
     assert set(usuario) == {
         "id",
@@ -41,11 +41,11 @@ def test_crear_devuelve_solo_datos_publicos() -> None:
 def test_la_clave_se_guarda_como_hash_argon2() -> None:
     servicio, repositorio = _servicio()
 
-    usuario = servicio.crear("asesor.017", "clave-segura-1", "ASESOR")
+    usuario = servicio.crear("asesor.017", "Clave-segura-1", "ASESOR")
 
     guardado = repositorio.filas[usuario["id"]]["hash_clave"]
     assert guardado.startswith("$argon2id$")
-    assert "clave-segura-1" not in guardado
+    assert "Clave-segura-1" not in guardado
 
 
 @pytest.mark.parametrize(
@@ -56,7 +56,7 @@ def test_alias_invalido_se_rechaza(alias: str) -> None:
     servicio, _ = _servicio()
 
     with pytest.raises(DatoInvalido):
-        servicio.crear(alias, "clave-segura-1", "ASESOR")
+        servicio.crear(alias, "Clave-segura-1", "ASESOR")
 
 
 @pytest.mark.parametrize(
@@ -66,7 +66,7 @@ def test_alias_con_forma_de_correo_o_documento_tiene_mensaje_claro(alias: str) -
     servicio, _ = _servicio()
 
     with pytest.raises(DatoInvalido, match="correo ni un número de documento"):
-        servicio.crear(alias, "clave-segura-1", "CLIENTE")
+        servicio.crear(alias, "Clave-segura-1", "CLIENTE")
 
 
 def test_clave_corta_se_rechaza() -> None:
@@ -80,21 +80,21 @@ def test_rol_desconocido_se_rechaza() -> None:
     servicio, _ = _servicio()
 
     with pytest.raises(DatoInvalido):
-        servicio.crear("asesor.017", "clave-segura-1", "ADMIN")
+        servicio.crear("asesor.017", "Clave-segura-1", "ADMIN")
 
 
 def test_alias_duplicado() -> None:
     servicio, _ = _servicio()
-    servicio.crear("asesor.017", "clave-segura-1", "ASESOR")
+    servicio.crear("asesor.017", "Clave-segura-1", "ASESOR")
 
     with pytest.raises(UsuarioDuplicado):
-        servicio.crear("asesor.017", "otra-clave-123", "CLIENTE", **extras_cliente("asesor.017"))
+        servicio.crear("asesor.017", "Otra-clave-123", "CLIENTE", **extras_cliente("asesor.017"))
 
 
 def test_listar_filtra_por_rol() -> None:
     servicio, _ = _servicio()
-    servicio.crear("asesor.017", "clave-segura-1", "ASESOR")
-    servicio.crear("cliente.a", "clave-segura-1", "CLIENTE", **extras_cliente("cliente.a"))
+    servicio.crear("asesor.017", "Clave-segura-1", "ASESOR")
+    servicio.crear("cliente.a", "Clave-segura-1", "CLIENTE", **extras_cliente("cliente.a"))
 
     assert [u["usuario"] for u in servicio.listar("CLIENTE")] == ["cliente.a"]
     assert len(servicio.listar(None)) == 2
@@ -103,7 +103,7 @@ def test_listar_filtra_por_rol() -> None:
 def test_cambiar_rol_y_suspender() -> None:
     servicio, _ = _servicio()
     usuario = servicio.crear(
-        "cliente.a", "clave-segura-1", "CLIENTE", **extras_cliente("cliente.a")
+        "cliente.a", "Clave-segura-1", "CLIENTE", **extras_cliente("cliente.a")
     )
 
     assert servicio.cambiar_rol(usuario["id"], "ASESOR")["rol"] == "ASESOR"

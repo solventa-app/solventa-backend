@@ -466,7 +466,7 @@ y `$env:CLAVE_BACKOFFICE = gcloud secrets versions access latest --secret usuari
 
 Los alias por defecto son `cliente.demo`, `asesor.demo` y `operador.demo` (`--cliente`, `--asesor`, `--operador` los
 cambian; un alias no puede ser un correo ni tener 6 o más dígitos seguidos). En local no hace falta el paso 1: el compose
-ya crea un BACKOFFICE público (`admin.solventa` / `admin-local-solventa`), con el que sirve `python scripts/crear_usuarios.py`.
+ya crea un BACKOFFICE público (`admin.solventa` / `Admin-local-solventa`), con el que sirve `python scripts/crear_usuarios.py`.
 
 ## Apagar y encender lo que cuesta (sin depender de nadie)
 

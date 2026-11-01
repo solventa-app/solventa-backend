@@ -15,7 +15,7 @@ from app.main import create_app
 from app.sesiones import ServicioSesiones
 from app.usuarios import ServicioUsuarios
 
-CLAVE = "clave-segura-1"
+CLAVE = "Clave-segura-1"
 
 
 def _cliente() -> TestClient:

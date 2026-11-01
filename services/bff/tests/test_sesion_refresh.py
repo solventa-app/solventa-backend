@@ -7,7 +7,7 @@ from app.configuracion import Configuracion
 from app.main import create_app
 
 LOGIN = """
-mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "clave-segura-1"}) {
+mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "Clave-segura-1"}) {
   __typename ... on Sesion { token expiraEn refreshToken refreshExpiraEn }
 } }
 """

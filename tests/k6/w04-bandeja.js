@@ -63,7 +63,7 @@ export function setup() {
       variables: {
         e: {
           usuario: __ENV.USUARIO_BACKOFFICE || "admin.solventa",
-          clave: __ENV.CLAVE_BACKOFFICE || "admin-local-solventa",
+          clave: __ENV.CLAVE_BACKOFFICE || "Admin-local-solventa",
         },
       },
     }),

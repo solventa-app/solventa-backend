@@ -27,7 +27,7 @@ from app.usuarios import (
     normalizar_documento,
 )
 
-CLAVE = "clave-segura-1"
+CLAVE = "Clave-segura-1"
 CORREO = "ana.perez@ejemplo.co"
 DOCUMENTO = "1020304050"
 

@@ -7,7 +7,7 @@
 //
 // Variables de entorno (valores por defecto SOLO LOCALES, no secretos):
 //   AUTH_TOKEN + CONSENTIMIENTO_ID   usar un ASESOR y un consentimiento que ya existen (staging)
-//   USUARIO_BACKOFFICE / CLAVE_BACKOFFICE   admin.solventa / admin-local-solventa
+//   USUARIO_BACKOFFICE / CLAVE_BACKOFFICE   admin.solventa / Admin-local-solventa
 
 import http from "k6/http";
 
@@ -77,7 +77,7 @@ export function prepararSesion(graphqlUrl, documento) {
   const backoffice = graphql(graphqlUrl, SESION, {
     e: {
       usuario: __ENV.USUARIO_BACKOFFICE || "admin.solventa",
-      clave: __ENV.CLAVE_BACKOFFICE || "admin-local-solventa",
+      clave: __ENV.CLAVE_BACKOFFICE || "Admin-local-solventa",
     },
   });
   const tokenBackoffice =

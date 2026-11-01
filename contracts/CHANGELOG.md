@@ -388,6 +388,17 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   visual; pueden leer `segundosRestantes`). Alcance: solo el flujo A (correo del registro móvil); los flujos B y C
   de la tabla del plan quedan para su tarea.
 
+
+## v0.29 — 2026-11-01
+
+- KAN-26 (T17): contraseña segura y login sin revelar el rol. Aditivo: `CredencialesInput.rol` (opcional) y el código
+  `CLAVE_DEBIL` de `ErrorAutenticacion` en `registrarCuenta`. En altas (onboarding y `crearUsuario`) la clave lleva de 8
+  a 128 caracteres, una mayúscula, una minúscula y un carácter especial (Unicode: categorías `Lu`, `Ll` y todo lo que no
+  sea letra ni número). El login no exige la regla: las cuentas existentes siguen entrando.
+- `iniciarSesion` con un `rol` distinto al de la cuenta responde igual que con una clave errada. La app (`/graphql/app`)
+  solo admite cuentas CLIENTE; ASESOR y BACKOFFICE reciben el mismo «Usuario o clave incorrectos.».
+- Afecta al frontend: sí (la web manda `rol`; el móvil muestra el checklist). PR gemelo en `solventa-frontend`.
+
 ## v0.32 — 2026-11-01
 
 - KAN-26 (T19): consultas `autocompletarDireccion` y `validarDireccion` (Places detrás del ACL Worker, timeout 700 ms, stub sin llave). Si Google no responde, `verificado = false` y la dirección se permite «sin verificar». Afecta al frontend: sí (aditivo).
