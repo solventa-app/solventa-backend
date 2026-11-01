@@ -388,6 +388,18 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   visual; pueden leer `segundosRestantes`). Alcance: solo el flujo A (correo del registro móvil); los flujos B y C
   de la tabla del plan quedan para su tarea.
 
+## v0.32 — 2026-11-01
+
+- KAN-26 (T19): consultas `autocompletarDireccion` y `validarDireccion` (Places detrás del ACL Worker, timeout 700 ms, stub sin llave). Si Google no responde, `verificado = false` y la dirección se permite «sin verificar». Afecta al frontend: sí (aditivo).
+
+## v0.33 — 2026-11-01
+
+- KAN-26 (T20): `Jurisdiccion.tiposDocumento` (código y etiquetas es/en, de `contracts/jurisdicciones.json`) y la consulta `documentoValido(pais, tipoDocumento, numero)`. No cambia aún el enum `TipoDocumentoOnboarding`, ni AUTH ni el `titular_id` (pendiente). Afecta al frontend: sí (aditivo).
+
+## v0.34 — 2026-11-01
+
+- KAN-26: los errores de sesión llevan `extensions.code` (`SIN_SESION`, `SESION_INVALIDA`); el cliente deja de comparar el mensaje. El texto no cambia. Afecta al frontend: sí (aditivo).
+
 ## v0.26 — 2026-11-01
 
 - KAN-26 (T22, `plan-cierre-HU-W03.md`): sesión con token de acceso corto y refresh largo. Aditivo:
