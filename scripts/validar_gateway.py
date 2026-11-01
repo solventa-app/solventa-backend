@@ -23,6 +23,9 @@ OPENAPI_SOCIOS = RAIZ / "infra" / "gateway" / "openapi-socios.yaml"
 CONTRATO_SOCIOS = RAIZ / "contracts" / "openapi" / "socios-v1.json"
 
 PLAZO_SEGUNDOS = 0.7
+# El canal móvil tiene 2 s: crear la cuenta del onboarding (hash de la clave) tarda ~1 s.
+PLAZO_CANAL_APP = 2.0
+RUTAS_CANAL_APP = {("POST", "/graphql/app"), ("POST", "/v1/graphql/app")}
 RUTAS_ESPERADAS = {
     ("GET", "/health"),
     ("POST", "/graphql/web"),
@@ -168,15 +171,16 @@ def validar(texto_openapi: str | None = None, texto_envoy: str | None = None) ->
         errores.append(f"Faltan rutas obligatorias en el gateway: {sorted(faltantes)}")
 
     for clave, deadline in sorted(rutas_oa.items()):
-        if abs(deadline - PLAZO_SEGUNDOS) > 1e-6:
+        esperado = PLAZO_CANAL_APP if clave in RUTAS_CANAL_APP else PLAZO_SEGUNDOS
+        if abs(deadline - esperado) > 1e-6:
             errores.append(
-                f"openapi.yaml {clave[0]} {clave[1]}: deadline={deadline}s "
-                f"(debe ser {PLAZO_SEGUNDOS}s)"
+                f"openapi.yaml {clave[0]} {clave[1]}: deadline={deadline}s (debe ser {esperado}s)"
             )
     for clave, timeout in sorted(rutas_ev.items()):
-        if abs(timeout - PLAZO_SEGUNDOS) > 1e-6:
+        esperado = PLAZO_CANAL_APP if clave in RUTAS_CANAL_APP else PLAZO_SEGUNDOS
+        if abs(timeout - esperado) > 1e-6:
             errores.append(
-                f"envoy.yaml {clave[0]} {clave[1]}: timeout={timeout}s (debe ser {PLAZO_SEGUNDOS}s)"
+                f"envoy.yaml {clave[0]} {clave[1]}: timeout={timeout}s (debe ser {esperado}s)"
             )
 
     if "port_value: 8080" not in texto_envoy:

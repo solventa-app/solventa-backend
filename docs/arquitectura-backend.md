@@ -58,7 +58,7 @@ solicitud y traduce la degradación al contrato (`ErrorOferta` con `motivo` o of
 BFF llama también a `POST /fuentes/invalidar-cache` en el ACL Worker para limpiar la caché de las fuentes en segundos (CA-W01-08).
 
 **Autenticación entre servicios y API Gateway (HA-LAT-004):** delante del BFF está GCP API Gateway (en local, Envoy en `:8080` con
-`infra/gateway/envoy.yaml`) con timeout duro de 700 ms por ruta (`infra/gateway/openapi.yaml`). En Cloud Run el BFF es privado y
+`infra/gateway/envoy.yaml`) con timeout duro de 700 ms por ruta (`infra/gateway/openapi.yaml`). La excepción es el canal móvil (`/graphql/app` y `/v1/graphql/app`), con 2 s: crear la cuenta del onboarding tarda ~1 s por el hash de la clave y a 700 ms el gateway devolvía 504 con la cuenta ya creada. En Cloud Run el BFF es privado y
 solo la cuenta `gateway-bff` tiene `roles/run.invoker` sobre él; el resto de servicios exige un token de identidad con
 audience = nombre del servicio destino. Todos los que llaman a otro servicio lo envían cuando
 `AUTENTICACION_SERVICIOS=id_token` (lo fija `.github/servicios.json` en staging; en local vale `ninguna`): el BFF
