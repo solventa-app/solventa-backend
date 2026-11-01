@@ -42,7 +42,7 @@ los llama el BFF, que ya validó el token y el rol.
 | `POST` | `/usuarios` `{usuario, clave, rol, nombre?, correo?, telefono?, documento_identidad?}` | el usuario (sin hash, nombre, contacto ni documento; con `tiene_contacto`); `400` alias, clave, nombre, contacto o documento inválidos (el nombre se admite en cualquier rol; el contacto y el documento solo en CLIENTE, y **un CLIENTE exige documento y correo**, W03-27); `409` alias repetido o documento de otro CLIENTE |
 | `POST` | `/usuarios/nombres` `{ids}` | `{id: nombre}` de los CLIENTE pedidos (hasta 200; ids en el cuerpo). Dato personal: solo lo llama el BFF para un BACKOFFICE |
 | `GET` | `/usuarios?rol=` | lista de usuarios (el `nombre` siempre en `null`) |
-| `GET` | `/usuarios/{id}` | el usuario con su `nombre`, su `correo` y su `documento_enmascarado` (`•••• 4050`; el BFF solo lo llama con el id del propio usuario, para `yo`), o `404` |
+| `GET` | `/usuarios/{id}` | el usuario con su `nombre`, su `correo` y su `documento_enmascarado` (`10••••4050`; el BFF solo lo llama con el id del propio usuario, para `yo`), o `404` |
 | `GET` | `/usuarios/{id}/identidad` | `{titular_id, documento}` **en claro** de un CLIENTE con la identidad verificada, o `404`. Dato personal: solo lo llama el BFF con el id del token, para cotizar sin pedirle la cédula (W03-34) y autorizar por titular (W03-33); nunca se loguea |
 | `POST` | `/usuarios/{id}/rol` `{rol}` | el usuario con el rol nuevo, o `404` |
 | `POST` | `/usuarios/{id}/suspender` | baja lógica (`estado = SUSPENDIDO`), o `404` |

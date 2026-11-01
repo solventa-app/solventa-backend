@@ -66,8 +66,22 @@ def test_documentos_invalidos(documento: str) -> None:
         normalizar_documento(documento)
 
 
-def test_enmascarar_deja_solo_los_ultimos_cuatro() -> None:
-    assert enmascarar_documento("1020304050") == "•••• 4050"
+@pytest.mark.parametrize(
+    ("documento", "esperado"),
+    [
+        ("123456", "••3456"),  # 6: solo los últimos 4, longitud conservada
+        ("1234567", "12•4567"),  # 7: ya aplica 2 + 4
+        ("1020304050", "10••••4050"),
+        ("AB123456", "AB••3456"),  # pasaporte con letras
+        ("A1234567X", "A1•••567X"),
+        ("12345", "•2345"),
+        ("1234", "1234"),
+    ],
+)
+def test_enmascarar_conserva_longitud(documento: str, esperado: str) -> None:
+    resultado = enmascarar_documento(documento)
+    assert resultado == esperado
+    assert len(resultado) == len(documento)
 
 
 # ---------- crear
@@ -140,7 +154,7 @@ def test_documento_enmascarado_e_identidad_del_propio_cliente() -> None:
     servicio, _ = _servicio()
     creado = _cliente(servicio)
 
-    assert servicio.documento_enmascarado_de(creado["id"]) == "•••• 4050"
+    assert servicio.documento_enmascarado_de(creado["id"]) == "10••••4050"
     assert servicio.identidad_de(creado["id"]) == {
         "titular_id": _titular_como_el_bff(DOCUMENTO),
         "documento": DOCUMENTO,
@@ -211,8 +225,8 @@ def test_http_la_mascara_sale_solo_al_propio_usuario() -> None:
         lista = client.get("/usuarios").json()
 
     assert creado["documento_enmascarado"] is None
-    assert sesion["usuario"]["documento_enmascarado"] == "•••• 4050"
-    assert propio["documento_enmascarado"] == "•••• 4050"
+    assert sesion["usuario"]["documento_enmascarado"] == "10••••4050"
+    assert propio["documento_enmascarado"] == "10••••4050"
     assert all(u["documento_enmascarado"] is None for u in lista)
 
 

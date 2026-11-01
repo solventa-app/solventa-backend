@@ -175,7 +175,7 @@ class UsuarioResponse(BaseModel):
     moneda: str = "COP"
     # Solo dice si tiene contacto (para que la web sepa cuándo pedirlo), nunca cuál es.
     tiene_contacto: bool = False
-    # Como `nombre`: solo en `POST /sesiones` y `GET /usuarios/{id}` (W03-34, `•••• 5678`).
+    # Como `nombre`: solo en `POST /sesiones` y `GET /usuarios/{id}` (W03-34, `10••••5678`).
     documento_enmascarado: str | None = None
     # v0.24: el correo propio, como `nombre`: solo en `POST /sesiones` y `GET /usuarios/{id}`.
     correo: str | None = None
