@@ -57,6 +57,9 @@ jobs:
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read # para saber si un apagado programado de hoy ya funcionó
     outputs:
       ok: ${{ steps.soporte.outputs.ok }}
     steps:
@@ -67,7 +70,27 @@ jobs:
         id: soporte
         env:
           EVENTO: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
         run: |
+          # Los cron de las 08:30, 10:00 y 12:00 UTC son REINTENTOS del de las 07:00: si un apagado programado de hoy
+          # (día de Colombia) ya terminó bien, con su job `costos` en verde, los demás no hacen nada. El 1-nov GitHub
+          # entregó el primero a las 14:06 UTC y dos reintentos a las 15:19 y 16:31 UTC, que volvieron a apagar
+          # staging en pleno día justo después de que el equipo lo encendiera a mano.
+          if [ "$EVENTO" = "schedule" ]; then
+            desde=$(date -u -d "$(TZ=America/Bogota date +%F) 00:00 -0500" +%Y-%m-%dT%H:%M:%SZ)
+            corridas=$(gh api "repos/${REPO}/actions/workflows/costos-staging.yml/runs?event=schedule&status=success&created=%3E%3D${desde}" \
+              --jq ".workflow_runs[] | select(.id != ${RUN_ID}) | .id")
+            for id in $corridas; do
+              resultado=$(gh api "repos/${REPO}/actions/runs/${id}/jobs" --jq '.jobs[] | select(.name == "costos") | .conclusion')
+              if [ "$resultado" = "success" ]; then
+                echo "ok=false" >> "$GITHUB_OUTPUT"
+                echo "::notice title=Costos staging::el apagado programado de hoy ya funcionó (run ${id}); este reintento no hace nada."
+                exit 0
+              fi
+            done
+          fi
           if grep -q 'cloud_sql_encendida' infra/variables.tf; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
             exit 0
