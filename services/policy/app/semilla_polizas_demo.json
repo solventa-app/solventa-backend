@@ -148,5 +148,155 @@
       "valor": "88000000",
       "moneda": "COP"
     }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-11",
+    "oferta_id": "demo-siniestros-oferta-11",
+    "cliente_id": "demo-siniestros-cli-11",
+    "vigencia_desde": "2026-03-10T00:00:00-05:00",
+    "vigencia_hasta": "2027-03-10T00:00:00-05:00",
+    "prima": {
+      "valor": "2430000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "81000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-12",
+    "oferta_id": "demo-siniestros-oferta-12",
+    "cliente_id": "demo-siniestros-cli-12",
+    "vigencia_desde": "2026-04-10T00:00:00-05:00",
+    "vigencia_hasta": "2027-04-10T00:00:00-05:00",
+    "prima": {
+      "valor": "2580000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "86000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-13",
+    "oferta_id": "demo-siniestros-oferta-13",
+    "cliente_id": "demo-siniestros-cli-13",
+    "vigencia_desde": "2026-03-10T00:00:00-05:00",
+    "vigencia_hasta": "2027-03-10T00:00:00-05:00",
+    "prima": {
+      "valor": "2400000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "80000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-14",
+    "oferta_id": "demo-siniestros-oferta-14",
+    "cliente_id": "demo-siniestros-cli-14",
+    "vigencia_desde": "2026-07-10T00:00:00-05:00",
+    "vigencia_hasta": "2027-07-10T00:00:00-05:00",
+    "prima": {
+      "valor": "2310000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "77000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-15",
+    "oferta_id": "demo-siniestros-oferta-15",
+    "cliente_id": "demo-siniestros-cli-15",
+    "vigencia_desde": "2026-01-10T00:00:00-05:00",
+    "vigencia_hasta": "2027-01-10T00:00:00-05:00",
+    "prima": {
+      "valor": "1830000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "61000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-16",
+    "oferta_id": "demo-siniestros-oferta-16",
+    "cliente_id": "demo-siniestros-cli-16",
+    "vigencia_desde": "2026-05-10T00:00:00-05:00",
+    "vigencia_hasta": "2027-05-10T00:00:00-05:00",
+    "prima": {
+      "valor": "1830000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "61000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-17",
+    "oferta_id": "demo-siniestros-oferta-17",
+    "cliente_id": "demo-siniestros-cli-17",
+    "vigencia_desde": "2026-06-10T00:00:00-05:00",
+    "vigencia_hasta": "2027-06-10T00:00:00-05:00",
+    "prima": {
+      "valor": "1380000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "46000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-18",
+    "oferta_id": "demo-siniestros-oferta-18",
+    "cliente_id": "demo-siniestros-cli-18",
+    "vigencia_desde": "2026-04-10T00:00:00-05:00",
+    "vigencia_hasta": "2027-04-10T00:00:00-05:00",
+    "prima": {
+      "valor": "1830000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "61000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-19",
+    "oferta_id": "demo-siniestros-oferta-19",
+    "cliente_id": "demo-siniestros-cli-19",
+    "vigencia_desde": "2026-02-10T00:00:00-05:00",
+    "vigencia_hasta": "2027-02-10T00:00:00-05:00",
+    "prima": {
+      "valor": "1890000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "63000000",
+      "moneda": "COP"
+    }
+  },
+  {
+    "propuesta_id": "demo-siniestros-prop-20",
+    "oferta_id": "demo-siniestros-oferta-20",
+    "cliente_id": "demo-siniestros-cli-20",
+    "vigencia_desde": "2026-06-10T00:00:00-05:00",
+    "vigencia_hasta": "2027-06-10T00:00:00-05:00",
+    "prima": {
+      "valor": "2490000",
+      "moneda": "COP"
+    },
+    "cobertura": {
+      "valor": "83000000",
+      "moneda": "COP"
+    }
   }
 ]
