@@ -896,6 +896,7 @@ type EstadoSistema {
   micros: [SaludMicro!]!
 }
 
+# v0.34: los errores de sesión llevan extensions.code = SIN_SESION o SESION_INVALIDA (no comparar el mensaje).
 # v0.25 (T18): límites y datos de cada país soportado, leídos de contracts/jurisdicciones.json. La web y el
 # móvil los usan para validar (plazo mínimo y máximo) sin llevarlos escritos.
 type Jurisdiccion {
@@ -905,9 +906,38 @@ type Jurisdiccion {
   tipoDocumento: String!
   plazoMin: Int!
   plazoMax: Int!
+  # v0.33 (T20): tipos de documento del país (el nacional y el pasaporte; en Colombia, CC, CE y pasaporte).
+  tiposDocumento: [TipoDocumentoPais!]!
+}
+
+# v0.33 (T20). Los códigos (CC, CPF...) no se traducen; las etiquetas sí.
+type TipoDocumentoPais {
+  codigo: String!
+  etiquetaEs: String!
+  etiquetaEn: String!
+}
+
+# v0.32 (T19)
+type SugerenciaDireccion {
+  placeId: String!
+  descripcion: String!
+}
+
+# v0.32 (T19). verificado = false: Google no respondió, el lugar no es válido o el país no está soportado;
+# la dirección escrita se permite «sin verificar» y no bloquea la cotización.
+type DireccionValidada {
+  verificado: Boolean!
+  direccion: String
+  ciudad: String
+  pais: String
 }
 
 type Query {
+  # v0.32 (T19). Places detrás del ACL Worker (timeout 700 ms; sin llave, un stub). Lista vacía si no responde.
+  autocompletarDireccion(texto: String!, pais: String = null): [SugerenciaDireccion!]!
+  validarDireccion(placeId: String!): DireccionValidada!
+  # v0.33 (T20). Pública. True si el tipo existe en el país y el número cumple su formato.
+  documentoValido(pais: String!, tipoDocumento: String!, numero: String!): Boolean!
   # v0.25 (T18). Pública: son parámetros del producto, sin datos personales.
   jurisdicciones: [Jurisdiccion!]!
   # El archivo si existe y quien pregunta puede leerlo; si no, null.

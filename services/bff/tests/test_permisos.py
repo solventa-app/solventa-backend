@@ -272,3 +272,13 @@ def test_el_listado_de_usuarios_no_expone_nombres() -> None:
         )["data"]["usuarios"]
 
     assert all(u["nombre"] is None for u in usuarios)
+
+
+def test_t19_t20_documento_y_codigo_de_sesion():
+    from app.jurisdicciones import validar_documento
+
+    assert validar_documento("CO", "CC", "1.234.567") is True
+    assert validar_documento("CO", "CC", "12") is False
+    assert validar_documento("BR", "CC", "1234567") is False  # el tipo no es del país
+    assert validar_documento("FR", "CC", "1234567") is False
+    assert validar_documento("US", "PASAPORTE", "A1234567") is True
