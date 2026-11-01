@@ -368,6 +368,7 @@ class AclFalso:
         self.fallan = fallan or set()
         self.llamadas: list[tuple[str, str, str]] = []
         self.invalidaciones: list[str] = []
+        self.notificaciones: list[dict] = []
 
     async def circuitos(self) -> dict[str, str]:
         return dict(self.circuitos_estado)
@@ -391,6 +392,26 @@ class AclFalso:
         if "tasas" in self.fallan:
             raise ErrorServicio("timeout")
         return {"COP": "1", "USD": "4000", "EUR": "4400", "CLP": "4"}
+
+    async def enviar_notificacion(
+        self,
+        id_notificacion: str,
+        plantilla: str,
+        destinatario_id: str,
+        datos: dict[str, str],
+        correo: str,
+    ) -> dict:
+        if "notificaciones" in self.fallan:
+            raise ErrorServicio("timeout")
+        envio = {
+            "id_notificacion": id_notificacion,
+            "plantilla": plantilla,
+            "destinatario_id": destinatario_id,
+            "datos": dict(datos),
+            "correo": correo,
+        }
+        self.notificaciones.append(envio)
+        return {"estado": "enviada", "referencia": "ref-1", "motivo": None}
 
 
 class RiskFalso:
@@ -1042,6 +1063,8 @@ class OnboardingFalso:
             raise ErrorServicio("caido")
         filas = [s for s in self.sesiones.values() if s["usuario_id"] == usuario_id]
         return self._vista(filas[-1]) if filas else None
+
+
 class ClaimsFalso:
     """CLAIMS en memoria (HU-W04): devuelve expedientes con la forma real y registra las
     llamadas."""

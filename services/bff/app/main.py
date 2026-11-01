@@ -41,6 +41,7 @@ from app.salud import (
     SinMetricas,
     sonda_http,
 )
+from app.servicio_codigo_onboarding import ServicioCodigoOnboarding
 from app.servicio_firma_pago import ErrorFlujoDatos, ServicioFirmaPago
 from app.servicio_oferta import ServicioOferta
 from app.servicio_suscripcion import MENSAJE_DOCUMENTO_NO_DISPONIBLE, ServicioSuscripcion
@@ -101,6 +102,12 @@ def create_app(
         app.state.servicio_firma_pago = ServicioFirmaPago(
             app.state.clientes, config.avisos_url, config.url_front
         )
+        almacen_codigo = AlmacenRedis(config.redis_url) if clientes is None else AlmacenMemoria()
+        if clientes is None:
+            abiertos.append(almacen_codigo)
+        app.state.servicio_codigo_onboarding = ServicioCodigoOnboarding(
+            app.state.clientes, almacen_codigo, config.cliente_id_clave
+        )
         # API de socios (HU-W07).
         app.state.cliente_id_clave = config.cliente_id_clave
         if app.state.clientes.socios is not None:
@@ -150,6 +157,7 @@ def create_app(
                 "clientes": app.state.clientes,
                 "servicio_oferta": app.state.servicio_oferta,
                 "servicio_firma_pago": app.state.servicio_firma_pago,
+                "servicio_codigo_onboarding": app.state.servicio_codigo_onboarding,
                 # Token del enlace de firma (W03-33): viaja en esta cabecera, nunca en la URL.
                 "enlace_firma": request.headers.get("x-enlace-firma"),
                 "usuario": usuario,
