@@ -24,7 +24,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('10 siniestros sembrados', () => pm.expect(pm.response.json().siniestros).to.eql(10));"
+                  "pm.test('20 siniestros sembrados', () => pm.expect(pm.response.json().siniestros).to.eql(20));"
                 ]
               }
             }
@@ -280,7 +280,7 @@
                   "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const cuerpo = pm.response.json();",
-                  "pm.test('Solo aprobados', () => pm.expect(cuerpo.data.siniestros.map(x => x.estado)).to.eql(['APROBADO', 'APROBADO']));"
+                  "pm.test('Solo aprobados', () => pm.expect(cuerpo.data.siniestros.map(x => x.estado)).to.eql(Array(4).fill('APROBADO')));"
                 ]
               }
             }
@@ -1210,7 +1210,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Semilla restaurada', () => pm.expect(pm.response.json().siniestros).to.eql(10));"
+                  "pm.test('Semilla restaurada', () => pm.expect(pm.response.json().siniestros).to.eql(20));"
                 ]
               }
             }
