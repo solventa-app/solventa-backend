@@ -131,15 +131,15 @@ Punto de retoma (2026-10-31): los ajustes de W01 y W05 están hechos en código,
 | web #110 | `PROJECT_STATUS.md` | Espera revisión |
 | web #111 | W05-01 por SSE, apilado sobre #110 | Espera revisión |
 
-**W01 no está integrada:** falta lo que dice su criterio de cierre.
+**W01 y W05 verificadas en vivo con el compose** (evidencias del 2026-10-31), sin staging. Integración en curso por PR.
 
-1. **Integrar** en orden: #459 → #460 y #110 → #111. Reconstruir la imagen de PAYMENTS (ahora usa Redis).
-2. **Validación local con compose:** D-B4 (revocar y comprobar Mongo y Redis, ≤ 5 min) y migración RISK `0004` contra Mongo real.
-3. **D-F0:** Cypress de W01 y W05 contra el backend real, y el recorrido por la web.
-4. **W05 de punta a punta:** intervalo 1, `POST /cobros/_generar-recurrentes`, W05-01 por SSE y rechazo de un recurrente.
+1. Integrar: backend #459 → #460 → stub → `fix/KAN-24-redis-en-risk`; web #110 → #111 → Cypress de integración.
+2. Decidir los hallazgos de W05-01: «Cliente» en «—» y «Todos» limitado a 10.
+3. Actualizar `w01-oferta.cy.ts` (espera 5 `li`; hay 8).
+4. Revisar en staging el secreto `redis-url-rating` de RISK: ahora sí escribe caché.
 5. **Staging**, cuando se decida: Cloud SQL detenida es lo que frenó el último despliegue. Confirmar `clave-firma-socios`, `Costos staging` > `encender`, `Deploy staging`, secreto `redis-url-w03` en PAYMENTS y mediciones k6.
 6. **Atacar EC004** y encender el gateway de socios con el portal de Daniel.
 
-**Decisión pendiente de Felipe:** que el stub de la pasarela recuerde cada token. Hoy `POST /v1/cobros` no lo consulta y el resultado depende solo del modo, así que una tarjeta de prueba mala no falla en un cobro recurrente.
+**Stub de la pasarela:** recuerda el token. `4000 0000 0000 0341` se aprueba en la página y se rechaza en los cobros recurrentes.
 
 **Acuerdos de trabajo:** por ahora solo validación por código, sin lanzar infraestructura. Commit, push y PR sin pedir aprobación, sin coautoría; el título del PR debe cumplir `tipo(alcance): KAN-N descripción` (`gh pr edit` falla por Projects classic: usar `gh api -X PATCH`). Antes de un PR de la web, correr `npm run formato:verificar`. Jira lo actualiza Felipe (CA-W01-08 ampliado y criterio nuevo de KAN-28).
