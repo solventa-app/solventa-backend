@@ -185,7 +185,7 @@ gql '{"query":"mutation { revocarConsentimiento(id:\"'"$CONSENTIMIENTO"'\") { vi
 gql "$OFERTA" "$TOKEN_ASESOR"
 ```
 
-**Esperado:** en orden: `ErrorOferta` por el plazo (sin reintento), la confirmación del contacto
+**Esperado:** en orden: `ErrorOferta` por el plazo (0 está fuera del rango de 6 a 200 meses de `contracts/jurisdicciones.json`; sin reintento), la confirmación del contacto
 (`contactarAsesor` hoy solo confirma, no hay servicio de asesores), el consentimiento con `"vigente":false` y, al pedir
 la oferta otra vez, `ErrorOferta`: **revocar corta el acceso a las fuentes**.
 

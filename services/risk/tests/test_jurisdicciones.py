@@ -28,7 +28,7 @@ def test_obtener_jurisdiccion_valida_e_invalida():
     assert co.monto_min == Decimal("500000")
     assert co.monto_max == Decimal("80000000")
     assert co.plazo_min == 6
-    assert co.plazo_max == 60
+    assert co.plazo_max == 200
     assert co.dti_maximo == Decimal("0.40")
 
     # Minúsculas deben resolverse correctamente

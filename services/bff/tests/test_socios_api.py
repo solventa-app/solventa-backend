@@ -203,7 +203,7 @@ def test_el_presupuesto_agotado_es_429_con_retry_after(e) -> None:
 def test_datos_invalidos_no_gastan_presupuesto(e) -> None:
     with e.cliente() as client:
         respuesta = client.post(
-            "/v1/cotizaciones", json={**COTIZACION, "plazoMeses": 61}, headers=e.cabeceras()
+            "/v1/cotizaciones", json={**COTIZACION, "plazoMeses": 201}, headers=e.cabeceras()
         )
 
     _es_error_publico(respuesta, 422, "DATOS_INVALIDOS")

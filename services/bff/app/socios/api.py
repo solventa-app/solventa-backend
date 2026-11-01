@@ -30,6 +30,7 @@ from app.clientes import CredencialesSocioInvalidas, ErrorServicio, PresupuestoA
 from app.esquema import RAMO_POLIZA, estado_visible
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.idioma import idioma_de, traducir
+from app.jurisdicciones import PLAZO_MAXIMO_MESES, PLAZO_MINIMO_MESES
 from app.monedas import MAXIMO_MONTOS, TASAS_PRUEBA, ConversionInvalida, convertir
 from app.revocacion import avisar_revocacion
 from app.servicio_firma_pago import ErrorFlujoDatos
@@ -86,7 +87,7 @@ class SolicitudCotizacion(_Entrada):
     consentimiento_id: str = Field(alias="consentimientoId", min_length=1)
     documento_identidad: str = Field(alias="documentoIdentidad", min_length=6, max_length=20)
     valor_credito: str = Field(alias="valorCredito", pattern=r"^\d+(\.\d+)?$")
-    plazo_meses: int = Field(alias="plazoMeses", ge=1, le=60)
+    plazo_meses: int = Field(alias="plazoMeses", ge=PLAZO_MINIMO_MESES, le=PLAZO_MAXIMO_MESES)
     direccion_inmueble: str = Field(alias="direccionInmueble", min_length=1, max_length=200)
 
 

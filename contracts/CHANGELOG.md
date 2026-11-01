@@ -360,3 +360,15 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   completo (`GET /usuarios/{id}/contacto`) sigue siendo solo para POLICY. AUTH cifra el correo en reposo y lo descifra
   únicamente con el id del token; no se registra en logs.
 - Afecta al frontend: sí (aditivo; el perfil común de web y mobile, T10).
+
+## v0.25 — 2026-11-01
+
+- KAN-26 (T18, W01-01): plazo del crédito de **6 a 200 meses**, configurable. Fuente única:
+  `contracts/jurisdicciones.json` (`plazo_min` = 6, `plazo_max` = 200 en los siete países); cada imagen
+  (BFF, RISK, RATING) lleva su copia `app/jurisdicciones.json` (`scripts/sincronizar_jurisdicciones.py`,
+  verificado en el CI) y falla con un error claro si falta, sin valor por defecto en el código.
+- Aditivo: tipo `Jurisdiccion` y consulta `jurisdicciones` (código, nombre, moneda, tipo de documento, plazo
+  mínimo y máximo). `plazoMeses` de `SolicitudOfertaInput` y de `POST /v1/cotizaciones` se valida de 6 a 200
+  (antes 1 a 60); el OpenAPI de socios lo refleja.
+- Afecta al frontend: sí (W01-01 deja de llevar el 1 a 60 escrito y lee el límite de `jurisdicciones`).
+  PR gemelo en `solventa-frontend`.
