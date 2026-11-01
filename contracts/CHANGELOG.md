@@ -350,3 +350,13 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Afecta al frontend: sí (aditivo; W04-02 lo muestra).
 - KAN-30 (SO-02): API de socios `POST /v1/conversiones`, con los montos en otra moneda solo para mostrar. No descuenta
   presupuesto. Con un token de PRUEBAS usa tasas fijas (W07-10). Afecta al frontend: sí (aditivo; el panel del socio).
+
+## v0.24 — 2026-11-01
+
+- KAN-26 (T9 del plan de cierre de HU-W03, perfil común): `Usuario.correo: String`, solo en `iniciarSesion` y `yo` y solo
+  del propio usuario; en `usuarios`, `crearUsuario` y los demás cambios va en null, y null si no tiene (solo los CLIENTE
+  guardan correo). Nunca viaja dentro del JWT.
+- Privacidad (EC022, W03-16): cambia que el correo no volvía por GraphQL. El **teléfono sigue sin volver** y el contacto
+  completo (`GET /usuarios/{id}/contacto`) sigue siendo solo para POLICY. AUTH cifra el correo en reposo y lo descifra
+  únicamente con el id del token; no se registra en logs.
+- Afecta al frontend: sí (aditivo; el perfil común de web y mobile, T10).
