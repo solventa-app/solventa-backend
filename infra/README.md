@@ -239,7 +239,8 @@ Una migración con el valor marcador falla fuerte y a propósito. `mongo-uri-rat
 
 ### Didit (verificación de identidad de HU-M01)
 
-El ACL Worker usa `stubs/kyc` mientras `IDENTIDAD_URL` no esté definida, también en staging. Para pasar a Didit:
+El ACL Worker usa `stubs/kyc` mientras `IDENTIDAD_URL` no esté definida, también en staging. **Staging usa Didit desde
+el 1-nov** (pasos 1 a 3 hechos; hasta entonces Didit no había recibido ninguna petición). Para pasar a Didit:
 
 1. Crea la cuenta y una aplicación en `business.didit.me` y copia su **API key** (la de *sandbox* responde siempre
    aprobado con datos ficticios y no cobra; la real cobra cada llamada que responde 200).
