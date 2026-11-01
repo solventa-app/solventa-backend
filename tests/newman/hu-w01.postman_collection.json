@@ -24,7 +24,7 @@
     { "key": "bffUrl", "value": "http://localhost:8000" },
     { "key": "stubOpenFinance", "value": "http://localhost:8101" },
     { "key": "stubOpenData", "value": "http://localhost:8102" },
-    { "key": "documentoIdentidad", "value": "" },
+    { "key": "documentoIdentidad", "value": "CC1020304051" },
     { "key": "consentimientoId", "value": "" },
     { "key": "ofertaId", "value": "" }
   ],
@@ -228,7 +228,7 @@
                 "exec": [
                   "const c = pm.response.json().data.contactarAsesor;",
                   "pm.test('confirma el canal pedido', () => pm.expect(c.canal).to.eql('CHAT'));",
-                  "pm.test('el resumen referencia la oferta', () => pm.expect(c.resumen).to.include(pm.collectionVariables.get('ofertaId')));"
+                  "pm.test('el resumen confirma el contacto, sin el id de la oferta', () => pm.expect(c.resumen).to.include('te contactará'));"
                 ]
               }
             }

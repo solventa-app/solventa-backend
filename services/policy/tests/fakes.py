@@ -308,6 +308,12 @@ class PaymentsFalso:
         self.cae = cae
         self.conflicto = conflicto
         self.ordenes: list[OrdenPrimerCobro] = []
+        self.programadas: list[tuple[str, str, str]] = []
+
+    def programar_cobros(self, propuesta_id: str, poliza_id: str, vigencia_hasta: str) -> None:
+        if self.cae:
+            raise PaymentsNoDisponible("caído")
+        self.programadas.append((propuesta_id, poliza_id, vigencia_hasta))
 
     def crear_cobro(self, orden: OrdenPrimerCobro) -> ResultadoCobroPayments:
         self.ordenes.append(orden)

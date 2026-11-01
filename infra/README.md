@@ -258,7 +258,10 @@ openssl rand -base64 32 | tr -d '\n' | gcloud secrets versions add clave-cache-i
 ### Resend (correo real de los avisos de HU-W03)
 
 El ACL manda los avisos (código de verificación, enlace de firma y póliza emitida con el PDF) por el simulador
-(`stubs/notificaciones`) mientras `NOTIFICACIONES_PROVEEDOR` sea `simulado`. Para correo real:
+(`stubs/notificaciones`) mientras `NOTIFICACIONES_PROVEEDOR` sea `simulado`. **Staging usa `resend` desde el 1-nov**
+(pasos 1 a 3 hechos) con el dominio verificado `solventa.globalspark.io` y el remitente
+`Solventa <avisos@solventa.globalspark.io>`. Con el remitente de prueba `onboarding@resend.dev`, Resend responde 403 a
+todo destinatario que no sea el dueño de la cuenta, y POLICY lo convierte en 503. Para correo real:
 
 1. Crea la cuenta en `resend.com`, verifica un dominio (registros DNS que da Resend) y crea una API key con permiso de
    **envío** («Sending access»). Sin dominio verificado, el remitente de prueba `onboarding@resend.dev` solo entrega al
@@ -509,7 +512,10 @@ Colombia** (`cron: '0 7 * * *'`, 07:00 UTC; Colombia no tiene horario de verano)
 prueba no sigue cobrando de un día para otro. Por eso cada mañana estará **apagado**: para usarlo, `encender`.
 Como GitHub no garantiza la hora (el 18-oct la ejecución llegó casi 5 h tarde y el 19-oct no llegó), el bloque `schedule`
 trae **tres reintentos** (08:30, 10:00 y 12:00 UTC). Apagar es idempotente: si la primera pasada funcionó, las otras no
-tienen cambios que aplicar. Para quitarlo, borra el bloque `schedule` de `.github/workflows/costos-staging.yml`. Tres cosas a saber:
+tienen cambios que aplicar. **Los reintentos solo actúan si ningún apagado programado de ese día terminó bien** (job
+`comprobar`, que mira el job `costos` de las ejecuciones `schedule` del día): el 1-nov el primero llegó a las 9:06 a.m.
+y funcionó, pero dos reintentos llegaron a las 10:19 y 11:31 a.m. y volvieron a apagar staging justo después de
+encenderlo a mano; uno se canceló a mitad del `apply` y dejó el candado del estado puesto. Para quitarlo, borra el bloque `schedule` de `.github/workflows/costos-staging.yml`. Tres cosas a saber:
 
 - GitHub puede demorar o saltarse una ejecución programada, y en un repositorio público las desactiva tras
   60 días sin actividad. Si el 1.er intento falla, GitHub avisa por correo a quien editó el cron por última vez.

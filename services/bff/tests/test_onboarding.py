@@ -226,3 +226,125 @@ def test_token_pendiente_no_crea_ni_consulta_ofertas() -> None:
     token = token_de_prueba("CLIENTE", "u-x", scopes=["verificacion-pendiente"])
     respuesta = _gql(cliente, '{ oferta(id: "o-1") { id } }', token=token)
     assert "verificando tu identidad" in respuesta["errors"][0]["message"]
+
+
+def test_reintentar_crear_cuenta_en_el_mismo_recorrido_es_idempotente() -> None:
+    cliente, _, onboarding = _pila()
+    oid, tok = _iniciar(cliente)
+    primera = _gql(cliente, CREAR, {"o": oid}, onb=tok)["data"]["crearCuentaOnboarding"]
+    segunda = _gql(cliente, CREAR, {"o": oid}, onb=tok)["data"]["crearCuentaOnboarding"]
+    assert primera["sesion"]["usuario"]["id"] == segunda["sesion"]["usuario"]["id"]
+    assert onboarding.sesiones[oid]["usuario_id"] == primera["sesion"]["usuario"]["id"]
+
+
+def test_enviar_y_verificar_codigo_onboarding() -> None:
+    from fakes import AclFalso
+
+    acl = AclFalso()
+    auth, onboarding = AuthFalso(), OnboardingFalso()
+    cliente = TestClient(
+        create_app(
+            config=Configuracion.desde_entorno(),
+            clientes=clientes_falsos(auth=auth, acl=acl, onboarding=onboarding),
+        )
+    )
+    cliente.__enter__()
+    q_envio = (
+        'mutation { enviarCodigoOnboarding(correo: "ana.prueba@ejemplo.com") { '
+        "... on CodigoOnboardingEnviado { correoEnmascarado venceEn } "
+        "... on ErrorOnboarding { codigo } } }"
+    )
+    envio = _gql(cliente, q_envio)["data"]["enviarCodigoOnboarding"]
+    assert envio["correoEnmascarado"] == "a•••@ejemplo.com"
+    assert len(acl.notificaciones) == 1
+    codigo = acl.notificaciones[0]["datos"]["codigo"]
+    assert len(codigo) == 6
+
+    q_verif = (
+        "mutation($c: String!) { verificarCodigoOnboarding("
+        'correo: "ana.prueba@ejemplo.com", codigo: $c) { '
+        "... on CodigoOnboardingEnviado { correoEnmascarado venceEn } "
+        "... on ErrorOnboarding { codigo mensaje } } }"
+    )
+    malo = _gql(
+        cliente,
+        q_verif,
+        {"c": "000000" if codigo != "000000" else "999999"},
+    )["data"]["verificarCodigoOnboarding"]
+    assert malo["codigo"] == "CODIGO_INVALIDO"
+
+    ok = _gql(cliente, q_verif, {"c": codigo})["data"]["verificarCodigoOnboarding"]
+    assert ok["correoEnmascarado"] == "a•••@ejemplo.com"
+
+
+def test_enviar_codigo_rechaza_correo_ya_registrado() -> None:
+    from fakes import AclFalso
+
+    acl = AclFalso()
+    auth = AuthFalso()
+    auth.claves["ya@ejemplo.com"] = "ClaveSegura123!"
+    cliente = TestClient(
+        create_app(
+            config=Configuracion.desde_entorno(),
+            clientes=clientes_falsos(auth=auth, acl=acl, onboarding=OnboardingFalso()),
+        )
+    )
+    cliente.__enter__()
+    q = (
+        'mutation { enviarCodigoOnboarding(correo: "ya@ejemplo.com") { '
+        "... on CodigoOnboardingEnviado { correoEnmascarado } "
+        "... on ErrorOnboarding { codigo } } }"
+    )
+    resultado = _gql(cliente, q)["data"]["enviarCodigoOnboarding"]
+    assert resultado["codigo"] == "CORREO_YA_REGISTRADO"
+    assert acl.notificaciones == []
+
+
+def test_registrar_cuenta_sin_token_con_otp() -> None:
+    from fakes import AclFalso
+
+    acl = AclFalso()
+    auth, onboarding = AuthFalso(), OnboardingFalso()
+    cliente = TestClient(
+        create_app(
+            config=Configuracion.desde_entorno(),
+            clientes=clientes_falsos(auth=auth, acl=acl, onboarding=onboarding),
+        )
+    )
+    cliente.__enter__()
+    # 1. Envía el código al correo
+    q_envio = (
+        'mutation { enviarCodigoOnboarding(correo: "carlos.nuevo@ejemplo.com") { '
+        "... on CodigoOnboardingEnviado { correoEnmascarado venceEn } } }"
+    )
+    _gql(cliente, q_envio)
+    codigo = acl.notificaciones[0]["datos"]["codigo"]
+
+    # 2. Código incorrecto
+    q_reg = (
+        "mutation($c: String!) { registrarCuenta("
+        'correo: "carlos.nuevo@ejemplo.com", clave: "ClaveSegura123!", codigo: $c) { '
+        "... on Sesion { token usuario { id rol estado } } "
+        "... on ErrorAutenticacion { codigo mensaje } } }"
+    )
+    malo = _gql(cliente, q_reg, {"c": "000000" if codigo != "000000" else "999999"})
+    assert malo["data"]["registrarCuenta"]["codigo"] == "CODIGO_INVALIDO"
+
+    # 3. Código correcto crea la cuenta y devuelve sesión PENDIENTE_VERIFICACION
+    bueno = _gql(cliente, q_reg, {"c": codigo})
+    sesion = bueno["data"]["registrarCuenta"]
+    assert sesion["usuario"]["rol"] == "CLIENTE"
+    assert sesion["usuario"]["estado"] == "PENDIENTE_VERIFICACION"
+    assert sesion["token"] is not None
+
+    # 4. Iniciar onboarding autenticado vincula la cuenta inmediatamente
+    token_jwt = sesion["token"]
+    q_onb = (
+        "mutation { iniciarOnboarding(entrada: { tipoDocumento: CC }) { "
+        "... on InicioOnboarding { onboarding { id estado } token } } }"
+    )
+    res_onb = _gql(cliente, q_onb, token=token_jwt)["data"]["iniciarOnboarding"]
+    assert res_onb["onboarding"]["estado"] == "INICIADO"
+    oid = res_onb["onboarding"]["id"]
+    assert onboarding.sesiones[oid]["usuario_id"] == sesion["usuario"]["id"]
+

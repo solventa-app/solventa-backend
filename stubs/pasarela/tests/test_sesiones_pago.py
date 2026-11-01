@@ -297,3 +297,51 @@ def test_api_alterna_de_sesiones(client) -> None:
     assert consultada["payment_method"]["brand"] == "MASTERCARD"
     assert consultada["payment_method"]["funding"] == "debit"
     assert client.get("/alterna/v2/checkout-sessions/nada").status_code == 404
+
+
+# ---------- cobros con el token (W05-A7) ----------
+
+
+def _token_de(client: TestClient, numero: str, referencia: str = "int-1") -> str:
+    sesion = _sesion(client, referencia)
+    assert _pagar(client, sesion["sesion_id"], numero=numero).json()["estado"] == "COBRADA"
+    return client.get(f"/v1/sesiones-pago/{sesion['sesion_id']}").json()["medio"]["token"]
+
+
+def _cobrar(client: TestClient, referencia: str, token: str) -> dict:
+    cuerpo = {
+        "referencia_comercio": referencia,
+        "poliza_id": "p-1",
+        "monto": "185000",
+        "moneda": "COP",
+        "token_medio_pago": token,
+    }
+    return client.post("/v1/cobros", json=cuerpo).json()
+
+
+def test_la_tarjeta_de_rechazo_recurrente_paga_en_linea_y_falla_con_su_token(client) -> None:
+    token = _token_de(client, "4000000000000341")
+
+    cobro = _cobrar(client, "rec-1", token)
+
+    assert (cobro["estado"], cobro["motivo"]) == ("rechazado", "fondos_insuficientes")
+
+
+def test_una_tarjeta_normal_sigue_cobrando_con_su_token(client) -> None:
+    assert _cobrar(client, "rec-1", _token_de(client, "4242424242424242"))["estado"] == "cobrado"
+
+
+def test_un_token_desconocido_sigue_la_regla_del_modo(client) -> None:
+    assert _cobrar(client, "rec-1", "tok_convenio")["estado"] == "cobrado"
+
+
+def test_la_api_alterna_tambien_rechaza_por_el_token(client) -> None:
+    cuerpo = {
+        "reference": "rec-1",
+        "policy": "p-1",
+        "amount": "185000",
+        "currency": "COP",
+        "payment_token": _token_de(client, "4000000000000341"),
+    }
+
+    assert client.post("/alterna/v2/charges", json=cuerpo).json()["status"] != "succeeded"

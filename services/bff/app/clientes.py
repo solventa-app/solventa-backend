@@ -100,6 +100,8 @@ class PuertoAuth(Protocol):
 
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict: ...
 
+    async def correo_registrado(self, correo: str) -> bool: ...
+
     async def obtener_usuario(self, usuario_id: str) -> dict | None: ...
 
     async def obtener_identidad(self, usuario_id: str) -> dict | None: ...
@@ -144,9 +146,26 @@ class PuertoAcl(Protocol):
     # HU-W07: el estado de cada circuito (`closed`, `half-opened` u `opened`), para la salud.
     async def circuitos(self) -> dict[str, str]: ...
 
+    async def enviar_notificacion(
+        self,
+        id_notificacion: str,
+        plantilla: str,
+        destinatario_id: str,
+        datos: dict[str, str],
+        correo: str,
+    ) -> dict: ...
+
 
 class PuertoRisk(Protocol):
-    async def registrar_perfil(self, cliente_id: str, fuentes: list[dict]) -> dict: ...
+    async def registrar_perfil(
+        self,
+        cliente_id: str,
+        fuentes: list[dict],
+        consentimiento_id: str | None = None,
+        consentimiento_vence_en: str | None = None,
+    ) -> dict: ...
+
+    async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None: ...
 
 
 class PuertoRating(Protocol):
@@ -164,6 +183,8 @@ class PuertoRating(Protocol):
 
 
 class PuertoPolicy(Protocol):
+    async def nombres_titulares(self, propuesta_ids: list[str]) -> dict[str, str]: ...
+
     async def crear_propuesta(
         self,
         oferta_id: str,
@@ -580,6 +601,15 @@ class ClienteAuthHttp:
             return None
         return _json_o_error(respuesta)
 
+    async def correo_registrado(self, correo: str) -> bool:
+        """¿Ya hay una cuenta con ese correo? El correo va solo en el cuerpo."""
+        respuesta = await _pedir(
+            self._cliente, "POST", "/usuarios/onboarding/correo-registrado", {"correo": correo}
+        )
+        if respuesta.status_code in (400, 422):
+            raise ErrorOnboardingServicio("DATO_INVALIDO")
+        return bool(_json_o_error(respuesta)["registrado"])
+
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
         """CLIENTE en PENDIENTE_VERIFICACION (HU-M01). Correo y clave van solo en el cuerpo."""
         respuesta = await _pedir(
@@ -731,18 +761,60 @@ class ClienteAclHttp:
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
 
+    async def enviar_notificacion(
+        self,
+        id_notificacion: str,
+        plantilla: str,
+        destinatario_id: str,
+        datos: dict[str, str],
+        correo: str,
+    ) -> dict:
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            "/notificaciones/enviar",
+            {
+                "id_notificacion": id_notificacion,
+                "plantilla": plantilla,
+                "destinatario_id": destinatario_id,
+                "datos": datos,
+                "correo": correo,
+            },
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
 
 class ClienteRiskHttp:
     def __init__(self, cliente: httpx.AsyncClient) -> None:
         self._cliente = cliente
 
-    async def registrar_perfil(self, cliente_id: str, fuentes: list[dict]) -> dict:
-        respuesta = await _pedir(
-            self._cliente, "POST", "/perfiles", {"cliente_id": cliente_id, "fuentes": fuentes}
-        )
+    async def registrar_perfil(
+        self,
+        cliente_id: str,
+        fuentes: list[dict],
+        consentimiento_id: str | None = None,
+        consentimiento_vence_en: str | None = None,
+    ) -> dict:
+        cuerpo = {
+            "cliente_id": cliente_id,
+            "fuentes": fuentes,
+            "consentimiento_id": consentimiento_id,
+            "consentimiento_vence_en": consentimiento_vence_en,
+        }
+        respuesta = await _pedir(self._cliente, "POST", "/perfiles", cuerpo)
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
+
+    async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None:
+        cuerpo = {"titular_id": titular_id, "consentimiento_id": consentimiento_id}
+        respuesta = await _pedir(
+            self._cliente, "POST", "/perfiles/consentimiento-revocado", cuerpo
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
 
 
 # Mismo valor que `DETALLE_DATOS_INSUFICIENTES` de services/rating/app/main.py.
@@ -1017,6 +1089,15 @@ class ClientePolicyHttp:
         ruta = f"/propuestas/{propuesta_id}/pago/{sesion_id}/confirmar"
         return await self._flujo("POST", ruta, None, acceso)
 
+    async def nombres_titulares(self, propuesta_ids: list[str]) -> dict[str, str]:
+        """`{propuesta_id: nombre}` (dato personal: nunca se loguea), hasta 200 por llamada."""
+        respuesta = await _pedir(
+            self._cliente, "POST", "/propuestas/nombres-titulares", {"ids": propuesta_ids}
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
     async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None:
         cuerpo = {"titular_id": titular_id, "consentimiento_id": consentimiento_id}
         respuesta = await _pedir(
@@ -1252,9 +1333,7 @@ class ClienteClaimsHttp:
         return respuesta.json()
 
     async def aprobar(self, siniestro_id: str, actor_usuario_id: str) -> dict:
-        return await self._resolver(
-            siniestro_id, "aprobar", {"actor_usuario_id": actor_usuario_id}
-        )
+        return await self._resolver(siniestro_id, "aprobar", {"actor_usuario_id": actor_usuario_id})
 
     async def rechazar(
         self, siniestro_id: str, motivo: str, comentario: str | None, actor_usuario_id: str

@@ -121,6 +121,10 @@ class ServicioCobros:
             return cobro
 
         logger.info("cobro creado poliza=%s estado=cobrando", id_opaco(cobro["poliza_id"]))
+        return self.ejecutar_cobro(cobro)
+
+    def ejecutar_cobro(self, cobro: dict[str, Any]) -> dict[str, Any]:
+        """Lleva a la pasarela un cobro ya guardado en `cobrando` (W05-A7 lo crea por su cuenta)."""
         self._emitir(cobro)
 
         resultado = self._cliente_acl.cobrar(

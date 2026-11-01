@@ -271,10 +271,28 @@ variable "url_front" {
   default     = "http://localhost:5173"
 }
 
+variable "cobros_recurrentes_cron" {
+  description = "Cada cuánto el trabajo de Cloud Scheduler `cobros-recurrentes` llama a `POST /cobros/_generar-recurrentes` de PAYMENTS (W05-A7). El ciclo de cada póliza lo fija `COBRO_RECURRENTE_INTERVALO_DIAS`. Formato cron, zona America/Bogota. Solo aplica con `crear_tareas = true`."
+  type        = string
+  default     = "0 * * * *"
+}
+
+variable "purgar_perfiles_cron" {
+  description = "Cada cuánto el trabajo de Cloud Scheduler `purgar-perfiles-risk` llama a `POST /perfiles/_purgar` de RISK: borra los perfiles cuyo consentimiento venció (W01-A4). Formato cron, zona America/Bogota. Solo aplica con `crear_tareas = true`."
+  type        = string
+  default     = "30 3 * * *"
+}
+
 variable "purgar_contactos_cron" {
   description = "Cada cuánto el trabajo de Cloud Scheduler `purgar-contactos-policy` llama a `POST /_purgar-contactos` de POLICY: borra nombre, correo e imagen de la firma de las propuestas cuyo consentimiento venció (W03-26). Formato cron, zona America/Bogota. Solo aplica con `crear_tareas = true`."
   type        = string
   default     = "0 3 * * *"
+}
+
+variable "aprobar_siniestros_cron" {
+  description = "Cada cuánto el trabajo de Cloud Scheduler `aprobar-siniestros-vencidos` llama a `POST /siniestros/_aprobar-vencidos` de CLAIMS: aprueba los casos pendientes con el plazo del dictamen vencido. Formato cron, zona America/Bogota. Solo aplica con `crear_tareas = true`."
+  type        = string
+  default     = "*/15 * * * *"
 }
 
 variable "crear_almacenamiento" {

@@ -255,6 +255,10 @@ class PagoResponse(BaseModel):
     poliza: PolizaResumenResponse | None = None
 
 
+class NombresTitularesRequest(BaseModel):
+    ids: list[str] = Field(max_length=200)
+
+
 class RevocacionRequest(BaseModel):
     titular_id: str = Field(min_length=1)
     consentimiento_id: str = Field(min_length=1)
@@ -932,6 +936,12 @@ def create_app(
         return _pago(
             _flujo().confirmar_pago(propuesta_id, _auth(x_enlace_firma, x_titular_id), sesion_id)
         )
+
+    @app.post("/propuestas/nombres-titulares", tags=["propuestas"], response_model=dict[str, str])
+    def nombres_titulares(body: NombresTitularesRequest) -> dict[str, str]:
+        """El nombre del titular por propuesta. Es dato personal: solo lo llama el BFF para un
+        BACKOFFICE, y nunca se loguea."""
+        return _flujo().nombres_titulares(body.ids)
 
     @app.post("/propuestas/consentimiento-revocado", tags=["operacion"], status_code=204)
     def consentimiento_revocado(body: RevocacionRequest) -> Response:

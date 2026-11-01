@@ -144,6 +144,11 @@ class AuthFalso:
         self.canales: list[str | None] = []
         self.renovaciones: list[tuple[str, str]] = []
 
+    async def correo_registrado(self, correo: str) -> bool:
+        if self.falla:
+            raise ErrorServicio("caido")
+        return correo in self.claves
+
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
         """Como AUTH (HU-M01): el doble usa el correo como alias para poder iniciar sesión."""
         if self.falla:
@@ -368,6 +373,7 @@ class AclFalso:
         self.fallan = fallan or set()
         self.llamadas: list[tuple[str, str, str]] = []
         self.invalidaciones: list[str] = []
+        self.notificaciones: list[dict] = []
 
     async def circuitos(self) -> dict[str, str]:
         return dict(self.circuitos_estado)
@@ -392,17 +398,51 @@ class AclFalso:
             raise ErrorServicio("timeout")
         return {"COP": "1", "USD": "4000", "EUR": "4400", "CLP": "4"}
 
+    async def enviar_notificacion(
+        self,
+        id_notificacion: str,
+        plantilla: str,
+        destinatario_id: str,
+        datos: dict[str, str],
+        correo: str,
+    ) -> dict:
+        if "notificaciones" in self.fallan:
+            raise ErrorServicio("timeout")
+        envio = {
+            "id_notificacion": id_notificacion,
+            "plantilla": plantilla,
+            "destinatario_id": destinatario_id,
+            "datos": dict(datos),
+            "correo": correo,
+        }
+        self.notificaciones.append(envio)
+        return {"estado": "enviada", "referencia": "ref-1", "motivo": None}
+
 
 class RiskFalso:
     def __init__(self, falla: bool = False) -> None:
         self.falla = falla
         self.llamadas: list[tuple[str, list[dict]]] = []
+        self.consentimientos: list[tuple[str | None, str | None]] = []
+        self.revocados: list[tuple[str, str]] = []
 
-    async def registrar_perfil(self, cliente_id: str, fuentes: list[dict]) -> dict:
+    async def registrar_perfil(
+        self,
+        cliente_id: str,
+        fuentes: list[dict],
+        consentimiento_id: str | None = None,
+        consentimiento_vence_en: str | None = None,
+    ) -> dict:
         self.llamadas.append((cliente_id, fuentes))
+        self.consentimientos.append((consentimiento_id, consentimiento_vence_en))
         if self.falla:
             raise ErrorServicio("HTTP 503")
         return {"cliente_id": cliente_id, "perfil_version": 1, "operation_time": "1700000000.1"}
+
+    async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None:
+        if self.falla:
+            raise ErrorServicio("HTTP 503")
+        self.revocados.append((titular_id, consentimiento_id))
 
 
 class RatingFalso:
@@ -566,6 +606,8 @@ class PolicyFalso:
         self.reconciliaciones: list[str] = []
         self.contactos_recibidos: list[dict | None] = []
         self.tasas_recibidas: list[str | None] = []
+        self.nombres: dict[str, str] = {}
+        self.falla_nombres = False
         self.error_reconciliar: Exception | None = None
         self.propuestas_conocidas: set[str] | None = None  # None = conoce cualquier id
         # v0.18: lo que el BFF le pidió (operación, argumentos) y lo que responderá.
@@ -732,6 +774,11 @@ class PolicyFalso:
                 "vigencia_hasta": "2031-10-28T12:06:00+00:00",
             },
         }
+
+    async def nombres_titulares(self, propuesta_ids: list[str]) -> dict[str, str]:
+        if self.falla_nombres:
+            raise ErrorServicio("caido")
+        return {i: self.nombres[i] for i in propuesta_ids if i in self.nombres}
 
     async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None:
         self._flujo("consentimiento_revocado", titular_id, consentimiento_id)
@@ -1021,6 +1068,8 @@ class OnboardingFalso:
             raise ErrorServicio("caido")
         filas = [s for s in self.sesiones.values() if s["usuario_id"] == usuario_id]
         return self._vista(filas[-1]) if filas else None
+
+
 class ClaimsFalso:
     """CLAIMS en memoria (HU-W04): devuelve expedientes con la forma real y registra las
     llamadas."""

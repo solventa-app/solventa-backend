@@ -55,6 +55,7 @@ from app.monedas import (
     ConversionInvalida,
     convertir,
 )
+from app.revocacion import avisar_revocacion
 from app.servicio_firma_pago import (
     MENSAJE_AVISOS_NO_DISPONIBLES,
     MENSAJE_POLIZA_YA_EMITIDA,
@@ -879,8 +880,10 @@ def _oferta(datos: dict) -> Oferta:
 
 def _cobro(datos: dict, nombres: dict[str, str] | None = None) -> Cobro:
     """`datos` es la respuesta de PAYMENTS (estados en minúscula, `monto` y `moneda` sueltos).
-    `nombres` es `{cliente_id: nombre}` de AUTH; sin él, el cliente sale sin nombre."""
+    `nombres` trae el de AUTH por `cliente_id` y, si el titular no tiene cuenta, el de POLICY por la
+    propuesta (`poliza_id`, ver W03-B1); sin él, el cliente sale sin nombre."""
     cliente_id = datos.get("cliente_id")
+    nombres = nombres or {}
     return Cobro(
         id=strawberry.ID(datos["id"]),
         poliza_id=strawberry.ID(datos["poliza_id"]),
@@ -892,7 +895,10 @@ def _cobro(datos: dict, nombres: dict[str, str] | None = None) -> Cobro:
         reintentos_restantes=datos.get("reintentos_rechazo_restantes"),
         id_transaccion=datos.get("referencia"),
         cliente=(
-            ClienteCobro(id=strawberry.ID(cliente_id), nombre=(nombres or {}).get(cliente_id))
+            ClienteCobro(
+                id=strawberry.ID(cliente_id),
+                nombre=nombres.get(cliente_id) or nombres.get(datos["poliza_id"]),
+            )
             if cliente_id
             else None
         ),
@@ -1085,6 +1091,12 @@ class CuentaOnboarding:
 
 
 @strawberry.type
+class CodigoOnboardingEnviado:
+    correo_enmascarado: str
+    vence_en: datetime
+
+
+@strawberry.type
 class ErrorOnboarding:
     codigo: str
     mensaje: str
@@ -1101,6 +1113,9 @@ ResultadoSubidaOnboarding = Annotated[
 ]
 ResultadoCuentaOnboarding = Annotated[
     CuentaOnboarding | ErrorOnboarding, strawberry.union("ResultadoCuentaOnboarding")
+]
+ResultadoCodigoOnboarding = Annotated[
+    CodigoOnboardingEnviado | ErrorOnboarding, strawberry.union("ResultadoCodigoOnboarding")
 ]
 
 
@@ -1129,6 +1144,9 @@ MENSAJES_ONBOARDING = {
     "SESION_CON_CUENTA": "Esta verificación ya tiene una cuenta.",
     "CORREO_YA_REGISTRADO": "Ya existe una cuenta con ese correo.",
     "DATO_INVALIDO": "Revisa los datos e intenta de nuevo.",
+    "CODIGO_INVALIDO": "El código no es correcto. Revísalo e intenta de nuevo.",
+    "CODIGO_VENCIDO": "El código venció. Pide uno nuevo.",
+    "INTENTOS_AGOTADOS": "Agotaste los intentos. Pide un código nuevo.",
     "JURISDICCION_NO_SOPORTADA": "Aún no verificamos documentos de ese país.",
     "TIPO_DOCUMENTO_NO_SOPORTADO": "Ese tipo de documento no se admite.",
     "PASO_INVALIDO": "Ese paso no existe.",
@@ -1183,6 +1201,8 @@ def _sesion(datos: dict) -> Sesion:
         expira_en=datetime.fromisoformat(datos["expira_en"]),
         usuario=_usuario(datos["usuario"]),
     )
+
+
 # ---------- Siniestros (v0.21, HU-W04, servicio CLAIMS) ----------
 
 
@@ -1289,6 +1309,7 @@ class Resolucion:
     perito: Perito | None
     instrucciones: str | None
     vencimiento_informe: datetime | None
+    automatica: bool  # v0.23: la aprobó el sistema porque el plazo venció sin gestión
 
 
 @strawberry.type
@@ -1449,6 +1470,7 @@ def _resolucion(datos: dict | None) -> Resolucion | None:
         perito=_perito(datos.get("perito")),
         instrucciones=datos.get("instrucciones"),
         vencimiento_informe=_fecha(datos.get("vencimiento_informe")),
+        automatica=datos.get("automatica", False),
     )
 
 
@@ -1542,6 +1564,29 @@ async def _nombres_de_clientes(info: Info, cobros: list[dict]) -> dict[str, str]
             nombres |= await _auth(info).nombres_de_clientes(ids[i : i + TAMANO_LOTE_NOMBRES])
     except (ErrorServicio, SolicitudInvalida) as error:
         logger.warning("nombres de clientes no disponibles error=%s", type(error).__name__)
+    return nombres | await _nombres_de_titulares(info, cobros, nombres)
+
+
+async def _nombres_de_titulares(
+    info: Info, cobros: list[dict], conocidos: dict[str, str]
+) -> dict[str, str]:
+    """El titular que dio un ASESOR no tiene cuenta: su nombre está en la propuesta de POLICY, y
+    `poliza_id` es el id de la propuesta. Si POLICY falla, esos cobros salen sin nombre."""
+    ids = sorted(
+        {
+            c["poliza_id"]
+            for c in cobros
+            if c.get("cliente_id") and c["cliente_id"] not in conocidos
+        }
+    )
+    nombres: dict[str, str] = {}
+    try:
+        for i in range(0, len(ids), TAMANO_LOTE_NOMBRES):
+            nombres |= await info.context["clientes"].policy.nombres_titulares(
+                ids[i : i + TAMANO_LOTE_NOMBRES]
+            )
+    except ErrorServicio as error:
+        logger.warning("nombres de titulares no disponibles error=%s", type(error).__name__)
     return nombres
 
 
@@ -1994,14 +2039,9 @@ class Mutation:
             raise ErrorPublico("Consentimiento no encontrado.")
         titular_id = datos.get("titular_id")
         if titular_id:
-            # Las dos avisos van en paralelo y ninguno hace fallar la revocación.
-            resultados = await asyncio.gather(
-                info.context["clientes"].acl.invalidar_cache_cliente(titular_id),
-                _firma_pago(info).consentimiento_revocado(titular_id, str(id)),
-                return_exceptions=True,
+            await avisar_revocacion(
+                info.context["clientes"], _firma_pago(info), titular_id, str(id)
             )
-            if isinstance(resultados[0], Exception):
-                logger.warning("no se pudo invalidar cache del titular al revocar consentimiento")
         return _consentimiento(datos)
 
     @strawberry.mutation
@@ -2457,11 +2497,17 @@ class Mutation:
     async def iniciar_onboarding(
         self, info: Info, entrada: IniciarOnboardingInput
     ) -> ResultadoInicioOnboarding:
-        """Pública, como `iniciarSesion`: aún no hay cuenta."""
+        """Inicia el recorrido de verificación de identidad. Si el usuario ya inició sesión
+        (CLIENTE en PENDIENTE_VERIFICACION), vincula el onboarding a su cuenta inmediatamente."""
+        usuario = exigir_rol(info, "CLIENTE", siempre=False, admite_pendiente=True)
         try:
             datos = await _onboarding(info).iniciar(
                 entrada.jurisdiccion.upper(), entrada.tipo_documento.value
             )
+            if usuario is not None:
+                await _onboarding(info).vincular_cuenta(
+                    datos["onboarding_id"], datos["token"], usuario.id
+                )
             estado = await _onboarding(info).consultar(datos["onboarding_id"], datos["token"])
         except ErrorOnboardingServicio as error:
             return _error_onboarding(error.codigo)
@@ -2545,29 +2591,136 @@ class Mutation:
         return await _paso_onboarding(llamada)
 
     @strawberry.mutation
+    async def enviar_codigo_onboarding(self, info: Info, correo: str) -> ResultadoCodigoOnboarding:
+        """Envía un código de 6 dígitos al correo para verificarlo en el onboarding (HU-M01)."""
+        try:
+            datos = await info.context["servicio_codigo_onboarding"].enviar(correo)
+        except ErrorOnboardingServicio as error:
+            return _error_onboarding(error.codigo)
+        except ErrorServicio:
+            return _error_onboarding("NO_DISPONIBLE")
+        return CodigoOnboardingEnviado(
+            correo_enmascarado=str(datos["correo_enmascarado"]),
+            vence_en=datos["vence_en"],
+        )
+
+    @strawberry.mutation
+    async def verificar_codigo_onboarding(
+        self, info: Info, correo: str, codigo: str
+    ) -> ResultadoCodigoOnboarding:
+        """Valida el código de 6 dígitos enviado al correo en el onboarding (HU-M01)."""
+        try:
+            datos = await info.context["servicio_codigo_onboarding"].verificar(correo, codigo)
+        except ErrorOnboardingServicio as error:
+            return _error_onboarding(error.codigo)
+        except ErrorServicio:
+            return _error_onboarding("NO_DISPONIBLE")
+        return CodigoOnboardingEnviado(
+            correo_enmascarado=str(datos["correo_enmascarado"]),
+            vence_en=datos["vence_en"],
+        )
+
+    @strawberry.mutation
+    async def registrar_cuenta(
+        self, info: Info, correo: str, clave: str, codigo: str
+    ) -> ResultadoSesion:
+        """Crea la cuenta CLIENTE en PENDIENTE_VERIFICACION validando el código OTP del correo,
+        y devuelve su sesión (scope `verificacion-pendiente`) para el canal móvil (HU-M01).
+        Pública: no exige token previo ni sesión."""
+        try:
+            await info.context["servicio_codigo_onboarding"].verificar(correo, codigo)
+        except ErrorOnboardingServicio as error:
+            mensaje = MENSAJES_ONBOARDING.get(error.codigo, "El código no es correcto o venció.")
+            return ErrorAutenticacion(mensaje=mensaje, codigo=error.codigo)
+        except ErrorServicio:
+            return ErrorAutenticacion(
+                mensaje="No pudimos verificar el código. Intenta de nuevo.",
+                codigo="NO_DISPONIBLE",
+            )
+
+        try:
+            cuenta = await _auth(info).crear_cuenta_onboarding(correo, clave)
+            usuario_id = cuenta["id"]
+        except ErrorOnboardingServicio as error:
+            if error.codigo == "CORREO_YA_REGISTRADO":
+                return ErrorAutenticacion(
+                    mensaje="Ya existe una cuenta con ese correo.",
+                    codigo="CORREO_YA_REGISTRADO",
+                )
+            return ErrorAutenticacion(
+                mensaje="No se pudo registrar la cuenta.",
+                codigo=error.codigo,
+            )
+        except (ErrorServicio, SolicitudInvalida, VerificacionPendiente):
+            return ErrorAutenticacion(
+                mensaje="No pudimos registrar tu cuenta. Intenta de nuevo.",
+                codigo="NO_DISPONIBLE",
+            )
+
+        sesion = await _auth(info).iniciar_sesion(correo, clave, CANAL_APP)
+        if sesion is None:
+            return ErrorAutenticacion(
+                mensaje="No se pudo iniciar la sesión.",
+                codigo="NO_DISPONIBLE",
+            )
+        logger.info("cuenta registrada con otp usuario=%s", id_opaco(usuario_id))
+        return _sesion(sesion)
+
+    @strawberry.mutation
     async def crear_cuenta_onboarding(
         self, info: Info, onboarding_id: strawberry.ID, entrada: CuentaOnboardingInput
     ) -> ResultadoCuentaOnboarding:
         """M01-05b: cuenta CLIENTE en PENDIENTE_VERIFICACION ligada al recorrido, y su sesión
-        (scope `verificacion-pendiente`). El correo y la clave no se loguean."""
+        (scope `verificacion-pendiente`). Idempotente si la cuenta ya se creó en un intento previo
+        interrumpido con la misma clave. El correo y la clave no se loguean."""
         try:
             token = _token_onboarding(info)
             servicio = _onboarding(info)
             # Valida el token antes de crear nada en AUTH.
             actual = await servicio.consultar(str(onboarding_id), token)
             if actual.get("tiene_cuenta"):
-                # Crear otra en AUTH la dejaría huérfana y gastaría el correo del cliente.
+                # Si la misma cuenta ya estaba vinculada a esta sesión, devolverla
+                # de forma idempotente.
+                try:
+                    sesion = await _auth(info).iniciar_sesion(
+                        entrada.correo, entrada.clave, CANAL_APP
+                    )
+                    if sesion is not None:
+                        usuario_id = sesion["usuario"]["id"]
+                        anterior = await servicio.de_usuario(usuario_id)
+                        if anterior is not None and str(anterior["id"]) == str(onboarding_id):
+                            return CuentaOnboarding(
+                                sesion=_sesion(sesion),
+                                onboarding=_onboarding_de(actual),
+                            )
+                except Exception:
+                    pass
+                # Si es otra cuenta diferente o las credenciales no corresponden:
                 return _error_onboarding("SESION_CON_CUENTA")
-            cuenta = await _auth(info).crear_cuenta_onboarding(entrada.correo, entrada.clave)
-            ligada = await servicio.vincular_cuenta(str(onboarding_id), token, cuenta["id"])
-            sesion = await _auth(info).iniciar_sesion(entrada.correo, entrada.clave, CANAL_APP)
+            try:
+                cuenta = await _auth(info).crear_cuenta_onboarding(entrada.correo, entrada.clave)
+                sesion = await _auth(info).iniciar_sesion(entrada.correo, entrada.clave, CANAL_APP)
+                if sesion is None:
+                    return _error_onboarding("NO_DISPONIBLE")
+                usuario_id = cuenta["id"]
+            except ErrorOnboardingServicio as error:
+                if error.codigo != "CORREO_YA_REGISTRADO":
+                    raise
+                # Si la cuenta quedó creada en PENDIENTE_VERIFICACION tras un corte de red previo,
+                # iniciar sesión con la misma clave la recupera si sigue sin otra sesión.
+                sesion = await _auth(info).iniciar_sesion(entrada.correo, entrada.clave, CANAL_APP)
+                if sesion is None or sesion["usuario"]["estado"] != "PENDIENTE_VERIFICACION":
+                    raise
+                usuario_id = sesion["usuario"]["id"]
+                anterior = await servicio.de_usuario(usuario_id)
+                if anterior is not None and str(anterior["id"]) != str(onboarding_id):
+                    raise
+            ligada = await servicio.vincular_cuenta(str(onboarding_id), token, usuario_id)
         except ErrorOnboardingServicio as error:
             return _error_onboarding(error.codigo)
         except (ErrorServicio, SolicitudInvalida, VerificacionPendiente):
             return _error_onboarding("NO_DISPONIBLE")
-        if sesion is None:
-            return _error_onboarding("NO_DISPONIBLE")
-        logger.info("cuenta de onboarding creada usuario=%s", id_opaco(cuenta["id"]))
+        logger.info("cuenta de onboarding creada usuario=%s", id_opaco(usuario_id))
         return CuentaOnboarding(sesion=_sesion(sesion), onboarding=_onboarding_de(ligada))
 
     @strawberry.mutation

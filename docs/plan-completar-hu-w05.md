@@ -167,6 +167,9 @@ Hecho y probado con pruebas automáticas locales (PAYMENTS 90, ACL Worker 92, mo
 | 4 · Pruebas FC-10 | **Preparado, sin correr** | `tests/k6/cobros-idempotencia.js`, `cobros-pasarela-lenta.js`, semilla adaptada a staging y `docs/evidencias/FC-10-plantilla.md` (solo plantilla, sin cifras) |
 | 5 · Tableros | Pendiente | Depende de los tableros por historia de HU-W01 |
 
+**Ajustes del 2026-10-31:** W05-A6 (avisos a `avisos:cobros`) y W05-A7 (cobro recurrente, PAYMENTS `0010`) hechos en
+código en `feat/KAN-28-ajustes-cobro-recurrente`; W05-A5 ya estaba. Evidencia: `docs/evidencias/HU-W05-ajustes-2026-10-31.md`.
+
 Límite conocido del bloque 0: el estado de los circuitos vive en la memoria de cada instancia, así que la sonda por Scheduler
 revisa los de la instancia que recibe la llamada. Compartir ese estado (Redis) queda para después.
 

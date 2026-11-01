@@ -696,6 +696,11 @@ type CuentaOnboarding {
   onboarding: Onboarding!
 }
 
+type CodigoOnboardingEnviado {
+  correoEnmascarado: String!
+  venceEn: DateTime!
+}
+
 # `codigo` es estable: TOKEN_INVALIDO, SIN_CONSENTIMIENTO, ESTADO_INVALIDO, PIEZAS_INCOMPLETAS, SIN_INTENTOS,
 # SESION_CON_CUENTA, CORREO_YA_REGISTRADO, DATO_INVALIDO, JURISDICCION_NO_SOPORTADA, NO_DISPONIBLE (con reintento)
 # o un código del almacenamiento (TIPO_CONTENIDO_NO_ADMITIDO, TAMANO_NO_ADMITIDO, OBJETO_NO_SUBIDO, ...).
@@ -708,6 +713,7 @@ union ResultadoInicioOnboarding = InicioOnboarding | ErrorOnboarding
 union ResultadoOnboarding = Onboarding | ErrorOnboarding
 union ResultadoSubidaOnboarding = SubidaArchivo | ErrorOnboarding
 union ResultadoCuentaOnboarding = CuentaOnboarding | ErrorOnboarding
+union ResultadoCodigoOnboarding = CodigoOnboardingEnviado | ErrorOnboarding
 
 input IniciarOnboardingInput {
   jurisdiccion: String! = "CO"
@@ -802,6 +808,8 @@ type Resolucion {
   perito: Perito
   instrucciones: String
   vencimientoInforme: DateTime
+  # v0.23: true si la aprobó el sistema porque el plazo del dictamen venció sin gestión.
+  automatica: Boolean!
 }
 
 type Siniestro {
@@ -988,6 +996,13 @@ type Mutation {
   ): ResultadoSubidaOnboarding!
   # Con `X-Onboarding-Token`, tras el PUT. Idempotente.
   confirmarSubidaOnboarding(onboardingId: ID!, archivoId: ID!): ResultadoOnboarding!
+  # Envía un código de 6 dígitos al correo para verificarlo en el onboarding (10 min, hasta 5 intentos).
+  # Si ya hay una cuenta con ese correo no envía nada y responde `ErrorOnboarding` con `CORREO_YA_REGISTRADO`.
+  enviarCodigoOnboarding(correo: String!): ResultadoCodigoOnboarding!
+  # Verifica el código de 6 dígitos enviado al correo en el onboarding.
+  verificarCodigoOnboarding(correo: String!, codigo: String!): ResultadoCodigoOnboarding!
+  # Crea la cuenta CLIENTE en PENDIENTE_VERIFICACION validando el código OTP del correo, y devuelve su sesión.
+  registrarCuenta(correo: String!, clave: String!, codigo: String!): ResultadoSesion!
   # Con `X-Onboarding-Token`. Crea la cuenta CLIENTE en PENDIENTE_VERIFICACION, la liga al recorrido y abre su sesión.
   crearCuentaOnboarding(onboardingId: ID!, entrada: CuentaOnboardingInput!): ResultadoCuentaOnboarding!
   # Con `X-Onboarding-Token` y las cuatro piezas confirmadas: responde EN_VERIFICACION y el resultado llega después

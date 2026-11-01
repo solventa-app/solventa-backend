@@ -55,6 +55,7 @@ cualquier CVV de 3 o 4 dígitos.
 | `5555 5555 5555 4444` | Mastercard | Aprobado |
 | `4000 0000 0000 0002` | Visa | Rechazado: `fondos_insuficientes` |
 | `4000 0000 0000 0069` | Visa | Rechazado: `tarjeta_vencida` |
+| `4000 0000 0000 0341` | Visa | Aprobado en la página; sus cobros con token se rechazan con `fondos_insuficientes` (W05-A7) |
 | `4000 0000 0000 0119` | Visa | Falla: `error_procesamiento` (sesión `FALLIDA`) |
 
 El tipo (crédito o débito) es el que elige el titular en la página. **Ningún dato de tarjeta se guarda ni se escribe en

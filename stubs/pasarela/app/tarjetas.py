@@ -26,6 +26,13 @@ TARJETAS_PRUEBA: dict[str, tuple[Resultado, str | None]] = {
 }
 
 
+# W05-A7: se aprueba en la página (el primer pago) y luego se rechaza al cobrar con su token. Es lo
+# que permite demostrar el rechazo de un cobro recurrente con una tarjeta concreta.
+TARJETAS_RECHAZADAS_CON_TOKEN: dict[str, str] = {
+    "4000000000000341": "fondos_insuficientes",
+}
+
+
 class TarjetaInvalida(ValueError):
     """`campo` dice qué corregir (numero, nombre, vencimiento, cvv o tipo); nunca el valor."""
 
@@ -99,6 +106,11 @@ def validar(datos: dict, hoy: date) -> tuple[str, TipoTarjeta]:
 
 def resultado_de(numero: str) -> tuple[Resultado, str | None]:
     return TARJETAS_PRUEBA.get(numero, ("aprobado", None))
+
+
+def rechazo_con_token(numero: str) -> str | None:
+    """El motivo con el que se rechazarán los cobros con el token de esta tarjeta, o `None`."""
+    return TARJETAS_RECHAZADAS_CON_TOKEN.get(numero)
 
 
 def tokenizar(numero: str, tipo: TipoTarjeta) -> MedioTokenizado:

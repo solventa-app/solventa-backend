@@ -106,7 +106,7 @@ Mesa de siniestros por el gateway (KAN-27, KAN-248): 26 peticiones y 52 asercion
 | Carpeta | Qué verifica |
 |---|---|
 | 0. Preparación | Reinicio de la semilla en CLAIMS (solo local), sesión de BACKOFFICE y un ASESOR para probar permisos |
-| 1. Bandeja | Los 10 casos, 7 en cola, orden por notificación y filtro por estado |
+| 1. Bandeja | Los 20 casos, 13 en cola, orden por notificación y filtro por estado |
 | 2. Detalle | Póliza real de POLICY con su `ramo`, 5 evidencias con URL firmada que descarga la imagen del almacenamiento, caso inexistente `null` y peritos con la fecha límite del informe |
 | 3. Derivar | Deja el caso EN_REVISION; ya tiene perito, texto de más de 500 y perito inexistente como `ErrorSiniestro` |
 | 4. Aprobar | Indemnización, método y plazo; ya resuelto; la orden queda `PENDIENTE_DISPERSION` en PAYMENTS; un caso derivado conserva su perito |

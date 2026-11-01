@@ -29,6 +29,13 @@ class RepositorioFalso:
             todos = [s for s in todos if s["estado"] == estado]
         return sorted(todos, key=lambda s: s["notificado_en"], reverse=True)
 
+    def pendientes_vencidos(self, ahora):
+        return [
+            s["id"]
+            for s in self.siniestros.values()
+            if s["estado"] == "PENDIENTE" and s["vence_dictamen_en"] <= ahora
+        ]
+
     def obtener(self, siniestro_id, primaria=False):
         self.lecturas_primaria += int(primaria)
         s = self.siniestros.get(siniestro_id)

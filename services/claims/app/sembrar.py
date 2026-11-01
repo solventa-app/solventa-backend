@@ -4,16 +4,16 @@ Uso: `python -m app.sembrar` (tarea `sembrar-siniestros` de docker compose). Sol
 pruebas.
 
 Lee los datos de `services/claims/semilla/` (`siniestros.json`, `peritos.json` y `medios/`,
-montados en `SEMILLA_DIR`): los mismos 10 casos que tenía el dummy de siniestros, ya retirado
-(W04-13). Los guarda en el modelo real:
+montados en `SEMILLA_DIR`): los 10 casos que tenía el dummy de siniestros, ya retirado (W04-13),
+más los que agrega `semilla_aleatoria` para probar la paginación. Los guarda en el modelo real:
 
 - **Pólizas reales:** cada siniestro apunta a la póliza que creó la semilla de POLICY
   (`demo-siniestros-prop-NN`, `python -m app.sembrar_demo`); su id se pide a POLICY.
 - **Evidencias en el almacenamiento:** cada imagen se sube como `servicio:claims` (tipos
   `siniestro-foto` y `siniestro-documento`) y se guarda solo su `archivo_id`. Una evidencia que ya
   tiene archivo no se vuelve a subir.
-- **Plazos relativos:** `vence_dictamen_horas` se convierte en fecha al sembrar, para que la cuenta
-  regresiva del detalle tenga sentido en cualquier día.
+- **Plazos relativos:** `vence_dictamen_horas` y `vence_informe_horas` se convierten en fecha al
+  sembrar, para que los plazos del detalle tengan sentido en cualquier día.
 - **Derivaciones y resoluciones:** se dejan como en los datos, borrando las que haya creado la demo.
 
 Es idempotente (los ids son fijos). `reiniciar` hace lo mismo sin llamar a POLICY ni al
@@ -37,6 +37,7 @@ from app.application.cifrado import CifradorAesGcm
 from app.application.clientes import ClienteAlmacenamiento, ClientePolicy, reglas_de_reescritura
 from app.application.configuracion import Configuracion
 from app.application.repositorio import RepositorioSiniestrosMongo
+from app.semilla_aleatoria import generar
 
 log = logging.getLogger("sembrar")
 
@@ -67,6 +68,7 @@ def sembrar(
         repositorio.guardar_perito({**p, "activo": True, "creado_en": ahora})
 
     siniestros = json.loads((datos / "siniestros.json").read_text(encoding="utf-8"))
+    siniestros += generar(siniestros, ahora)
     for s in siniestros:
         sid = s["id"]
         existente = repositorio.obtener(sid, primaria=True)
@@ -100,7 +102,7 @@ def sembrar(
             )
         for e in s["evidencias"]:
             _sembrar_evidencia(repositorio, datos, s, e, ahora, almacenamiento)
-        _sembrar_resolucion(repositorio, s)
+        _sembrar_resolucion(repositorio, s, ahora)
     return len(siniestros)
 
 
@@ -136,7 +138,7 @@ def _sembrar_evidencia(repositorio, datos: Path, s: dict, e: dict, ahora, almace
     )
 
 
-def _sembrar_resolucion(repositorio, s: dict) -> None:
+def _sembrar_resolucion(repositorio, s: dict, ahora: datetime) -> None:
     r = s.get("resolucion")
     sid = s["id"]
     asignacion = resolucion = None
@@ -148,7 +150,7 @@ def _sembrar_resolucion(repositorio, s: dict) -> None:
             "instrucciones": r.get("instrucciones"),
             "notificacion": r["notificacion"],
             "asignada_en": _fecha(r["resuelta_en"]),
-            "vence_informe_en": _fecha(r["vencimiento_informe"]),
+            "vence_informe_en": ahora + timedelta(hours=r["vence_informe_horas"]),
         }
     if r and r["tipo"] in ("APROBACION", "RECHAZO"):
         resolucion = {

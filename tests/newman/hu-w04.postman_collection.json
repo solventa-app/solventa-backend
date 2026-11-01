@@ -24,7 +24,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('10 siniestros sembrados', () => pm.expect(pm.response.json().siniestros).to.eql(10));"
+                  "pm.test('20 siniestros sembrados', () => pm.expect(pm.response.json().siniestros).to.eql(20));"
                 ]
               }
             }
@@ -184,7 +184,7 @@
       "name": "1. Bandeja (CA-W04-01 a 05)",
       "item": [
         {
-          "name": "1.1 siniestros: los 10 casos, del más reciente al más antiguo",
+          "name": "1.1 siniestros: los 20 casos, del más reciente al más antiguo",
           "request": {
             "method": "POST",
             "header": [
@@ -228,8 +228,8 @@
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const cuerpo = pm.response.json();",
                   "const s = cuerpo.data.siniestros;",
-                  "pm.test('10 casos', () => pm.expect(s.length).to.eql(10));",
-                  "pm.test('7 en cola (pendientes y en revisión)', () => pm.expect(s.filter(x => ['PENDIENTE','EN_REVISION'].includes(x.estado)).length).to.eql(7));",
+                  "pm.test('20 casos', () => pm.expect(s.length).to.eql(20));",
+                  "pm.test('13 en cola (pendientes y en revisión)', () => pm.expect(s.filter(x => ['PENDIENTE','EN_REVISION'].includes(x.estado)).length).to.eql(13));",
                   "pm.test('Ordenados por notificación descendente', () => { const f = s.map(x => Date.parse(x.notificadoEn)); pm.expect(f).to.eql([...f].sort((a, b) => b - a)); });"
                 ]
               }
@@ -280,7 +280,7 @@
                   "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const cuerpo = pm.response.json();",
-                  "pm.test('Solo aprobados', () => pm.expect(cuerpo.data.siniestros.map(x => x.estado)).to.eql(['APROBADO', 'APROBADO']));"
+                  "pm.test('Solo aprobados', () => pm.expect(cuerpo.data.siniestros.map(x => x.estado)).to.eql(Array(4).fill('APROBADO')));"
                 ]
               }
             }
@@ -1129,7 +1129,7 @@
                   "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const cuerpo = pm.response.json();",
-                  "pm.test('10 casos por /v1', () => pm.expect(cuerpo.data.siniestros.length).to.eql(10));"
+                  "pm.test('20 casos por /v1', () => pm.expect(cuerpo.data.siniestros.length).to.eql(20));"
                 ]
               }
             }
@@ -1210,7 +1210,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Semilla restaurada', () => pm.expect(pm.response.json().siniestros).to.eql(10));"
+                  "pm.test('Semilla restaurada', () => pm.expect(pm.response.json().siniestros).to.eql(20));"
                 ]
               }
             }

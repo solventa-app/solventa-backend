@@ -76,6 +76,13 @@ class RepositorioUsuariosMemoria:
         self.filas[usuario_id] = fila
         return dict(fila)
 
+    def nombres_cifrados_por_titular(self, titulares: list[str]) -> dict[str, tuple[str, str]]:
+        return {
+            f["titular_id"]: (f["id"], f["nombre_cifrado"])
+            for f in self.filas.values()
+            if f["titular_id"] in titulares and f["rol"] == "CLIENTE" and f["nombre_cifrado"]
+        }
+
     def nombres_cifrados(self, ids: list[str]) -> dict[str, str]:
         return {
             i: self.filas[i]["nombre_cifrado"]

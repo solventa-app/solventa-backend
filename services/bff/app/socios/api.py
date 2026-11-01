@@ -30,6 +30,8 @@ from app.clientes import CredencialesSocioInvalidas, ErrorServicio, PresupuestoA
 from app.esquema import RAMO_POLIZA, estado_visible
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.idioma import idioma_de, traducir
+from app.monedas import MAXIMO_MONTOS, TASAS_PRUEBA, ConversionInvalida, convertir
+from app.revocacion import avisar_revocacion
 from app.servicio_firma_pago import ErrorFlujoDatos
 from app.servicio_oferta import ErrorOfertaDatos, validar_solicitud
 from app.servicio_suscripcion import (
@@ -100,6 +102,16 @@ class SolicitudPropuesta(_Entrada):
 
 class SolicitudCodigo(_Entrada):
     correo: str | None = Field(default=None, max_length=254)
+
+
+class MontoEntrada(_Entrada):
+    valor: str = Field(pattern=r"^\d+(\.\d+)?$")
+    moneda: str = Field(min_length=3, max_length=3)
+
+
+class SolicitudConversion(_Entrada):
+    montos: list[MontoEntrada] = Field(min_length=1, max_length=MAXIMO_MONTOS)
+    moneda: str = Field(min_length=3, max_length=3)
 
 
 class VerificacionCodigo(_Entrada):
@@ -343,13 +355,8 @@ def construir_router() -> APIRouter:
             raise no_encontrado()
         titular_id = datos.get("titular_id")
         if titular_id:
-            # Como en `revocarConsentimiento` de GraphQL: ninguno de los dos avisos hace fallar.
-            await asyncio.gather(
-                clientes.acl.invalidar_cache_cliente(titular_id),
-                estado(request).servicio_firma_pago.consentimiento_revocado(
-                    titular_id, consentimiento_id
-                ),
-                return_exceptions=True,
+            await avisar_revocacion(
+                clientes, estado(request).servicio_firma_pago, titular_id, consentimiento_id
             )
         return consentimiento_rest(datos)
 
@@ -625,6 +632,29 @@ def construir_router() -> APIRouter:
             "meses": datos["meses"],
             "totales": datos["totales"],
         }
+
+    @router.post("/v1/conversiones")
+    async def conversiones(cuerpo: SolicitudConversion, request: Request) -> dict:
+        """Solo para mostrar: no cambia lo cobrado ni descuenta presupuesto (KAN-209)."""
+        socio = await socio_de(request)
+        if socio.es_prueba:
+            tasas = TASAS_PRUEBA
+        else:
+            try:
+                tasas = await estado(request).clientes.acl.tasas_cambio()
+            except ErrorServicio as error:
+                raise no_disponible() from error
+        try:
+            montos = [
+                {
+                    "valor": convertir(m.valor, m.moneda, cuerpo.moneda, tasas),
+                    "moneda": cuerpo.moneda,
+                }
+                for m in cuerpo.montos
+            ]
+        except ConversionInvalida as error:
+            raise datos_invalidos() from error
+        return {"montos": montos}
 
     @router.get("/v1/credenciales")
     async def credenciales(request: Request) -> dict:
