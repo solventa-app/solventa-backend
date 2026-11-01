@@ -277,6 +277,29 @@ def test_enviar_y_verificar_codigo_onboarding() -> None:
     assert ok["correoEnmascarado"] == "a•••@ejemplo.com"
 
 
+def test_enviar_codigo_rechaza_correo_ya_registrado() -> None:
+    from fakes import AclFalso
+
+    acl = AclFalso()
+    auth = AuthFalso()
+    auth.claves["ya@ejemplo.com"] = "ClaveSegura123!"
+    cliente = TestClient(
+        create_app(
+            config=Configuracion.desde_entorno(),
+            clientes=clientes_falsos(auth=auth, acl=acl, onboarding=OnboardingFalso()),
+        )
+    )
+    cliente.__enter__()
+    q = (
+        'mutation { enviarCodigoOnboarding(correo: "ya@ejemplo.com") { '
+        "... on CodigoOnboardingEnviado { correoEnmascarado } "
+        "... on ErrorOnboarding { codigo } } }"
+    )
+    resultado = _gql(cliente, q)["data"]["enviarCodigoOnboarding"]
+    assert resultado["codigo"] == "CORREO_YA_REGISTRADO"
+    assert acl.notificaciones == []
+
+
 def test_registrar_cuenta_sin_token_con_otp() -> None:
     from fakes import AclFalso
 

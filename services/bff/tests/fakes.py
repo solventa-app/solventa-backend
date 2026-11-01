@@ -144,6 +144,11 @@ class AuthFalso:
         self.canales: list[str | None] = []
         self.renovaciones: list[tuple[str, str]] = []
 
+    async def correo_registrado(self, correo: str) -> bool:
+        if self.falla:
+            raise ErrorServicio("caido")
+        return correo in self.claves
+
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
         """Como AUTH (HU-M01): el doble usa el correo como alias para poder iniciar sesión."""
         if self.falla:

@@ -148,6 +148,12 @@ def test_rutas_http_del_onboarding() -> None:
         cuenta_id = creada.json()["id"]
         dup = cliente.post("/usuarios/onboarding", json={"correo": CORREO, "clave": CLAVE})
         assert dup.status_code == 409
+        registrado = cliente.post("/usuarios/onboarding/correo-registrado", json={"correo": CORREO})
+        assert registrado.json() == {"registrado": True}
+        libre = cliente.post(
+            "/usuarios/onboarding/correo-registrado", json={"correo": "libre@ejemplo.com"}
+        )
+        assert libre.json() == {"registrado": False}
         web = cliente.post("/sesiones", json={"usuario": CORREO, "clave": CLAVE, "canal": "web"})
         assert (web.status_code, web.json()["detail"]) == (403, "VERIFICACION_PENDIENTE")
         app_ = cliente.post("/sesiones", json={"usuario": CORREO, "clave": CLAVE, "canal": "app"})

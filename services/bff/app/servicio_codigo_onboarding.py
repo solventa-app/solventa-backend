@@ -73,6 +73,12 @@ class ServicioCodigoOnboarding:
 
     async def enviar(self, correo: str) -> dict[str, str | datetime]:
         limpio = self._normalizar_correo(correo)
+        try:
+            if await self._clientes.auth.correo_registrado(limpio):
+                # Antes de gastar un envío: con cuenta ya no se registra, se inicia sesión.
+                raise ErrorOnboardingServicio("CORREO_YA_REGISTRADO")
+        except ErrorServicio as error:
+            raise ErrorOnboardingServicio("NO_DISPONIBLE") from error
         correo_id = self._id_correo(limpio)
         codigo = generar_codigo()
         vence_en = self._reloj() + timedelta(minutes=VIGENCIA_MINUTOS)
