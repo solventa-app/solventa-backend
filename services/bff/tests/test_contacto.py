@@ -215,7 +215,7 @@ def test_sin_token_exige_sesion() -> None:
     assert r.json()["errors"][0]["message"] == "Debes iniciar sesión."
 
 
-@pytest.mark.parametrize("campo", ["correo", "telefono", "correoCifrado", "contacto"])
+@pytest.mark.parametrize("campo", ["telefono", "correoCifrado", "contacto"])
 def test_el_contacto_no_se_puede_leer_por_graphql(campo: str) -> None:
     with _cliente(AuthFalso()) as client:
         uid = _nuevo_cliente(client, correo=CORREO)
@@ -224,6 +224,16 @@ def test_el_contacto_no_se_puede_leer_por_graphql(campo: str) -> None:
     assert cuerpo.get("data") is None
     assert "Cannot query field" in cuerpo["errors"][0]["message"]
     assert CORREO not in str(cuerpo)
+
+
+def test_el_correo_solo_vuelve_en_yo_y_el_telefono_nunca() -> None:
+    """Contrato v0.24: `Usuario.correo` es del propio usuario; el teléfono no vuelve."""
+    with _cliente(AuthFalso()) as client:
+        uid = _nuevo_cliente(client, correo=CORREO, telefono=TELEFONO)
+        cuerpo = _post(client, "{ yo { correo } }", rol="CLIENTE", uid=uid)
+
+    assert cuerpo["data"]["yo"] == {"correo": CORREO}
+    assert TELEFONO not in str(cuerpo)
 
 
 def test_los_logs_no_llevan_el_contacto(caplog) -> None:
