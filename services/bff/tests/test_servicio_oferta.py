@@ -198,7 +198,8 @@ def test_sin_historial_crediticio_da_error_con_reintento() -> None:
         ({"valor": "-5"}, MENSAJE_VALOR_INVALIDO),
         ({"valor": "Infinity"}, MENSAJE_VALOR_INVALIDO),
         ({"plazo": 0}, MENSAJE_PLAZO_INVALIDO),
-        ({"plazo": 61}, MENSAJE_PLAZO_INVALIDO),
+        ({"plazo": 5}, MENSAJE_PLAZO_INVALIDO),
+        ({"plazo": 201}, MENSAJE_PLAZO_INVALIDO),
         ({"plazo": 360}, MENSAJE_PLAZO_INVALIDO),
         ({"direccion": "   "}, MENSAJE_DIRECCION_INVALIDA),
         ({"direccion": "x" * 201}, MENSAJE_DIRECCION_INVALIDA),
@@ -215,7 +216,7 @@ def test_solicitud_invalida_da_error_sin_reintento_y_no_consulta_nada(cambios, m
 
 
 def test_los_limites_del_plazo_son_validos() -> None:
-    for plazo in (1, 60):
+    for plazo in (6, 7, 60, 199, 200):
         servicio = ServicioOferta(clientes_falsos(), "clave")
         assert not isinstance(_solicitar(servicio, plazo=plazo), ErrorOfertaDatos)
 

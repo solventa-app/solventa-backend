@@ -1468,8 +1468,8 @@
           },
           "plazoMeses": {
             "type": "integer",
-            "minimum": 1,
-            "maximum": 60
+            "minimum": 6,
+            "maximum": 200
           },
           "direccionInmueble": {
             "type": "string",

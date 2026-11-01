@@ -8,7 +8,7 @@
     "monto_min": 500000,
     "monto_max": 80000000,
     "plazo_min": 6,
-    "plazo_max": 60,
+    "plazo_max": 200,
     "dti_maximo": 0.40,
     "paso_monto": 10000,
     "regimen_open_finance": "Finanzas abiertas obligatorias (Decreto 1297/2022, Decreto 0368/2026, SFC)"
@@ -22,7 +22,7 @@
     "monto_min": 2000,
     "monto_max": 400000,
     "plazo_min": 6,
-    "plazo_max": 60,
+    "plazo_max": 200,
     "dti_maximo": 0.40,
     "paso_monto": 100,
     "regimen_open_finance": "Ley Fintech, art. 76 (APIs abiertas)"
@@ -36,7 +36,7 @@
     "monto_min": 500,
     "monto_max": 100000,
     "plazo_min": 6,
-    "plazo_max": 60,
+    "plazo_max": 200,
     "dti_maximo": 0.40,
     "paso_monto": 50,
     "regimen_open_finance": "Open Finance Brasil (BCB)"
@@ -50,7 +50,7 @@
     "monto_min": 200000,
     "monto_max": 30000000,
     "plazo_min": 6,
-    "plazo_max": 60,
+    "plazo_max": 200,
     "dti_maximo": 0.40,
     "paso_monto": 10000,
     "regimen_open_finance": "Ley Fintec 21.521 (SFA)"
@@ -64,7 +64,7 @@
     "monto_min": 500,
     "monto_max": 80000,
     "plazo_min": 6,
-    "plazo_max": 60,
+    "plazo_max": 200,
     "dti_maximo": 0.40,
     "paso_monto": 50,
     "regimen_open_finance": "Marco en desarrollo (SBS)"
@@ -78,7 +78,7 @@
     "monto_min": 500,
     "monto_max": 50000,
     "plazo_min": 6,
-    "plazo_max": 60,
+    "plazo_max": 200,
     "dti_maximo": 0.40,
     "paso_monto": 50,
     "regimen_open_finance": "CFPB Section 1033"
@@ -92,7 +92,7 @@
     "monto_min": 500,
     "monto_max": 60000,
     "plazo_min": 6,
-    "plazo_max": 60,
+    "plazo_max": 200,
     "dti_maximo": 0.40,
     "paso_monto": 50,
     "regimen_open_finance": "PSD2 / Berlin Group (UE)"

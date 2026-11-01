@@ -298,7 +298,7 @@ liberación, por el pipeline (ADR-09).
   (`scripts/sincronizar_socios.py`, verificado en el CI), igual que `salud.json`.
 - **POLICY no suma `socio_id`:** con `actor_rol = SOCIO`, el socio es `actor_usuario_id`, que ya tiene índice.
 - **`CLAUDE.md` se actualiza al cierre** (bloque 9): el PR #387 cambia la misma línea.
-- **El contrato se ajustó a lo que ya valida W01:** `plazoMeses` de 1 a 60 y el documento con al menos 6 dígitos
+- **El contrato se ajustó a lo que ya valida W01:** `plazoMeses` de 1 a 60 (desde T18, 2026-11-01: de 6 a 200, configurable en `contracts/jurisdicciones.json`) y el documento con al menos 6 dígitos
   (el borrador del bloque 1 decía de 12 a 360).
 - **POLICY devuelve `enlace_vence_en`** en `GET /propuestas/{id}` (aditivo): así el socio sigue el enlace por su
   vencimiento sin ver nunca el token (W07-17).
