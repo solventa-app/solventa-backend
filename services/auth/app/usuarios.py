@@ -163,8 +163,12 @@ def normalizar_documento(documento: str) -> str:
 
 
 def enmascarar_documento(documento: str) -> str:
-    """Solo los últimos 4 caracteres (W03-34): `•••• 5678`."""
-    return f"•••• {documento[-4:]}"
+    """Conserva la longitud (T24): 2 iniciales y 4 finales visibles, el resto `•` (`10••••3040`).
+    Con menos de 7 caracteres solo se ven los últimos 4, para no revelar el documento entero."""
+    n = len(documento)
+    if n < 7:
+        return "•" * (n - 4) + documento[-4:] if n > 4 else documento
+    return documento[:2] + "•" * (n - 6) + documento[-4:]
 
 
 def contexto_documento(usuario_id: str) -> str:

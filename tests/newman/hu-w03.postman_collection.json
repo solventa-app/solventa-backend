@@ -6174,8 +6174,8 @@
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const cuerpo = pm.response.json();",
                   "const doc = pm.collectionVariables.get('doc_cuenta_titular');",
-                  "pm.test('solo los últimos 4 dígitos', () => {",
-                  "  pm.expect(cuerpo.data.yo.documentoEnmascarado).to.eql('•••• ' + doc.slice(-4));",
+                  "pm.test('longitud conservada, 2 iniciales y 4 finales', () => {",
+                  "  pm.expect(cuerpo.data.yo.documentoEnmascarado).to.eql(doc.slice(0, 2) + '•'.repeat(doc.length - 6) + doc.slice(-4));",
                   "  pm.expect(JSON.stringify(cuerpo)).to.not.include(doc);",
                   "});"
                 ]

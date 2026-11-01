@@ -360,6 +360,10 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   completo (`GET /usuarios/{id}/contacto`) sigue siendo solo para POLICY. AUTH cifra el correo en reposo y lo descifra
   únicamente con el id del token; no se registra en logs.
 - Afecta al frontend: sí (aditivo; el perfil común de web y mobile, T10).
+- KAN-26 (HU-W03, T24): cambia el comportamiento de `Usuario.documentoEnmascarado`, sin cambio de esquema. Antes
+  `•••• 5678`; ahora conserva la longitud con 2 iniciales y 4 finales (`10••••3040`). Con menos de 7 caracteres solo se
+  ven los últimos 4 (`••3456`). Aplica igual a pasaportes con letras. Afecta al frontend: sí (solo lectura del perfil y
+  de la cotización del CLIENTE; web y mobile).
 
 ## v0.25 — 2026-11-01
 

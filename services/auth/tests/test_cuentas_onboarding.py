@@ -169,7 +169,7 @@ def test_rutas_http_del_onboarding() -> None:
         )
         assert renovada.status_code == 200
         assert renovada.json()["usuario"]["nombre"] == "Ana Prueba"
-        assert renovada.json()["usuario"]["documento_enmascarado"] == "•••• 0001"
+        assert renovada.json()["usuario"]["documento_enmascarado"] == "10••••0001"
         otra = cliente.post(
             "/usuarios/onboarding", json={"correo": "b@ejemplo.com", "clave": CLAVE}
         )

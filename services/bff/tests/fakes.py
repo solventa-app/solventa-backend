@@ -121,6 +121,10 @@ def _con_nombre(usuario: dict, nombres: dict[str, str]) -> dict:
     return {**usuario, "nombre": nombres.get(usuario["id"])}
 
 
+def _enmascarar(documento: str) -> str:
+    return documento[:2] + "•" * (len(documento) - 6) + documento[-4:]
+
+
 class AuthFalso:
     def __init__(self, consentimientos: dict | None = None, falla: bool = False) -> None:
         self.consentimientos = dict(
@@ -292,7 +296,7 @@ class AuthFalso:
         return {
             **_con_nombre(datos, self.nombres),
             "correo": self._correo(usuario_id),
-            "documento_enmascarado": f"•••• {documento[-4:]}" if documento else None,
+            "documento_enmascarado": _enmascarar(documento) if documento else None,
         }
 
     async def obtener_identidad(self, usuario_id: str) -> dict | None:
