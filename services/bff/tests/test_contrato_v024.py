@@ -36,7 +36,7 @@ def _app(auth: AuthFalso) -> TestClient:
 def _crear_cliente(client: TestClient) -> dict:
     entrada = {
         "usuario": "cliente.correo",
-        "clave": "clave-segura-1",
+        "clave": "Clave-segura-1",
         "rol": "CLIENTE",
         "correo": CORREO,
         "telefono": TELEFONO,
@@ -55,7 +55,7 @@ def test_correo_solo_en_login_y_yo_para_el_propio_usuario() -> None:
         login = _post(
             client,
             "mutation { iniciarSesion(entrada: "
-            '{usuario: "cliente.correo", clave: "clave-segura-1"}) '
+            '{usuario: "cliente.correo", clave: "Clave-segura-1"}) '
             "{ ... on Sesion { usuario { correo } } } }",
         )["data"]["iniciarSesion"]
         yo = _post(client, "{ yo { correo } }", rol="CLIENTE", uid=creado["id"])["data"]["yo"]

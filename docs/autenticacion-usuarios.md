@@ -75,7 +75,7 @@ otorgó en nombre del cliente (CA-W01-02 y CA-W01-11).
   el tiempo de respuesta tampoco lo revele.
 - **Bloqueo**: 5 fallos seguidos bloquean el usuario 15 minutos; un inicio de sesión correcto reinicia el contador.
 - **Nada sensible en logs**: ni el alias, ni la clave, ni el token. Solo el id opaco del usuario (`id_opaco`).
-- **Secretos**: en local, valores fijos y públicos (`solo-local-no-secreta-jwt-solventa-0001`, `admin-local-solventa`);
+- **Secretos**: en local, valores fijos y públicos (`solo-local-no-secreta-jwt-solventa-0001`, `Admin-local-solventa`);
   en Cloud Run, Secret Manager. AUTH y el BFF **se niegan a arrancar en la nube** con el valor local, el marcador de
   Terraform o un secreto de menos de 32 bytes.
 - **Errores**: nunca un 5xx. Los errores de permiso viajan como error de GraphQL con HTTP 200 y mensaje claro.
@@ -130,7 +130,7 @@ docker compose logs crear-backoffice --no-color | tail -1
 ### Paso 2. Iniciar sesión como BACKOFFICE
 
 ```bash
-TOKEN_BO=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"admin.solventa\", clave:\"admin-local-solventa\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
+TOKEN_BO=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"admin.solventa\", clave:\"Admin-local-solventa\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
 echo "${TOKEN_BO:0:25}..."
 ```
 
@@ -149,12 +149,12 @@ gql '{"query":"{ yo { usuario rol estado } }"}' "$TOKEN_BO"
 ### Paso 4. Crear un ASESOR y un CLIENTE
 
 ```bash
-gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"asesor.demo\", clave:\"clave-demo-0001\", rol:ASESOR, nombre:\"Asesora Demo\"}) { __typename ... on Usuario { id rol } ... on ErrorUsuario { mensaje } } }"}' "$TOKEN_BO"
-ID_CLIENTE=$(gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"cliente.demo\", clave:\"clave-demo-0001\", rol:CLIENTE}) { ... on Usuario { id } } }"}' "$TOKEN_BO" | campo data.crearUsuario.id)
+gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"asesor.demo\", clave:\"Clave-demo-0001\", rol:ASESOR, nombre:\"Asesora Demo\"}) { __typename ... on Usuario { id rol } ... on ErrorUsuario { mensaje } } }"}' "$TOKEN_BO"
+ID_CLIENTE=$(gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"cliente.demo\", clave:\"Clave-demo-0001\", rol:CLIENTE}) { ... on Usuario { id } } }"}' "$TOKEN_BO" | campo data.crearUsuario.id)
 echo "$ID_CLIENTE"
 
 # Un alias con forma de correo se rechaza:
-gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"persona@correo.com\", clave:\"clave-demo-0001\", rol:CLIENTE}) { __typename ... on ErrorUsuario { mensaje } } }"}' "$TOKEN_BO"
+gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"persona@correo.com\", clave:\"Clave-demo-0001\", rol:CLIENTE}) { __typename ... on ErrorUsuario { mensaje } } }"}' "$TOKEN_BO"
 ```
 
 **Esperado:** `"__typename":"Usuario"` con `"rol":"ASESOR"`; un id (UUID) para el cliente; y
@@ -164,7 +164,7 @@ gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"persona@correo.com\", 
 ### Paso 5. Iniciar sesión como ASESOR
 
 ```bash
-TOKEN_ASESOR=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"asesor.demo\", clave:\"clave-demo-0001\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
+TOKEN_ASESOR=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"asesor.demo\", clave:\"Clave-demo-0001\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
 gql '{"query":"{ yo { usuario rol nombre } }"}' "$TOKEN_ASESOR"
 ```
 
@@ -189,7 +189,7 @@ gql '{"query":"mutation($e: SolicitudOfertaInput!) { solicitarOferta(entrada:$e)
 ### Paso 7. Un intento prohibido
 
 ```bash
-TOKEN_CLIENTE=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"cliente.demo\", clave:\"clave-demo-0001\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
+TOKEN_CLIENTE=$(gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"cliente.demo\", clave:\"Clave-demo-0001\"}) { ... on Sesion { token } } }"}' | campo data.iniciarSesion.token)
 gql '{"query":"{ usuarios { usuario } }"}' "$TOKEN_CLIENTE"
 gql '{"query":"{ usuarios { usuario } }"}'
 ```
@@ -203,12 +203,12 @@ En ambos casos la respuesta HTTP es 200, nunca un 5xx.
 Se usa un usuario aparte para no bloquear a los de los pasos anteriores.
 
 ```bash
-gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"bloqueo.demo\", clave:\"clave-demo-0001\", rol:CLIENTE}) { __typename } }"}' "$TOKEN_BO"
+gql '{"query":"mutation { crearUsuario(entrada:{usuario:\"bloqueo.demo\", clave:\"Clave-demo-0001\", rol:CLIENTE}) { __typename } }"}' "$TOKEN_BO"
 for i in 1 2 3 4 5; do
   gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"bloqueo.demo\", clave:\"no-es-la-clave\"}) { ... on ErrorAutenticacion { mensaje } } }"}'
 done
 # Ahora incluso con la clave correcta:
-gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"bloqueo.demo\", clave:\"clave-demo-0001\"}) { __typename ... on ErrorAutenticacion { mensaje } } }"}'
+gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"bloqueo.demo\", clave:\"Clave-demo-0001\"}) { __typename ... on ErrorAutenticacion { mensaje } } }"}'
 ```
 
 **Esperado:** cinco veces "Usuario o clave incorrectos."; y la sexta, con la clave correcta, **también**
@@ -219,7 +219,7 @@ gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"bloqueo.demo\", clave
 
 ```bash
 gql '{"query":"mutation($id: ID!) { suspenderUsuario(id:$id) { ... on Usuario { usuario estado } } }","variables":{"id":"'"$ID_CLIENTE"'"}}' "$TOKEN_BO"
-gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"cliente.demo\", clave:\"clave-demo-0001\"}) { __typename } }"}'
+gql '{"query":"mutation { iniciarSesion(entrada:{usuario:\"cliente.demo\", clave:\"Clave-demo-0001\"}) { __typename } }"}'
 ```
 
 **Esperado:** `"estado":"SUSPENDIDO"`, y después `"__typename":"ErrorAutenticacion"`.
@@ -242,7 +242,7 @@ sirve, porque en base64url solo lleva bits de relleno. El token **vencido** lo c
 
 ```bash
 docker compose logs auth bff --no-color | grep -E "auth.sesiones|auth.usuarios" | tail -5
-docker compose logs auth bff --no-color | grep -c -E "clave-demo-0001|admin-local-solventa|eyJ|asesor.demo" || true
+docker compose logs auth bff --no-color | grep -c -E "Clave-demo-0001|Admin-local-solventa|eyJ|asesor.demo" || true
 ```
 
 **Esperado:** líneas como `sesión iniciada usuario=3f9c2a1b7d4e rol=ASESOR` (id opaco, sin alias), y un conteo de `0`.

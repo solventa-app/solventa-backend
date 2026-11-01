@@ -142,7 +142,7 @@ def test_servicio_caido_responde_error_con_reintento() -> None:
 
 
 CREAR = """mutation($o: ID!) { crearCuentaOnboarding(onboardingId: $o,
-    entrada: {correo: "ana@example.com", clave: "clave-segura-123"}) {
+    entrada: {correo: "ana@example.com", clave: "Clave-segura-123"}) {
     ... on CuentaOnboarding { sesion { token usuario { id estado rol } } onboarding { id } }
     ... on ErrorOnboarding { codigo } } }"""
 
@@ -182,7 +182,7 @@ def test_segunda_cuenta_en_la_misma_sesion_no_deja_una_cuenta_huerfana_en_auth()
 
 
 LOGIN = """mutation { iniciarSesion(
-    entrada: {usuario: "ana@example.com", clave: "clave-segura-123"}) {
+    entrada: {usuario: "ana@example.com", clave: "Clave-segura-123"}) {
     ... on Sesion { usuario { estado } } ... on ErrorAutenticacion { mensaje codigo } } }"""
 
 
@@ -194,7 +194,7 @@ def test_login_de_cuenta_pendiente_depende_del_canal() -> None:
     assert web["codigo"] == "VERIFICACION_PENDIENTE"
     app = _gql(cliente, LOGIN, canal="app")["data"]["iniciarSesion"]
     assert app["usuario"]["estado"] == "PENDIENTE_VERIFICACION"
-    incorrecta = _gql(cliente, LOGIN.replace("clave-segura-123", "otra"), canal="web")
+    incorrecta = _gql(cliente, LOGIN.replace("Clave-segura-123", "otra"), canal="web")
     assert incorrecta["data"]["iniciarSesion"]["codigo"] is None
 
 
@@ -348,3 +348,36 @@ def test_registrar_cuenta_sin_token_con_otp() -> None:
     oid = res_onb["onboarding"]["id"]
     assert onboarding.sesiones[oid]["usuario_id"] == sesion["usuario"]["id"]
 
+
+
+def test_registrar_cuenta_con_clave_debil_no_gasta_el_codigo() -> None:
+    """T17: la clave se valida antes del OTP; el mensaje dice qué falta, en español y en inglés."""
+    from fakes import AclFalso
+
+    acl = AclFalso()
+    auth, onboarding = AuthFalso(), OnboardingFalso()
+    cliente = TestClient(
+        create_app(
+            config=Configuracion.desde_entorno(),
+            clientes=clientes_falsos(auth=auth, acl=acl, onboarding=onboarding),
+        )
+    )
+    cliente.__enter__()
+    _gql(
+        cliente,
+        'mutation { enviarCodigoOnboarding(correo: "debil@ejemplo.com") { '
+        "... on CodigoOnboardingEnviado { correoEnmascarado } } }",
+    )
+    codigo = acl.notificaciones[0]["datos"]["codigo"]
+    q = (
+        "mutation($k: String!, $c: String!) { registrarCuenta("
+        'correo: "debil@ejemplo.com", clave: $k, codigo: $c) { '
+        "... on Sesion { token } ... on ErrorAutenticacion { codigo mensaje } } }"
+    )
+    debil = _gql(cliente, q, {"k": "clave1234", "c": codigo})["data"]["registrarCuenta"]
+    assert debil["codigo"] == "CLAVE_DEBIL"
+    assert debil["mensaje"] == "La clave no es segura: falta una mayúscula y un carácter especial."
+
+    # El código sigue vivo: con una clave buena y el mismo código se crea la cuenta.
+    bueno = _gql(cliente, q, {"k": "Contraseña¿1", "c": codigo})["data"]["registrarCuenta"]
+    assert bueno["token"]

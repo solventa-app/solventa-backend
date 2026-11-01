@@ -376,3 +376,13 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   (antes 1 a 60); el OpenAPI de socios lo refleja.
 - Afecta al frontend: sí (W01-01 deja de llevar el 1 a 60 escrito y lee el límite de `jurisdicciones`).
   PR gemelo en `solventa-frontend`.
+
+## v0.29 — 2026-11-01
+
+- KAN-26 (T17): contraseña segura y login sin revelar el rol. Aditivo: `CredencialesInput.rol` (opcional) y el código
+  `CLAVE_DEBIL` de `ErrorAutenticacion` en `registrarCuenta`. En altas (onboarding y `crearUsuario`) la clave lleva de 8
+  a 128 caracteres, una mayúscula, una minúscula y un carácter especial (Unicode: categorías `Lu`, `Ll` y todo lo que no
+  sea letra ni número). El login no exige la regla: las cuentas existentes siguen entrando.
+- `iniciarSesion` con un `rol` distinto al de la cuenta responde igual que con una clave errada. La app (`/graphql/app`)
+  solo admite cuentas CLIENTE; ASESOR y BACKOFFICE reciben el mismo «Usuario o clave incorrectos.».
+- Afecta al frontend: sí (la web manda `rol`; el móvil muestra el checklist). PR gemelo en `solventa-frontend`.

@@ -17,7 +17,7 @@ from app.sesiones import (
 from app.usuarios import ServicioUsuarios
 
 SECRETO = "secreto-de-prueba-con-32-bytes-o-mas"
-CLAVE = "clave-segura-1"
+CLAVE = "Clave-segura-1"
 
 
 def _preparar(rol: str = "ASESOR"):

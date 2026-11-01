@@ -40,7 +40,7 @@ import urllib.request
 from datetime import date
 
 REGION = "us-central1"
-CLAVE_NUEVO_CLIENTE = "clave-cobros-0001"  # solo se usa si hay que crear al CLIENTE de la prueba
+CLAVE_NUEVO_CLIENTE = "Clave-cobros-0001"  # solo se usa si hay que crear al CLIENTE de la prueba
 
 CREAR = """mutation($e: CrearCobroInput!) { crearCobro(entrada: $e) { __typename
   ... on Cobro { id estado motivo intentos idTransaccion reintentosRestantes cliente { id nombre } }
@@ -661,7 +661,7 @@ def main() -> int:
     argumentos.usuario = argumentos.usuario or (
         "operador.demo" if Config.staging else "admin.solventa"
     )
-    argumentos.clave = argumentos.clave or (None if Config.staging else "admin-local-solventa")
+    argumentos.clave = argumentos.clave or (None if Config.staging else "Admin-local-solventa")
     argumentos.cliente = argumentos.cliente or (
         "cliente.demo" if Config.staging else "cliente.cobros"
     )

@@ -42,7 +42,7 @@ OPERACIONES = {
         {},
     ),
     "crearUsuario": (
-        'mutation { crearUsuario(entrada: {usuario: "nuevo.uno", clave: "clave-segura-1", '
+        'mutation { crearUsuario(entrada: {usuario: "nuevo.uno", clave: "Clave-segura-1", '
         "rol: CLIENTE}) { __typename } }",
         {},
     ),
@@ -137,7 +137,7 @@ def test_token_vencido_o_alterado_siempre_se_rechaza(modo: str) -> None:
 
 
 def test_iniciar_sesion_y_yo() -> None:
-    login = """mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "clave-segura-1"}) {
+    login = """mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "Clave-segura-1"}) {
         __typename ... on Sesion { token expiraEn usuario { usuario rol } } } }"""
     with _cliente() as client:
         sesion = _post(client, login)["data"]["iniciarSesion"]
@@ -149,7 +149,7 @@ def test_iniciar_sesion_y_yo() -> None:
 
 
 def test_clave_erronea_devuelve_error_de_autenticacion_sin_5xx() -> None:
-    login = """mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "mala-clave-9"}) {
+    login = """mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "Mala-clave-9"}) {
         __typename ... on ErrorAutenticacion { mensaje } } }"""
     with _cliente() as client:
         resultado = _post(client, login)["data"]["iniciarSesion"]
@@ -162,7 +162,7 @@ def test_clave_erronea_devuelve_error_de_autenticacion_sin_5xx() -> None:
 
 def test_backoffice_crea_cambia_rol_y_suspende() -> None:
     bo = token_de_prueba("BACKOFFICE", "u-bo")
-    crear = """mutation { crearUsuario(entrada: {usuario: "cliente.dos", clave: "clave-segura-1",
+    crear = """mutation { crearUsuario(entrada: {usuario: "cliente.dos", clave: "Clave-segura-1",
         rol: CLIENTE}) { __typename ... on Usuario { id rol estado } } }"""
     with _cliente() as client:
         creado = _post(client, crear, token=bo)["data"]["crearUsuario"]
@@ -186,7 +186,7 @@ def test_backoffice_crea_cambia_rol_y_suspende() -> None:
 
 
 def test_alias_invalido_devuelve_error_usuario() -> None:
-    crear = """mutation { crearUsuario(entrada: {usuario: "a@b.co", clave: "clave-segura-1",
+    crear = """mutation { crearUsuario(entrada: {usuario: "a@b.co", clave: "Clave-segura-1",
         rol: CLIENTE}) { __typename ... on ErrorUsuario { mensaje } } }"""
     with _cliente() as client:
         resultado = _post(client, crear, token=token_de_prueba("BACKOFFICE"))["data"][
@@ -217,21 +217,21 @@ def test_el_actor_del_consentimiento_es_el_asesor_autenticado() -> None:
 
 def test_los_logs_no_llevan_clave_ni_token(caplog) -> None:
     token = token_de_prueba("ASESOR")
-    login = """mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "clave-segura-1"}) {
+    login = """mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "Clave-segura-1"}) {
         __typename } }"""
     query, variables = OPERACIONES["solicitarOferta"]
     with caplog.at_level(logging.DEBUG), _cliente() as client:
         _post(client, login)
         _post(client, query, variables, token)
 
-    assert "clave-segura-1" not in caplog.text
+    assert "Clave-segura-1" not in caplog.text
     assert token not in caplog.text
 
 
 def test_cada_usuario_ve_su_propio_nombre_en_el_login_y_en_yo() -> None:
     auth = AuthFalso()
     auth.nombres = {"u-1": "Laura Gómez"}
-    login = """mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "clave-segura-1"}) {
+    login = """mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "Clave-segura-1"}) {
         ... on Sesion { token usuario { nombre rol } } } }"""
     with _cliente(auth=auth) as client:
         sesion = _post(client, login)["data"]["iniciarSesion"]
@@ -256,7 +256,7 @@ def test_el_nombre_no_viaja_en_el_jwt() -> None:
     with _cliente(auth=auth) as client:
         token = _post(
             client,
-            """mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "clave-segura-1"}) {
+            """mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "Clave-segura-1"}) {
                 ... on Sesion { token } } }""",
         )["data"]["iniciarSesion"]["token"]
 
@@ -272,3 +272,22 @@ def test_el_listado_de_usuarios_no_expone_nombres() -> None:
         )["data"]["usuarios"]
 
     assert all(u["nombre"] is None for u in usuarios)
+
+
+def test_iniciar_sesion_con_otro_rol_responde_como_clave_erronea() -> None:
+    """T17: el chip de rol equivocado no revela el rol real de la cuenta ni abre sesión."""
+    plantilla = (
+        'mutation { iniciarSesion(entrada: {usuario: "asesor.uno", clave: "Clave-segura-1", '
+        "rol: %s}) { __typename ... on ErrorAutenticacion { mensaje codigo } "
+        "... on Sesion { token } } }"
+    )
+    with _cliente() as client:
+        otro = _post(client, plantilla % "BACKOFFICE")["data"]["iniciarSesion"]
+        propio = _post(client, plantilla % "ASESOR")["data"]["iniciarSesion"]
+
+    assert otro == {
+        "__typename": "ErrorAutenticacion",
+        "mensaje": "Usuario o clave incorrectos.",
+        "codigo": None,
+    }
+    assert propio["__typename"] == "Sesion"

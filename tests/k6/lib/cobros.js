@@ -3,7 +3,7 @@
 // Variables de entorno (ninguna clave va en el repo):
 //   BFF_URL             URL base (en staging, la del API Gateway; local: http://localhost:8000)
 //   USUARIO_BACKOFFICE  alias del operador (local: admin.solventa)
-//   CLAVE_BACKOFFICE    su clave (local: admin-local-solventa)
+//   CLAVE_BACKOFFICE    su clave (local: Admin-local-solventa)
 //   STUB_PASARELA_URL   solo para fijar el modo del stub (local: http://localhost:8103)
 //   TOKEN_PASARELA      token de identidad para el stub si es privado:
 //                       gcloud auth print-identity-token --audiences=stub-pasarela
@@ -29,7 +29,7 @@ export function iniciarSesion() {
     {
       e: {
         usuario: __ENV.USUARIO_BACKOFFICE || 'admin.solventa',
-        clave: __ENV.CLAVE_BACKOFFICE || 'admin-local-solventa',
+        clave: __ENV.CLAVE_BACKOFFICE || 'Admin-local-solventa',
       },
     },
     null,

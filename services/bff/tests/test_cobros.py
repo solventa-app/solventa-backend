@@ -413,7 +413,7 @@ def test_los_logs_no_llevan_nombres_ni_ids_de_clientes(caplog) -> None:
 
 def test_crear_cliente_con_nombre_lo_manda_a_auth() -> None:
     auth = AuthFalso()
-    crear = """mutation { crearUsuario(entrada: {usuario: "cliente.nuevo", clave: "clave-segura-1",
+    crear = """mutation { crearUsuario(entrada: {usuario: "cliente.nuevo", clave: "Clave-segura-1",
         rol: CLIENTE, nombre: "Luis Mora"}) { __typename ... on Usuario { id } } }"""
     with _cliente(PaymentsFalso(), auth) as client:
         creado = _post(client, crear, {})["data"]["crearUsuario"]

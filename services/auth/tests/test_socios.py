@@ -26,7 +26,7 @@ from app.socios import (
 from app.tokens_socio import AUDIENCIA, EMISOR, FirmadorTokensSocio
 
 CREDENCIALES = {
-    "PRODUCCION": ("sol_prod_demo1", "clave-produccion-demo-1"),
+    "PRODUCCION": ("sol_prod_demo1", "Clave-produccion-demo-1"),
     "PRUEBAS": ("sol_test_demo1", "clave-pruebas-demo-1"),
 }
 
@@ -90,7 +90,7 @@ def test_el_jwks_no_expone_la_clave_privada(servicio) -> None:
 
 @pytest.mark.parametrize(
     "client_id,clave",
-    [("sol_prod_demo1", "otra-clave"), ("sol_prod_no_existe", "clave-produccion-demo-1")],
+    [("sol_prod_demo1", "Otra-clave"), ("sol_prod_no_existe", "Clave-produccion-demo-1")],
 )
 def test_credenciales_erroneas_dan_el_mismo_error(servicio, client_id, clave) -> None:
     with pytest.raises(CredencialesSocioInvalidas, match="Credenciales inválidas"):
@@ -120,7 +120,7 @@ def test_un_socio_suspendido_no_recibe_token(servicio) -> None:
 def test_las_credenciales_se_muestran_con_la_clave_y_se_guardan_cifradas(servicio) -> None:
     credenciales = {c["entorno"]: c for c in servicio.credenciales("socio-demo-1")}
 
-    assert credenciales["PRODUCCION"]["clave"] == "clave-produccion-demo-1"
+    assert credenciales["PRODUCCION"]["clave"] == "Clave-produccion-demo-1"
     guardadas = servicio._repo.credenciales
     assert all("clave-" not in c["clave_cifrada"] for c in guardadas)
 
@@ -242,7 +242,7 @@ def cliente(servicio) -> TestClient:
 
 def test_http_token_y_jwks(cliente) -> None:
     respuesta = cliente.post(
-        "/socios/tokens", json={"client_id": "sol_prod_demo1", "clave": "clave-produccion-demo-1"}
+        "/socios/tokens", json={"client_id": "sol_prod_demo1", "clave": "Clave-produccion-demo-1"}
     )
 
     assert respuesta.status_code == 200

@@ -20,7 +20,7 @@ from app.main import create_app
 from app.sesiones import ServicioSesiones
 from app.usuarios import MAXIMO_IDS_POR_CONSULTA, DatoInvalido, ServicioUsuarios
 
-CLAVE = "clave-segura-1"
+CLAVE = "Clave-segura-1"
 NOMBRE = "María Fernanda Gómez"
 
 

@@ -93,6 +93,8 @@ class Credenciales(BaseModel):
     clave: str
     # Canal desde el que se inicia sesión (`app` = móvil, `web`). Sin canal se trata como `web`.
     canal: str | None = None
+    # T17: rol con el que se intenta entrar; si no es el de la cuenta, falla como una clave errada.
+    rol: str | None = None
 
 
 class SolicitudCorreo(BaseModel):
@@ -375,7 +377,9 @@ def create_app(
     @app.post("/sesiones", tags=["sesiones"], response_model=SesionResponse)
     def iniciar_sesion(body: Credenciales) -> SesionResponse:
         try:
-            sesion = app.state.sesiones.iniciar_sesion(body.usuario, body.clave, body.canal)
+            sesion = app.state.sesiones.iniciar_sesion(
+                body.usuario, body.clave, body.canal, body.rol
+            )
         except CredencialesInvalidas as error:
             raise HTTPException(status_code=401, detail=str(error)) from error
         except VerificacionPendiente as error:

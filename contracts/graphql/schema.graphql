@@ -536,6 +536,7 @@ type ErrorAutenticacion {
   mensaje: String!
   # v0.20 (HU-M01): null en credenciales incorrectas. VERIFICACION_PENDIENTE: la clave es correcta pero la identidad
   # aún no se verificó y el canal no es la app (la web no admite esas cuentas).
+  # v0.29 (T17): CLAVE_DEBIL en `registrarCuenta` cuando la clave no cumple la regla; el mensaje dice qué falta.
   codigo: String
 }
 
@@ -550,6 +551,9 @@ union ResultadoUsuario = Usuario | ErrorUsuario
 input CredencialesInput {
   usuario: String!
   clave: String!
+  # v0.29 (T17): rol del chip elegido en la web. Si no es el de la cuenta, la respuesta es la de una clave errada
+  # («Usuario o clave incorrectos.»): no se revela qué rol tiene. Opcional: los clientes viejos no lo mandan.
+  rol: RolUsuario = null
 }
 
 input CrearUsuarioInput {
