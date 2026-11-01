@@ -52,7 +52,7 @@ Todo esto está en código y verificado **en local**; nada tiene medición de st
 | HU-M01 / KAN-31 | Onboarding móvil con verificación de identidad | [`services/onboarding/README.md`](services/onboarding/README.md) |
 | KAN-250 | Almacenamiento de archivos | [ADR-10](docs/adr/ADR-10-almacenamiento-de-archivos.md) |
 
-Contrato en **v0.22**; la siguiente libre es **v0.23**. Últimas migraciones: AUTH `0010`, POLICY `0008`, PAYMENTS `0010`, RISK `0004`.
+Contrato en **v0.23**; la siguiente libre es **v0.24**. Últimas migraciones: AUTH `0010`, POLICY `0008`, PAYMENTS `0010`, RISK `0004`, CLAIMS `0003`.
 
 ## Estado actual
 
@@ -122,7 +122,7 @@ Contrato en **v0.22**; la siguiente libre es **v0.23**. Últimas migraciones: AU
 
 ## Próximos pasos exactos
 
-**Revisión QA del equipo (2026-10-31):** el plan vigente es [`docs/plan-revision-qa-2026-10-31.md`](docs/plan-revision-qa-2026-10-31.md), repartido entre dos desarrolladores y con las decisiones cerradas. A1 y B1 van primero: la firma y el pago fallan en el navegador.
+**Revisión QA del equipo (2026-10-31):** el plan vigente es [`docs/plan-revision-qa-2026-10-31.md`](docs/plan-revision-qa-2026-10-31.md), repartido entre dos desarrolladores y con las decisiones cerradas. **B1 a B8 (Operador y Socio) están hechos**, con [evidencia](docs/evidencias/revision-qa-desarrollador-b-2026-11-01.md). Falta el desarrollador A, desde A1: la firma y el pago siguen fallando en el navegador.
 
 Punto de retoma (2026-10-31): los ajustes de W01 y W05 están integrados en `develop` y verificados en vivo con el compose
 (evidencias del 2026-10-31). `develop` backend y web llevan más cambios del equipo (M01, Sentry). **Nada de esto se ha
