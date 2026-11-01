@@ -258,7 +258,9 @@ openssl rand -base64 32 | tr -d '\n' | gcloud secrets versions add clave-cache-i
 ### Resend (correo real de los avisos de HU-W03)
 
 El ACL manda los avisos (código de verificación, enlace de firma y póliza emitida con el PDF) por el simulador
-(`stubs/notificaciones`) mientras `NOTIFICACIONES_PROVEEDOR` sea `simulado`. Para correo real:
+(`stubs/notificaciones`) mientras `NOTIFICACIONES_PROVEEDOR` sea `simulado`. **Staging usa `resend` desde el 1-nov**
+(pasos 1 a 3 hechos, con el remitente de prueba `onboarding@resend.dev`: hasta verificar un dominio, solo le llega al
+dueño de la cuenta de Resend). Para correo real:
 
 1. Crea la cuenta en `resend.com`, verifica un dominio (registros DNS que da Resend) y crea una API key con permiso de
    **envío** («Sending access»). Sin dominio verificado, el remitente de prueba `onboarding@resend.dev` solo entrega al
