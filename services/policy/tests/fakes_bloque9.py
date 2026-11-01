@@ -55,6 +55,10 @@ class RepositorioBloque9Falso(RepositorioPropuestasFalso):
             return None
         return dict(self.contactos.get(propuesta_id) or {})
 
+    def nombres_titulares(self, propuesta_ids: list[str]) -> dict[str, str]:
+        contactos = {i: self.contactos.get(i) or {} for i in propuesta_ids}
+        return {i: c["nombre"] for i, c in contactos.items() if c.get("nombre")}
+
     def actualizar_correo(self, propuesta_id: str, correo: str) -> None:
         self.contactos[propuesta_id]["correo"] = correo
 

@@ -358,3 +358,13 @@ def test_los_logs_no_llevan_el_nombre(caplog) -> None:
         client.post("/usuarios/nombres", json={"ids": [creado["id"]]})
 
     assert "Fernanda" not in caplog.text and "Gómez" not in caplog.text
+
+
+def test_nombres_tambien_resuelve_por_titular() -> None:
+    servicio, repositorio = _servicio()
+    usuario = servicio.crear(
+        "cliente.uno", CLAVE, "CLIENTE", NOMBRE, **extras_cliente("cliente.uno")
+    )
+    repositorio.filas[usuario["id"]]["titular_id"] = "titular-hmac"
+
+    assert servicio.nombres(["titular-hmac"]) == {"titular-hmac": NOMBRE}

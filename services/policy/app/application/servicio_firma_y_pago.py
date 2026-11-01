@@ -137,6 +137,8 @@ class PuertoRepositorio(Protocol):
 
     def contacto(self, propuesta_id: str) -> dict[str, str | None] | None: ...
 
+    def nombres_titulares(self, propuesta_ids: list[str]) -> dict[str, str]: ...
+
     def actualizar_correo(self, propuesta_id: str, correo: str) -> None: ...
 
     def cambiar_estado(
@@ -194,6 +196,9 @@ class ServicioFirmaYPago:
         if propuesta is None:
             raise ErrorFlujo(NO_ENCONTRADA)
         return propuesta
+
+    def nombres_titulares(self, propuesta_ids: list[str]) -> dict[str, str]:
+        return self._repo.nombres_titulares(propuesta_ids)
 
     def autorizar(
         self, propuesta_id: str, auth: Autorizacion, permitir_vencido: bool = False
