@@ -147,6 +147,10 @@ class AuthFalso:
         self.claves = {"asesor.uno": "clave-segura-1", "admin.solventa": "clave-segura-1"}
         self.canales: list[str | None] = []
         self.renovaciones: list[tuple[str, str]] = []
+        # T22: refresh vigentes -> (usuario_id, canal); rotan en cada uso, como en AUTH.
+        self.refrescos: dict[str, tuple[str, str]] = {}
+        self.refrescos_cerrados: list[str] = []
+        self._contador_refresh = 0
 
     async def correo_registrado(self, correo: str) -> bool:
         if self.falla:
@@ -237,7 +241,36 @@ class AuthFalso:
                 raise VerificacionPendiente()
         elif datos["estado"] != "ACTIVO":
             return None
-        return self._sesion(datos)
+        return self._con_refresh(self._sesion(datos), datos["id"], canal)
+
+    def _con_refresh(self, sesion: dict, usuario_id: str, canal: str | None) -> dict:
+        self._contador_refresh += 1
+        refresh = f"refresh-{self._contador_refresh}"
+        self.refrescos[refresh] = (usuario_id, canal or "web")
+        return {
+            **sesion,
+            "refresh_token": refresh,
+            "refresh_expira_en": "2099-01-09T12:00:00+00:00",
+        }
+
+    async def renovar_con_refresh(self, refresh_token: str, canal: str | None) -> dict | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        dueno = self.refrescos.pop(refresh_token, None)  # rota: el anterior deja de servir
+        if dueno is None or dueno[1] != (canal or "web"):
+            return None
+        datos = self.usuarios.get(dueno[0])
+        if datos is None or datos["estado"] == "SUSPENDIDO":
+            return None
+        if datos["estado"] != "ACTIVO" and canal != "app":
+            return None
+        return self._con_refresh(self._sesion(datos), datos["id"], canal)
+
+    async def cerrar_sesion(self, refresh_token: str) -> None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        self.refrescos_cerrados.append(refresh_token)
+        self.refrescos.pop(refresh_token, None)
 
     def _sesion(self, datos: dict) -> dict:
         pendiente = datos["estado"] != "ACTIVO"

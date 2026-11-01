@@ -218,8 +218,8 @@ Agregar un proveedor nuevo no toca el código: su variable `PRESUPUESTO_MS_<PROV
 - **Correo real con Resend** (`app/adapters/correo_resend.py`): `NOTIFICACIONES_PROVEEDOR=resend` cambia el simulador por
   `POST https://api.resend.com/emails` (EC031: el mismo puerto, otro adaptador). Variables: `NOTIFICACIONES_PROVEEDOR`
   (`simulado` | `resend`), `RESEND_API_KEY` (secreto `resend-api-key`; con `resend` y sin ella no arranca) y `CORREO_REMITENTE`
-  (de un dominio verificado en Resend). El asunto y el cuerpo de las 5 plantillas (`codigo-verificacion`, `codigo-registro`, `enlace-firma`,
-  `poliza-emitida` y `poliza-emitida-asesor`) viven en el adaptador, con los datos escapados en el HTML. El `id_notificacion`
+  (de un dominio verificado en Resend). El asunto y el cuerpo de las 4 plantillas (`codigo-verificacion`, `codigo-registro`, `enlace-firma`
+  y `poliza-emitida`) viven en el adaptador, con los datos escapados en el HTML. El `id_notificacion`
   va como `Idempotency-Key`: un reintento no manda dos correos. Un aviso sin `correo` o con una plantilla desconocida
   responde `rechazada` sin llamar a Resend (POLICY lo omite); 429, 5xx y fallas de red cuentan para el circuito y quedan
   `pendiente`; otro 4xx es `rechazada` con el nombre del error de Resend, nunca su mensaje (puede repetir el correo). La

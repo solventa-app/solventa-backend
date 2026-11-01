@@ -46,6 +46,12 @@ from app.clientes import (
     SolicitudInvalida,
     VerificacionPendiente,
 )
+from app.cookie_refresh import (
+    borrar_cookie,
+    csrf_valido,
+    es_web,
+    poner_cookie,
+)
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.idioma import TraducirMensajes
 from app.jurisdicciones import JURISDICCIONES
@@ -688,6 +694,11 @@ class Sesion:
     token: str
     expira_en: datetime
     usuario: Usuario
+    # v0.26 (T22): solo en el canal `app`. En la web el refresh viaja en una cookie httpOnly que
+    # pone el BFF y estos campos vienen null (el JavaScript nunca lo ve).
+    refresh_token: str | None = None
+    # Vencimiento del refresh (se informa en ambos canales).
+    refresh_expira_en: datetime | None = None
 
 
 @strawberry.type
@@ -1214,11 +1225,30 @@ async def _paso_onboarding(llamada) -> Onboarding | ErrorOnboarding:
         return _error_onboarding("NO_DISPONIBLE")
 
 
-def _sesion(datos: dict) -> Sesion:
+def _sesion_vencida(contexto: dict) -> "ErrorAutenticacion":
+    """Respuesta única a cualquier fallo del refresh; en la web además borra la cookie."""
+    if es_web(contexto):
+        borrar_cookie(contexto)
+    return ErrorAutenticacion(
+        mensaje="Tu sesión ya no es válida. Inicia sesión de nuevo.", codigo="SESION_VENCIDA"
+    )
+
+
+def _sesion(datos: dict, contexto: dict | None = None) -> Sesion:
+    """`contexto` (T22): en la web el refresh se pasa a la cookie y no sale en la respuesta."""
+    refresh = datos.get("refresh_token")
+    vence = datos.get("refresh_expira_en")
+    vence_en = datetime.fromisoformat(vence) if vence else None
+    if refresh and contexto is not None and es_web(contexto):
+        segundos = int((vence_en - datetime.now(UTC)).total_seconds()) if vence_en else 0
+        poner_cookie(contexto, refresh, segundos)
+        refresh = None
     return Sesion(
         token=datos["token"],
         expira_en=datetime.fromisoformat(datos["expira_en"]),
         usuario=_usuario(datos["usuario"]),
+        refresh_token=refresh,
+        refresh_expira_en=vence_en,
     )
 
 
@@ -2226,7 +2256,46 @@ class Mutation:
             raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
         if sesion is None:
             return ErrorAutenticacion(mensaje="Usuario o clave incorrectos.")
-        return _sesion(sesion)
+        return _sesion(sesion, info.context)
+
+    @strawberry.mutation
+    async def renovar_sesion(self, info: Info, refresh_token: str | None = None) -> ResultadoSesion:
+        """T22: cambia el refresh por un acceso y un refresh nuevos (el anterior queda inválido).
+        Pública: el refresh es la credencial. En la web lo lee de la cookie (y exige la cabecera
+        anti-CSRF); en la app llega como argumento. Cualquier fallo responde lo mismo, con el
+        código `SESION_VENCIDA`, sin decir el motivo."""
+        contexto = info.context
+        web = es_web(contexto)
+        if web and not csrf_valido(contexto):
+            return _sesion_vencida(contexto)
+        refresh = contexto.get("cookie_refresh") if web else refresh_token
+        if not refresh:
+            return _sesion_vencida(contexto)
+        try:
+            sesion = await _auth(info).renovar_con_refresh(refresh, contexto.get("canal"))
+        except ErrorServicio as error:
+            # No es un refresh inválido (red, 5xx): la cookie se conserva para reintentar.
+            raise ErrorPublico("No pudimos renovar tu sesión. Intenta de nuevo.") from error
+        if sesion is None:
+            return _sesion_vencida(contexto)
+        return _sesion(sesion, contexto)
+
+    @strawberry.mutation
+    async def cerrar_sesion(self, info: Info, refresh_token: str | None = None) -> bool:
+        """T22: revoca la cadena del refresh y borra la cookie de la web. Idempotente."""
+        contexto = info.context
+        web = es_web(contexto)
+        if web and not csrf_valido(contexto):
+            return False
+        refresh = contexto.get("cookie_refresh") if web else refresh_token
+        if web:
+            borrar_cookie(contexto)
+        if refresh:
+            try:
+                await _auth(info).cerrar_sesion(refresh)
+            except ErrorServicio as error:
+                raise ErrorPublico("No pudimos cerrar tu sesión. Intenta de nuevo.") from error
+        return True
 
     @strawberry.mutation
     async def crear_usuario(self, info: Info, entrada: CrearUsuarioInput) -> ResultadoUsuario:

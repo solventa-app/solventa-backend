@@ -464,7 +464,6 @@ class ServicioEmision:
             return
         evidencia = self._repositorio.obtener_evidencia(propuesta_id)
         propuesta = self._repositorio.obtener(propuesta_id)
-        self._avisar_al_asesor(poliza, propuesta, numero)
         if propuesta.get("origen_contacto") == "PROPUESTA":
             destino = self._destino_desde_la_propuesta(poliza, propuesta_id, numero)
         elif propuesta.get("origen_contacto") == "AUTH" and propuesta.get("actor_usuario_id"):
@@ -535,26 +534,6 @@ class ServicioEmision:
             correo=contacto["correo"],
             adjuntos=[self._adjunto_de_la_poliza(poliza, contacto.get("nombre"), numero)],
         )
-
-    def _avisar_al_asesor(
-        self, poliza: dict[str, Any], propuesta: dict[str, Any], numero: str
-    ) -> None:
-        """W03-37: el correo al asesor que vendió la póliza, para cuando no tiene la app abierta.
-        Sin el PDF ni datos del titular. AUTH no guarda el contacto del ASESOR: el proveedor lo
-        resuelve por su id. Idempotente por `poliza-emitida-asesor-<id>`; si no sale, se reintenta
-        con el aviso del titular."""
-        if propuesta.get("actor_rol") != "ASESOR" or not propuesta.get("actor_usuario_id"):
-            return
-        resultado = self._notificador.notificar(
-            SolicitudNotificacion(
-                id_notificacion=f"poliza-emitida-asesor-{poliza['id']}",
-                plantilla="poliza-emitida-asesor",
-                destinatario_id=propuesta["actor_usuario_id"],
-                datos={"numero_poliza": numero, "propuesta_id": propuesta["id"]},
-            )
-        )
-        if resultado.estado not in ("enviada", "rechazada"):
-            raise EmisionPendiente("notificaciones no disponibles")
 
     def _adjunto_de_la_poliza(
         self, poliza: dict[str, Any], nombre_asegurado: str | None, numero: str
