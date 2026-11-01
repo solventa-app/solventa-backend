@@ -202,3 +202,11 @@ def test_resend_con_su_llave_y_remitente(monkeypatch) -> None:
         "re_abc",
         "Solventa <avisos@solventa.co>",
     )
+
+
+def test_el_codigo_de_registro_no_menciona_al_asesor() -> None:
+    from app.adapters.correo_resend import componer
+
+    asunto, cuerpo, texto = componer("codigo-registro", {"codigo": "123456", "minutos": "10"})
+    assert "123456" in cuerpo and "123456" in texto
+    assert "asesor" not in (asunto + cuerpo + texto).lower()
