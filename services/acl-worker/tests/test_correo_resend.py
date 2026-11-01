@@ -67,10 +67,10 @@ def test_envia_el_correo_con_el_pdf_y_la_llave_de_idempotencia() -> None:
 
 
 def test_sin_correo_no_llama_a_resend_y_queda_rechazada() -> None:
-    """P. ej. el aviso al asesor, cuyo contacto no guarda AUTH: POLICY lo da por omitido."""
+    """P. ej. un cliente sin contacto en AUTH: POLICY lo da por omitido."""
     adaptador, pedidos = _adaptador(lambda r: httpx.Response(200, json={"id": "x"}))
 
-    resultado = adaptador.enviar(_solicitud(correo=None, plantilla="poliza-emitida-asesor"))
+    resultado = adaptador.enviar(_solicitud(correo=None, plantilla="poliza-emitida"))
 
     assert (resultado.estado, resultado.motivo) == ("rechazada", "sin_correo")
     assert pedidos == []
