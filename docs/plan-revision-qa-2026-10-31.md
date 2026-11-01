@@ -8,7 +8,7 @@
 
 | Resultado | Puntos | Cuáles |
 |---|---:|---|
-| Defecto confirmado | 8 | AS-03, AS-06, AS-07, AS-08, SO-01, OP-06, y los de moneda OP-02 y OP-03 (y sus variantes) |
+| Defecto confirmado | 12 | Moneda (OP-02, OP-03, OP-05, AS-01, SO-02, TR-01), AS-03, AS-06, AS-07, AS-08, SO-01, OP-06 |
 | Funcionalidad pendiente que ya estaba prevista | 5 | AS-05, CL-01, CL-02, CL-03, OP-04 |
 | Mejora de diseño | 3 | AS-04, OP-07, SO-03 |
 | Funciona como se diseñó: hay que decidir o explicar | 3 | OP-01, AS-02, SO-04 |
