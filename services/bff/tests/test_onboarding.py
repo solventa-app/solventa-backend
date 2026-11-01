@@ -349,6 +349,71 @@ def test_registrar_cuenta_sin_token_con_otp() -> None:
     assert onboarding.sesiones[oid]["usuario_id"] == sesion["usuario"]["id"]
 
 
+def test_reenvio_del_codigo_exige_espera_de_60_segundos() -> None:
+    from fakes import AclFalso
+
+    acl = AclFalso()
+    cliente = TestClient(
+        create_app(
+            config=Configuracion.desde_entorno(),
+            clientes=clientes_falsos(auth=AuthFalso(), acl=acl, onboarding=OnboardingFalso()),
+        )
+    )
+    cliente.__enter__()
+    q = (
+        'mutation { enviarCodigoOnboarding(correo: "espera@ejemplo.com") { '
+        "... on CodigoOnboardingEnviado { venceEn } "
+        "... on ErrorOnboarding { codigo mensaje segundosRestantes } } }"
+    )
+    assert "venceEn" in _gql(cliente, q)["data"]["enviarCodigoOnboarding"]
+    segundo = _gql(cliente, q)["data"]["enviarCodigoOnboarding"]
+    assert segundo["codigo"] == "ESPERA_REQUERIDA"
+    assert 1 <= segundo["segundosRestantes"] <= 60
+    assert len(acl.notificaciones) == 1  # el rechazo no gasta un envío
+
+
+def test_servicio_codigo_permite_reenviar_pasado_el_minuto_e_invalida_el_anterior() -> None:
+    import asyncio
+    from datetime import UTC, datetime, timedelta
+
+    from fakes import AclFalso
+
+    from app.clientes import ErrorOnboardingServicio
+    from app.servicio_codigo_onboarding import ServicioCodigoOnboarding
+    from app.socios.modo_prueba import AlmacenMemoria
+
+    ahora = [datetime(2026, 11, 1, 12, 0, tzinfo=UTC)]
+    acl = AclFalso()
+    servicio = ServicioCodigoOnboarding(
+        clientes_falsos(auth=AuthFalso(), acl=acl, onboarding=OnboardingFalso()),
+        AlmacenMemoria(),
+        "material",
+        reloj=lambda: ahora[0],
+    )
+
+    async def correr() -> None:
+        await servicio.enviar("a@ejemplo.com")
+        ahora[0] += timedelta(seconds=42)
+        try:
+            await servicio.enviar("A@ejemplo.com")
+        except ErrorOnboardingServicio as error:
+            assert error.codigo == "ESPERA_REQUERIDA"
+            assert error.segundos_restantes == 18
+        else:
+            raise AssertionError("debió exigir espera")
+        ahora[0] += timedelta(seconds=18)
+        await servicio.enviar("a@ejemplo.com")
+        viejo, nuevo = (n["datos"]["codigo"] for n in acl.notificaciones)
+        if viejo != nuevo:
+            try:
+                await servicio.verificar("a@ejemplo.com", viejo)
+            except ErrorOnboardingServicio as error:
+                assert error.codigo == "CODIGO_INVALIDO"
+        await servicio.verificar("a@ejemplo.com", nuevo)
+
+    asyncio.run(correr())
+
+
 
 def test_registrar_cuenta_con_clave_debil_no_gasta_el_codigo() -> None:
     """T17: la clave se valida antes del OTP; el mensaje dice qué falta, en español y en inglés."""

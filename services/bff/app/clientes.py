@@ -71,9 +71,11 @@ class PresupuestoAgotado(Exception):
 class ErrorOnboardingServicio(Exception):
     """ONBOARDING (o AUTH al crear la cuenta) rechazó la solicitud con un código estable."""
 
-    def __init__(self, codigo: str) -> None:
+    def __init__(self, codigo: str, segundos_restantes: int | None = None) -> None:
         super().__init__(codigo)
         self.codigo = codigo
+        # Solo con `ESPERA_REQUERIDA`: lo que falta para poder pedir otro código.
+        self.segundos_restantes = segundos_restantes
 
 
 class PuertoAuth(Protocol):

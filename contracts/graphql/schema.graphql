@@ -719,10 +719,12 @@ type CodigoOnboardingEnviado {
 
 # `codigo` es estable: TOKEN_INVALIDO, SIN_CONSENTIMIENTO, ESTADO_INVALIDO, PIEZAS_INCOMPLETAS, SIN_INTENTOS,
 # SESION_CON_CUENTA, CORREO_YA_REGISTRADO, DATO_INVALIDO, JURISDICCION_NO_SOPORTADA, NO_DISPONIBLE (con reintento)
+# ESPERA_REQUERIDA (v0.31: reenvío del código antes de 60 s; trae `segundosRestantes`),
 # o un código del almacenamiento (TIPO_CONTENIDO_NO_ADMITIDO, TAMANO_NO_ADMITIDO, OBJETO_NO_SUBIDO, ...).
 type ErrorOnboarding {
   codigo: String!
   mensaje: String!
+  segundosRestantes: Int # solo con ESPERA_REQUERIDA
 }
 
 union ResultadoInicioOnboarding = InicioOnboarding | ErrorOnboarding
