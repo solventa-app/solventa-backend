@@ -61,6 +61,7 @@ def test_recorrido_completo_por_http() -> None:
             "motivo": None,
             "intento": 1,
             "intentos_restantes": 2,
+            "tiene_cuenta": True,
         }
         assert cliente.get("/usuarios/u-9/onboarding").json()["estado"] == "VERIFICADA"
 

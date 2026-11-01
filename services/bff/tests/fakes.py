@@ -953,7 +953,8 @@ class OnboardingFalso:
         return self.sesiones[onboarding_id]
 
     def _vista(self, sesion: dict) -> dict:
-        return {k: sesion[k] for k in ("id", "estado", "motivo", "intento", "intentos_restantes")}
+        vista = {k: sesion[k] for k in ("id", "estado", "motivo", "intento", "intentos_restantes")}
+        return {**vista, "tiene_cuenta": sesion.get("usuario_id") is not None}
 
     async def iniciar(self, jurisdiccion: str, tipo_documento: str) -> dict:
         if self.falla:
