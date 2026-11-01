@@ -177,6 +177,8 @@ class UsuarioResponse(BaseModel):
     tiene_contacto: bool = False
     # Como `nombre`: solo en `POST /sesiones` y `GET /usuarios/{id}` (W03-34, `10••••5678`).
     documento_enmascarado: str | None = None
+    # v0.24: el correo propio, como `nombre`: solo en `POST /sesiones` y `GET /usuarios/{id}`.
+    correo: str | None = None
 
 
 class SolicitudPreferencias(BaseModel):
@@ -383,6 +385,7 @@ def create_app(
         sesion["usuario"]["documento_enmascarado"] = app.state.usuarios.documento_enmascarado_de(
             usuario_id
         )
+        sesion["usuario"]["correo"] = app.state.usuarios.correo_de(usuario_id)
         return SesionResponse(**sesion)
 
     @app.post("/sesiones/renovar", tags=["sesiones"], response_model=SesionResponse)
@@ -397,6 +400,7 @@ def create_app(
         sesion["usuario"]["documento_enmascarado"] = app.state.usuarios.documento_enmascarado_de(
             body.usuario_id
         )
+        sesion["usuario"]["correo"] = app.state.usuarios.correo_de(body.usuario_id)
         return SesionResponse(**sesion)
 
     # ---------- Usuarios ----------
@@ -495,6 +499,7 @@ def create_app(
             **usuario,
             nombre=app.state.usuarios.nombre_de(usuario_id),
             documento_enmascarado=app.state.usuarios.documento_enmascarado_de(usuario_id),
+            correo=app.state.usuarios.correo_de(usuario_id),
         )
 
     @app.get(

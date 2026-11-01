@@ -710,6 +710,12 @@ class ServicioUsuarios:
             ),
         }
 
+    def correo_de(self, usuario_id: str) -> str | None:
+        """El correo del propio usuario, para mostrárselo a él (`yo` e `iniciarSesion`, contrato
+        v0.24). Solo los CLIENTE tienen correo; el BFF lo pide únicamente con el id del token."""
+        contacto = self.contacto_de(usuario_id)
+        return contacto["correo"] if contacto else None
+
     def _descifrar_contacto(self, fila: dict, campo: str, contexto: str) -> str | None:
         if self._cifrador is None or not fila.get(campo):
             return None

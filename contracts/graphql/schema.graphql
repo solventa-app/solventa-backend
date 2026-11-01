@@ -520,6 +520,10 @@ type Usuario {
   # v0.18 (W03-34): el documento del CLIENTE enmascarado (p. ej. 10••••5678; T24: longitud conservada, 2 iniciales y 4 finales), solo en `iniciarSesion` y `yo`; null si
   # no tiene documento o no es CLIENTE. El documento completo nunca vuelve por GraphQL.
   documentoEnmascarado: String
+  # v0.24 (perfil común): el correo del propio usuario, solo en `iniciarSesion` y `yo` (cada quien ve el suyo); en
+  # `usuarios`, `crearUsuario` y los demás cambios va en null, y null si no tiene (solo los CLIENTE guardan correo).
+  # Nunca viaja dentro del JWT. El teléfono sigue sin volver por GraphQL.
+  correo: String
 }
 
 type Sesion {

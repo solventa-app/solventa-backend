@@ -248,8 +248,12 @@ class AuthFalso:
                 scopes=["verificacion-pendiente"] if pendiente else ["sesion"],
             ),
             "expira_en": "2026-10-14T13:00:00+00:00",
-            "usuario": _con_nombre(datos, self.nombres),
+            "usuario": {**_con_nombre(datos, self.nombres), "correo": self._correo(datos["id"])},
         }
+
+    def _correo(self, usuario_id: str) -> str | None:
+        """Como AUTH (v0.24): el correo propio, solo en el login y en `GET /usuarios/{id}`."""
+        return self.contactos.get(usuario_id, {}).get("correo")
 
     async def obtener_usuario(self, usuario_id: str) -> dict | None:
         datos = self.usuarios.get(usuario_id)
@@ -258,6 +262,7 @@ class AuthFalso:
         documento = self.documentos.get(usuario_id)
         return {
             **_con_nombre(datos, self.nombres),
+            "correo": self._correo(usuario_id),
             "documento_enmascarado": _enmascarar(documento) if documento else None,
         }
 
