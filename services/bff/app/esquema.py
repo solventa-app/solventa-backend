@@ -2550,7 +2550,10 @@ class Mutation:
             token = _token_onboarding(info)
             servicio = _onboarding(info)
             # Valida el token antes de crear nada en AUTH.
-            await servicio.consultar(str(onboarding_id), token)
+            actual = await servicio.consultar(str(onboarding_id), token)
+            if actual.get("tiene_cuenta"):
+                # Crear otra en AUTH la dejaría huérfana y gastaría el correo del cliente.
+                return _error_onboarding("SESION_CON_CUENTA")
             cuenta = await _auth(info).crear_cuenta_onboarding(entrada.correo, entrada.clave)
             ligada = await servicio.vincular_cuenta(str(onboarding_id), token, cuenta["id"])
             sesion = await _auth(info).iniciar_sesion(entrada.correo, entrada.clave, CANAL_APP)
