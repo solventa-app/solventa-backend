@@ -57,6 +57,9 @@ jobs:
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read # para saber si un apagado programado de hoy ya funcionó
     outputs:
       ok: ${{ steps.soporte.outputs.ok }}
     steps:
@@ -67,17 +70,26 @@ jobs:
         id: soporte
         env:
           EVENTO: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          # GitHub entrega los cron de mejor esfuerzo: el 1-nov los reintentos de las 10:00 y 12:00 UTC llegaron a las
-          # 15:19 y 16:31 UTC y apagaron staging en pleno día, justo después de encenderlo a mano. Un apagado
-          # programado solo vale de madrugada (antes de las 9:00 hora de Colombia); si llega más tarde, se omite.
+          # Los cron de las 08:30, 10:00 y 12:00 UTC son REINTENTOS del de las 07:00: si un apagado programado de hoy
+          # (día de Colombia) ya terminó bien, con su job `costos` en verde, los demás no hacen nada. El 1-nov GitHub
+          # entregó el primero a las 14:06 UTC y dos reintentos a las 15:19 y 16:31 UTC, que volvieron a apagar
+          # staging en pleno día justo después de que el equipo lo encendiera a mano.
           if [ "$EVENTO" = "schedule" ]; then
-            hora=$(TZ=America/Bogota date +%-H)
-            if [ "$hora" -ge 9 ]; then
-              echo "ok=false" >> "$GITHUB_OUTPUT"
-              echo "::notice title=Costos staging::el apagado programado llegó a las ${hora}:xx hora de Colombia (fuera de la madrugada); se omite para no apagar a quien está usando staging."
-              exit 0
-            fi
+            desde=$(date -u -d "$(TZ=America/Bogota date +%F) 00:00 -0500" +%Y-%m-%dT%H:%M:%SZ)
+            corridas=$(gh api "repos/${REPO}/actions/workflows/costos-staging.yml/runs?event=schedule&status=success&created=%3E%3D${desde}" \
+              --jq ".workflow_runs[] | select(.id != ${RUN_ID}) | .id")
+            for id in $corridas; do
+              resultado=$(gh api "repos/${REPO}/actions/runs/${id}/jobs" --jq '.jobs[] | select(.name == "costos") | .conclusion')
+              if [ "$resultado" = "success" ]; then
+                echo "ok=false" >> "$GITHUB_OUTPUT"
+                echo "::notice title=Costos staging::el apagado programado de hoy ya funcionó (run ${id}); este reintento no hace nada."
+                exit 0
+              fi
+            done
           fi
           if grep -q 'cloud_sql_encendida' infra/variables.tf; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
