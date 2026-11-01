@@ -259,8 +259,9 @@ openssl rand -base64 32 | tr -d '\n' | gcloud secrets versions add clave-cache-i
 
 El ACL manda los avisos (código de verificación, enlace de firma y póliza emitida con el PDF) por el simulador
 (`stubs/notificaciones`) mientras `NOTIFICACIONES_PROVEEDOR` sea `simulado`. **Staging usa `resend` desde el 1-nov**
-(pasos 1 a 3 hechos, con el remitente de prueba `onboarding@resend.dev`: hasta verificar un dominio, solo le llega al
-dueño de la cuenta de Resend). Para correo real:
+(pasos 1 a 3 hechos) con el dominio verificado `solventa.globalspark.io` y el remitente
+`Solventa <avisos@solventa.globalspark.io>`. Con el remitente de prueba `onboarding@resend.dev`, Resend responde 403 a
+todo destinatario que no sea el dueño de la cuenta, y POLICY lo convierte en 503. Para correo real:
 
 1. Crea la cuenta en `resend.com`, verifica un dominio (registros DNS que da Resend) y crea una API key con permiso de
    **envío** («Sending access»). Sin dominio verificado, el remitente de prueba `onboarding@resend.dev` solo entrega al
