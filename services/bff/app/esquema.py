@@ -1309,6 +1309,7 @@ class Resolucion:
     perito: Perito | None
     instrucciones: str | None
     vencimiento_informe: datetime | None
+    automatica: bool  # v0.23: la aprobó el sistema porque el plazo venció sin gestión
 
 
 @strawberry.type
@@ -1469,6 +1470,7 @@ def _resolucion(datos: dict | None) -> Resolucion | None:
         perito=_perito(datos.get("perito")),
         instrucciones=datos.get("instrucciones"),
         vencimiento_informe=_fecha(datos.get("vencimiento_informe")),
+        automatica=datos.get("automatica", False),
     )
 
 

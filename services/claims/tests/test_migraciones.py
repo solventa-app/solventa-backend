@@ -40,14 +40,22 @@ class FakeDb:
 
 
 def test_descubre_las_migraciones_en_orden():
-    assert [n for n, _ in descubrir()] == ["0001_base", "0002_colecciones"]
+    assert [n for n, _ in descubrir()] == [
+        "0001_base",
+        "0002_colecciones",
+        "0003_plazo_dictamen",
+    ]
 
 
 def test_segunda_ejecucion_no_reaplica():
     db = FakeDb()
-    assert len(aplicar_pendientes(db)) == 2
+    assert len(aplicar_pendientes(db)) == 3
     assert aplicar_pendientes(db) == []
-    assert set(db[COLECCION].docs) == {"0001_base", "0002_colecciones"}
+    assert set(db[COLECCION].docs) == {
+        "0001_base",
+        "0002_colecciones",
+        "0003_plazo_dictamen",
+    }
 
 
 def test_crea_las_seis_colecciones_con_validacion_e_indices_unicos():

@@ -289,6 +289,12 @@ variable "purgar_contactos_cron" {
   default     = "0 3 * * *"
 }
 
+variable "aprobar_siniestros_cron" {
+  description = "Cada cuánto el trabajo de Cloud Scheduler `aprobar-siniestros-vencidos` llama a `POST /siniestros/_aprobar-vencidos` de CLAIMS: aprueba los casos pendientes con el plazo del dictamen vencido. Formato cron, zona America/Bogota. Solo aplica con `crear_tareas = true`."
+  type        = string
+  default     = "*/15 * * * *"
+}
+
 variable "crear_almacenamiento" {
   description = "Crea el bucket privado de archivos (CMEK con la llave `archivos` si crear_kms), sus avisos por Pub/Sub a ALMACENAMIENTO y los temas `archivo-disponible` y `archivo-rechazado` (KAN-250, ADR-10). Cobra por GB guardado (~USD 0,02/GB-mes)."
   type        = bool

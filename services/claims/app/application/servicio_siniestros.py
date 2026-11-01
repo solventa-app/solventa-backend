@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 MAX_TEXTO = 500
 ABIERTOS = ("PENDIENTE", "EN_REVISION")
+# Quien aprueba un caso cuyo plazo venció sin gestión (D-3 de la revisión QA).
+ACTOR_SISTEMA = "SISTEMA"
 MOTIVOS = (
     "EVIDENCIA_INSUFICIENTE",
     "FUERA_DE_COBERTURA",
@@ -79,6 +81,8 @@ class PuertoPayments(Protocol):
 
 class PuertoRepositorio(Protocol):
     def listar(self, estado: str | None = None) -> list[dict]: ...
+
+    def pendientes_vencidos(self, ahora: datetime) -> list[str]: ...
 
     def obtener(self, siniestro_id: str, primaria: bool = False) -> dict | None: ...
 
@@ -243,7 +247,24 @@ class ServicioSiniestros:
         self._publicar(evento_rechazado(siniestro, resolucion, actor))
         return self.obtener(siniestro_id, primaria=True)
 
-    def aprobar(self, siniestro_id: str, actor: str | None) -> dict:
+    def aprobar_vencidos(self) -> dict[str, int]:
+        """Una pasada del plazo del dictamen (D-3): cada caso PENDIENTE vencido se aprueba por el
+        mismo camino que usa el operador, sin mirar las verificaciones (D-3a). Un caso derivado está
+        EN_REVISION y espera al perito (D-3b). Un caso que falla sigue abierto para la próxima
+        pasada, e idempotente: PAYMENTS devuelve la misma orden."""
+        aprobados = pendientes = 0
+        for siniestro_id in self._repo.pendientes_vencidos(self._reloj()):
+            try:
+                self.aprobar(siniestro_id, ACTOR_SISTEMA, automatica=True)
+                aprobados += 1
+            except (DependenciaNoDisponible, ErrorNegocio) as error:
+                pendientes += 1
+                logger.warning(
+                    "siniestro=%s sin aprobar por vencimiento: %s", id_opaco(siniestro_id), error
+                )
+        return {"aprobados": aprobados, "pendientes": pendientes}
+
+    def aprobar(self, siniestro_id: str, actor: str | None, automatica: bool = False) -> dict:
         """W04-6: primero la orden de pago en PAYMENTS (idempotente por siniestro) y después la
         aprobación. Si PAYMENTS o POLICY no responden, el caso sigue abierto y nada queda a medias:
         reintentar devuelve la misma orden."""
@@ -271,6 +292,7 @@ class ServicioSiniestros:
             "metodo_transferencia": orden.get("metodo_transferencia", METODO_TRANSFERENCIA),
             "plazo_dispersion": PLAZO_DISPERSION,
             "orden_pago_id": orden["id"],
+            "automatica": automatica,
             "resuelta_en": ahora,
             "actor_usuario_id": actor,
         }
@@ -353,6 +375,7 @@ class ServicioSiniestros:
                 "metodo_transferencia": resolucion.get("metodo_transferencia"),
                 "plazo_dispersion": resolucion.get("plazo_dispersion"),
                 "orden_pago_id": resolucion.get("orden_pago_id"),
+                "automatica": resolucion.get("automatica", False),
                 # Si el caso pasó por un perito, la resolución final lo conserva (como el dummy).
                 "perito": _perito(perito),
                 "instrucciones": None,
@@ -370,6 +393,7 @@ class ServicioSiniestros:
                 "metodo_transferencia": None,
                 "plazo_dispersion": None,
                 "orden_pago_id": None,
+                "automatica": False,
                 "perito": _perito(perito),
                 "instrucciones": asignacion.get("instrucciones"),
                 "vencimiento_informe": asignacion["vence_informe_en"],
