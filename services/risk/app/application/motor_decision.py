@@ -26,6 +26,7 @@ from app.application.motor_scoring import (
     ResultadoMotorScore,
     calcular_score_motor,
 )
+from app.limites_plazo import limites_plazo
 
 APROBADO = "APROBADO"
 CONDICIONADO = "CONDICIONADO"
@@ -49,8 +50,9 @@ class PoliticaCredito(BaseModel):
     monto_min: Decimal = Decimal("500000")
     monto_max: Decimal = Decimal("80000000")
     paso_monto: Decimal = Decimal("10000")
-    plazo_min: int = 6
-    plazo_max: int = 60
+    # T18: los límites salen de jurisdicciones.json, no de números escritos aquí.
+    plazo_min: int = Field(default_factory=lambda: limites_plazo()[0])
+    plazo_max: int = Field(default_factory=lambda: limites_plazo()[1])
     tasa_referencia_ea: Decimal = Decimal("0.10")  # 10.0% EA base
     tasa_maxima_legal_ea: Decimal = Decimal("0.30")  # 30.0% EA tope legal (usura)
     moneda: str = "COP"

@@ -350,3 +350,15 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Afecta al frontend: sí (aditivo; W04-02 lo muestra).
 - KAN-30 (SO-02): API de socios `POST /v1/conversiones`, con los montos en otra moneda solo para mostrar. No descuenta
   presupuesto. Con un token de PRUEBAS usa tasas fijas (W07-10). Afecta al frontend: sí (aditivo; el panel del socio).
+
+## v0.24 — 2026-11-01
+
+- KAN-26 (T18, W01-01): plazo del crédito de **6 a 200 meses**, configurable. Fuente única:
+  `contracts/jurisdicciones.json` (`plazo_min` = 6, `plazo_max` = 200 en los siete países); cada imagen
+  (BFF, RISK, RATING) lleva su copia `app/jurisdicciones.json` (`scripts/sincronizar_jurisdicciones.py`,
+  verificado en el CI) y falla con un error claro si falta, sin valor por defecto en el código.
+- Aditivo: tipo `Jurisdiccion` y consulta `jurisdicciones` (código, nombre, moneda, tipo de documento, plazo
+  mínimo y máximo). `plazoMeses` de `SolicitudOfertaInput` y de `POST /v1/cotizaciones` se valida de 6 a 200
+  (antes 1 a 60); el OpenAPI de socios lo refleja.
+- Afecta al frontend: sí (W01-01 deja de llevar el 1 a 60 escrito y lee el límite de `jurisdicciones`).
+  PR gemelo en `solventa-frontend`.

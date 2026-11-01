@@ -246,9 +246,6 @@ EN: dict[str, str] = {
     ),
     "El valor del crédito no es válido.": "The loan amount is not valid.",
     "El documento de identidad no es válido.": "The ID number is not valid.",
-    "El plazo del crédito debe estar entre 1 y 60 meses.": (
-        "The loan term must be between 1 and 60 months."
-    ),
     "Ingresa la dirección del inmueble.": "Enter the property address.",
     "No pudimos consultar tu historial crediticio en este momento. "
     "Intenta de nuevo o habla con un asesor.": (
@@ -319,6 +316,10 @@ EN: dict[str, str] = {
 
 # Mensajes con un número dentro (PAYMENTS, `mensaje_reintentos_agotados`).
 EN_PATRONES: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"El plazo del crédito debe estar entre (\d+) y (\d+) meses\."),
+        r"The loan term must be between \1 and \2 months.",
+    ),
     (
         re.compile(r"Se agotaron los (\d+) reintentos: el cobro requiere otro medio de pago\."),
         r"All \1 retries were used: the payment needs another payment method.",

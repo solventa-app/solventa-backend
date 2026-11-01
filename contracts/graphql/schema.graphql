@@ -892,7 +892,20 @@ type EstadoSistema {
   micros: [SaludMicro!]!
 }
 
+# v0.24 (T18): límites y datos de cada país soportado, leídos de contracts/jurisdicciones.json. La web y el
+# móvil los usan para validar (plazo mínimo y máximo) sin llevarlos escritos.
+type Jurisdiccion {
+  codigo: String!
+  nombre: String!
+  moneda: String!
+  tipoDocumento: String!
+  plazoMin: Int!
+  plazoMax: Int!
+}
+
 type Query {
+  # v0.24 (T18). Pública: son parámetros del producto, sin datos personales.
+  jurisdicciones: [Jurisdiccion!]!
   # El archivo si existe y quien pregunta puede leerlo; si no, null.
   archivo(id: ID!): Archivo
   oferta(id: ID!): Oferta

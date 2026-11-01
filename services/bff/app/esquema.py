@@ -48,6 +48,7 @@ from app.clientes import (
 )
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.idioma import TraducirMensajes
+from app.jurisdicciones import JURISDICCIONES
 from app.monedas import (
     MAXIMO_MONTOS,
     MENSAJE_DEMASIADOS_MONTOS,
@@ -204,6 +205,18 @@ class ConsentimientoInput:
     tipo_dato: str | None = None
     fuente_datos: str | None = None
     canal: str | None = None
+
+
+@strawberry.type
+class Jurisdiccion:
+    """v0.24 (T18): límites por país, de jurisdicciones.json."""
+
+    codigo: str
+    nombre: str
+    moneda: str
+    tipo_documento: str
+    plazo_min: int
+    plazo_max: int
 
 
 @strawberry.type
@@ -1955,6 +1968,22 @@ class Query:
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_AUTH_NO_DISPONIBLE) from error
         return _usuario(datos) if datos else None
+
+    @strawberry.field
+    def jurisdicciones(self) -> list[Jurisdiccion]:
+        """v0.24 (T18): plazo mínimo y máximo, moneda y tipo de documento por país. Son
+        parámetros del producto, sin datos personales."""
+        return [
+            Jurisdiccion(
+                codigo=j.codigo,
+                nombre=j.nombre,
+                moneda=j.moneda,
+                tipo_documento=j.tipo_documento,
+                plazo_min=j.plazo_min,
+                plazo_max=j.plazo_max,
+            )
+            for j in JURISDICCIONES
+        ]
 
     @strawberry.field
     async def convertir_montos(
