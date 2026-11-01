@@ -139,7 +139,7 @@ def create_app(reloj: Callable[[], datetime] = lambda: datetime.now(UTC)) -> Fas
     sesiones: dict[str, dict] = {}
     sesion_por_referencia: dict[str, str] = {}
     # Token -> motivo de rechazo, solo de las tarjetas que fallan al cobrar con token. En memoria,
-    # como los cobros: un token desconocido (el del convenio, o tras reiniciar el stub) sigue el modo.
+    # como los cobros: un token desconocido (convenio, o tras reiniciar el stub) sigue el modo.
     rechazos_por_token: dict[str, str] = {}
     candado = asyncio.Lock()
     vigencia = timedelta(seconds=int(os.getenv("SESION_VIGENCIA_SEGUNDOS", "600")))
