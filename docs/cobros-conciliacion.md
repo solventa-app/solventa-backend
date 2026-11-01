@@ -121,6 +121,42 @@ Cómo produce cada estado el mock de la pasarela, por modo:
 | `caido` | Conexión colgada 60 s | `pendiente` |
 | `rechaza` | 200 con `rechazado` y `motivo: fondos_insuficientes` | `rechazado` |
 
+## 4b. Mapa de estados: sesión de pago, cobro y propuesta (T13, 2026-11-01)
+
+Hay tres máquinas de estados distintas y **la tabla de conciliación muestra solo cobros reales** (los cuatro estados de
+la sección 4). Un intento interactivo que no cobra no crea cobro: solo cambia la sesión de pago.
+
+| Entidad | Estados | Quién la escribe |
+|---|---|---|
+| Sesión de pago (checkout) | `abierta`, `cobrada`, `rechazada`, `fallida`, `vencida`, `no_disponible` | PAYMENTS (`servicio_sesiones`) |
+| Cobro (la tabla) | `cobrando`, `cobrado`, `rechazado`, `pendiente` | PAYMENTS |
+| Propuesta | `ACEPTADA`, `IDENTIDAD_VERIFICADA`, `EN_FIRMA`, `FIRMADA`, `EN_EMISION`, `PENDIENTE_PAGO`, `PAGO_RECHAZADO`, `EN_REVISION`, `NO_EMITIDA`, `EMITIDA`, `CANCELADA` | POLICY |
+
+| Sesión de pago | Cobro que crea | Origen | Lo que ve el operador | Lo que ve el cliente (propuesta) |
+|---|---|---|---|---|
+| `cobrada` | `cobrado` | `INTERACTIVO` | Fila nueva, en vivo por `avisos:cobros` | `EMITIDA` |
+| `rechazada`, `fallida`, `vencida`, `no_disponible` | ninguno | | Nada | `PAGO_RECHAZADO` o `PENDIENTE_PAGO`, con salida para reintentar |
+| (cobro recurrente, Cloud Scheduler) | `cobrado`, `rechazado` o `pendiente` | `RECURRENTE` | Fila; el rechazado se reintenta a mano hasta 3 veces | |
+
+Consecuencias, decididas por felipe (2026-11-01):
+
+- Un cobro `INTERACTIVO` es siempre `cobrado`; por eso la web retiró el caso inalcanzable «Rechazado · En línea». Los
+  rechazados de cobros recurrentes, su filtro y el reintento se quedan.
+- `cobrando` se deja como está: es interno, dura menos de 0,7 s (el ACL corta a los 700 ms) y solo se ve si el proceso
+  se cae a mitad; sirve para detectar un cobro atascado.
+- El texto del estado `pendiente` es el mismo en el filtro y en la fila: «Pendiente de reintento».
+- La pantalla donde se escribe la tarjeta es la página alojada del stub de la pasarela (`/checkout/{id}`); el front solo
+  redirige y recibe el retorno. Una pasarela real (token de tarjeta del proveedor) es una tarea aparte con el ACL.
+
+### Fila en vivo del pago interactivo: configuración revisada
+
+Al confirmar el pago, `servicio_sesiones` publica `cobro.estado-cambiado`; `BusConAvisos` lo copia a Redis
+(`avisos:cobros`) solo si PAYMENTS tiene `REDIS_URL`, y el servicio `avisos` lo envía por SSE a la tabla, que si no
+conoce el cobro recarga la lista 1 s después. Revisado en `docker-compose.yml`: `payments`, `policy`, `bff` y `avisos`
+usan la misma base (`redis://redis:6379/3`) y `avisos` está en el compose. **No se ha ejecutado de punta a punta**
+(pagar como cliente con la tabla abierta como BACKOFFICE; la fila debe aparecer en 1 a 2 s): queda para la prueba en el
+Mac. La publicación es de mejor esfuerzo; si Redis falla solo queda un `warning` en el log.
+
 ## 5. Qué se construyó
 
 | Pieza | Cambio |

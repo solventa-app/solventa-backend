@@ -1,7 +1,7 @@
 """Código de verificación de correo para cuentas del onboarding móvil (HU-M01).
 
 Como en HU-W03 (`services/policy/app/application/servicio_firma_y_pago.py`), envía un código de 6
-dígitos por el ACL Worker (`plantilla="codigo-verificacion"`), guarda solo su huella HMAC-SHA256
+dígitos por el ACL Worker (`plantilla="codigo-registro"`), guarda solo su huella HMAC-SHA256
 (en Redis con respaldo en memoria), vence a los 10 minutos, admite hasta 5 intentos y exige 60 s
 entre envíos al mismo correo (`ESPERA_REQUERIDA`); un código nuevo invalida el anterior. Ni el
 correo ni el código se escriben en los logs (regla #6)."""
@@ -106,7 +106,7 @@ class ServicioCodigoOnboarding:
         try:
             resultado = await self._clientes.acl.enviar_notificacion(
                 id_notificacion=f"codigo-onboarding-{uuid.uuid4()}",
-                plantilla="codigo-verificacion",
+                plantilla="codigo-registro",
                 destinatario_id=correo_id[:24],
                 datos={"codigo": codigo, "minutos": str(VIGENCIA_MINUTOS)},
                 correo=limpio,
