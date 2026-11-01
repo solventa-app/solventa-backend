@@ -351,7 +351,7 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - KAN-30 (SO-02): API de socios `POST /v1/conversiones`, con los montos en otra moneda solo para mostrar. No descuenta
   presupuesto. Con un token de PRUEBAS usa tasas fijas (W07-10). Afecta al frontend: sí (aditivo; el panel del socio).
 
-## v0.24 — 2026-11-01
+## v0.25 — 2026-11-01
 
 - KAN-26 (T18, W01-01): plazo del crédito de **6 a 200 meses**, configurable. Fuente única:
   `contracts/jurisdicciones.json` (`plazo_min` = 6, `plazo_max` = 200 en los siete países); cada imagen

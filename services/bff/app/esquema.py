@@ -209,7 +209,7 @@ class ConsentimientoInput:
 
 @strawberry.type
 class Jurisdiccion:
-    """v0.24 (T18): límites por país, de jurisdicciones.json."""
+    """v0.25 (T18): límites por país, de jurisdicciones.json."""
 
     codigo: str
     nombre: str
@@ -1971,7 +1971,7 @@ class Query:
 
     @strawberry.field
     def jurisdicciones(self) -> list[Jurisdiccion]:
-        """v0.24 (T18): plazo mínimo y máximo, moneda y tipo de documento por país. Son
+        """v0.25 (T18): plazo mínimo y máximo, moneda y tipo de documento por país. Son
         parámetros del producto, sin datos personales."""
         return [
             Jurisdiccion(
