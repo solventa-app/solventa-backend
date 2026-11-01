@@ -1,6 +1,7 @@
 # Plan de corrección · Revisión QA del equipo (2026-10-31)
 
-> **Estado: planeación, sin ejecutar.** Repartido entre dos desarrolladores. Hay 4 decisiones por cerrar (sección 2).
+> **Estado: planeación cerrada, lista para ejecutar.** Repartido entre dos desarrolladores, con todas las decisiones
+> tomadas (sección 2).
 > Cubre backend y web. Las causas se contrastaron con `develop` y, donde se indica, con el stack local.
 > **Ya resuelto:** la semilla de siniestros (OP-06) está en el PR #472.
 
@@ -35,17 +36,19 @@ Al final, **B9** se hace entre los dos: documentos, regresión y evidencia.
 
 ## 2. Decisiones
 
-| # | Decisión | Estado | Afecta |
-|---|---|---|---|
-| D-1 | **Estado del sistema:** el operador no debe ver ese menú | **Cerrada:** se retiran la tarjeta y la ruta | B2 |
-| D-2 | **Moneda:** todo lo que se consulta se convierte; lo que se firma, cobra o captura sigue en la moneda original, con el selector deshabilitado. La regla es la misma en toda la web | **Cerrada** | B1, A2, B4, B7 |
-| D-3 | **Siniestro vencido:** al llegar a cero sin gestión, el sistema lo aprueba como si lo hubiera hecho el operador. Es un cambio automático de estado | **Cerrada** | B5 |
-| D-3b | ¿Un caso **derivado a perito** también se aprueba al vencer, o espera el informe? Recomendado: espera el informe; su plazo pasa a ser `vencimientoInforme` | **Abierta** | B5 |
-| D-4 | **Sesión por pestaña.** Recomendado: mantenerla y que cerrar sesión cierre las pestañas duplicadas | **Abierta** | A3 |
-| D-5 | **Reenviar enlace tras firmar.** Recomendado: quitarlo y mostrar «Enviar enlace de pago» solo en `FIRMADA`, porque sin enlace vigente el cliente no puede pagar | **Abierta** | A3 |
-| D-6 | **Correo y teléfono en «Mis datos».** Recomendado: completos, solo en `yo` y solo al propio usuario. Modifica W03-16 y exige revisar EC022 | **Abierta** | A5 |
+Todas cerradas por Felipe (2026-11-01).
 
-La navegación del portal de socios (B7) no tiene Figma: necesita visto bueno de diseño antes de construirla.
+| # | Decisión | Afecta |
+|---|---|---|
+| D-1 | **Estado del sistema:** el operador no debe ver ese menú. Se retiran la tarjeta y la ruta | B2 |
+| D-2 | **Moneda:** todo lo que se consulta se convierte; lo que se firma, cobra o captura sigue en la moneda original, con el selector deshabilitado. La regla es la misma en toda la web | B1, A2, B4, B6 |
+| D-3 | **Siniestro vencido:** al llegar a cero sin gestión, el sistema lo aprueba como si lo hubiera hecho el operador. Es un cambio automático de estado | B5 |
+| D-3a | **Sin excepciones por verificaciones:** se aprueba aunque una verificación no cumpla. No revisar a tiempo es un error de procedimiento que asume el operador | B5 |
+| D-3b | **Derivado a perito:** el plazo queda en pausa mientras esté derivado y el caso no se aprueba solo | B5 |
+| D-4 | **Sesión por pestaña:** se mantiene, y cerrar sesión cierra también las pestañas duplicadas | A3 |
+| D-5 | **Tras firmar:** se quita «Reenviar enlace» y en `FIRMADA` se muestra «Enviar enlace de pago», porque sin enlace vigente el cliente no puede pagar | A3 |
+| D-6 | **«Mis datos»:** correo y teléfono completos, solo en `yo` y solo al propio usuario. Modifica W03-16 y exige revisar EC022 | A5 |
+| D-7 | **Portal de socios:** la navegación se ajusta a medida que se construya. La propuesta de B7 es el punto de partida, sin visto bueno previo | B7 |
 
 ## 3. Desarrollador A: Asesor y Cliente
 
@@ -75,7 +78,7 @@ Usar `montoVisible` en `OfertaCompleta`, `OfertaPreliminar` y `RevisarOfertaAcep
 
 **Hecho cuando:** USD cambia los valores de la oferta y el contrato sigue en COP.
 
-**A3 · Emisión sin callejones** · AS-02, AS-03, AS-04, AS-08 · Alta · M · web · Depende de D-4 y D-5
+**A3 · Emisión sin callejones** · AS-02, AS-03, AS-04, AS-08 · Alta · M · web
 
 1. Mostrar «Emitir» en `IDENTIDAD_VERIFICADA`. Hoy, al cerrar el modal, no hay forma de volver.
 2. Recuperar la propuesta con `propuestas` al entrar a `/suscripcion/:ofertaId`, para que recargar no pierda el proceso.
@@ -83,8 +86,8 @@ Usar `montoVisible` en `OfertaCompleta`, `OfertaPreliminar` y `RevisarOfertaAcep
 4. La tarjeta debe poder pintarse con los datos de la propuesta: si la oferta venció, `oferta(id)` devuelve null.
 5. Generalizar `useAvisos.ts` para propuestas (POLICY ya publica en `avisos:asesor:<usuario>`), quitar «Actualizar
    estado» y consultar una vez al reabrir, como W05-01.
-6. Aplicar D-5.
-7. Aplicar D-4. El token vive en `sessionStorage`, que es por pestaña: no es una medida de seguridad, y el navegador lo
+6. Aplicar D-5: en `FIRMADA`, «Enviar enlace de pago» reemplaza a «Reenviar enlace».
+7. Aplicar D-4: avisar el cierre de sesión a las demás pestañas. El token vive en `sessionStorage`, que es por pestaña: no es una medida de seguridad, y el navegador lo
    copia al duplicar la pestaña.
 
 **Hecho cuando:** cerrar el modal o recargar en cualquier paso permite retomar, y el estado cambia sin recargar.
@@ -116,7 +119,7 @@ en vivo. **Objetivo:** que el asesor vea lo que ha gestionado. Sale del formato 
 
 ### Perfil Cliente
 
-**A5 · Mis datos y precarga** · CL-01, CL-02 · Alta · M · web, backend y contrato v0.24 · Depende de D-6
+**A5 · Mis datos y precarga** · CL-01, CL-02 · Alta · M · web, backend y contrato v0.24
 
 1. Contrato: datos personales propios en `Usuario`, solo por `yo`. AUTH los entrega solo al propio usuario.
 2. `MiPerfil`: mostrar documento enmascarado, correo, teléfono y, si existen, nacimiento y país de onboarding. Los clientes
@@ -187,7 +190,7 @@ casos (PR #472). Un cambio de filtro vuelve a la página 1.
 `montoVisible` en `ConciliacionDePagos`, `DetalleSiniestro` y `ConfirmacionAprobacion`. En W05-01 el total se suma en la
 moneda original y luego se convierte, y solo se pide lo visible para no chocar con el límite.
 
-**B5 · Plazo y aprobación automática** · OP-07 · Alta · L · web, backend y contrato v0.23 · Depende de D-3b
+**B5 · Plazo y aprobación automática** · OP-07 · Alta · L · web, backend y contrato v0.23
 
 Hoy el reloj se recalcula cada 60 s y con más de 24 h solo muestra días y horas, así que parece fijo. Nadie actúa al vencer.
 
@@ -199,9 +202,13 @@ Hoy el reloj se recalcula cada 60 s y con más de 24 h solo muestra días y hora
 4. Índice por `(estado, vence_dictamen_en)` con migración idempotente.
 5. **Web:** el contador muestra siempre minutos («1 d 5 h 12 min») y se actualiza cada 30 s; el detalle dice «Aprobado
    automáticamente por vencimiento» y el vencimiento se ve también en la bandeja.
-6. Derivados: según D-3b.
+6. **Derivados (D-3b):** el proceso los omite y el detalle cambia el contador por `vencimientoInforme` del perito. Si el
+   caso vuelve a estar sin derivación, el plazo se recalcula con el tiempo que quedaba.
+7. **Verificaciones (D-3a):** no son condición: un caso `PENDIENTE` vencido se aprueba siempre. Los casos resueltos o
+   derivados no cambian.
 
-**Hecho cuando:** un caso vencido queda aprobado una sola vez, con su orden en PAYMENTS y marcado como automático.
+**Hecho cuando:** un caso `PENDIENTE` vencido queda aprobado una sola vez, con su orden en PAYMENTS y marcado como
+automático, y un caso derivado no cambia.
 
 ### Perfil Socio
 
@@ -213,9 +220,10 @@ Hoy el reloj se recalcula cada 60 s y con más de 24 h solo muestra días y hora
    `openapi-socios.yaml`, sin descontar presupuesto. Con un token de PRUEBAS usa tasas fijas (W07-10: no llama micros).
 3. `montoVisible` en ventas y comisiones, usando esa ruta dentro del portal.
 
-**B7 · Navegación del portal** · SO-03 · Media · M · web · Requiere visto bueno de diseño
+**B7 · Navegación del portal** · SO-03 · Media · M · web
 
-Una sola barra fija para todo el portal, con `Pestanas`, reunida en un layout `PortalSocio.vue`:
+No hay Figma: esta propuesta es el punto de partida y se ajusta con el equipo a medida que se construya (D-7). Una sola
+barra fija para todo el portal, con `Pestanas`, reunida en un layout `PortalSocio.vue`:
 
 ```
 ┌ Solventa | Portal de socios                          ES  COP ┐  fijo
@@ -248,8 +256,8 @@ liberar, y allí habrá que verificar el CORS real del bucket y las rutas de Ver
 
 ## 5. Riesgos
 
-- **Aprobación automática:** genera órdenes de indemnización sin revisión humana, incluso si una verificación del caso no
-  cumple. La orden no dispersa dinero (W05-3), pero conviene el visto bueno de quien responde por el negocio.
+- **Aprobación automática:** riesgo aceptado (D-3a). Genera órdenes de indemnización sin revisión humana, aunque una
+  verificación no cumpla. La orden no dispersa dinero (W05-3), y `Resolucion.automatica` deja el rastro.
 - **Vercel:** AS-06 se dedujo de `vercel.json`, sin probarlo en la nube.
 - **Tablero:** F-F3 y F-F4 no tenían peso en Jira; este plan los vuelve prioritarios y aún hay que reflejarlo.
 - **Tasas:** son de referencia. Por eso el aviso de B1 es parte del alcance.

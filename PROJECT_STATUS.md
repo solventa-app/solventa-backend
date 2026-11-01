@@ -122,7 +122,7 @@ Contrato en **v0.22**; la siguiente libre es **v0.23**. Últimas migraciones: AU
 
 ## Próximos pasos exactos
 
-**Revisión QA del equipo (2026-10-31):** el plan vigente es [`docs/plan-revision-qa-2026-10-31.md`](docs/plan-revision-qa-2026-10-31.md), repartido entre dos desarrolladores y con 4 decisiones abiertas. A1 y B1 van primero: la firma y el pago fallan en el navegador.
+**Revisión QA del equipo (2026-10-31):** el plan vigente es [`docs/plan-revision-qa-2026-10-31.md`](docs/plan-revision-qa-2026-10-31.md), repartido entre dos desarrolladores y con las decisiones cerradas. A1 y B1 van primero: la firma y el pago fallan en el navegador.
 
 Punto de retoma (2026-10-31): los ajustes de W01 y W05 están integrados en `develop` y verificados en vivo con el compose
 (evidencias del 2026-10-31). `develop` backend y web llevan más cambios del equipo (M01, Sentry). **Nada de esto se ha
