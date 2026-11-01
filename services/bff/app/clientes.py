@@ -1038,11 +1038,13 @@ class ClientePolicyHttp:
         return await self._flujo("POST", f"/propuestas/{propuesta_id}/enlace")
 
     async def resolver_enlace(self, token: str) -> dict | None:
-        """El token va en el cuerpo, nunca en la URL (regla 6). `None` si no existe."""
+        """El token va en el cuerpo, nunca en la URL (regla 6). `None` si no existe o si ni siquiera
+        tiene la forma de un token (POLICY lo rechaza con 422): para quien llega con un enlace
+        mal copiado es lo mismo que uno desconocido."""
         try:
             return await self._flujo("POST", "/enlaces/resolver", {"token": token})
         except FlujoRechazado as rechazo:
-            if rechazo.motivo == "PROPUESTA_NO_ENCONTRADA":
+            if rechazo.motivo in ("PROPUESTA_NO_ENCONTRADA", "SOLICITUD_INVALIDA"):
                 return None
             raise
 

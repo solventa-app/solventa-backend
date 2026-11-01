@@ -195,3 +195,18 @@ def test_reconciliar_algo_que_no_es_una_propuesta_devuelve_none() -> None:
 def test_reconciliar_con_policy_caido_es_error_de_servicio(estado: int) -> None:
     with pytest.raises(ErrorServicio):
         _reconciliar(lambda: httpx.Response(estado, json={"detail": "EMISION_PENDIENTE"}))
+
+
+def test_resolver_un_token_mal_formado_o_desconocido_es_none() -> None:
+    async def correr(respuesta: httpx.Response) -> dict | None:
+        transporte = httpx.MockTransport(lambda peticion: respuesta)
+        async with httpx.AsyncClient(base_url="http://policy", transport=transporte) as cliente:
+            return await ClientePolicyHttp(cliente).resolver_enlace("corto")
+
+    inexistente = httpx.Response(404, json={"detail": "PROPUESTA_NO_ENCONTRADA"})
+    # POLICY valida el largo del token y responde 422 con una lista de errores.
+    mal_formado = httpx.Response(422, json={"detail": [{"msg": "too short"}]})
+    assert asyncio.run(correr(inexistente)) is None
+    assert asyncio.run(correr(mal_formado)) is None
+    with pytest.raises(ErrorServicio):
+        asyncio.run(correr(httpx.Response(503)))

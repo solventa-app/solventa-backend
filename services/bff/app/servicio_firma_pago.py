@@ -149,6 +149,29 @@ class ServicioFirmaPago:
             return _no_encontrada()
         return Autorizado(propuesta_id, Acceso(titular_id=titular))
 
+    async def autorizar_poliza_por_enlace(
+        self, enlace_token: str, poliza_id: str
+    ) -> bool | ErrorFlujoDatos:
+        """El PDF de la póliza con el token del enlace: solo la póliza de la propuesta a la que
+        pertenece el token, y solo si ya está emitida. Cualquier otra responde como inexistente."""
+        try:
+            resuelto = await self._c.policy.resolver_enlace(enlace_token)
+            if resuelto is None:
+                return _no_encontrada()
+            propuesta = await self._c.policy.obtener_propuesta(resuelto["propuesta_id"])
+        except FlujoRechazado as rechazo:
+            return _error_de(rechazo)
+        except ErrorServicio as error:
+            logger.warning("no se pudo autorizar el documento de la póliza error=%s", error)
+            return _error_servicio()
+        if (
+            propuesta is None
+            or propuesta.get("estado") != "EMITIDA"
+            or propuesta.get("poliza_id") != poliza_id
+        ):
+            return _no_encontrada()
+        return True
+
     async def _propuesta_del_asesor(
         self, usuario: UsuarioActual, propuesta_id: str
     ) -> dict | ErrorFlujoDatos:
