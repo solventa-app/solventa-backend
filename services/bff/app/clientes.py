@@ -98,6 +98,10 @@ class PuertoAuth(Protocol):
 
     async def renovar_sesion(self, usuario_id: str, expira_en: str) -> dict | None: ...
 
+    async def renovar_con_refresh(self, refresh_token: str, canal: str | None) -> dict | None: ...
+
+    async def cerrar_sesion(self, refresh_token: str) -> None: ...
+
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict: ...
 
     async def correo_registrado(self, correo: str) -> bool: ...
@@ -605,6 +609,27 @@ class ClienteAuthHttp:
         if respuesta.status_code == 401:
             return None
         return _json_o_error(respuesta)
+
+    async def renovar_con_refresh(self, refresh_token: str, canal: str | None) -> dict | None:
+        """T22: cambia un refresh por un par nuevo. `None` si AUTH lo rechaza (401). El refresh
+        viaja solo en el cuerpo."""
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            "/sesiones/refresh",
+            {"refresh_token": refresh_token, "canal": canal},
+        )
+        if respuesta.status_code == 401:
+            return None
+        return _json_o_error(respuesta)
+
+    async def cerrar_sesion(self, refresh_token: str) -> None:
+        """T22: revoca la cadena del refresh en AUTH."""
+        respuesta = await _pedir(
+            self._cliente, "POST", "/sesiones/cerrar", {"refresh_token": refresh_token}
+        )
+        if respuesta.status_code >= 400:
+            raise ErrorServicio(f"AUTH respondió {respuesta.status_code}")
 
     async def correo_registrado(self, correo: str) -> bool:
         """¿Ya hay una cuenta con ese correo? El correo va solo en el cuerpo."""

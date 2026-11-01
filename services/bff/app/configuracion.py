@@ -57,6 +57,12 @@ class Configuracion:
     metricas_fuente: str = "ninguna"
     prometheus_url: str = "http://localhost:9190"
     gcp_proyecto: str = ""
+    # Sesión web (T22): el refresh viaja en una cookie `httpOnly; SameSite=Strict`. `Secure` queda
+    # activo salvo que se apague (`COOKIE_REFRESH_SECURE=false`, solo para HTTP local sin TLS).
+    cookie_refresh_secure: bool = True
+    # Orígenes del front web autorizados a renovar la sesión (`ORIGENES_WEB_PERMITIDOS`, separados
+    # por coma). Vacío = sin verificación de `Origin` (local); en staging y producción se fija.
+    origenes_web: tuple[str, ...] = ()
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -105,4 +111,10 @@ class Configuracion:
             autenticacion_servicios=autenticacion,
             jwt_secreto=jwt_secreto,
             autenticacion_usuarios=modo,
+            cookie_refresh_secure=os.getenv("COOKIE_REFRESH_SECURE", "true").lower() != "false",
+            origenes_web=tuple(
+                o.strip().rstrip("/")
+                for o in os.getenv("ORIGENES_WEB_PERMITIDOS", "").split(",")
+                if o.strip()
+            ),
         )

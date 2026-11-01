@@ -64,8 +64,8 @@ from app.application.imagen_firma import ImagenInvalida, validar
 logger = logging.getLogger("policy.firma_y_pago")
 
 MODOS_FIRMA = ("TRAZO", "IMAGEN", "NOMBRE")
-# Quien vende por el titular: verifica su identidad con el código y «emite» (W07-20). Los avisos al
-# asesor siguen siendo solo del ASESOR (`avisos.py` y el correo `poliza-emitida-asesor`).
+# Quien vende por el titular: verifica su identidad con el código y «emite» (W07-20). Los avisos en
+# vivo al asesor siguen siendo solo del ASESOR (`avisos.py`); no hay correo al asesor.
 ROLES_INTERMEDIARIO = ("ASESOR", "SOCIO")
 CORREO_VALIDO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
