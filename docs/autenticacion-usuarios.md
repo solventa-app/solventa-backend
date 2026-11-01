@@ -54,7 +54,7 @@ Tabla `usuarios` en la base `auth`: `id`, `usuario` (alias único), `hash_clave`
 | `propuestas` (v0.18, W03-35: filtrada por el rol del token) | ✅ las suyas | ✅ las que aceptó | ✅ todas | ❌ siempre exige token |
 | `ticketAvisos` (v0.18, W03-37: ticket de 60 s para el stream de `avisos`) | ✅ | ✅ | ✅ | ❌ siempre exige token |
 | `GET /propuestas/{id}/contrato.pdf` (v0.18, W03-31: contrato a firmar; REST; token del enlace en `X-Enlace-Firma` **o** sesión del CLIENTE titular; sin acceso, 404) | ✅ titular | ❌ (404) | ❌ (404) | ✅ solo con `X-Enlace-Firma` |
-| `GET /polizas/{id}/documento` (PDF de la póliza; REST, no GraphQL; un CLIENTE solo descarga la suya, una ajena da 404) | ✅ | ✅ | ❌ (403) | ❌ siempre exige token (401) |
+| `GET /polizas/{id}/documento` (PDF de la póliza; REST, no GraphQL; un CLIENTE solo descarga la suya, una ajena da 404; también con el token del enlace en `X-Enlace-Firma`, solo para la póliza ya emitida de la propuesta de ese enlace, otra da 404) | ✅ | ✅ | ❌ (403) | ✅ solo con `X-Enlace-Firma`; sin él, 401 |
 | `cobros`, `crearCobro`, `reintentarCobro` (KAN-28, datos de pagos) | ❌ | ❌ | ✅ | ❌ siempre exige token |
 | `usuarios`, `crearUsuario` (con `nombre`, `correo` y `telefono` para CLIENTE; desde la v0.18 un CLIENTE **exige `documentoIdentidad` y `correo`**, W03-27), `cambiarRolUsuario`, `suspenderUsuario` | ❌ | ❌ | ✅ | ❌ siempre exige token |
 | `actualizarContacto` (HU-W03, bloque 8: correo y teléfono del propio CLIENTE; el id sale del token) | ✅ | ❌ | ❌ | ❌ siempre exige token |
