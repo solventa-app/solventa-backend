@@ -39,18 +39,19 @@ tratan en la sección 7.
 
 ### Tareas y pesos (peso = pts · horas Jira a 8,7 h/pt · valor = VN de la HU × pts tarea ÷ 13)
 
-| ID | Actividad | Rol | Plan (h) | Pts | Horas Jira |
-|---|---|---|---|---|---|
-| T-M01-1 | Esqueleto Flutter (navegación, tema, textos) y home G-03 | Móvil | 3 | 1,5 | 13 |
-| T-M01-2 | Bienvenida y autorización de datos con registro del consentimiento (M01-01, M01-02) | Web | 2 | 1 | 8,5 |
-| T-M01-3 | Captura de documento por ambas caras (M01-03, M01-04) | Móvil | 4 | 2 | 17,5 |
-| T-M01-4 | Prueba de vida con cámara frontal (M01-05) | Móvil | 3 | 1,5 | 13 |
-| T-M01-5 | Puerto y adaptador KYC (stub Truora) sobre el ACL y endpoint de onboarding | Líder técnico | 5 | 3 | 26 |
-| T-M01-6 | Verificación, resultado (M01-06, M01-07) y activación de biometría (M01-08) | Móvil | 3 | 1,5 | 13 |
-| T-M01-7 | Cifrado de datos personales y scopes JWT del onboarding | Líder técnico | 2 | 1 | 8,5 |
-| T-M01-8 | Pruebas: flutter_test, Firebase Test Lab y k6 (EC009, EC010) | Backend | 2 | 1 | 8,5 |
-| T-M01-9 | Documentación técnica y revisión de código | Backend | 1 | 0,5 | 4,5 |
-| | **Total** | | **25** | **13** | |
+Son las tareas que ya existen en Jira (`S2-M01-1…8`, en «KAN Sprint 2»). El esqueleto de la app (T-M01-1, 3 h) se hizo en el Sprint 2 y no tiene tarea propia; los 13 puntos de la historia quedan repartidos en estas 8.
+
+| Jira | Plan | Actividad | Rol | Plan (h) | Pts | Horas Jira |
+|---|---|---|---|---|---|---|
+| KAN-231 | T-M01-2 | Bienvenida y autorización de datos con registro del consentimiento (M01-01, M01-02) | Web y móvil | 2 | 1 | 8,5 |
+| KAN-232 | T-M01-3 | Captura del documento por ambas caras (M01-03, M01-04) | Móvil | 4 | 2,5 | 22 |
+| KAN-233 | T-M01-4 | Prueba de vida con la cámara frontal (M01-05) | Móvil | 3 | 2 | 17,5 |
+| KAN-234 | T-M01-5 | Puerto y adaptador de KYC (stub tipo Truora) en el ACL y endpoint de onboarding | Líder técnico | 5 | 3 | 26 |
+| KAN-235 | T-M01-6 | Verificación, resultado y activación de biometría (M01-06 a M01-08) | Móvil | 3 | 2 | 17,5 |
+| KAN-236 | T-M01-7 | Cifrado de datos personales y biométricos y scopes JWT del onboarding | Líder técnico | 2 | 1 | 8,5 |
+| KAN-237 | T-M01-8 | Pruebas: flutter_test, Firebase Test Lab y k6 (EC009, EC010) | Backend | 2 | 1 | 8,5 |
+| KAN-238 | T-M01-9 | Documentación técnica y revisión de código | Backend | 1 | 0,5 | 4,5 |
+| | | **Total** | | **22** | **13** | |
 
 ### Criterios de aceptación propuestos
 
@@ -176,6 +177,18 @@ tratan en la sección 7.
   integración con el portal del socio. No consumen capacidad nueva salvo cierre.
 - **HU-M02 (KAN-32, 6 pts):** autenticación biométrica nativa. AUTH tiene `POST /sesiones/renovar` pero no revocación;
   la app aún no usa `local_auth`. Es la siguiente en el orden de recorte tras M06.
+
+## 7b. Claves en Jira (cargadas el 2026-10-31)
+
+El sprint «KAN Sprint 3» (id 36, 3–23 nov 2026) existe en Jira con las tareas nuevas. Las de M01 y W04 siguen en «KAN Sprint 2» y pasan al 3 al cerrarlo si quedan abiertas.
+
+| Historia | Tareas en Jira |
+|---|---|
+| HU-M01 | KAN-231 a KAN-238 (`S2-M01-1…8`) |
+| HU-W04 | KAN-242 a KAN-249 (`S2-W04-1…8`) |
+| HU-M04 | KAN-255 a KAN-262 (`S3-M04-1…8`) |
+| HU-M06 | KAN-263 a KAN-268 (`S3-M06-1…6`) |
+| Regresión y entrega | KAN-269 a KAN-272 (`S3-R-1…4`, sin puntos) |
 
 ## 8. Riesgos y decisiones abiertas
 
