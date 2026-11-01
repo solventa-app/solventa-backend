@@ -22,6 +22,7 @@ from app.adapters.firma import AdaptadorFirma
 from app.adapters.firma_alterna import AdaptadorFirmaAlterna
 from app.adapters.identidad_didit import AdaptadorIdentidadDidit
 from app.adapters.kyc import AdaptadorKyc
+from app.adapters.lugares import lugares_desde_entorno
 from app.adapters.notificaciones import AdaptadorNotificaciones
 from app.adapters.open_data import AdaptadorOpenData
 from app.adapters.open_finance import AdaptadorOpenFinance
@@ -526,6 +527,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
     app = FastAPI(title="solventa-acl-worker", version="0.1.0", lifespan=lifespan)
     # No depende de Redis ni de un proveedor externo: se crea aquí y no en el lifespan.
     tasas_cambio = AdaptadorTasasReferencia()
+    lugares = lugares_desde_entorno()
 
     @app.get("/health", tags=["operacion"])
     def health() -> dict[str, str]:
@@ -761,6 +763,17 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         return TasasCambioResponse(
             base="COP", cop_por_unidad=tabla.cop_por_unidad, fecha=tabla.fecha, fuente=tabla.fuente
         )
+
+    @app.get("/lugares/autocompletar", tags=["lugares"])
+    def lugares_autocompletar(texto: str, pais: str | None = None) -> dict[str, list]:
+        """T19: sugerencias de dirección (Places, timeout 700 ms; sin llave, un stub)."""
+        return {"sugerencias": lugares.autocompletar(texto, pais)}
+
+    @app.get("/lugares/validar", tags=["lugares"])
+    def lugares_validar(place_id: str) -> dict:
+        """T19: dirección normalizada, ciudad y país de un `place_id`. Si Google no responde,
+        `verificado = false` (no bloquea la cotización)."""
+        return lugares.validar(place_id)
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app

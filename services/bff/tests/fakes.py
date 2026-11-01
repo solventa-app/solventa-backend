@@ -435,6 +435,17 @@ class AclFalso:
     async def invalidar_cache_cliente(self, cliente_id: str) -> None:
         self.invalidaciones.append(cliente_id)
 
+    async def autocompletar_direccion(self, texto: str, pais: str | None) -> list[dict]:
+        if "lugares" in self.fallan:
+            raise ErrorServicio("timeout")
+        return [{"place_id": f"stub:{pais or 'CO'}:{texto}", "descripcion": texto}]
+
+    async def validar_direccion(self, place_id: str) -> dict:
+        if "lugares" in self.fallan:
+            raise ErrorServicio("timeout")
+        _, pais, texto = place_id.split(":", 2)
+        return {"verificado": True, "direccion": texto, "ciudad": None, "pais": pais}
+
     async def tasas_cambio(self) -> dict[str, str]:
         if "tasas" in self.fallan:
             raise ErrorServicio("timeout")

@@ -54,7 +54,7 @@ from app.cookie_refresh import (
 )
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.idioma import TraducirMensajes
-from app.jurisdicciones import JURISDICCIONES
+from app.jurisdicciones import JURISDICCIONES, validar_documento
 from app.monedas import (
     MAXIMO_MONTOS,
     MENSAJE_DEMASIADOS_MONTOS,
@@ -89,7 +89,14 @@ TAMANO_LOTE_NOMBRES = 200  # el máximo de ids por llamada que admite AUTH
 
 class ErrorPublico(Exception):
     """Error cuyo mensaje SÍ puede ver el cliente. Cualquier otra excepción se
-    enmascara como "Unexpected error." (sin detalles internos)."""
+    enmascara como "Unexpected error." (sin detalles internos).
+
+    v0.34: `codigo` opcional viaja en `extensions.code` para que el cliente no compare el texto."""
+
+    def __init__(self, mensaje: str, codigo: str | None = None) -> None:
+        super().__init__(mensaje)
+        if codigo:
+            self.extensions = {"code": codigo}
 
 
 def _mostrar_solo_errores_publicos(error: GraphQLError) -> bool:
@@ -113,11 +120,11 @@ def exigir_rol(
       `admite_pendiente` (`yo`, `miVerificacion`, `actualizarSesion`)."""
     contexto = info.context
     if contexto["error_token"]:
-        raise ErrorPublico(contexto["error_token"])
+        raise ErrorPublico(contexto["error_token"], "SESION_INVALIDA")
     usuario = contexto["usuario"]
     if usuario is None:
         if siempre or contexto["modo_autenticacion"] == "obligatoria":
-            raise ErrorPublico(MENSAJE_SIN_SESION)
+            raise ErrorPublico(MENSAJE_SIN_SESION, "SIN_SESION")
         return None
     if usuario.rol not in roles:
         raise ErrorPublico(MENSAJE_SIN_PERMISO)
@@ -223,6 +230,35 @@ class Jurisdiccion:
     tipo_documento: str
     plazo_min: int
     plazo_max: int
+    tipos_documento: list["TipoDocumentoPais"]
+
+
+@strawberry.type
+class TipoDocumentoPais:
+    """v0.33 (T20): tipo de documento de un país, con su etiqueta en español e inglés."""
+
+    codigo: str
+    etiqueta_es: str
+    etiqueta_en: str
+
+
+@strawberry.type
+class SugerenciaDireccion:
+    """v0.32 (T19)."""
+
+    place_id: str
+    descripcion: str
+
+
+@strawberry.type
+class DireccionValidada:
+    """v0.32 (T19). `verificado = false`: Google no respondió o el lugar no es válido; la web
+    deja escribir la dirección «sin verificar» y no bloquea la cotización."""
+
+    verificado: bool
+    direccion: str | None
+    ciudad: str | None
+    pais: str | None
 
 
 @strawberry.type
@@ -2010,9 +2046,53 @@ class Query:
                 tipo_documento=j.tipo_documento,
                 plazo_min=j.plazo_min,
                 plazo_max=j.plazo_max,
+                tipos_documento=[
+                    TipoDocumentoPais(
+                        codigo=t["codigo"],
+                        etiqueta_es=t["etiqueta_es"],
+                        etiqueta_en=t["etiqueta_en"],
+                    )
+                    for t in j.tipos_documento
+                ],
             )
             for j in JURISDICCIONES
         ]
+
+    @strawberry.field
+    def documento_valido(self, pais: str, tipo_documento: str, numero: str) -> bool:
+        """v0.33 (T20): el tipo existe en el país y el número cumple su formato. Pública y sin
+        persistir nada: el número no se registra."""
+        return validar_documento(pais, tipo_documento, numero)
+
+    @strawberry.field
+    async def autocompletar_direccion(
+        self, info: Info, texto: str, pais: str | None = None
+    ) -> list[SugerenciaDireccion]:
+        """v0.32 (T19): sugerencias de dirección (Places detrás del ACL). Si el ACL no responde,
+        lista vacía: nunca un error técnico."""
+        exigir_rol(info, "CLIENTE", "ASESOR", "BACKOFFICE", "SOCIO")
+        try:
+            lista = await info.context["clientes"].acl.autocompletar_direccion(texto[:200], pais)
+        except ErrorServicio:
+            return []
+        return [
+            SugerenciaDireccion(place_id=x["place_id"], descripcion=x["descripcion"]) for x in lista
+        ]
+
+    @strawberry.field
+    async def validar_direccion(self, info: Info, place_id: str) -> DireccionValidada:
+        """v0.32 (T19): dirección normalizada, ciudad y país. Un país no soportado no es
+        verificado. Si el ACL no responde, `verificado = false` (se permite «sin verificar»)."""
+        exigir_rol(info, "CLIENTE", "ASESOR", "BACKOFFICE", "SOCIO")
+        try:
+            r = await info.context["clientes"].acl.validar_direccion(place_id)
+        except ErrorServicio:
+            return DireccionValidada(verificado=False, direccion=None, ciudad=None, pais=None)
+        if r.get("pais") not in {j.codigo for j in JURISDICCIONES}:
+            r = {"verificado": False, "direccion": None, "ciudad": None, "pais": None}
+        return DireccionValidada(
+            **{k: r.get(k) for k in ("verificado", "direccion", "ciudad", "pais")}
+        )
 
     @strawberry.field
     async def convertir_montos(
