@@ -100,6 +100,8 @@ class PuertoAuth(Protocol):
 
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict: ...
 
+    async def correo_registrado(self, correo: str) -> bool: ...
+
     async def obtener_usuario(self, usuario_id: str) -> dict | None: ...
 
     async def obtener_identidad(self, usuario_id: str) -> dict | None: ...
@@ -598,6 +600,15 @@ class ClienteAuthHttp:
         if respuesta.status_code == 401:
             return None
         return _json_o_error(respuesta)
+
+    async def correo_registrado(self, correo: str) -> bool:
+        """¿Ya hay una cuenta con ese correo? El correo va solo en el cuerpo."""
+        respuesta = await _pedir(
+            self._cliente, "POST", "/usuarios/onboarding/correo-registrado", {"correo": correo}
+        )
+        if respuesta.status_code in (400, 422):
+            raise ErrorOnboardingServicio("DATO_INVALIDO")
+        return bool(_json_o_error(respuesta)["registrado"])
 
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
         """CLIENTE en PENDIENTE_VERIFICACION (HU-M01). Correo y clave van solo en el cuerpo."""

@@ -750,6 +750,17 @@ class ServicioUsuarios:
             raise UsuarioDuplicado("Ya existe una cuenta con ese correo.")
         return publico(creado)
 
+    def correo_registrado(self, correo: str) -> bool:
+        """¿Ya hay una cuenta con ese correo? Lo consulta el BFF antes de enviar el código OTP del
+        registro (HU-M01). Busca por el HMAC del correo: el correo no se guarda ni se loguea."""
+        if not self._clave_titular:
+            raise DatoInvalido("Este servicio no está configurado para cuentas del onboarding.")
+        limpio = normalizar_correo(correo)
+        return (
+            self._repositorio.obtener_por_correo_hmac(correo_hmac(limpio, self._clave_titular))
+            is not None
+        )
+
     def cerrar_verificacion(
         self,
         usuario_id: str,

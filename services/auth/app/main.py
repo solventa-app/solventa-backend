@@ -95,6 +95,10 @@ class Credenciales(BaseModel):
     canal: str | None = None
 
 
+class SolicitudCorreo(BaseModel):
+    correo: str
+
+
 class SolicitudCuentaOnboarding(BaseModel):
     correo: str
     clave: str
@@ -415,6 +419,15 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(error)) from error
         logger_usuarios.info("usuario creado id=%s rol=%s", id_opaco(usuario["id"]), usuario["rol"])
         return UsuarioResponse(**usuario)
+
+    @app.post("/usuarios/onboarding/correo-registrado", tags=["usuarios"])
+    def correo_registrado(body: SolicitudCorreo) -> dict[str, bool]:
+        """¿Existe ya una cuenta con ese correo? La llama el BFF antes de enviar el código OTP del
+        registro (HU-M01). El correo llega solo en el cuerpo y no se loguea."""
+        try:
+            return {"registrado": app.state.usuarios.correo_registrado(body.correo)}
+        except DatoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.post("/usuarios/onboarding", tags=["usuarios"], response_model=UsuarioResponse)
     def crear_cuenta_onboarding(body: SolicitudCuentaOnboarding) -> UsuarioResponse:

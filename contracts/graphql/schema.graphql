@@ -995,6 +995,7 @@ type Mutation {
   # Con `X-Onboarding-Token`, tras el PUT. Idempotente.
   confirmarSubidaOnboarding(onboardingId: ID!, archivoId: ID!): ResultadoOnboarding!
   # Envía un código de 6 dígitos al correo para verificarlo en el onboarding (10 min, hasta 5 intentos).
+  # Si ya hay una cuenta con ese correo no envía nada y responde `ErrorOnboarding` con `CORREO_YA_REGISTRADO`.
   enviarCodigoOnboarding(correo: String!): ResultadoCodigoOnboarding!
   # Verifica el código de 6 dígitos enviado al correo en el onboarding.
   verificarCodigoOnboarding(correo: String!, codigo: String!): ResultadoCodigoOnboarding!
