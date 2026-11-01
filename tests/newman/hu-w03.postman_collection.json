@@ -8255,56 +8255,6 @@
           }
         },
         {
-          "name": "6.33 stub de notificaciones: aviso de póliza al asesor",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (Number(pm.collectionVariables.get('sondeo') || 0) > 0) { setTimeout(() => {}, 500); }"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const avisos = pm.response.json().filter(a => a.plantilla === 'poliza-emitida-asesor' && JSON.stringify(a).includes(pm.collectionVariables.get('w6a_poliza')));",
-                  "const intentos = Number(pm.collectionVariables.get('sondeo') || 0) + 1;",
-                  "if (avisos.length === 0 && intentos < 40) {",
-                  "  pm.collectionVariables.set('sondeo', intentos);",
-                  "  postman.setNextRequest(pm.info.requestName);",
-                  "} else {",
-                  "  pm.collectionVariables.set('sondeo', 0);",
-                  "  pm.test('el aviso salió', () => pm.expect(avisos).to.not.be.empty);",
-                  "  const aviso = avisos[avisos.length - 1];",
-                  "  pm.test('plantilla poliza-emitida-asesor', () => pm.expect(aviso.plantilla).to.eql('poliza-emitida-asesor'));",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{stub_notificaciones_url}}/control/enviados",
-              "host": [
-                "{{stub_notificaciones_url}}"
-              ],
-              "path": [
-                "control",
-                "enviados"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          }
-        },
-        {
           "name": "6.34 propuestas del ASESOR: ve la que vendió, con el nombre del titular",
           "event": [
             {

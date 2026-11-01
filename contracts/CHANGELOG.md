@@ -386,3 +386,16 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - `iniciarSesion` con un `rol` distinto al de la cuenta responde igual que con una clave errada. La app (`/graphql/app`)
   solo admite cuentas CLIENTE; ASESOR y BACKOFFICE reciben el mismo «Usuario o clave incorrectos.».
 - Afecta al frontend: sí (la web manda `rol`; el móvil muestra el checklist). PR gemelo en `solventa-frontend`.
+
+## v0.26 — 2026-11-01
+
+- KAN-26 (T22, `plan-cierre-HU-W03.md`): sesión con token de acceso corto y refresh largo. Aditivo:
+  - `Sesion.refreshToken: String` (solo canal `app`; en la web viaja en la cookie `solventa_refresh`, `httpOnly; Secure;
+    SameSite=Strict`, y aquí viene null) y `Sesion.refreshExpiraEn: DateTime`.
+  - `Mutation.renovarSesion(refreshToken: String): ResultadoSesion!` y `Mutation.cerrarSesion(refreshToken: String): Boolean!`.
+    El refresh rota en cada uso; reusar uno ya usado revoca la cadena. Web: cabecera `X-Solventa-Csrf: 1` obligatoria.
+  - `ErrorAutenticacion.codigo = SESION_VENCIDA` para cualquier fallo de la renovación.
+  - Duraciones en `contracts/sesion.json` (`acceso_minutos: 60`, `refresh_dias: 8`), leídas por AUTH (copia en
+    `services/auth/app/sesion.json`, verificada por `scripts/sincronizar_fuentes.py --verificar`); el cliente las recibe en
+    `expiraEn` y `refreshExpiraEn`.
+- Afecta al frontend: sí (web: temporizador y cookie; móvil: almacenamiento seguro e interceptor). Aditivo.

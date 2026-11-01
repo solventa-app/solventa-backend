@@ -303,3 +303,16 @@ En el **Sprint 1** ya existe el API Gateway delante del BFF (`infra/gateway.tf`,
 - **Eventos de usuario** (`usuario.creado`, `usuario.suspendido`, `usuario.rol-cambiado`): no se publican porque nadie los consume todavía. Se definen en `contracts/events/` cuando exista un consumidor.
 - **Staging**: cargar `clave-jwt` y crear el primer BACKOFFICE (ver `infra/README.md`).
 
+
+## Sesión con acceso corto y refresh largo (T22, KAN-26, contrato v0.26)
+
+- Acceso: JWT de 60 minutos. Refresh: opaco, 8 días. Las duraciones salen de `contracts/sesion.json` (copia en
+  `services/auth/app/sesion.json`) y las variables `JWT_VIGENCIA_MINUTOS` y `REFRESH_VIGENCIA_DIAS` las sobrescriben por ambiente.
+- AUTH (`0011_refresh_tokens`) guarda solo el SHA-256 del refresh, atado al canal (`app` o `web`). Rota en cada uso; reusar uno
+  ya usado revoca la cadena (`familia_id`) y deja un `warning` sin datos personales. Se revoca al cerrar sesión (`POST /sesiones/cerrar`)
+  y al suspender la cuenta. `POST /sesiones/refresh` revalida estado y rol; un PENDIENTE_VERIFICACION o RECHAZADA renueva solo por `app`.
+- BFF: `renovarSesion` y `cerrarSesion`. En la web el refresh va en la cookie `solventa_refresh` (`httpOnly; Secure; SameSite=Strict`)
+  que pone y lee el BFF, con la cabecera `X-Solventa-Csrf: 1` obligatoria y `Origin` verificado contra `ORIGENES_WEB_PERMITIDOS`
+  (vacío en local). En la app viaja por el cuerpo. `COOKIE_REFRESH_SECURE=false` solo para HTTP local sin TLS.
+- Pendiente: cambiar la clave (hoy no existe el endpoint; al crearlo debe llamar `revocar_de_usuario`), verificación en vivo
+  contra Postgres/Docker y detrás del gateway.

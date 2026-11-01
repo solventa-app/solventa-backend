@@ -27,7 +27,13 @@ from app.configuracion import Configuracion
 from app.consentimientos import AlmacenConsentimientos, AlmacenConsentimientosPostgres
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.observabilidad import configurar_trazas
-from app.sesiones import CredencialesInvalidas, ServicioSesiones, VerificacionPendiente
+from app.refrescos import RepositorioRefrescosPostgres
+from app.sesiones import (
+    CredencialesInvalidas,
+    RefreshInvalido,
+    ServicioSesiones,
+    VerificacionPendiente,
+)
 from app.socios import (
     CredencialesSocioInvalidas,
     DatoSocioInvalido,
@@ -192,6 +198,18 @@ class SesionResponse(BaseModel):
     token: str
     expira_en: datetime
     usuario: UsuarioResponse
+    # T22: el refresh opaco y su vencimiento. Null si AUTH no tiene refrescos configurados.
+    refresh_token: str | None = None
+    refresh_expira_en: datetime | None = None
+
+
+class SolicitudRefresh(BaseModel):
+    refresh_token: str
+    canal: str | None = None
+
+
+class SolicitudCierre(BaseModel):
+    refresh_token: str
 
 
 # ---------- Socios (HU-W07) ----------
@@ -301,6 +319,8 @@ def create_app(
                 config.jwt_secreto,
                 config.jwt_vigencia_minutos,
                 clave_correo=config.cliente_id_clave,
+                refrescos=RepositorioRefrescosPostgres(pool),
+                refresh_dias=config.refresh_vigencia_dias,
             )
         # Con todo lo demás inyectado (pruebas) no hay pool: las de socios inyectan el suyo.
         if servicio_socios is None and pool is not None:
@@ -406,6 +426,25 @@ def create_app(
         )
         sesion["usuario"]["correo"] = app.state.usuarios.correo_de(body.usuario_id)
         return SesionResponse(**sesion)
+
+    @app.post("/sesiones/refresh", tags=["sesiones"], response_model=SesionResponse)
+    def renovar_con_refresh(body: SolicitudRefresh) -> SesionResponse:
+        """T22: cambia un refresh por un par nuevo. Mismo 401 genérico en cualquier fallo."""
+        try:
+            sesion = app.state.sesiones.renovar_con_refresh(body.refresh_token, body.canal)
+        except RefreshInvalido as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        usuario_id = sesion["usuario"]["id"]
+        sesion["usuario"]["nombre"] = app.state.usuarios.nombre_de(usuario_id)
+        sesion["usuario"]["documento_enmascarado"] = app.state.usuarios.documento_enmascarado_de(
+            usuario_id
+        )
+        return SesionResponse(**sesion)
+
+    @app.post("/sesiones/cerrar", tags=["sesiones"], status_code=204)
+    def cerrar_sesion(body: SolicitudCierre) -> None:
+        """T22: revoca la cadena del refresh. Idempotente: no dice si el refresh existía."""
+        app.state.sesiones.cerrar_sesion(body.refresh_token)
 
     # ---------- Usuarios ----------
 
@@ -534,6 +573,7 @@ def create_app(
         usuario = app.state.usuarios.suspender(usuario_id)
         if usuario is None:
             raise HTTPException(status_code=404, detail="usuario no encontrado")
+        app.state.sesiones.revocar_de_usuario(usuario_id)  # T22: sus refresh dejan de servir
         logger_usuarios.info("usuario suspendido id=%s", id_opaco(usuario_id))
         return UsuarioResponse(**usuario)
 
