@@ -146,6 +146,11 @@ def create_app(
         except DependenciaNoDisponible as error:
             return JSONResponse(status_code=503, content={"detail": str(error)})
 
+    @app.post("/siniestros/_aprobar-vencidos", tags=["operacion"])
+    def aprobar_vencidos() -> dict[str, int]:
+        """Una pasada del plazo del dictamen. La dispara Cloud Scheduler; es idempotente."""
+        return app.state.servicio.aprobar_vencidos()
+
     @app.post("/siniestros/{siniestro_id}/aprobar", tags=["resolucion"])
     def aprobar(siniestro_id: str, body: AprobarRequest) -> dict:
         """Registra la orden de pago en PAYMENTS y aprueba (W04-6)."""

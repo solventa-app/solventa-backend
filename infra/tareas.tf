@@ -436,3 +436,41 @@ resource "google_cloud_scheduler_job" "purgar_contactos_policy" {
     }
   }
 }
+
+# Plazo del dictamen de los siniestros (D-3 de docs/plan-revision-qa-2026-10-31.md): cada pasada aprueba los PENDIENTE
+# vencidos. Idempotente. Misma cuenta `programador`; CLAIMS es privado.
+resource "google_cloud_run_v2_service_iam_member" "programador_invoca_claims" {
+  count    = local.hay_tareas ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.servicio["claims"].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.programador[0].email}"
+}
+
+resource "google_cloud_scheduler_job" "aprobar_siniestros_vencidos" {
+  count       = local.hay_tareas ? 1 : 0
+  depends_on  = [google_project_service.tareas_apis]
+  project     = var.project_id
+  region      = var.region
+  name        = "aprobar-siniestros-vencidos"
+  description = "Una pasada del plazo del dictamen de CLAIMS: aprueba los casos pendientes vencidos sin gestión"
+  schedule    = var.aprobar_siniestros_cron
+  time_zone   = "America/Bogota"
+
+  attempt_deadline = "300s"
+
+  retry_config {
+    retry_count = 0
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.url["claims"]}/siniestros/_aprobar-vencidos"
+
+    oidc_token {
+      service_account_email = google_service_account.programador[0].email
+      audience              = local.url["claims"]
+    }
+  }
+}

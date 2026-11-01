@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import pytest
 from fakes import AHORA, PaymentsFalso, PolicyPolizas, repositorio_con_datos
 from fastapi.testclient import TestClient
@@ -137,6 +139,52 @@ def test_reintentar_la_aprobacion_no_duplica_la_orden():
 
 
 # ---------- API ----------
+
+
+def _vencer(repo, sid="sin-01"):
+    repo.siniestros[sid]["vence_dictamen_en"] = AHORA - timedelta(minutes=1)
+
+
+def test_un_caso_pendiente_vencido_se_aprueba_solo_una_vez():
+    servicio, repo = _servicio()
+    _vencer(repo)
+    assert servicio.aprobar_vencidos() == {"aprobados": 1, "pendientes": 0}
+    assert servicio.aprobar_vencidos() == {"aprobados": 0, "pendientes": 0}
+    caso = servicio.obtener("sin-01")
+    assert caso["estado"] == "APROBADO"
+    assert caso["resolucion"]["automatica"] is True
+    resolucion = repo.resoluciones_por["sin-01"]
+    assert resolucion["actor_usuario_id"] == "SISTEMA"
+    assert resolucion["orden_pago_id"]
+
+
+def test_el_vencimiento_no_mira_las_verificaciones():
+    servicio, repo = _servicio()
+    repo.verificaciones_por["sin-01"] = [{"descripcion": "x", "cumple": False}]
+    _vencer(repo)
+    assert servicio.aprobar_vencidos()["aprobados"] == 1
+
+
+def test_un_caso_derivado_no_se_aprueba_por_vencimiento():
+    servicio, repo = _servicio()
+    servicio.derivar("sin-01", "per-01", None, "op")
+    _vencer(repo)
+    assert servicio.aprobar_vencidos() == {"aprobados": 0, "pendientes": 0}
+    assert servicio.obtener("sin-01")["estado"] == "EN_REVISION"
+
+
+def test_un_caso_no_vencido_no_cambia_y_la_aprobacion_manual_no_es_automatica():
+    servicio, repo = _servicio()
+    repo.siniestros["sin-01"]["vence_dictamen_en"] = AHORA + timedelta(minutes=1)
+    assert servicio.aprobar_vencidos()["aprobados"] == 0
+    assert servicio.aprobar("sin-01", "op")["resolucion"]["automatica"] is False
+
+
+def test_si_payments_falla_el_caso_vencido_sigue_abierto_para_la_proxima_pasada():
+    servicio, repo = _servicio(payments=PaymentsFalso(falla=ServicioNoDisponible("x")))
+    _vencer(repo)
+    assert servicio.aprobar_vencidos() == {"aprobados": 0, "pendientes": 1}
+    assert servicio.obtener("sin-01")["estado"] == "PENDIENTE"
 
 
 def _cliente(**kwargs):

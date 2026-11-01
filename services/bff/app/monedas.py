@@ -18,6 +18,16 @@ DECIMALES: dict[str, int] = {
     "CLP": 0,
 }
 MAXIMO_MONTOS = 50
+# Tasas fijas para el modo prueba de socios, que nunca llama a los micros ni a los stubs (W07-10).
+TASAS_PRUEBA: dict[str, str] = {
+    "COP": "1",
+    "USD": "4100",
+    "EUR": "4450",
+    "MXN": "225",
+    "BRL": "750",
+    "PEN": "1100",
+    "CLP": "4.4",
+}
 
 MENSAJE_MONEDA_NO_SOPORTADA = "Moneda no soportada."
 MENSAJE_MONTO_INVALIDO = "El monto no es válido."

@@ -808,6 +808,8 @@ type Resolucion {
   perito: Perito
   instrucciones: String
   vencimientoInforme: DateTime
+  # v0.23: true si la aprobó el sistema porque el plazo del dictamen venció sin gestión.
+  automatica: Boolean!
 }
 
 type Siniestro {

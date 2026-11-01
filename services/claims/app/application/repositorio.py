@@ -101,6 +101,11 @@ class RepositorioSiniestrosMongo:
         docs = self._buscar(SINIESTROS, filtro, primaria=False, orden=[("notificado_en", -1)])
         return [self._a_siniestro(d) for d in docs]
 
+    def pendientes_vencidos(self, ahora: datetime) -> list[str]:
+        """Ids de los casos PENDIENTE con el plazo vencido. Lee la primaria: decide escrituras."""
+        filtro = {"estado": "PENDIENTE", "vence_dictamen_en": {"$lte": ahora}}
+        return [d["_id"] for d in self._buscar(SINIESTROS, filtro, primaria=True)]
+
     def obtener(self, siniestro_id: str, primaria: bool = False) -> dict | None:
         docs = self._buscar(SINIESTROS, {"_id": siniestro_id}, primaria)
         return self._a_siniestro(docs[0]) if docs else None
@@ -277,6 +282,7 @@ class RepositorioSiniestrosMongo:
             "notificacion": resolucion["notificacion"],
             "via_recurso": resolucion.get("via_recurso"),
             "indemnizacion": resolucion.get("indemnizacion"),
+            "automatica": resolucion.get("automatica", False),
             "metodo_transferencia": resolucion.get("metodo_transferencia"),
             "plazo_dispersion": resolucion.get("plazo_dispersion"),
             "orden_pago_id": resolucion.get("orden_pago_id"),

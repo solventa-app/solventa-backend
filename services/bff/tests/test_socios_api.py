@@ -391,3 +391,17 @@ def test_el_contrato_y_las_rutas_coinciden(e) -> None:
     }
 
     assert rutas == esperadas
+
+
+def test_conversiones_convierte_sin_descontar_presupuesto(e) -> None:
+    cuerpo = {"montos": [{"valor": "48500.00", "moneda": "COP"}], "moneda": "USD"}
+    with e.cliente() as client:
+        respuesta = client.post("/v1/conversiones", json=cuerpo, headers=e.cabeceras())
+        moneda_mala = client.post(
+            "/v1/conversiones", json={**cuerpo, "moneda": "XXX"}, headers=e.cabeceras()
+        )
+        sin_token = client.post("/v1/conversiones", json=cuerpo)
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json()["montos"][0]["moneda"] == "USD"
+    assert moneda_mala.status_code == 422
+    assert sin_token.status_code == 401

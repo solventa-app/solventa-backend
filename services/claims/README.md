@@ -39,6 +39,7 @@ por campo con AES-GCM (regla 6) y nunca van a los logs.
 | POST | `/siniestros/{id}/derivar` | `{perito_id, instrucciones, actor_usuario_id}`: deja el caso EN_REVISION con su perito y la fecha límite del informe (días hábiles, W04-7). Una sola derivación por caso |
 | POST | `/siniestros/{id}/rechazar` | `{motivo, comentario, actor_usuario_id}`: RECHAZADO con la vía de recurso |
 | POST | `/siniestros/{id}/aprobar` | `{actor_usuario_id}`: pide primero la orden de pago a PAYMENTS (`POST /indemnizaciones`, idempotente por siniestro) y luego aprueba. Indemnización = suma reclamada acotada a la cobertura de la póliza (W04-8, la pide a POLICY) |
+| POST | `/siniestros/_aprobar-vencidos` | Una pasada del plazo (Cloud Scheduler `aprobar-siniestros-vencidos`): cada caso PENDIENTE vencido se aprueba por el mismo camino, con actor `SISTEMA` y `automatica = true`, sin mirar las verificaciones. Un caso derivado espera al perito. Devuelve `{aprobados, pendientes}`; un fallo sigue abierto para la próxima pasada |
 | POST | `/_demo/reiniciar` | Solo con `DEMO_REINICIAR=true` (local): vuelve a la semilla. No toca las órdenes de PAYMENTS |
 
 **Errores:** un error de negocio es `409 {"detail": mensaje}` (caso inexistente o ya resuelto, perito no disponible,

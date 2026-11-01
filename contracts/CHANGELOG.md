@@ -341,3 +341,12 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
     clave (permite reintentos tras caídas de red sin quedar bloqueado en `CORREO_YA_REGISTRADO`).
 - Afecta al frontend: sí (`solventa-frontend-mobile` usa las nuevas mutaciones en `M01-05b` y `M01-05c`; no rompe
   operaciones existentes).
+
+## v0.23 — 2026-11-01
+
+- KAN-27 (OP-07, D-3 de `docs/plan-revision-qa-2026-10-31.md`): `Resolucion.automatica: Boolean!`, true si el sistema aprobó
+  el siniestro porque `venceDictamenEn` llegó sin gestión. En ese caso el evento `siniestro.aprobado` lleva
+  `actorUsuarioId = SISTEMA`. Un caso derivado a perito no se aprueba solo.
+- Afecta al frontend: sí (aditivo; W04-02 lo muestra).
+- KAN-30 (SO-02): API de socios `POST /v1/conversiones`, con los montos en otra moneda solo para mostrar. No descuenta
+  presupuesto. Con un token de PRUEBAS usa tasas fijas (W07-10). Afecta al frontend: sí (aditivo; el panel del socio).
