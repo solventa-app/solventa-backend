@@ -276,16 +276,20 @@ def create_app(
         """El contrato a firmar en PDF (W03-31), con la misma autorización doble de la página del
         enlace: `X-Enlace-Firma` o la sesión del CLIENTE titular. Sin datos personales. Una
         propuesta ajena o inexistente responde igual (404)."""
+        enlace = request.headers.get("x-enlace-firma")
         try:
             usuario = leer_usuario(
                 extraer_cabecera_autorizacion(request.headers), config.jwt_secreto
             )
         except TokenInvalido as error:
-            return JSONResponse({"mensaje": str(error)}, status_code=401)
+            # Detrás de GCP API Gateway, una petición sin sesión llega con el ID token del
+            # gateway en `Authorization` (y sin `X-Forwarded-Authorization`): no es una sesión
+            # de Solventa. Con el token del enlace basta, como en GraphQL (guarda el error y sigue).
+            if not enlace:
+                return JSONResponse({"mensaje": str(error)}, status_code=401)
+            usuario = None
         servicio: ServicioFirmaPago = app.state.servicio_firma_pago
-        autorizado = await servicio.autorizar_enlace(
-            usuario, request.headers.get("x-enlace-firma"), propuesta_id
-        )
+        autorizado = await servicio.autorizar_enlace(usuario, enlace, propuesta_id)
         if isinstance(autorizado, ErrorFlujoDatos):
             return _respuesta_de_error(autorizado)
         pdf = await servicio.contrato_pdf(autorizado)
