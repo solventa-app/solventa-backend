@@ -509,7 +509,9 @@ Colombia** (`cron: '0 7 * * *'`, 07:00 UTC; Colombia no tiene horario de verano)
 prueba no sigue cobrando de un día para otro. Por eso cada mañana estará **apagado**: para usarlo, `encender`.
 Como GitHub no garantiza la hora (el 18-oct la ejecución llegó casi 5 h tarde y el 19-oct no llegó), el bloque `schedule`
 trae **tres reintentos** (08:30, 10:00 y 12:00 UTC). Apagar es idempotente: si la primera pasada funcionó, las otras no
-tienen cambios que aplicar. Para quitarlo, borra el bloque `schedule` de `.github/workflows/costos-staging.yml`. Tres cosas a saber:
+tienen cambios que aplicar. **Un apagado programado que llegue a las 9:00 a.m. hora de Colombia o más tarde se omite**
+(job `comprobar`): el 1-nov dos reintentos llegaron a las 10:19 y 11:31 a.m. y apagaron staging justo después de
+encenderlo a mano, y uno se canceló a mitad del `apply` y dejó el candado del estado puesto. Para quitarlo, borra el bloque `schedule` de `.github/workflows/costos-staging.yml`. Tres cosas a saber:
 
 - GitHub puede demorar o saltarse una ejecución programada, y en un repositorio público las desactiva tras
   60 días sin actividad. Si el 1.er intento falla, GitHub avisa por correo a quien editó el cron por última vez.

@@ -68,6 +68,17 @@ jobs:
         env:
           EVENTO: ${{ github.event_name }}
         run: |
+          # GitHub entrega los cron de mejor esfuerzo: el 1-nov los reintentos de las 10:00 y 12:00 UTC llegaron a las
+          # 15:19 y 16:31 UTC y apagaron staging en pleno día, justo después de encenderlo a mano. Un apagado
+          # programado solo vale de madrugada (antes de las 9:00 hora de Colombia); si llega más tarde, se omite.
+          if [ "$EVENTO" = "schedule" ]; then
+            hora=$(TZ=America/Bogota date +%-H)
+            if [ "$hora" -ge 9 ]; then
+              echo "ok=false" >> "$GITHUB_OUTPUT"
+              echo "::notice title=Costos staging::el apagado programado llegó a las ${hora}:xx hora de Colombia (fuera de la madrugada); se omite para no apagar a quien está usando staging."
+              exit 0
+            fi
+          fi
           if grep -q 'cloud_sql_encendida' infra/variables.tf; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
             exit 0
