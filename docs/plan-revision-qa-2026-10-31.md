@@ -1,95 +1,221 @@
 # Plan de corrección · Revisión QA del equipo (2026-10-31)
 
-> **Estado: propuesta, con 7 decisiones por confirmar (sección 2).** Cubre backend y web. Sale de la revisión manual del
-> equipo sobre el stack local. Cada causa se contrastó con el código de `develop` y, donde se indica, con el stack
-> corriendo (web por Vite en `:5173`, gateway en `:8080`). Nada se ha corregido todavía.
+> **Estado: planeación, sin ejecutar.** Repartido entre dos desarrolladores. Hay 4 decisiones por cerrar (sección 2).
+> Cubre backend y web. Las causas se contrastaron con `develop` y, donde se indica, con el stack local.
+> **Ya resuelto:** la semilla de siniestros (OP-06) está en el PR #472.
 
-## 1. Resumen
+## 1. Reparto
 
-| Resultado | Puntos | Cuáles |
-|---|---:|---|
-| Defecto confirmado | 12 | Moneda (OP-02, OP-03, OP-05, AS-01, SO-02, TR-01), AS-03, AS-06, AS-07, AS-08, SO-01, OP-06 |
-| Funcionalidad pendiente que ya estaba prevista | 5 | AS-05, CL-01, CL-02, CL-03, OP-04 |
-| Mejora de diseño | 3 | AS-04, OP-07, SO-03 |
-| Funciona como se diseñó: hay que decidir o explicar | 3 | OP-01, AS-02, SO-04 |
-| **Hallazgos nuevos de esta revisión de QA** | 4 | QA-01 a QA-04, uno de ellos bloqueante |
+| | Desarrollador A | Desarrollador B |
+|---|---|---|
+| **Perfiles** | **Asesor y Cliente** | **Operador y Socio** |
+| **Además** | Firma y pago, que bloquean ambos perfiles | La base de moneda, que usan todos |
+| **Contrato** | v0.24 | v0.23 |
 
-**Lo más importante:**
+**Lo primero en cada lista desbloquea el resto: A1 y B1 arrancan a la vez y no se pisan.** Cada tarea es una rama y un PR
+hacia `develop`, y se hace en el orden indicado. Tamaños relativos S, M y L, como en `docs/sprint-3.md`.
 
-1. **El recorrido de firma y pago no funciona en el navegador**, aunque por API sí. Fallan cuatro cosas seguidas: el
-   contrato no se ve, firmar con trazo falla, la página de retorno de la pasarela queda en blanco y el PDF de la póliza
-   no abre. Por eso van primero (bloque 0).
-2. **El selector de moneda es decorativo.** No está conectado a nada, pero el backend ya tiene lo necesario
-   (`convertirMontos`, `actualizarPreferencias`, `Usuario.moneda`). Es un solo arreglo en la web, no uno por pantalla.
-3. **Casi todo lo del CLIENTE y «Pólizas emitidas» es front pendiente** (F-F3, F-F3b y F-F4 de `docs/sprint-3.md`). El
-   backend y el contrato ya lo soportan.
+### Dónde se cruzan
 
-**Por qué no lo detectaron las pruebas:** Newman y k6 van directo al BFF, y Cypress usa mocks. Ninguna prueba recorre en
-un navegador real la firma y el pago. La cubre el bloque 7.
+| Pieza | Dueño | Quién la usa | Regla |
+|---|---|---|---|
+| `useMoneda`, `montoVisible`, `HeaderPantalla`, `formato.ts` | B (B1) | A (A2) | A2 espera a que B1 esté en `develop` |
+| `Paginador.vue` | B (B3) | A (A4) | A4 espera a que B3 esté en `develop` |
+| `useAvisos.ts` generalizado | A (A3) | — | B no lo toca |
+| `schema.graphql` y `socios-v1.json` | v0.23 = B, v0.24 = A | — | Nadie edita el contrato fuera de su PR. Si A llega primero, se intercambian los números |
 
-## 2. Decisiones por confirmar
+```
+A  A1 ──► A2 ──► A3 ──► A4 ──► A5 ──► A6 ──► A7        Asesor: A1 a A4 · Cliente: A5 a A7
+          ▲              ▲
+          │ B1           │ B3
+B  B1 ──► B2 ──► B3 ──► B4 ──► B5 ──► B6 ──► B7 ──► B8  Operador: B2 a B5 · Socio: B6 a B8
+```
 
-Cada una trae la opción recomendada. El plan asume esa opción; si se elige otra, cambia el bloque indicado.
+Al final, **B9** se hace entre los dos: documentos, regresión y evidencia.
 
-| # | Decisión | Recomendación | Alternativa | Bloque |
-|---|---|---|---|---|
-| D-1 | ¿Quién ve el estado del sistema? Hoy es del BACKOFFICE por diseño (W07-04, CA-W07-14 y 15) | Retirar la tarjeta y la ruta de la web del operador; dejar `estadoSistema` en el BFF y ajustar esos CA | Crear un rol `ADMIN` que la vea: más costoso, toca AUTH, BFF y contrato | 5 |
-| D-2 | ¿Qué se convierte al cambiar de moneda? | Todo lo que se **consulta**. Lo que se **firma, cobra o captura** sigue en la moneda original (contrato, autorización de cobro, pasarela, «Monto del crédito») con el selector deshabilitado | Mostrar también el valor de referencia «≈ USD» en esas pantallas | 1 |
-| D-3 | ¿Qué significa «gestionar automáticamente» un siniestro cuyo plazo llega a cero? | **Escalar, no decidir:** marcarlo vencido, subirlo en la bandeja y avisar. Aprobar genera una orden de indemnización y rechazar notifica al asegurado: ninguna debería ocurrir sola | Aprobar o rechazar automáticamente: pide validación jurídica antes | 5 |
-| D-4 | ¿Se mantiene la sesión por pestaña? | Sí, y añadir que cerrar sesión cierre también las pestañas duplicadas | Exigir login en cada pestaña duplicada | 2 |
-| D-5 | «Reenviar enlace» cuando el cliente ya firmó | Quitarlo como se pidió, pero en `FIRMADA` mostrar **«Enviar enlace de pago»**. El enlace dura 30 min y `FIRMADA` significa que falta pagar: sin ese botón, quien pierda el enlace no puede pagar | Quitarlo sin reemplazo y aceptar ese riesgo | 2 |
-| D-6 | Correo y teléfono en «Mis datos» | Mostrarlos completos, solo en `yo` y solo al propio usuario; el documento sigue enmascarado. Modifica W03-16 («legibles solo por POLICY») y exige revisar EC022 | Mostrarlos enmascarados | 4 |
-| D-7 | Navegación del portal de socios | La propuesta de la sección 3.4. No hay Figma: requiere visto bueno de diseño | Conservar la estructura y solo fijar las migas | 6 |
+## 2. Decisiones
 
-## 3. Matriz de hallazgos
+| # | Decisión | Estado | Afecta |
+|---|---|---|---|
+| D-1 | **Estado del sistema:** el operador no debe ver ese menú | **Cerrada:** se retiran la tarjeta y la ruta | B2 |
+| D-2 | **Moneda:** todo lo que se consulta se convierte; lo que se firma, cobra o captura sigue en la moneda original, con el selector deshabilitado. La regla es la misma en toda la web | **Cerrada** | B1, A2, B4, B7 |
+| D-3 | **Siniestro vencido:** al llegar a cero sin gestión, el sistema lo aprueba como si lo hubiera hecho el operador. Es un cambio automático de estado | **Cerrada** | B5 |
+| D-3b | ¿Un caso **derivado a perito** también se aprueba al vencer, o espera el informe? Recomendado: espera el informe; su plazo pasa a ser `vencimientoInforme` | **Abierta** | B5 |
+| D-4 | **Sesión por pestaña.** Recomendado: mantenerla y que cerrar sesión cierre las pestañas duplicadas | **Abierta** | A3 |
+| D-5 | **Reenviar enlace tras firmar.** Recomendado: quitarlo y mostrar «Enviar enlace de pago» solo en `FIRMADA`, porque sin enlace vigente el cliente no puede pagar | **Abierta** | A3 |
+| D-6 | **Correo y teléfono en «Mis datos».** Recomendado: completos, solo en `yo` y solo al propio usuario. Modifica W03-16 y exige revisar EC022 | **Abierta** | A5 |
 
-Severidad: **Bloqueante** (impide terminar un recorrido), **Alta** (requisito no cumplido), **Media** (funciona mal o
-incompleto), **Baja**. Evidencia: **Vivo** (reproducido en el stack), **Código** (confirmado leyendo el código),
-**Sin reproducir**.
+La navegación del portal de socios (B7) no tiene Figma: necesita visto bueno de diseño antes de construirla.
 
-### 3.1 Operador
+## 3. Desarrollador A: Asesor y Cliente
 
-| ID | Reportado | Sev. | Evidencia | Causa | Corrección |
-|---|---|---|---|---|---|
-| OP-01 | Se ve System Status | Media | Código | No es un error: `HomeOperador.vue` trae la tarjeta y `/operador/estado` admite BACKOFFICE, según W07-04. El operador y `admin.solventa` son el mismo rol | D-1 |
-| OP-02 | La moneda vuelve a COP al navegar | Alta | Código | `HeaderPantalla` recibe `moneda` por prop con valor `COP` y ninguna pantalla la conecta. Al cambiar de ruta se vuelve a montar | Bloque 1 |
-| OP-03 | Conciliación no cambia valores | Alta | Código | La web no llama `convertirMontos` en ninguna parte | Bloque 1 |
-| OP-04 | Bandeja sin paginador | Media | Código | `BandejaSiniestros.vue` no pagina. El de conciliación está escrito dentro de esa pantalla | Extraer `Paginador.vue` y usarlo en ambas, 10 por página. Con la semilla de 10 casos debe mostrarse igual («1 de 1») |
-| OP-05 | Siniestros no cambia valores | Alta | Código | Igual que OP-03 | Bloque 1 |
-| OP-06 | Semilla en revisión sin bloqueo de perito | Media | Código | Es un dato malo. Solo derivar lleva a `EN_REVISION`, pero la semilla trae 2 de 3 casos así con `resolucion: null` (`services/claims/semilla/siniestros.json`, líneas 93 y 523). El botón se bloquea según la derivación, no según el estado | Darles asignación y perito en la semilla, con una prueba que lo exija |
-| OP-07 | El tiempo restante debe correr y gestionarse al llegar a cero | Alta | Código | Tres vacíos. **Reloj:** se recalcula cada 60 s, y con más de 24 h solo muestra días y horas, así que parece fijo. **Backend:** nadie actúa al vencer. **Derivados:** el contador sigue corriendo aunque el caso espera al perito | Bloque 5 y D-3 |
+### Común
 
-### 3.2 Asesor
+**A1 · Destrabar firma y pago** · Bloqueante · S · web y backend
 
-| ID | Reportado | Sev. | Evidencia | Causa | Corrección |
-|---|---|---|---|---|---|
-| AS-01 | Cotización no cambia valores | Alta | Código | Igual que OP-03 | Bloque 1 |
-| AS-02 | ¿La sesión entre pestañas es por seguridad? | Baja | Código, sin reproducir | **No es una medida de seguridad.** El token vive en `sessionStorage`, que es por pestaña: una pestaña nueva abierta a mano no lo tiene. El navegador sí lo copia al **duplicar** una pestaña. Confirmar cómo se abrió la pestaña en la revisión | D-4 |
-| AS-03 | Cerrar el modal antes de emitir pierde el proceso | Alta | Código | En `IDENTIDAD_VERIFICADA` la tarjeta de `RevisarOfertaAceptada.vue` solo ofrece «Actualizar estado»: no hay forma de volver a emitir. Además la pantalla no recupera la propuesta al recargar, y «Reenviar enlace» tras recargar abre el modal en el paso 1 y pide otra vez el código | Botón «Emitir» en `IDENTIDAD_VERIFICADA`, recuperar la propuesta con `propuestas` al entrar y abrir el modal en el paso correcto |
-| AS-04 | Sobra «Actualizar estado» | Media | Código | La pantalla no usa SSE. POLICY ya publica en `avisos:asesor:<usuario>`, pero `useAvisos.ts` solo entiende cobros | Generalizar `useAvisos`, quitar el botón y consultar una vez al reabrir, igual que W05-01 |
-| AS-05 | «Pólizas emitidas» no lleva a nada | Alta | Vivo | `G-06` no tiene componente (`PantallaPendiente`): es F-F4, pendiente. El backend responde: `propuestas` devolvió datos reales del asesor | Bloque 3 |
-| AS-06 | El contrato PDF no se ve | Bloqueante | Vivo | `/propuestas` y `/polizas` no están en el proxy de Vite ni en `vercel.json`. Por el proxy web responde `200 text/html`; por el gateway, un `%PDF` válido. `urlDelPdf` solo mira `.ok` y mete el HTML en el iframe. **Por la configuración, también afecta a Vercel** | Añadir ambas rutas en los dos sitios y rechazar lo que no sea `application/pdf` |
-| AS-07 | Error al confirmar el contrato | Bloqueante | Vivo | El bucket local rechaza la subida desde el navegador: el preflight responde **403** por `x-goog-content-length-range` y `x-goog-if-generation-match`, y `fake-gcs` no los admite. TRAZO es el modo por defecto. Con una imagen válida, sin navegador, la firma queda `FIRMADA`; el modo NOMBRE también. Confirmar que el mensaje visto fue el de error de subida | Añadir `-cors-headers` a `fake-gcs` en el compose. Verificar en staging el CORS real, que está configurado y nunca se probó |
-| AS-08 | «Reenviar enlace» aparece ya firmado | Media | Código | La condición incluye `FIRMADA`, igual que `reenviar_enlace` de POLICY | D-5 |
+Hoy el recorrido funciona por API, pero no en el navegador.
 
-### 3.3 Cliente
+| Punto | Causa verificada | Corrección |
+|---|---|---|
+| AS-06 · El contrato no se ve | `/propuestas` y `/polizas` no están en el proxy de Vite ni en `vercel.json`: responde `200 text/html` y `urlDelPdf` mete ese HTML en el iframe. Por configuración, también afecta a Vercel | Añadir las rutas en los dos sitios y rechazar lo que no sea `application/pdf` |
+| AS-07 · Error al confirmar | El preflight de `fake-gcs` responde 403 por `x-goog-content-length-range` y `x-goog-if-generation-match`. Trazo es el modo por defecto; por API, la firma queda `FIRMADA` | Añadir `-cors-headers` en el compose. Confirmar que el mensaje visto fue el de subida |
+| QA-01 · Página en blanco tras pagar | El BFF devuelve `/pago/retorno/{id}?sesion=…` y la web solo tiene `/pago/retorno`. No se llama `confirmarPago`, así que **el cliente paga y la póliza no se emite** desde esa pantalla | Ruta `/pago/retorno/:propuestaId?` |
+| QA-02 · El PDF de la póliza no abre por enlace | La ruta exige JWT y W03-04 no tiene sesión (visto en código) | Aceptar `X-Enlace-Firma` con el mismo control de `contrato.pdf` y actualizar `docs/autenticacion-usuarios.md` |
+| QA-04 · Token mal formado da 503 | POLICY responde 422 y el BFF no lo reconoce | Responder 404 |
 
-| ID | Reportado | Sev. | Evidencia | Causa | Corrección |
-|---|---|---|---|---|---|
-| CL-01 | Faltan datos personales | Alta | Vivo | `MiPerfil.vue` pide 6 campos. `yo` ya ofrece `documentoEnmascarado`, moneda e idioma. Correo y teléfono están en AUTH, pero el contrato los excluye a propósito (W03-16). Los clientes de onboarding tienen además nacimiento y país en `onboarding` | Bloque 4 y D-6. Mostrar solo lo que exista: los creados por BACKOFFICE no tienen datos de onboarding |
-| CL-02 | Cotización sin datos precargados | Alta | Código | Es F-F3b. `validar()` exige digitar el documento aunque el BFF ya cotiza con el de la cuenta si se envía null | Documento, nombre y correo de solo lectura. Monto, plazo y dirección siguen editables: no están guardados |
-| CL-03 | Debe pasar directo a firmar | Alta | Código | La pantalla sigue la decisión vieja D-2 («solo ASESOR»), que W03-32 y W03-33 reemplazaron. El contrato y k6 ya usan el flujo con sesión | Bloque 4 |
+**Hecho cuando:** en un navegador real, con el stack local, el contrato se ve, se firma en los tres modos, se paga, vuelve
+con la póliza emitida y el PDF abre.
 
-### 3.4 Socio
+### Perfil Asesor
 
-| ID | Reportado | Sev. | Evidencia | Causa | Corrección |
-|---|---|---|---|---|---|
-| SO-01 | Header y footer no quedan fijos | Media | Vivo | En el panel el documento mide 2.073 px en una ventana de 660: se desplaza toda la página. En documentación mide 660, sin problema. **Causa probable:** la `<table class="sr-only">` de `GraficoLlamadas.vue` es absoluta y se sale de `main` | Dar `relative` a `main` y comprobar en Cypress que el documento no supere la ventana |
-| SO-02 | Ajustar moneda | Alta | Código | Igual que OP-03, y además `convertirMontos` no admite al socio: usa REST con su propio token | Bloque 1, con una operación REST nueva |
-| SO-03 | Navegación confusa; la miga se pierde | Media | Vivo | Las migas están dentro del `main` que se desplaza. «Producción/Pruebas» aparece con dos significados: datos del panel y API de la documentación | Propuesta abajo, D-7 |
-| SO-04 | El Swagger no pide token | Media | Vivo | **No es un hueco de seguridad.** Sin token, `/v1/consumo` y `/v1/cotizaciones` responden **401**. `SwaggerSocios.vue` añade el token del entorno sin mostrarlo, porque el CSS oculta «Authorize» a propósito (plan W07, 5.4). Si falla al pedirlo, la petición sale sin token y el usuario no entiende el 401 | Mostrar «Autenticado con la clave de Pruebas · vence 10:45» y un error claro si no se obtiene. Añadir a Cypress que «Try it out» lleva el token |
+**A2 · Moneda en cotización** · AS-01 · Alta · S · web · Depende de B1
 
-**Propuesta de navegación (D-7).** Una sola barra fija para todo el portal, con el componente `Pestanas`:
+Usar `montoVisible` en `OfertaCompleta`, `OfertaPreliminar` y `RevisarOfertaAceptada`. El selector queda deshabilitado en
+`SolicitudYConsentimiento` y en las pantallas de firma y pago.
+
+**Hecho cuando:** USD cambia los valores de la oferta y el contrato sigue en COP.
+
+**A3 · Emisión sin callejones** · AS-02, AS-03, AS-04, AS-08 · Alta · M · web · Depende de D-4 y D-5
+
+1. Mostrar «Emitir» en `IDENTIDAD_VERIFICADA`. Hoy, al cerrar el modal, no hay forma de volver.
+2. Recuperar la propuesta con `propuestas` al entrar a `/suscripcion/:ofertaId`, para que recargar no pierda el proceso.
+3. Abrir el modal en el paso correcto. Hoy, tras recargar, «Reenviar enlace» vuelve al paso 1 y pide otro código.
+4. La tarjeta debe poder pintarse con los datos de la propuesta: si la oferta venció, `oferta(id)` devuelve null.
+5. Generalizar `useAvisos.ts` para propuestas (POLICY ya publica en `avisos:asesor:<usuario>`), quitar «Actualizar
+   estado» y consultar una vez al reabrir, como W05-01.
+6. Aplicar D-5.
+7. Aplicar D-4. El token vive en `sessionStorage`, que es por pestaña: no es una medida de seguridad, y el navegador lo
+   copia al duplicar la pestaña.
+
+**Hecho cuando:** cerrar el modal o recargar en cualquier paso permite retomar, y el estado cambia sin recargar.
+
+**A4 · Pantalla «Pólizas emitidas»** · AS-05 · Alta · L · web · Depende de A3 y B3
+
+Hoy `G-06` no tiene pantalla (`PantallaPendiente`). El backend ya está listo: `propuestas(estado, pagina, tamano)` respondió
+en vivo. **Objetivo:** que el asesor vea lo que ha gestionado. Sale del formato de las tablas de siniestros y de pagos.
+
+| Columna | Dato | Nota |
+|---|---|---|
+| Cliente | `nombreTitular` y, debajo, `poliza.numero` en gris | Como cliente y radicado en la bandeja. Sin póliza, solo el nombre |
+| Prima mensual | `prima` | Convertida (consulta) y alineada a la derecha |
+| Cobertura | `cobertura` | Convertida |
+| Plazo | `plazoMeses` | |
+| Estado | `estadoVisible` con `Badge` | El detalle de `mensajeEstado` va en el `title` |
+| Actualizada | `actualizadoEn` | Fecha corta; la completa en el `title` |
+| Acciones | Según el estado | `EMITIENDO`: **Retomar**. `EMITIDA`: **Ver PDF**. `NO_EMITIDA`: sin acción |
+
+- **Filtros:** chips Todos, Emitiendo, Emitida y No emitida, en el servidor con el argumento `estado`.
+- **Paginación:** `Paginador.vue` con 10 por página y «Mostrando N de M» usando `total`. Un cambio de filtro vuelve a la
+  página 1.
+- **Estados:** cargando, vacío, vacío por filtro y error con reintento, como la bandeja.
+- **En vivo:** un aviso actualiza solo su fila; una propuesta desconocida recarga la página una vez.
+- **Encabezado:** `HeaderPantalla`, migas hacia el inicio del rol y header y footer fijos.
+- **Sin esta entrega:** BACKOFFICE. W03-35 lo prevé, pero su home no tiene esa entrada y no se pidió.
+
+**Hecho cuando:** el asesor ve solo lo suyo, filtra, pagina, retoma una pendiente y abre el PDF de una emitida.
+
+### Perfil Cliente
+
+**A5 · Mis datos y precarga** · CL-01, CL-02 · Alta · M · web, backend y contrato v0.24 · Depende de D-6
+
+1. Contrato: datos personales propios en `Usuario`, solo por `yo`. AUTH los entrega solo al propio usuario.
+2. `MiPerfil`: mostrar documento enmascarado, correo, teléfono y, si existen, nacimiento y país de onboarding. Los clientes
+   creados por BACKOFFICE no tienen datos de onboarding: se muestra lo que haya.
+3. `SolicitudYConsentimiento`: documento, nombre y correo de solo lectura; enviar `documentoIdentidad` en null para que el
+   BFF use el de la cuenta. Monto, plazo y dirección siguen editables porque no están guardados.
+
+**Hecho cuando:** el cliente ve sus datos y cotiza sin digitar lo que ya existe.
+
+**A6 · Del cotizar al firmar** · CL-03 · Alta · L · web · Depende de A1 y A5
+
+El contrato ya lo soporta (W03-32 y W03-33) y k6 lo recorre.
+
+1. En la oferta completa, el botón principal es «Firmar»: `aceptarOferta` → `emitirPropuesta` → `/firma`. «Contactar a un
+   asesor» queda como secundario.
+2. `useEnlaceFirma` admite dos autorizaciones: token del enlace, o sesión más `propuestaId`, también para el PDF.
+3. Atender `EN_REVISION` y `NO_EMITIDA` con su mensaje, sin pasar a firmar.
+4. Si la cuenta no tiene documento, explicarlo y ofrecer el asesor.
+5. Marcar W03-19 y D-2 del plan del front como reemplazadas.
+
+**Hecho cuando:** un cliente llega de cotizar a póliza emitida sin código ni asesor.
+
+**A7 · «Mis pólizas» y recorridos reales** · S · web · Depende de A4 y A6
+
+1. Reusar la pantalla de A4 para el CLIENTE: sin columna Cliente, y solo sus pólizas.
+2. Crear `w03-recorrido.cy.ts` contra el stack real, de la oferta a la póliza, como ASESOR y como CLIENTE. **Esto cierra
+   el vacío que dejó pasar estos fallos:** Newman y k6 van directo al BFF y Cypress usa mocks.
+
+## 4. Desarrollador B: Operador y Socio
+
+### Común
+
+**B1 · Base de moneda** · OP-02, TR-01, QA-03 · Alta · M · web · Sin dependencias
+
+Hoy el selector no está conectado a nada: `HeaderPantalla` recibe `COP` por prop, y `convertirMontos`,
+`actualizarPreferencias` y `Usuario.moneda` no se usan. La conversión funciona en vivo (`185.000.000 COP` → `45.121,95 USD`).
+
+1. `useMoneda.ts`, como `idioma`: se lee de la cuenta al iniciar sesión, se guarda con `actualizarPreferencias` y, sin
+   sesión, en `localStorage`. La cuenta prevalece.
+2. `montoVisible(monto)` para plantillas: devuelve el valor convertido, agrupa las peticiones (máximo 50) y guarda las ya
+   convertidas.
+3. Mientras convierte, o si falla, muestra el monto original con un aviso, nunca un error (regla 5).
+4. `HeaderPantalla` usa `useMoneda` directamente y admite `monedaFija`, que deshabilita el selector. Con otra moneda
+   muestra: «Valores de referencia. El cobro se hace en la moneda original».
+5. `formatearMonto` usa los decimales de cada moneda: `11,83 USD` hoy se vería como `12`. COP y CLP siguen sin decimales.
+6. Documentar la regla D-2 en `docs/convenciones.md` del front.
+
+| Se convierte (consulta) | No se convierte (firma, cobro o captura) |
+|---|---|
+| Ofertas, siniestros, conciliación, pólizas, ventas del socio | Contrato, autorización de cobro, pago, póliza emitida, monto del crédito |
+
+**Hecho cuando:** la moneda elegida sobrevive a navegar, a recargar y a volver a iniciar sesión.
+
+### Perfil Operador
+
+**B2 · Quitar el estado del sistema** · OP-01 · Media · S · web · D-1
+
+Retirar la tarjeta de `HomeOperador`, la ruta `/operador/estado`, `EstadoSistema.vue`, `useEstadoSistema.ts`, sus textos y
+sus pruebas. `estadoSistema` sigue en el BFF. El socio conserva `/v1/estado`. Ajustar CA-W07-14 y 15.
+
+**B3 · Paginador en la bandeja** · OP-04 · Media · S · web
+
+Extraer `Paginador.vue` de `ConciliacionDePagos` y usarlo en ambas pantallas, con 10 por página. La bandeja tiene ya 20
+casos (PR #472). Un cambio de filtro vuelve a la página 1.
+
+**B4 · Moneda del operador** · OP-03, OP-05 · Alta · S · web · Depende de B1
+
+`montoVisible` en `ConciliacionDePagos`, `DetalleSiniestro` y `ConfirmacionAprobacion`. En W05-01 el total se suma en la
+moneda original y luego se convierte, y solo se pide lo visible para no chocar con el límite.
+
+**B5 · Plazo y aprobación automática** · OP-07 · Alta · L · web, backend y contrato v0.23 · Depende de D-3b
+
+Hoy el reloj se recalcula cada 60 s y con más de 24 h solo muestra días y horas, así que parece fijo. Nadie actúa al vencer.
+
+1. **Contrato:** `Resolucion.automatica`, para distinguirla de una aprobación manual.
+2. **CLAIMS:** `POST /siniestros/_aprobar-vencidos`, idempotente, por Cloud Scheduler como los demás procesos periódicos. El
+   Terraform se escribe, pero no se aplica.
+3. **Mismo camino que el operador:** reutiliza `aprobar`, con su orden en PAYMENTS, evento y notificación, y actor
+   `SISTEMA`. Si PAYMENTS falla, el caso sigue abierto y se reintenta en la siguiente pasada.
+4. Índice por `(estado, vence_dictamen_en)` con migración idempotente.
+5. **Web:** el contador muestra siempre minutos («1 d 5 h 12 min») y se actualiza cada 30 s; el detalle dice «Aprobado
+   automáticamente por vencimiento» y el vencimiento se ve también en la bandeja.
+6. Derivados: según D-3b.
+
+**Hecho cuando:** un caso vencido queda aprobado una sola vez, con su orden en PAYMENTS y marcado como automático.
+
+### Perfil Socio
+
+**B6 · Marco fijo y moneda** · SO-01, SO-02 · Alta · M · web, backend y contrato v0.23 · Depende de B1
+
+1. **SO-01:** en el panel el documento mide 2.073 px en una ventana de 660, y se desplaza toda la página. Causa probable:
+   la `<table class="sr-only">` de `GraficoLlamadas.vue` se sale de `main`. Dar `relative` a `main`.
+2. **SO-02:** `convertirMontos` no admite al socio. Crear `POST /v1/conversiones` en el contrato, el BFF, Envoy y
+   `openapi-socios.yaml`, sin descontar presupuesto. Con un token de PRUEBAS usa tasas fijas (W07-10: no llama micros).
+3. `montoVisible` en ventas y comisiones, usando esa ruta dentro del portal.
+
+**B7 · Navegación del portal** · SO-03 · Media · M · web · Requiere visto bueno de diseño
+
+Una sola barra fija para todo el portal, con `Pestanas`, reunida en un layout `PortalSocio.vue`:
 
 ```
 ┌ Solventa | Portal de socios                          ES  COP ┐  fijo
@@ -103,111 +229,28 @@ incompleto), **Baja**. Evidencia: **Vivo** (reproducido en el stack), **Código*
 └──────────────────────────────────────────────────────────────┘
 ```
 
-- Con la barra siempre visible sobran las migas y el botón «Documentación de la API».
-- En el panel, el selector pasa a llamarse «Ver datos de» y se dibuja distinto, para no parecer navegación.
-- Un layout `PortalSocio.vue` reúne el marco común y se conservan las URL actuales.
+Con la barra sobran las migas y el botón «Documentación de la API». El selector del panel se llama «Ver datos de» y se
+dibuja distinto, para no parecer navegación. Se conservan las URL actuales.
 
-### 3.5 Transversal
+**B8 · Token visible en Swagger** · SO-04 · Media · S · web
 
-| ID | Reportado | Sev. | Evidencia | Causa | Corrección |
-|---|---|---|---|---|---|
-| TR-01 | Revisar la moneda en toda la aplicación | Alta | Vivo | `convertirMontos` funciona en vivo (`185.000.000 COP` → `45.121,95 USD`); falta usarlo | Bloque 1, con la lista de pantallas |
+**No es un hueco de seguridad:** sin token, la API responde 401 (verificado). El portal lo añade sin mostrarlo porque el CSS
+oculta «Authorize». Mostrar «Autenticado con la clave de Pruebas · vence 10:45» y un error claro si no se obtiene. Añadir a
+Cypress que «Try it out» lleva el token, porque eso aún no se ha probado en el navegador.
 
-### 3.6 Hallazgos nuevos de QA
+### Cierre (A y B)
 
-| ID | Hallazgo | Sev. | Evidencia | Causa | Corrección |
-|---|---|---|---|---|---|
-| QA-01 | **Tras pagar, la página queda en blanco** | Bloqueante | Vivo | El BFF devuelve `/pago/retorno/{id}?sesion=…` y la web solo tiene `/pago/retorno`. Como `RetornoPago` no se monta, **no se llama `confirmarPago`: el cliente paga y la póliza no se emite** desde esa pantalla | Ruta `/pago/retorno/:propuestaId?` y prueba de punta a punta |
-| QA-02 | El PDF de la póliza no abre por enlace | Alta | Código | `/polizas/{id}/documento` exige JWT, pero W03-04 no tiene sesión y envía `X-Enlace-Firma`. Respondería 401 | Aceptar el token del enlace en esa ruta, con el mismo control de `contrato.pdf`, y reflejarlo en `docs/autenticacion-usuarios.md` |
-| QA-03 | USD se redondea sin centavos | Media | Vivo | `formatearMonto` fija 0 decimales. `48.500 COP` son `11,83 USD` y se verían como `12` | Usar los decimales propios de cada moneda |
-| QA-04 | Un token mal formado da 503 | Baja | Vivo | POLICY responde 422, el BFF no lo reconoce y devuelve 503. Debe ser 404, como un token inexistente (regla 4) | Mapear ese caso |
+**B9 · Regresión y documentos** · M
 
-## 4. Plan por bloques
-
-Tamaños relativos, como en `docs/sprint-3.md`. Cada fila es una rama y un PR hacia `develop`.
-
-| Bloque | Contenido | Puntos | Repos | Tamaño | Depende de |
-|---|---|---|---|---:|---|
-| **0 · Destrabar firma y pago** | Rutas de PDF, CORS de `fake-gcs`, ruta de retorno, PDF de póliza con enlace | AS-06, AS-07, QA-01, QA-02, QA-04 | web, backend | S | — |
-| **1 · Moneda** | Estado global, conversión, formato y REST de socios | OP-02, OP-03, OP-05, AS-01, SO-02, TR-01, QA-03 | web, backend, contrato | L | D-2 |
-| **2 · Emisión del asesor** | Retomar, SSE, reenvío y cierre entre pestañas | AS-03, AS-04, AS-08, AS-02 | web | M | D-4, D-5 |
-| **3 · Pólizas** | Pantalla `G-06` para los tres roles, con SSE | AS-05 | web | L | 2 |
-| **4 · Cliente** | Datos, precarga y flujo con sesión | CL-01, CL-02, CL-03 | web, backend, contrato | L | 0, D-6 |
-| **5 · Operador** | Paginador, semilla, plazo y estado del sistema | OP-01, OP-04, OP-06, OP-07 | web, backend, contrato | M | D-1, D-3 |
-| **6 · Socio** | Layout, navegación y token visible | SO-01, SO-03, SO-04 | web | M | D-7 |
-| **7 · Cierre** | Recorridos en navegador real, documentos y regresión | Todos | web, backend | M | 0 a 6 |
-
-Orden: **0 primero y solo**, porque desbloquea probar todo lo demás. Después 1, 2, 4 y 5 pueden ir en paralelo; 3 tras 2 y
-6 cuando lo apruebe diseño. Los bloques 0, 2, 3 y 4 tocan W03; el 5, W04; el 6, W07; y el 1 cruza todas las pantallas.
-**Conviene arrancar el 1 pronto:** cambia cómo se muestran los montos, y cuanto más tarde, más pantallas hay que rehacer.
-
-### Bloque 1 · Moneda
-
-1. `useMoneda.ts`, como `idioma`: se lee de `Usuario.moneda` al iniciar sesión, se guarda con `actualizarPreferencias` y,
-   sin sesión, en `localStorage`. `HeaderPantalla` se conecta a él directamente, sin prop.
-2. Un componente `MontoVisible` reemplaza a `formatearMonto` en pantallas de consulta. Agrupa las peticiones (máximo 50
-   por llamada, `MAXIMO_MONTOS`) y guarda las ya convertidas.
-3. Si la conversión falla, muestra el monto original con un aviso, nunca un error (regla 5).
-4. **Se convierte:** W01-02 a W01-04, W04-02 y confirmaciones, W05-01, «Pólizas» y ventas del socio. **No se convierte
-   (D-2):** W03-02, W03-02b, W03-03, W03-04 y el campo del crédito.
-5. En W05-01 el total se suma primero en la moneda original y luego se convierte. Solo se convierte la página visible y
-   el total, para no chocar con el límite.
-6. Socio: operación REST nueva en `socios-v1.json`, Envoy y `openapi-socios.yaml`, que no descuente presupuesto.
-
-### Bloque 4 · Flujo del CLIENTE
-
-1. Contrato v0.23 con los campos de CL-01 (D-6). AUTH expone el contacto solo al propio usuario.
-2. `useEnlaceFirma` admite dos autorizaciones: token del enlace, o sesión más `propuestaId`, también para el PDF.
-3. En la oferta completa, el botón principal del CLIENTE es «Firmar»: `aceptarOferta` → `emitirPropuesta` → `/firma`.
-   «Contactar a un asesor» queda como opción secundaria.
-4. Atender `EN_REVISION` y `NO_EMITIDA` con su mensaje, sin pasar a firmar.
-5. Si un cliente no tiene documento en su cuenta, explicarlo y ofrecer el asesor.
-6. Actualizar W03-19 y D-2 en los documentos: esas decisiones quedan reemplazadas.
-
-### Bloque 5 · Plazo del siniestro (con D-3 aprobada)
-
-1. **Web:** el contador muestra siempre minutos («1 d 5 h 12 min»), se actualiza cada 30 s y la bandeja muestra el
-   vencimiento.
-2. **Contrato v0.23:** `Siniestro.escaladoEn` y el evento `siniestro.sla-vencido`.
-3. **CLAIMS:** `POST /siniestros/_vencer-dictamenes`, idempotente, disparado por Cloud Scheduler como los demás procesos
-   periódicos (en Cloud Run no hay bucles de fondo). El Terraform se escribe, pero no se aplica.
-4. **Derivados:** el contador se reemplaza por `vencimientoInforme` del perito.
-5. Índice por `(estado, vence_dictamen_en)` con migración idempotente.
-
-## 5. Contrato v0.23
-
-Solo cambios aditivos, antes del código (regla 8):
-
-| Cambio | Superficie | Bloque |
-|---|---|---|
-| Datos personales propios en `Usuario`, solo por `yo` | GraphQL | 4 |
-| `Siniestro.escaladoEn` | GraphQL | 5 |
-| `siniestro.sla-vencido` | Evento | 5 |
-| Conversión de montos para socios | REST `socios-v1` | 1 |
-
-## 6. Criterios de salida
-
-| Bloque | Se da por hecho cuando |
-|---|---|
-| 0 | En un navegador real, con el stack local: el contrato se ve, se firma en los tres modos, se paga, vuelve a una pantalla con la póliza emitida y el PDF abre |
-| 1 | Elegir USD se mantiene al navegar y al volver a iniciar sesión, y cambia los valores de todas las pantallas de consulta; las de firma y pago siguen en COP |
-| 2 | Cerrar el modal o recargar en cualquier paso permite retomar; el estado cambia sin recargar y no hay «Actualizar estado» |
-| 3 | Cada rol ve solo sus pólizas, filtra por estado, abre el PDF y retoma las pendientes |
-| 4 | Un CLIENTE cotiza sin digitar sus datos y llega a póliza emitida sin código ni asesor |
-| 5 | Los casos de la semilla se comportan como los nuevos; un caso vencido queda escalado una sola vez y sin decisión automática |
-| 6 | Header, barra y footer siguen fijos al desplazar en todo el portal, y siempre hay una forma visible de volver |
-| 7 | Vitest, Cypress con mocks, Newman y los recorridos reales pasan, con evidencia en `docs/evidencias/` |
-
-**Bloque 7 añade** un `w03-recorrido.cy.ts` contra el stack real (ASESOR y CLIENTE, de la oferta a la póliza) y actualiza
+Vitest, Cypress con mocks, Newman y los recorridos reales de A7 en verde, con evidencia en `docs/evidencias/`. Actualizar
 `PROJECT_STATUS.md`, `CLAUDE.md` y los planes de W03, W04 y W07. Staging queda fuera: sigue pendiente de la decisión de
-liberar. Allí habrá que verificar además el CORS real del bucket.
+liberar, y allí habrá que verificar el CORS real del bucket y las rutas de Vercel.
 
-## 7. Riesgos
+## 5. Riesgos
 
-- **Vercel:** AS-06 se dedujo de `vercel.json`, sin probarlo en la nube. El arreglo debe verificarse al desplegar.
-- **Sprint 3:** F-F3 y F-F4 ya estaban sin tamaño comprometido en Jira. Este plan los vuelve prioritarios y aún hay que
-  reflejarlo en el tablero.
-- **Tasas de cambio:** son de referencia y solo para mostrar. La pantalla debe decirlo para que nadie las tome por el
-  valor cobrado.
-- **Datos personales:** D-6 amplía quién puede leer correo y teléfono. Sigue siendo el propio titular, pero cambia una
-  decisión documentada.
+- **Aprobación automática:** genera órdenes de indemnización sin revisión humana, incluso si una verificación del caso no
+  cumple. La orden no dispersa dinero (W05-3), pero conviene el visto bueno de quien responde por el negocio.
+- **Vercel:** AS-06 se dedujo de `vercel.json`, sin probarlo en la nube.
+- **Tablero:** F-F3 y F-F4 no tenían peso en Jira; este plan los vuelve prioritarios y aún hay que reflejarlo.
+- **Tasas:** son de referencia. Por eso el aviso de B1 es parte del alcance.
+- **Datos personales:** D-6 cambia una decisión documentada y exige revisar EC022.
