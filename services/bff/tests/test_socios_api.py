@@ -291,9 +291,7 @@ def test_codigo_verificar_y_emitir_sin_devolver_la_url(e) -> None:
 def test_un_codigo_invalido_dice_cuantos_intentos_quedan(e) -> None:
     from app.clientes import FlujoRechazado
 
-    e.policy.rechazos["verificar_codigo"] = FlujoRechazado(
-        "CODIGO_INVALIDO", intentos_restantes=3
-    )
+    e.policy.rechazos["verificar_codigo"] = FlujoRechazado("CODIGO_INVALIDO", intentos_restantes=3)
     with e.cliente() as client:
         pid = client.post(
             "/v1/propuestas", json={"ofertaId": "o-1", "contacto": CONTACTO}, headers=e.cabeceras()
@@ -370,6 +368,7 @@ def test_la_api_de_socios_no_tapa_v1_graphql(e) -> None:
 def test_el_contrato_y_las_rutas_coinciden(e) -> None:
     """Contrato primero (regla 8): cada operación del OpenAPI de socios tiene su ruta en el BFF y
     al revés."""
+
     # Los nombres de los parámetros cambian de estilo (`propuestaId` en el contrato, `propuesta_id`
     # en Python): se compara la forma de la ruta.
     def forma(camino: str) -> str:

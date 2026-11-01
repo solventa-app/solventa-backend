@@ -71,9 +71,11 @@ class PresupuestoAgotado(Exception):
 class ErrorOnboardingServicio(Exception):
     """ONBOARDING (o AUTH al crear la cuenta) rechazó la solicitud con un código estable."""
 
-    def __init__(self, codigo: str) -> None:
+    def __init__(self, codigo: str, segundos_restantes: int | None = None) -> None:
         super().__init__(codigo)
         self.codigo = codigo
+        # Solo con `ESPERA_REQUERIDA`: lo que falta para poder pedir otro código.
+        self.segundos_restantes = segundos_restantes
 
 
 class PuertoAuth(Protocol):
@@ -810,9 +812,7 @@ class ClienteRiskHttp:
 
     async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None:
         cuerpo = {"titular_id": titular_id, "consentimiento_id": consentimiento_id}
-        respuesta = await _pedir(
-            self._cliente, "POST", "/perfiles/consentimiento-revocado", cuerpo
-        )
+        respuesta = await _pedir(self._cliente, "POST", "/perfiles/consentimiento-revocado", cuerpo)
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
 

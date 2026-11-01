@@ -376,3 +376,14 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   (antes 1 a 60); el OpenAPI de socios lo refleja.
 - Afecta al frontend: sí (W01-01 deja de llevar el 1 a 60 escrito y lee el límite de `jurisdicciones`).
   PR gemelo en `solventa-frontend`.
+
+## v0.31 — 2026-11-01
+
+- KAN-26 (T23, HU-M01): límite de reenvío del código OTP del correo. `enviarCodigoOnboarding` rechaza un
+  segundo envío al mismo correo antes de 60 s con `ErrorOnboarding.codigo = ESPERA_REQUERIDA`; un envío
+  aceptado invalida el código anterior (ya ocurría). Se valida en el servidor.
+- Aditivo: campo opcional `ErrorOnboarding.segundosRestantes: Int` (solo con `ESPERA_REQUERIDA`) y el código
+  nuevo en la lista estable. Mensaje en ES y EN (`idioma.py`).
+- Afecta al frontend: sí, pero sin romper nada (el cooldown de 60 s de la web y del móvil queda como ayuda
+  visual; pueden leer `segundosRestantes`). Alcance: solo el flujo A (correo del registro móvil); los flujos B y C
+  de la tabla del plan quedan para su tarea.

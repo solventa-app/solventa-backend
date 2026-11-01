@@ -21,21 +21,15 @@ Idioma = Literal["es", "en"]
 
 EN: dict[str, str] = {
     # API de socios (HU-W07, contracts/openapi/socios-v1.json)
-    "Credenciales inválidas.": (
-        "Invalid credentials."
-    ),
-    "Falta el token de acceso o no es válido.": (
-        "The access token is missing or invalid."
-    ),
+    "Credenciales inválidas.": ("Invalid credentials."),
+    "Falta el token de acceso o no es válido.": ("The access token is missing or invalid."),
     "Esta operación requiere un token de producción.": (
         "This operation requires a production token."
     ),
     "No existe o no pertenece a este socio.": (
         "It does not exist or does not belong to this partner."
     ),
-    "Revisa los datos de la solicitud.": (
-        "Check the request data."
-    ),
+    "Revisa los datos de la solicitud.": ("Check the request data."),
     "No hay un consentimiento vigente de este socio para el titular.": (
         "This partner has no valid consent for the holder."
     ),
@@ -196,6 +190,9 @@ EN: dict[str, str] = {
     "El código no es correcto. Revísalo e intenta de nuevo.": (
         "The code isn't correct. Check it and try again."
     ),
+    "Espera un momento antes de pedir otro código.": (
+        "Please wait a moment before requesting another code."
+    ),
     "El código venció. Pide uno nuevo.": "The code has expired. Request a new one.",
     "Agotaste los intentos. Pide un código nuevo.": (
         "You've used all your attempts. Request a new code."
@@ -288,9 +285,7 @@ EN: dict[str, str] = {
     "No pudimos consultar los siniestros. Intenta de nuevo.": (
         "We couldn't load the claims. Please try again."
     ),
-    "La ventana debe ser 15m, 1h, 24h o 7d.": (
-        "The window must be 15m, 1h, 24h or 7d."
-    ),
+    "La ventana debe ser 15m, 1h, 24h o 7d.": ("The window must be 15m, 1h, 24h or 7d."),
     "No pudimos calcular el estado del sistema. Intenta de nuevo.": (
         "We couldn't compute the system status. Please try again."
     ),

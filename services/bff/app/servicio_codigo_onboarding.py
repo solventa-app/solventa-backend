@@ -2,12 +2,14 @@
 
 Como en HU-W03 (`services/policy/app/application/servicio_firma_y_pago.py`), envía un código de 6
 dígitos por el ACL Worker (`plantilla="codigo-verificacion"`), guarda solo su huella HMAC-SHA256
-(en Redis con respaldo en memoria), vence a los 10 minutos y admite hasta 5 intentos. Ni el correo
-ni el código se escriben en los logs (regla #6)."""
+(en Redis con respaldo en memoria), vence a los 10 minutos, admite hasta 5 intentos y exige 60 s
+entre envíos al mismo correo (`ESPERA_REQUERIDA`); un código nuevo invalida el anterior. Ni el
+correo ni el código se escriben en los logs (regla #6)."""
 
 import hashlib
 import hmac
 import logging
+import math
 import re
 import secrets
 import uuid
@@ -23,6 +25,7 @@ logger = logging.getLogger("bff.codigo_onboarding")
 LARGO_CODIGO = 6
 VIGENCIA_MINUTOS = 10
 MAX_INTENTOS = 5
+ESPERA_ENTRE_ENVIOS_SEGUNDOS = 60  # mínimo entre dos envíos al mismo correo
 CORREO_VALIDO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PREFIJO_CLAVE = "onboarding:codigo:"
 
@@ -80,8 +83,16 @@ class ServicioCodigoOnboarding:
         except ErrorServicio as error:
             raise ErrorOnboardingServicio("NO_DISPONIBLE") from error
         correo_id = self._id_correo(limpio)
+        ahora = self._reloj()
+        previo = await self._almacen.leer(PREFIJO_CLAVE + correo_id)
+        if previo and previo.get("enviado_en"):
+            transcurrido = (ahora - datetime.fromisoformat(previo["enviado_en"])).total_seconds()
+            if 0 <= transcurrido < ESPERA_ENTRE_ENVIOS_SEGUNDOS:
+                # Se valida en el servidor para que no se pueda saltar desde el cliente.
+                restantes = math.ceil(ESPERA_ENTRE_ENVIOS_SEGUNDOS - transcurrido)
+                raise ErrorOnboardingServicio("ESPERA_REQUERIDA", restantes)
         codigo = generar_codigo()
-        vence_en = self._reloj() + timedelta(minutes=VIGENCIA_MINUTOS)
+        vence_en = ahora + timedelta(minutes=VIGENCIA_MINUTOS)
         await self._almacen.guardar(
             PREFIJO_CLAVE + correo_id,
             {
@@ -89,6 +100,7 @@ class ServicioCodigoOnboarding:
                 "vence_en": vence_en.isoformat(),
                 "intentos": 0,
                 "verificado": False,
+                "enviado_en": ahora.isoformat(),
             },
         )
         try:

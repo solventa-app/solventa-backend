@@ -1116,6 +1116,8 @@ class CodigoOnboardingEnviado:
 class ErrorOnboarding:
     codigo: str
     mensaje: str
+    # Solo con `ESPERA_REQUERIDA`: segundos que faltan para poder pedir otro código.
+    segundos_restantes: int | None = None
 
 
 ResultadoInicioOnboarding = Annotated[
@@ -1163,6 +1165,7 @@ MENSAJES_ONBOARDING = {
     "CODIGO_INVALIDO": "El código no es correcto. Revísalo e intenta de nuevo.",
     "CODIGO_VENCIDO": "El código venció. Pide uno nuevo.",
     "INTENTOS_AGOTADOS": "Agotaste los intentos. Pide un código nuevo.",
+    "ESPERA_REQUERIDA": "Espera un momento antes de pedir otro código.",
     "JURISDICCION_NO_SOPORTADA": "Aún no verificamos documentos de ese país.",
     "TIPO_DOCUMENTO_NO_SOPORTADO": "Ese tipo de documento no se admite.",
     "PASO_INVALIDO": "Ese paso no existe.",
@@ -1171,11 +1174,11 @@ MENSAJES_ONBOARDING = {
 }
 
 
-def _error_onboarding(codigo: str) -> ErrorOnboarding:
+def _error_onboarding(codigo: str, segundos_restantes: int | None = None) -> ErrorOnboarding:
     mensaje = MENSAJES_ONBOARDING.get(codigo) or MENSAJES_ARCHIVO.get(
         codigo, MENSAJES_ONBOARDING["NO_DISPONIBLE"]
     )
-    return ErrorOnboarding(codigo=codigo, mensaje=mensaje)
+    return ErrorOnboarding(codigo=codigo, mensaje=mensaje, segundos_restantes=segundos_restantes)
 
 
 def _onboarding_de(datos: dict) -> Onboarding:
@@ -1589,11 +1592,7 @@ async def _nombres_de_titulares(
     """El titular que dio un ASESOR no tiene cuenta: su nombre está en la propuesta de POLICY, y
     `poliza_id` es el id de la propuesta. Si POLICY falla, esos cobros salen sin nombre."""
     ids = sorted(
-        {
-            c["poliza_id"]
-            for c in cobros
-            if c.get("cliente_id") and c["cliente_id"] not in conocidos
-        }
+        {c["poliza_id"] for c in cobros if c.get("cliente_id") and c["cliente_id"] not in conocidos}
     )
     nombres: dict[str, str] = {}
     try:
@@ -2628,7 +2627,7 @@ class Mutation:
         try:
             datos = await info.context["servicio_codigo_onboarding"].enviar(correo)
         except ErrorOnboardingServicio as error:
-            return _error_onboarding(error.codigo)
+            return _error_onboarding(error.codigo, error.segundos_restantes)
         except ErrorServicio:
             return _error_onboarding("NO_DISPONIBLE")
         return CodigoOnboardingEnviado(
