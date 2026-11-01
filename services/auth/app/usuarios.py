@@ -221,6 +221,8 @@ class RepositorioUsuarios(Protocol):
 
     def nombres_cifrados(self, ids: list[str]) -> dict[str, str]: ...
 
+    def nombres_cifrados_por_titular(self, titulares: list[str]) -> dict[str, tuple[str, str]]: ...
+
     def obtener(self, usuario_id: str) -> dict | None: ...
 
     def obtener_por_alias(self, alias: str) -> dict | None: ...
@@ -325,6 +327,19 @@ class RepositorioUsuariosPostgres:
                 {"ids": ids},
             ).fetchall()
             return {fila["id"]: fila["nombre_cifrado"] for fila in filas}
+
+    def nombres_cifrados_por_titular(self, titulares: list[str]) -> dict[str, tuple[str, str]]:
+        """`{titular_id: (usuario_id, nombre_cifrado)}`. El id es el contexto del cifrado."""
+        with self._pool.connection() as conexion:
+            filas = conexion.execute(
+                """
+                SELECT titular_id, id, nombre_cifrado FROM usuarios
+                WHERE titular_id = ANY(%(titulares)s) AND rol = 'CLIENTE'
+                  AND nombre_cifrado IS NOT NULL
+                """,
+                {"titulares": titulares},
+            ).fetchall()
+            return {fila["titular_id"]: (fila["id"], fila["nombre_cifrado"]) for fila in filas}
 
     def obtener(self, usuario_id: str) -> dict | None:
         return self._una(f"SELECT {_TODAS} FROM usuarios WHERE id = %(id)s", {"id": usuario_id})
@@ -567,8 +582,9 @@ class ServicioUsuarios:
             return None
 
     def nombres(self, ids: list[str]) -> dict[str, str]:
-        """Nombres en claro de los CLIENTE pedidos. Un nombre que no se pueda descifrar se
-        omite (el cobro sale sin nombre) en vez de fallar toda la consulta."""
+        """Nombres en claro de los CLIENTE pedidos, por id de usuario o por `titular_id`: los cobros
+        guardan uno u otro según su origen. Un nombre que no se pueda descifrar se omite (el cobro
+        sale sin nombre) en vez de fallar toda la consulta."""
         if len(ids) > MAXIMO_IDS_POR_CONSULTA:
             raise DatoInvalido(f"Se pueden pedir hasta {MAXIMO_IDS_POR_CONSULTA} nombres a la vez.")
         if self._cifrador is None or not ids:
@@ -577,6 +593,12 @@ class ServicioUsuarios:
         for usuario_id, cifrado in self._repositorio.nombres_cifrados(list(set(ids))).items():
             try:
                 resultado[usuario_id] = self._cifrador.descifrar(cifrado, usuario_id)
+            except ErrorDeCifrado:
+                continue
+        por_titular = self._repositorio.nombres_cifrados_por_titular(list(set(ids)))
+        for titular_id, (usuario_id, cifrado) in por_titular.items():
+            try:
+                resultado[titular_id] = self._cifrador.descifrar(cifrado, usuario_id)
             except ErrorDeCifrado:
                 continue
         return resultado

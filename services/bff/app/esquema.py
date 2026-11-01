@@ -880,8 +880,10 @@ def _oferta(datos: dict) -> Oferta:
 
 def _cobro(datos: dict, nombres: dict[str, str] | None = None) -> Cobro:
     """`datos` es la respuesta de PAYMENTS (estados en minúscula, `monto` y `moneda` sueltos).
-    `nombres` es `{cliente_id: nombre}` de AUTH; sin él, el cliente sale sin nombre."""
+    `nombres` trae el de AUTH por `cliente_id` y, si el titular no tiene cuenta, el de POLICY por la
+    propuesta (`poliza_id`, ver W03-B1); sin él, el cliente sale sin nombre."""
     cliente_id = datos.get("cliente_id")
+    nombres = nombres or {}
     return Cobro(
         id=strawberry.ID(datos["id"]),
         poliza_id=strawberry.ID(datos["poliza_id"]),
@@ -893,7 +895,10 @@ def _cobro(datos: dict, nombres: dict[str, str] | None = None) -> Cobro:
         reintentos_restantes=datos.get("reintentos_rechazo_restantes"),
         id_transaccion=datos.get("referencia"),
         cliente=(
-            ClienteCobro(id=strawberry.ID(cliente_id), nombre=(nombres or {}).get(cliente_id))
+            ClienteCobro(
+                id=strawberry.ID(cliente_id),
+                nombre=nombres.get(cliente_id) or nombres.get(datos["poliza_id"]),
+            )
             if cliente_id
             else None
         ),
@@ -1543,6 +1548,29 @@ async def _nombres_de_clientes(info: Info, cobros: list[dict]) -> dict[str, str]
             nombres |= await _auth(info).nombres_de_clientes(ids[i : i + TAMANO_LOTE_NOMBRES])
     except (ErrorServicio, SolicitudInvalida) as error:
         logger.warning("nombres de clientes no disponibles error=%s", type(error).__name__)
+    return nombres | await _nombres_de_titulares(info, cobros, nombres)
+
+
+async def _nombres_de_titulares(
+    info: Info, cobros: list[dict], conocidos: dict[str, str]
+) -> dict[str, str]:
+    """El titular que dio un ASESOR no tiene cuenta: su nombre está en la propuesta de POLICY, y
+    `poliza_id` es el id de la propuesta. Si POLICY falla, esos cobros salen sin nombre."""
+    ids = sorted(
+        {
+            c["poliza_id"]
+            for c in cobros
+            if c.get("cliente_id") and c["cliente_id"] not in conocidos
+        }
+    )
+    nombres: dict[str, str] = {}
+    try:
+        for i in range(0, len(ids), TAMANO_LOTE_NOMBRES):
+            nombres |= await info.context["clientes"].policy.nombres_titulares(
+                ids[i : i + TAMANO_LOTE_NOMBRES]
+            )
+    except ErrorServicio as error:
+        logger.warning("nombres de titulares no disponibles error=%s", type(error).__name__)
     return nombres
 
 

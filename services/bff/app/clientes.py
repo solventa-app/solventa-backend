@@ -172,6 +172,8 @@ class PuertoRating(Protocol):
 
 
 class PuertoPolicy(Protocol):
+    async def nombres_titulares(self, propuesta_ids: list[str]) -> dict[str, str]: ...
+
     async def crear_propuesta(
         self,
         oferta_id: str,
@@ -1042,6 +1044,15 @@ class ClientePolicyHttp:
     async def confirmar_pago(self, propuesta_id: str, acceso: Acceso, sesion_id: str) -> dict:
         ruta = f"/propuestas/{propuesta_id}/pago/{sesion_id}/confirmar"
         return await self._flujo("POST", ruta, None, acceso)
+
+    async def nombres_titulares(self, propuesta_ids: list[str]) -> dict[str, str]:
+        """`{propuesta_id: nombre}` (dato personal: nunca se loguea), hasta 200 por llamada."""
+        respuesta = await _pedir(
+            self._cliente, "POST", "/propuestas/nombres-titulares", {"ids": propuesta_ids}
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
 
     async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None:
         cuerpo = {"titular_id": titular_id, "consentimiento_id": consentimiento_id}

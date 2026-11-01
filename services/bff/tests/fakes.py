@@ -580,6 +580,8 @@ class PolicyFalso:
         self.reconciliaciones: list[str] = []
         self.contactos_recibidos: list[dict | None] = []
         self.tasas_recibidas: list[str | None] = []
+        self.nombres: dict[str, str] = {}
+        self.falla_nombres = False
         self.error_reconciliar: Exception | None = None
         self.propuestas_conocidas: set[str] | None = None  # None = conoce cualquier id
         # v0.18: lo que el BFF le pidió (operación, argumentos) y lo que responderá.
@@ -746,6 +748,11 @@ class PolicyFalso:
                 "vigencia_hasta": "2031-10-28T12:06:00+00:00",
             },
         }
+
+    async def nombres_titulares(self, propuesta_ids: list[str]) -> dict[str, str]:
+        if self.falla_nombres:
+            raise ErrorServicio("caido")
+        return {i: self.nombres[i] for i in propuesta_ids if i in self.nombres}
 
     async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None:
         self._flujo("consentimiento_revocado", titular_id, consentimiento_id)

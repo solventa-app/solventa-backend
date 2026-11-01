@@ -431,6 +431,20 @@ class RepositorioPropuestasPostgres:
             ),
         }
 
+    def nombres_titulares(self, propuesta_ids: list[str]) -> dict[str, str]:
+        """`{propuesta_id: nombre}` de las que conservan el contacto (dato personal; nunca se
+        loguea). Con el contacto purgado o de un CLIENTE, que lo tiene en AUTH, no aparecen."""
+        with self._pool.connection() as conexion:
+            filas = conexion.execute(
+                "SELECT id, nombre_cifrado FROM propuestas "
+                "WHERE id = ANY(%(ids)s) AND nombre_cifrado IS NOT NULL",
+                {"ids": propuesta_ids},
+            ).fetchall()
+        return {
+            fila["id"]: self._cifrador.descifrar(fila["nombre_cifrado"], f"nombre:{fila['id']}")
+            for fila in filas
+        }
+
     def actualizar_correo(self, propuesta_id: str, correo: str) -> None:
         """El ASESOR corrige el correo en el modal (W03-25)."""
         with self._pool.connection() as conexion:
