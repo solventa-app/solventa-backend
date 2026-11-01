@@ -350,3 +350,7 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Afecta al frontend: sí (aditivo; W04-02 lo muestra).
 - KAN-30 (SO-02): API de socios `POST /v1/conversiones`, con los montos en otra moneda solo para mostrar. No descuenta
   presupuesto. Con un token de PRUEBAS usa tasas fijas (W07-10). Afecta al frontend: sí (aditivo; el panel del socio).
+- KAN-26 (HU-W03, T24): cambia el comportamiento de `Usuario.documentoEnmascarado`, sin cambio de esquema. Antes
+  `•••• 5678`; ahora conserva la longitud con 2 iniciales y 4 finales (`10••••3040`). Con menos de 7 caracteres solo se
+  ven los últimos 4 (`••3456`). Aplica igual a pasaportes con letras. Afecta al frontend: sí (solo lectura del perfil y
+  de la cotización del CLIENTE; web y mobile).

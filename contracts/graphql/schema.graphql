@@ -517,7 +517,7 @@ type Usuario {
   # Solo dice si el usuario ya dejó un contacto (correo o teléfono) para el aviso de su póliza (HU-W03, bloque 8);
   # nunca cuál es: el contacto se escribe con `crearUsuario` o `actualizarContacto` y no vuelve por GraphQL.
   tieneContacto: Boolean!
-  # v0.18 (W03-34): el documento del CLIENTE enmascarado (p. ej. •••• 5678), solo en `iniciarSesion` y `yo`; null si
+  # v0.18 (W03-34): el documento del CLIENTE enmascarado (p. ej. 10••••5678; T24: longitud conservada, 2 iniciales y 4 finales), solo en `iniciarSesion` y `yo`; null si
   # no tiene documento o no es CLIENTE. El documento completo nunca vuelve por GraphQL.
   documentoEnmascarado: String
 }
