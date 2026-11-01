@@ -2597,7 +2597,23 @@ class Mutation:
             # Valida el token antes de crear nada en AUTH.
             actual = await servicio.consultar(str(onboarding_id), token)
             if actual.get("tiene_cuenta"):
-                # Crear otra en AUTH la dejaría huérfana y gastaría el correo del cliente.
+                # Si la misma cuenta ya estaba vinculada a esta sesión, devolverla
+                # de forma idempotente.
+                try:
+                    sesion = await _auth(info).iniciar_sesion(
+                        entrada.correo, entrada.clave, CANAL_APP
+                    )
+                    if sesion is not None:
+                        usuario_id = sesion["usuario"]["id"]
+                        anterior = await servicio.de_usuario(usuario_id)
+                        if anterior is not None and str(anterior["id"]) == str(onboarding_id):
+                            return CuentaOnboarding(
+                                sesion=_sesion(sesion),
+                                onboarding=_onboarding_de(actual),
+                            )
+                except Exception:
+                    pass
+                # Si es otra cuenta diferente o las credenciales no corresponden:
                 return _error_onboarding("SESION_CON_CUENTA")
             try:
                 cuenta = await _auth(info).crear_cuenta_onboarding(entrada.correo, entrada.clave)
