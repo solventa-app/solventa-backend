@@ -288,6 +288,15 @@ static_resources:
                             cluster: bff_cluster
                             timeout: 0.7s
                         - match:
+                            path: "/v1/conversiones"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
                             path: "/v1/credenciales"
                             headers:
                               - name: ":method"

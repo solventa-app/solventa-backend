@@ -277,6 +277,19 @@ paths:
       responses:
         "200":
           description: OK
+  /v1/conversiones:
+    post:
+      summary: "Convierte montos a otra moneda, solo para mostrar"
+      operationId: convertirMontos
+      security:
+        - socios_jwt: []
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
   /v1/ventas:
     get:
       summary: "Propuestas, pólizas emitidas, primas y comisión por mes"

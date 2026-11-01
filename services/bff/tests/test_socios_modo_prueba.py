@@ -136,3 +136,10 @@ def test_las_ventas_del_sandbox_son_ficticias_pero_coherentes(p) -> None:
 
     assert len(ventas["meses"]) == 3
     assert ventas["totales"]["emitidas"] == sum(m["emitidas"] for m in ventas["meses"])
+
+
+def test_las_conversiones_del_sandbox_usan_tasas_fijas(p) -> None:
+    cuerpo = {"montos": [{"valor": "41000", "moneda": "COP"}], "moneda": "USD"}
+    respuesta = p.post("/v1/conversiones", cuerpo)
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json() == {"montos": [{"valor": "10.00", "moneda": "USD"}]}
