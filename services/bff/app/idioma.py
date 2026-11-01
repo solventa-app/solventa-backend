@@ -55,6 +55,12 @@ EN: dict[str, str] = {
     "No pudimos actualizar tu sesión. Intenta de nuevo.": (
         "We could not refresh your session. Please try again."
     ),
+    "No pudimos renovar tu sesión. Intenta de nuevo.": (
+        "We could not renew your session. Please try again."
+    ),
+    "No pudimos cerrar tu sesión. Intenta de nuevo.": (
+        "We could not close your session. Please try again."
+    ),
     "Tu sesión ya no es válida. Inicia sesión de nuevo.": (
         "Your session is no longer valid. Please sign in again."
     ),

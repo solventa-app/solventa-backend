@@ -374,3 +374,43 @@ class RepositorioSociosMemoria:
         for c in self._en_rango(socio_id, entorno, desde, hasta):
             por_dia[c["fecha"]] = por_dia.get(c["fecha"], 0) + 1
         return [{"fecha": d, "llamadas": n} for d, n in sorted(por_dia.items())]
+
+
+class RepositorioRefrescosMemoria:
+    """Cumple el `Protocol` `RepositorioRefrescos` de `app/refrescos.py`."""
+
+    def __init__(self) -> None:
+        self.filas: dict[str, dict] = {}
+
+    def crear(self, refresh_id, familia_id, usuario_id, hash_token, canal, expira_en) -> None:
+        self.filas[refresh_id] = {
+            "id": refresh_id,
+            "familia_id": familia_id,
+            "usuario_id": usuario_id,
+            "hash_token": hash_token,
+            "canal": canal,
+            "expira_en": expira_en,
+            "usado_en": None,
+            "revocado_en": None,
+        }
+
+    def obtener_por_hash(self, hash_token: str) -> dict | None:
+        fila = next((f for f in self.filas.values() if f["hash_token"] == hash_token), None)
+        return dict(fila) if fila else None
+
+    def marcar_usado(self, refresh_id: str, ahora: datetime) -> bool:
+        fila = self.filas[refresh_id]
+        if fila["usado_en"] is not None or fila["revocado_en"] is not None:
+            return False
+        fila["usado_en"] = ahora
+        return True
+
+    def revocar_familia(self, familia_id: str, ahora: datetime) -> None:
+        for fila in self.filas.values():
+            if fila["familia_id"] == familia_id and fila["revocado_en"] is None:
+                fila["revocado_en"] = ahora
+
+    def revocar_de_usuario(self, usuario_id: str, ahora: datetime) -> None:
+        for fila in self.filas.values():
+            if fila["usuario_id"] == usuario_id and fila["revocado_en"] is None:
+                fila["revocado_en"] = ahora

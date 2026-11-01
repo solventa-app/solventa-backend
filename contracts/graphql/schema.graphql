@@ -530,12 +530,19 @@ type Sesion {
   token: String!
   expiraEn: DateTime!
   usuario: Usuario!
+  # v0.26 (T22): refresh opaco, solo en el canal `app` (el móvil lo guarda en almacenamiento seguro). En la web viaja en
+  # la cookie `solventa_refresh` (httpOnly; Secure; SameSite=Strict) que pone el BFF y aquí viene null.
+  refreshToken: String
+  # v0.26 (T22): vencimiento del refresh, en ambos canales. Las duraciones salen de `contracts/sesion.json`.
+  refreshExpiraEn: DateTime
 }
 
 type ErrorAutenticacion {
   mensaje: String!
   # v0.20 (HU-M01): null en credenciales incorrectas. VERIFICACION_PENDIENTE: la clave es correcta pero la identidad
   # aún no se verificó y el canal no es la app (la web no admite esas cuentas).
+  # v0.26 (T22): SESION_VENCIDA en `renovarSesion`: refresh inexistente, vencido, ya usado, revocado, de otro canal o de
+  # una cuenta que ya no puede renovar; nunca dice cuál (mismo mensaje siempre).
   codigo: String
 }
 
@@ -1030,6 +1037,14 @@ type Mutation {
   # Con sesión (cualquier rol o scope): un token nuevo con los permisos del estado actual de la cuenta y la misma
   # expiración. Tras VERIFICADA, el token deja de ser `verificacion-pendiente`.
   actualizarSesion: ResultadoSesion!
+  # ---------- v0.26 (T22): sesión con acceso corto y refresh largo ----------
+  # Pública (el refresh es la credencial). Cambia el refresh por un acceso y un refresh nuevos; el anterior queda
+  # inválido y reusarlo revoca toda la cadena. Web: ignora el argumento y lee la cookie `solventa_refresh`; exige la
+  # cabecera `X-Solventa-Csrf: 1` (y un `Origin` autorizado si el navegador lo manda). App: `refreshToken` va como
+  # argumento. Cualquier fallo responde ErrorAutenticacion con codigo SESION_VENCIDA.
+  renovarSesion(refreshToken: String = null): ResultadoSesion!
+  # Revoca la cadena del refresh (y borra la cookie en la web, con la misma cabecera anti-CSRF). Idempotente.
+  cerrarSesion(refreshToken: String = null): Boolean!
   # ---------- v0.21 (HU-W04): mesa de siniestros, solo BACKOFFICE ----------
   # Aprobar registra la orden de pago de la indemnización en PAYMENTS (sin
   # dispersión); si no se puede registrar, responde ErrorSiniestro y el caso sigue abierto.
