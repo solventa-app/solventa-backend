@@ -934,6 +934,24 @@ def test_un_token_de_sesion_invalido_en_el_contrato_responde_401() -> None:
     assert r.status_code == 401
 
 
+def test_tras_el_gateway_el_contrato_se_entrega_con_el_enlace_aunque_llegue_su_id_token() -> None:
+    """GCP API Gateway pone su propio ID token en `Authorization` cuando el navegador no manda
+    sesión. Con `X-Enlace-Firma` eso no debe cortar la descarga con 401 (visto en staging)."""
+    clientes, *_ = _montar(estado="EN_FIRMA")
+    app = create_app(config=Configuracion.desde_entorno(), clientes=clientes)
+    with TestClient(app) as client:
+        r = client.get(
+            "/propuestas/p-1/contrato.pdf",
+            headers={
+                "Authorization": "Bearer id-token-del-gateway",
+                "X-Enlace-Firma": TOKEN_ENLACE,
+            },
+        )
+
+    assert r.status_code == 200
+    assert r.content.startswith(b"%PDF")
+
+
 def test_error_de_servicio_no_se_traga_el_tipo() -> None:
     """`ErrorServicio` de la lista sube como error público, no como 5xx (cubierto arriba); aquí
     solo se fija que el doble de POLICY lo lance, para que esas pruebas midan algo."""
