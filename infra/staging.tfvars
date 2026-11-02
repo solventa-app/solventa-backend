@@ -26,10 +26,14 @@ crear_cloud_sql   = true
 crear_mongo_atlas = true # Atlas M0: gratis. Lo necesitan risk y rating (infra/README.md, «MongoDB Atlas»)
 
 # Eventos Pub/Sub (bloque 8), Batch nocturno (bloque 9) y API Gateway 700 ms delante del BFF (bloque 10).
-crear_pubsub            = true
-crear_metricas_logs     = true
-crear_batch             = true
-crear_gateway           = true
+crear_pubsub        = true
+crear_metricas_logs = true
+crear_batch         = true
+crear_gateway       = true
+# Gateway de los socios de distribución (HU-W07, `infra/README.md`, «API Gateway de los socios»). Paso 2: se crea con
+# `jwks_socios_url` vacío; paso 3: se pone `<gateway_socios_url>/v1/.well-known/jwks.json` y se vuelve a liberar.
+crear_gateway_socios    = true
+jwks_socios_url         = ""
 calentar_camino_critico = false # poner en true solo durante la sesión de medición con k6
 
 # Disparadores externos (plan de HU-W05, bloque 0): Cloud Tasks para el reintento de cobros y Cloud Scheduler para la
