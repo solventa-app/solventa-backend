@@ -242,7 +242,7 @@ variable "crear_gateway_socios" {
 }
 
 variable "jwks_socios_url" {
-  description = "URL pública del JWKS de los tokens de socios para `x-google-jwks_uri`: la ruta `/v1/.well-known/jwks.json` del propio gateway de socios (output `gateway_socios_url`). Vacía en el primer despliegue."
+  description = "URL pública del JWKS de los tokens de socios para `x-google-jwks_uri`. Vacía (lo normal) usa `/v1/.well-known/jwks.json` del gateway de los usuarios (`infra/gateway.tf`); solo hace falta para apuntar a otro origen."
   type        = string
   default     = ""
 }
