@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/siniestro.reportado/v1",
+  "title": "siniestro.reportado",
+  "description": "HU-M05: el cliente reportó un siniestro desde la app; queda PENDIENTE en la mesa de siniestros. Sin datos personales: ni el relato, ni la ubicación, ni el nombre del asegurado viajan en el evento.",
+  "type": "object",
+  "required": [
+    "eventId",
+    "tipo",
+    "version",
+    "ocurridoEn",
+    "datos"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tipo": {
+      "const": "siniestro.reportado"
+    },
+    "version": {
+      "const": 1
+    },
+    "ocurridoEn": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "datos": {
+      "type": "object",
+      "required": [
+        "siniestroId",
+        "radicado",
+        "polizaId",
+        "actorUsuarioId",
+        "notificadoEn",
+        "venceDictamenEn",
+        "fotos",
+        "canal"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "siniestroId": {
+          "type": "string"
+        },
+        "radicado": {
+          "type": "string"
+        },
+        "polizaId": {
+          "type": "string"
+        },
+        "actorUsuarioId": {
+          "type": "string"
+        },
+        "notificadoEn": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "venceDictamenEn": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "fotos": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "canal": {
+          "const": "app"
+        }
+      }
+    }
+  }
+}

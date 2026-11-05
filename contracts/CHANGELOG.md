@@ -411,6 +411,15 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 
 - KAN-26: los errores de sesión llevan `extensions.code` (`SIN_SESION`, `SESION_INVALIDA`); el cliente deja de comparar el mensaje. El texto no cambia. Afecta al frontend: sí (aditivo).
 
+## v0.35 — 2026-11-04
+
+- KAN-35 (HU-M05, KAN-274 y KAN-275): el CLIENTE reporta un siniestro desde el móvil y llega `PENDIENTE` a la mesa de
+  siniestros de HU-W04. Aditivo: `Mutation.solicitarSubidaEvidenciaSiniestro`, `Mutation.reportarSiniestro`,
+  `Query.misSiniestros`, los tipos `SiniestroReportado`, `ResultadoReporteSiniestro` y los inputs `ReporteSiniestroInput`,
+  `UbicacionReporteInput` y `FotoReporteInput`. El tipo de archivo `siniestro-foto` admite que lo suba un `CLIENTE`
+  (a nombre del caso). Evento nuevo `siniestro.reportado` (v1). CLAIMS: `POST /siniestros`, `GET
+  /clientes/{id}/siniestros` y migración `0004`. Afecta al frontend: sí (aditivo; lo consume el móvil).
+
 ## v0.26 — 2026-11-01
 
 - KAN-26 (T22, `plan-cierre-HU-W03.md`): sesión con token de acceso corto y refresh largo. Aditivo:

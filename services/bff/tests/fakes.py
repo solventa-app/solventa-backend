@@ -1183,6 +1183,28 @@ class ClaimsFalso:
         }
         return s
 
+    async def reportar(self, reporte: dict) -> dict:
+        """HU-M05: como CLAIMS, idempotente por `id_reporte`."""
+        self._revisar("reportar", reporte)
+        sid = reporte["id_reporte"]
+        if sid not in self.siniestros:
+            self.siniestros[sid] = {
+                "id": sid,
+                "radicado": f"SIN-2026-{1000 + len(self.siniestros)}",
+                "estado": "PENDIENTE",
+                "poliza_id": reporte["poliza_id"],
+                "ocurrido_en": reporte["ocurrido_en"],
+                "notificado_en": "2026-11-04T15:00:00+00:00",
+                "vence_dictamen_en": "2026-11-06T17:00:00-05:00",
+                "reportado_por": reporte["cliente_id"],
+                "evidencias": [{"tipo": "FOTO"} for _ in reporte["evidencias"]],
+            }
+        return self.siniestros[sid]
+
+    async def de_cliente(self, cliente_id: str) -> list[dict]:
+        self._revisar("de_cliente", cliente_id)
+        return [s for s in self.siniestros.values() if s.get("reportado_por") == cliente_id]
+
     async def derivar(self, siniestro_id, perito_id, instrucciones, actor_usuario_id) -> dict:
         self._revisar("derivar", siniestro_id, perito_id, instrucciones, actor_usuario_id)
         s = self.siniestros[siniestro_id]

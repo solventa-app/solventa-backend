@@ -15,7 +15,7 @@ import json
 from datetime import datetime
 from typing import Any
 
-from pymongo import MongoClient
+from pymongo import MongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from pymongo.read_preferences import SecondaryPreferred
 
@@ -27,6 +27,8 @@ EVIDENCIAS = "evidencias_siniestro"
 VERIFICACIONES = "verificaciones_siniestro"
 ASIGNACIONES = "asignaciones_perito"
 RESOLUCIONES = "resoluciones_siniestro"
+CONTADORES = "contadores"
+RADICADO_INICIAL = 1000
 
 
 class RepositorioSiniestrosMongo:
@@ -87,6 +89,8 @@ class RepositorioSiniestrosMongo:
             "descripcion": self._descifrar(doc["descripcion_cifrada"], "descripcion", sid),
             "suma_reclamada": doc["suma_reclamada"],
             "vence_dictamen_en": doc["vence_dictamen_en"],
+            # HU-M05: el CLIENTE que lo reportó desde la app (id opaco de AUTH); None en la semilla.
+            "reportado_por": doc.get("reportado_por"),
         }
 
     @staticmethod
@@ -204,8 +208,56 @@ class RepositorioSiniestrosMongo:
         self._db[PERITOS].replace_one({"_id": perito["id"]}, doc, upsert=True)
 
     def guardar_siniestro(self, siniestro: dict, ahora: datetime) -> None:
-        sid = siniestro["id"]
+        doc = self._doc_siniestro(siniestro, ahora)
+        self._db[SINIESTROS].replace_one({"_id": siniestro["id"]}, doc, upsert=True)
+
+    # ---------- Reporte del cliente (HU-M05, KAN-274) ----------
+
+    def siguiente_radicado(self, anio: int) -> str:
+        """`SIN-AAAA-NNNN` con un contador atómico por año en `contadores` (plan de W04). El 0141
+        y siguientes ya los usa la semilla; el contador arranca en 1000 para no chocar."""
+        contador = self._db[CONTADORES].find_one_and_update(
+            {"_id": f"radicado-{anio}"},
+            {"$inc": {"valor": 1}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return f"SIN-{anio}-{RADICADO_INICIAL + contador['valor']:04d}"
+
+    def crear_reporte(self, siniestro: dict, evidencias: list[dict], ahora: datetime) -> bool:
+        """El siniestro y sus fotos en una transacción. False si ya existía un caso con ese id
+        (el mismo `idReporte`): reportar dos veces no crea dos casos."""
         doc = {
+            **self._doc_siniestro(siniestro, ahora),
+            "reportado_por": siniestro["reportado_por"],
+            "canal": "app",
+        }
+        with self._cliente.start_session() as sesion:
+            try:
+                with sesion.start_transaction():
+                    self._db[SINIESTROS].insert_one(doc, session=sesion)
+                    if evidencias:
+                        self._db[EVIDENCIAS].insert_many(
+                            [
+                                {**{k: v for k, v in e.items() if k != "id"}, "_id": e["id"]}
+                                for e in evidencias
+                            ],
+                            session=sesion,
+                        )
+            except DuplicateKeyError:
+                return False
+        return True
+
+    def listar_de_cliente(self, cliente_id: str) -> list[dict]:
+        """Los casos que reportó un cliente, del más reciente al más antiguo (réplica)."""
+        docs = self._buscar(
+            SINIESTROS, {"reportado_por": cliente_id}, primaria=False, orden=[("notificado_en", -1)]
+        )
+        return [self._a_siniestro(d) for d in docs]
+
+    def _doc_siniestro(self, siniestro: dict, ahora: datetime) -> dict[str, Any]:
+        sid = siniestro["id"]
+        return {
             "_id": sid,
             "radicado": siniestro["radicado"],
             "poliza_id": siniestro["poliza_id"],
@@ -229,7 +281,6 @@ class RepositorioSiniestrosMongo:
             "creado_en": ahora,
             "actualizado_en": ahora,
         }
-        self._db[SINIESTROS].replace_one({"_id": sid}, doc, upsert=True)
 
     def evidencia(self, evidencia_id: str) -> dict | None:
         doc = self._db[EVIDENCIAS].find_one({"_id": evidencia_id})

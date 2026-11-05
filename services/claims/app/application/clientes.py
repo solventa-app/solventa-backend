@@ -111,6 +111,14 @@ class ClienteAlmacenamiento:
             raise SolicitudRechazada(confirmado.get("motivo") or "ARCHIVO_RECHAZADO")
         return archivo_id
 
+    def obtener(self, archivo_id: str) -> dict[str, Any] | None:
+        """Metadatos de un archivo (HU-M05: la foto que subió el cliente). `None` si no existe o
+        CLAIMS no puede leerlo; nunca trae la URL ni el contenido."""
+        try:
+            return _pedir(self._cliente, "GET", f"/archivos/{archivo_id}")
+        except SolicitudRechazada:
+            return None
+
     def cerrar(self) -> None:
         self._cliente.close()
         self._bucket.close()

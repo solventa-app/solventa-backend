@@ -92,6 +92,21 @@ def evento_derivado(siniestro: dict, asignacion: dict, actor: str | None) -> dic
     )
 
 
+def evento_reportado(siniestro: dict, fotos: int) -> dict[str, Any]:
+    """HU-M05: el cliente reportó el caso desde la app. Sin datos personales: ni el relato ni la
+    ubicación viajan en el evento."""
+    return _evento(
+        "siniestro.reportado",
+        {
+            **_comunes(siniestro, siniestro["reportado_por"]),
+            "notificadoEn": siniestro["notificado_en"].isoformat(),
+            "venceDictamenEn": siniestro["vence_dictamen_en"].isoformat(),
+            "fotos": fotos,
+            "canal": "app",
+        },
+    )
+
+
 class PuertoBusEventos(Protocol):
     def publicar(self, evento: dict[str, Any]) -> bool: ...
 

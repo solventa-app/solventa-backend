@@ -16,7 +16,7 @@ class FakeColeccion:
     def update_one(self, filtro, cambio, upsert=False):
         self.docs.setdefault(filtro["_id"], cambio["$setOnInsert"])
 
-    def create_index(self, llaves, name, unique):
+    def create_index(self, llaves, name, unique, **opciones):
         self.indices[name] = (tuple(llaves), unique)
 
 
@@ -44,17 +44,19 @@ def test_descubre_las_migraciones_en_orden():
         "0001_base",
         "0002_colecciones",
         "0003_plazo_dictamen",
+        "0004_reporte_cliente",
     ]
 
 
 def test_segunda_ejecucion_no_reaplica():
     db = FakeDb()
-    assert len(aplicar_pendientes(db)) == 3
+    assert len(aplicar_pendientes(db)) == 4
     assert aplicar_pendientes(db) == []
     assert set(db[COLECCION].docs) == {
         "0001_base",
         "0002_colecciones",
         "0003_plazo_dictamen",
+        "0004_reporte_cliente",
     }
 
 
