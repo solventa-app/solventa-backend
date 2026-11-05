@@ -420,6 +420,15 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   (a nombre del caso). Evento nuevo `siniestro.reportado` (v1). CLAIMS: `POST /siniestros`, `GET
   /clientes/{id}/siniestros` y migración `0004`. Afecta al frontend: sí (aditivo; lo consume el móvil).
 
+## v0.36 — 2026-11-05
+
+- KAN-263 (HU-M06, KAN-36): catálogo maestro de prestadores. Tipos `TipoPrestador`, `Prestador` y `CatalogoPrestadores`;
+  consulta `catalogoPrestadores(versionLocal)` con sesión de CLIENTE. Con `versionLocal` igual a la vigente responde
+  `vigente: true` y la lista vacía; nula o distinta, la lista completa (incluidos los inactivos). Lo sirve CLAIMS desde
+  la réplica; el catálogo vive en `services/claims/migrations/datos/prestadores.json` y se sincroniza al migrar.
+  Propuesto por la app móvil en `solventa-frontend-mobile/docs/hu-m06-backend.md`. Solo cambios aditivos.
+- Afecta al frontend: sí (móvil: regenerar `lib/core/contrato/` y cambiar el fake por el datasource GraphQL).
+
 ## v0.26 — 2026-11-01
 
 - KAN-26 (T22, `plan-cierre-HU-W03.md`): sesión con token de acceso corto y refresh largo. Aditivo:

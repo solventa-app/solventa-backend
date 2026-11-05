@@ -994,6 +994,30 @@ type DireccionValidada {
   pais: String
 }
 
+# v0.36 (HU-M06, KAN-263). Catálogo maestro de prestadores para la asistencia en sitio. Sin datos personales: la app
+# guarda una copia, calcula la cercanía con la ubicación del teléfono (que no viaja) y solo descarga si cambia la versión.
+# La app descarta los tipos que no conoce, así que agregar uno no la rompe.
+enum TipoPrestador {
+  MEDICO
+  MECANICO
+}
+
+type Prestador {
+  id: ID!
+  nombre: String!
+  tipo: TipoPrestador!
+  ciudad: String!
+  latitud: Float! # WGS84
+  longitud: Float!
+  activo: Boolean! # false = dado de baja; la app lo descarta
+}
+
+type CatalogoPrestadores {
+  version: String! # versión vigente en el backend (AAAA-MM-DD.n)
+  vigente: Boolean! # true si versionLocal ya es la vigente: entonces prestadores viene vacía
+  prestadores: [Prestador!]! # completa (activos e inactivos) cuando vigente = false
+}
+
 type Query {
   # v0.32 (T19). Places detrás del ACL Worker (timeout 700 ms; sin llave, un stub). Lista vacía si no responde.
   autocompletarDireccion(texto: String!, pais: String = null): [SugerenciaDireccion!]!
@@ -1035,6 +1059,9 @@ type Query {
   # ---------- v0.22 (HU-W07) ----------
   # Solo BACKOFFICE. `ventana`: 15m, 1h, 24h o 7d.
   estadoSistema(ventana: String = "1h"): EstadoSistema!
+  # ---------- v0.36 (HU-M06) ----------
+  # Sesión de CLIENTE (SIN_SESION si no hay). versionLocal null o distinta de la vigente: la lista completa.
+  catalogoPrestadores(versionLocal: String = null): CatalogoPrestadores!
 }
 
 type Mutation {

@@ -16,9 +16,15 @@ from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 from pymongo import MongoClient
+from pymongo.errors import PyMongoError
 
 from app.application.autenticacion_servicios import autenticacion_para
 from app.application.bus_eventos import BusEventosLog
+from app.application.catalogo_prestadores import (
+    CatalogoNoDisponible,
+    LectorCatalogoPrestadores,
+    consultar,
+)
 from app.application.cifrado import CifradorAesGcm
 from app.application.clientes import (
     ClienteAlmacenamiento,
@@ -107,9 +113,10 @@ def create_app(
     config: Configuracion | None = None,
     servicio: ServicioSiniestros | None = None,
     reiniciar: Callable[[], int] | None = None,
+    catalogo=None,
 ) -> FastAPI:
-    """`servicio` y `reiniciar` permiten inyectar dobles de prueba sin levantar MongoDB (ver
-    `tests/fakes.py`)."""
+    """`servicio`, `reiniciar` y `catalogo` permiten inyectar dobles de prueba sin levantar
+    MongoDB (ver `tests/fakes.py`)."""
     config = config or Configuracion.desde_entorno()
 
     @asynccontextmanager
@@ -119,6 +126,7 @@ def create_app(
         payments: ClientePayments | None = None
         almacenamiento: ClienteAlmacenamiento | None = None
         app.state.reiniciar = reiniciar
+        app.state.catalogo = catalogo
         if servicio is not None:
             app.state.servicio = servicio
         else:
@@ -131,6 +139,10 @@ def create_app(
             repositorio = RepositorioSiniestrosMongo(
                 cliente_mongo, cifrador, config.mongo_db, config.lectura_max_ms
             )
+            if app.state.catalogo is None:
+                app.state.catalogo = LectorCatalogoPrestadores(
+                    cliente_mongo, config.mongo_db, config.lectura_max_ms
+                )
             modo = config.autenticacion_servicios
             policy = ClientePolicy(
                 config.policy_url,
@@ -188,6 +200,16 @@ def create_app(
     @app.get("/siniestros/{siniestro_id}/peritos", tags=["siniestros"])
     def peritos(siniestro_id: str) -> list[dict]:
         return app.state.servicio.peritos_para(siniestro_id)
+
+    @app.get("/prestadores", tags=["prestadores"])
+    def prestadores(version_local: str | None = None) -> dict:
+        """HU-M06: catálogo maestro de prestadores, versionado. Se lee de la réplica."""
+        try:
+            return consultar(app.state.catalogo, version_local)
+        except (CatalogoNoDisponible, PyMongoError):
+            # Sin catálogo cargado o con la réplica lenta: 503 y la app sigue con su copia.
+            detalle = "El catálogo de prestadores no está disponible."
+            return JSONResponse(status_code=503, content={"detail": detalle})
 
     def _accion(accion) -> dict | JSONResponse:
         """Un error de negocio es 409 y una dependencia caída 503, siempre con un `detail` en

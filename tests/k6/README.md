@@ -10,6 +10,7 @@ medir, lo dice y no lo inventa).
 | `perfilamiento-baseline.js` | EC003 / EC004 (HA-LAT-001) | p95 ≤ 400 ms (normal), p99 ≤ 800 ms (pico), 0 % 5xx | La duración de `solicitarOferta` por el gateway/BFF a 5,6 req/s y luego a 3× |
 | `falla-proveedor.js` | EC009 / EC010 (HA-LAT-002) | Ninguna llamada espera al proveedor lento; p99 ≤ 500 ms con caché y proveedor caído; 0 % 5xx | La duración de `solicitarOferta` con el stub de Open Finance en `lento` y luego en `caido` (con la caché recalentada entre las dos fases) |
 | `lectura-replica.js` | EC011 / EC012 (HA-LAT-003) | p95 ≤ 150 ms, p99 ≤ 300 ms; 0 perfiles obsoletos | Escribe en RISK y lee de RATING (`GET /perfiles/{id}?operation_time=`): solo el tiempo de la **lectura** y si lo leído es lo recién escrito (misma versión y marca) |
+| `m06-catalogo-prestadores.js` | EC011 / EC012 (HA-LAT-003, HU-M06) | p95 ≤ 150 ms, p99 ≤ 300 ms | `GET /prestadores` de CLAIMS (mitad completa, mitad con la versión vigente) y, informativo, `catalogoPrestadores` por el gateway con sesión de CLIENTE |
 | `gateway-presupuesto.js` | EC001 / EC002 / EC008 (HA-LAT-004) | p99 ≤ 500 ms por el gateway; ≤ 120 ms por dependencia (p95); corte duro de 700 ms | La duración por el gateway; la dependencia, llamando al ACL (`POST /fuentes/consultar`, `forzar_proveedor=true`); y el corte con el stub en `lento` |
 
 La preparación común (crear un ASESOR de prueba con el BACKOFFICE, iniciar sesión y registrar el consentimiento del
