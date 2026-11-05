@@ -30,8 +30,8 @@ crear_pubsub        = true
 crear_metricas_logs = true
 crear_batch         = true
 crear_gateway       = true
-# Gateway de los socios de distribución (HU-W07, `infra/README.md`, «API Gateway de los socios»). Paso 2: se crea con
-# `jwks_socios_url` vacío; paso 3: se pone `<gateway_socios_url>/v1/.well-known/jwks.json` y se vuelve a liberar.
+# Gateway de los socios de distribución (HU-W07, `infra/README.md`, «API Gateway de los socios»). Con
+# `jwks_socios_url` vacío valida el token con el JWKS publicado en el gateway de los usuarios (`infra/gateway.tf`).
 crear_gateway_socios    = true
 jwks_socios_url         = ""
 calentar_camino_critico = false # poner en true solo durante la sesión de medición con k6

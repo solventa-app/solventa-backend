@@ -85,6 +85,17 @@ paths:
       responses:
         "200":
           description: Respuesta GraphQL
+  /v1/.well-known/jwks.json:
+    get:
+      summary: Claves públicas de los tokens de socios (ES256), sin token; es el x-google-jwks_uri del gateway de socios
+      operationId: jwksSocios
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: JWKS
   /polizas/{poliza_id}/documento:
     get:
       summary: PDF de la póliza emitida (CLIENTE y ASESOR; el BFF exige token siempre)

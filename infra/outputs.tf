@@ -69,6 +69,6 @@ output "gateway_url" {
 }
 
 output "gateway_socios_url" {
-  description = "URL pública del API Gateway de los socios (HU-W07); null si crear_gateway_socios = false. Su `/v1/.well-known/jwks.json` es el valor de `jwks_socios_url`."
+  description = "URL pública del API Gateway de los socios (HU-W07); null si crear_gateway_socios = false."
   value       = local.gateway_socios ? "https://${google_api_gateway_gateway.socios[0].default_hostname}" : null
 }
