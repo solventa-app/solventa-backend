@@ -40,6 +40,8 @@ por campo con AES-GCM (regla 6) y nunca van a los logs.
 | POST | `/siniestros/{id}/rechazar` | `{motivo, comentario, actor_usuario_id}`: RECHAZADO con la vía de recurso |
 | POST | `/siniestros/{id}/aprobar` | `{actor_usuario_id}`: pide primero la orden de pago a PAYMENTS (`POST /indemnizaciones`, idempotente por siniestro) y luego aprueba. Indemnización = suma reclamada acotada a la cobertura de la póliza (W04-8, la pide a POLICY) |
 | POST | `/siniestros/_aprobar-vencidos` | Una pasada del plazo (Cloud Scheduler `aprobar-siniestros-vencidos`): cada caso PENDIENTE vencido se aprueba por el mismo camino, con actor `SISTEMA` y `automatica = true`, sin mirar las verificaciones. Un caso derivado espera al perito. Devuelve `{aprobados, pendientes}`; un fallo sigue abierto para la próxima pasada |
+| POST | `/siniestros` | HU-M05: el CLIENTE reporta desde la app (lo llama el BFF con su id y su nombre y documento de AUTH). Crea el caso PENDIENTE con radicado `SIN-AAAA-NNNN` (contador en `contadores`, desde 1000), plazo de 2 días hábiles y suma reclamada = cobertura. Idempotente por `id_reporte` (es el id del caso). Valida póliza suya, EMITIDA y vigente en la fecha, relato de 10 a 1000 y de 1 a 3 fotos `siniestro-foto` DISPONIBLE a nombre del caso (las consulta al almacenamiento). Publica `siniestro.reportado` |
+| GET | `/clientes/{id}/siniestros` | HU-M05: los casos que reportó un cliente (`reportado_por`, índice de la migración `0004`) |
 | POST | `/_demo/reiniciar` | Solo con `DEMO_REINICIAR=true` (local): vuelve a la semilla. No toca las órdenes de PAYMENTS |
 
 **Errores:** un error de negocio es `409 {"detail": mensaje}` (caso inexistente o ya resuelto, perito no disponible,
