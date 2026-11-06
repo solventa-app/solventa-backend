@@ -73,7 +73,7 @@ extend type Mutation {
 }
 ```
 
-AUTH (migración `0011_recuperacion_clave`, expandir):
+AUTH (migración `0012_recuperacion_clave`, expandir):
 
 - Tabla `recuperaciones_clave` (`id`, `usuario_id`, `hash_codigo` HMAC, `expira_en` a los 15 min, `intentos`,
   `usado_en`, `creado_en`). Un código nuevo invalida el anterior; 5 intentos como máximo; un solo uso.
@@ -107,14 +107,14 @@ en la app (el contrato es igual en el canal `app`).
 - `forzarRecuperacionClave(id: ID!): ResultadoUsuario!` (solo ADMIN): invalida la clave actual (el hash deja de servir),
   revoca todas las sesiones y envía el código al correo del usuario, que elige su clave nueva con `restablecerClave`. El
   ADMIN nunca ve ni escribe la clave de nadie.
-- `debe_cambiar_clave` (columna nueva en `0011`) solo la usa el ADMIN sembrado en staging (A-6): al ingresar, la sesión
+- `debe_cambiar_clave` (columna nueva en `0012`) solo la usa el ADMIN sembrado en staging (A-6): al ingresar, la sesión
   sale con el scope `cambio-clave-pendiente` (como el `verificacion-pendiente` de HU-M01) y solo admite `cambiarClave`.
 - `cambiarClave(claveActual: String!, claveNueva: String!): ResultadoSesion!`, para cualquier usuario con sesión
   (también desde «Mi perfil»).
 
 ## 4. Bloque 3: panel de administración de usuarios
 
-**Rol (A-1):** el ADMIN administra la plataforma; este bloque solo trae el módulo de usuarios. Migración `0011` amplía el CHECK a `('CLIENTE', 'ASESOR', 'BACKOFFICE', 'ADMIN')` (expandir; el
+**Rol (A-1):** el ADMIN administra la plataforma; este bloque solo trae el módulo de usuarios. Migración `0012` amplía el CHECK a `('CLIENTE', 'ASESOR', 'BACKOFFICE', 'ADMIN')` (expandir; el
 `downgrade` falla con un mensaje claro si ya existe algún ADMIN). `RolUsuario` gana `ADMIN` en el contrato (agregar un
 valor a un enum es un cambio «peligroso» para los clientes: la web y el móvil deben tolerar valores desconocidos).
 `SCOPES_POR_ROL["ADMIN"] = ["usuarios"]`; el BACKOFFICE pierde el scope `usuarios` al final de la transición (A-5). El
@@ -156,12 +156,12 @@ y el equipo carga la versión, como `clave-firma-socios`.
 | # | Bloque | Backend | Web | Móvil |
 |---|---|---|---|---|
 | 1 | Ingreso sin selector | ½ día (contrato y BFF) | 1 día | — |
-| 2 | Recuperación por correo (todos los roles) | 2½ días (AUTH `0011`, correo del personal, BFF, plantilla en ACL y stub, gateway) | 1½ días | 1 día |
+| 2 | Recuperación por correo (todos los roles) | 2½ días (AUTH `0012`, correo del personal, BFF, plantilla en ACL y stub, gateway) | 1½ días | 1 día |
 | 3 | Rol ADMIN + panel | 2½ días (rol, operaciones, auditoría, transición) | 2½ días | — |
 | 4 | Recuperación forzada, semilla del ADMIN y `cambiarClave` | 1 día (más el Job y el secreto en `infra/`) | 1 día | ½ día (`cambiarClave` en perfil) |
 
-Se puede liberar por bloques: el 1 no depende de nada; el 2 y el 3 comparten la migración `0011`, así que van en la misma
-liberación o se parte en `0011` y `0012`.
+Se puede liberar por bloques: el 1 no depende de nada; el 2 y el 3 comparten la migración `0012`, así que van en la misma
+liberación o se parte en `0012` y `0013`. (AUTH ya tiene `0011_refresh_tokens`.)
 
 ## 6. Verificación
 
