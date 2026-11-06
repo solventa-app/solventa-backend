@@ -40,7 +40,7 @@ from app.application.servicio_siniestros import (
     ServicioSiniestros,
 )
 from app.observabilidad import configurar_trazas
-from app.sembrar import sembrar
+from app.sembrar import reiniciar as reiniciar_semilla
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 # httpx registra cada URL pedida en INFO, y las URLs firmadas del almacenamiento no deben quedar en
@@ -169,7 +169,7 @@ def create_app(
             )
             if app.state.reiniciar is None:
                 datos = Path(config.semilla_dir)
-                app.state.reiniciar = lambda: sembrar(repositorio, datos)
+                app.state.reiniciar = lambda: reiniciar_semilla(repositorio, datos)
         try:
             yield
         finally:

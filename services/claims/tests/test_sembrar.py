@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.application.configuracion import Configuracion
 from app.application.servicio_siniestros import ServicioSiniestros
 from app.main import create_app
-from app.sembrar import sembrar
+from app.sembrar import reiniciar, sembrar
 from app.semilla_aleatoria import generar
 
 # Los datos de la semilla: los 10 casos del dummy de siniestros, ya retirado, más los generados.
@@ -110,3 +110,16 @@ def test_los_casos_generados_son_consistentes_y_repetibles():
         assert all(v["cumple"] for v in caso["verificaciones"])
     archivos = {f.name for f in (DATOS / "medios").iterdir()}
     assert {e["archivo"] for c in casos for e in c["evidencias"]} <= archivos
+
+
+def test_el_reinicio_quita_los_casos_reportados_desde_la_app():
+    """Tras `hu-m05`, la mesa vuelve a tener solo la semilla y `hu-w04` cuenta los mismos casos."""
+    repo, *_ = _sembrado()
+    repo.siniestros["0c9f2b7e-reportado"] = {
+        **repo.siniestros["sin-01"],
+        "id": "0c9f2b7e-reportado",
+        "reportado_por": "c-1",
+    }
+    assert reiniciar(repo, DATOS) == TOTAL
+    assert "0c9f2b7e-reportado" not in repo.siniestros
+    assert len(repo.siniestros) == TOTAL
