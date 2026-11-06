@@ -32,7 +32,7 @@ deja de pedir y de usar `CredencialesInput.rol`.
 
 ## 2. Bloque 1: ingreso sin selector de rol
 
-**Backend (contrato v0.36, aditivo):**
+**Backend (contrato v0.38, aditivo):**
 
 1. `CredencialesInput.rol` pasa a `@deprecated(reason: "El rol sale del token; no lo mandes.")`. No se borra antes de un
    sprint (regla 2 de `contracts/README.md`). AUTH lo sigue aceptando mientras exista, pero el BFF deja de reenviarlo,
@@ -52,7 +52,7 @@ deja de pedir y de usar `CredencialesInput.rol`.
 
 ### 3.1 CLIENTE (A-2, A-4)
 
-Contrato v0.36:
+Contrato v0.38:
 
 ```graphql
 type SolicitudRecuperacion {
@@ -120,7 +120,7 @@ valor a un enum es un cambio «peligroso» para los clientes: la web y el móvil
 `SCOPES_POR_ROL["ADMIN"] = ["usuarios"]`; el BACKOFFICE pierde el scope `usuarios` al final de la transición (A-5). El
 canal `app` rechaza ADMIN, igual que hoy rechaza a todo el que no sea CLIENTE.
 
-**Operaciones (contrato v0.36; todas `siempre=True` y solo ADMIN):**
+**Operaciones (contrato v0.38; todas `siempre=True` y solo ADMIN):**
 
 | Operación | Estado | Notas |
 |---|---|---|
@@ -177,6 +177,6 @@ liberación o se parte en `0011` y `0012`.
 
 ## 7. Documentos que actualiza
 
-`contracts/graphql/schema.graphql` y `CHANGELOG.md` (v0.36), `services/auth/README.md`, `services/bff/README.md`,
+`contracts/graphql/schema.graphql` y `CHANGELOG.md` (v0.38), `services/auth/README.md`, `services/bff/README.md`,
 `tests/newman/README.md`, `PROJECT_STATUS.md` y `CLAUDE.md` (estado por historia). En la web: su
 `docs/plan-...` gemelo y Figma G-01.
