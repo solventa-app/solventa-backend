@@ -335,6 +335,8 @@ class PuertoClaims(Protocol):
 
     async def peritos(self, siniestro_id: str) -> list[dict]: ...
 
+    async def catalogo_prestadores(self, version_local: str | None) -> dict: ...
+
     async def aprobar(self, siniestro_id: str, actor_usuario_id: str) -> dict: ...
 
     async def rechazar(
@@ -344,6 +346,10 @@ class PuertoClaims(Protocol):
     async def derivar(
         self, siniestro_id: str, perito_id: str, instrucciones: str | None, actor_usuario_id: str
     ) -> dict: ...
+
+    async def reportar(self, reporte: dict) -> dict: ...
+
+    async def de_cliente(self, cliente_id: str) -> list[dict]: ...
 
 
 class PuertoSocios(Protocol):
@@ -1362,6 +1368,17 @@ class ClienteClaimsHttp:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
 
+    async def catalogo_prestadores(self, version_local: str | None) -> dict:
+        """HU-M06: catálogo maestro de prestadores (sin datos personales)."""
+        parametros = {"version_local": version_local} if version_local else None
+        try:
+            respuesta = await self._cliente.get("/prestadores", params=parametros)
+        except httpx.HTTPError as error:
+            raise ErrorServicio(type(error).__name__) from error
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
     async def _resolver(self, siniestro_id: str, accion: str, cuerpo: dict) -> dict:
         try:
             respuesta = await self._cliente.post(
@@ -1375,6 +1392,27 @@ class ClienteClaimsHttp:
             raise ResolucionRechazada(str(_detalle(respuesta) or MENSAJE_RESOLUCION))
         if respuesta.status_code == 422:
             raise ResolucionRechazada(MENSAJE_DATOS_INVALIDOS)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def reportar(self, reporte: dict) -> dict:
+        """HU-M05: crea el caso del CLIENTE (idempotente por `id_reporte`). Un 409 o 503 trae el
+        mensaje para el cliente escrito por CLAIMS."""
+        try:
+            respuesta = await self._cliente.post("/siniestros", json=reporte)
+        except httpx.HTTPError as error:
+            raise ErrorServicio(type(error).__name__) from error
+        if respuesta.status_code in (409, 503):
+            raise ResolucionRechazada(str(_detalle(respuesta) or MENSAJE_RESOLUCION))
+        if respuesta.status_code == 422:
+            raise ResolucionRechazada(MENSAJE_DATOS_INVALIDOS)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def de_cliente(self, cliente_id: str) -> list[dict]:
+        respuesta = await _pedir(self._cliente, "GET", f"/clientes/{cliente_id}/siniestros")
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()

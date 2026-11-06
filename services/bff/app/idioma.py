@@ -287,9 +287,38 @@ EN: dict[str, str] = {
         "That id_intento_cobro was already used with other data: "
         "generate a new one for a different order."
     ),
+    # Reporte de siniestro del cliente (HU-M05): mensajes del BFF y de CLAIMS, que llegan tal cual
+    "Termina de verificar tu identidad para poder reportar un siniestro.": (
+        "Finish verifying your identity to report a claim."
+    ),
+    "No pudimos registrar tu reporte. Intenta de nuevo.": (
+        "We couldn't register your report. Please try again."
+    ),
+    "El identificador del reporte no es válido.": "The report identifier is not valid.",
+    "La póliza no existe o no es tuya.": "The policy doesn't exist or isn't yours.",
+    "La fecha del siniestro está fuera de la vigencia de la póliza.": (
+        "The claim date is outside the policy's coverage period."
+    ),
+    "La fecha del siniestro no puede ser posterior a hoy.": (
+        "The claim date can't be later than today."
+    ),
+    "Cuéntanos qué pasó en 10 a 1000 caracteres.": (
+        "Tell us what happened in 10 to 1000 characters."
+    ),
+    "Adjunta de 1 a 3 fotos del daño.": "Attach 1 to 3 photos of the damage.",
+    "Una de las fotos no se subió bien. Tómala de nuevo.": (
+        "One of the photos didn't upload correctly. Please take it again."
+    ),
+    "Ese reporte ya existe.": "That report already exists.",
+    "No pudimos revisar las fotos. Intenta de nuevo.": (
+        "We couldn't check the photos. Please try again."
+    ),
     # Mesa de siniestros (HU-W04): mensajes del BFF y de CLAIMS, que llegan tal cual
     "No pudimos consultar los siniestros. Intenta de nuevo.": (
         "We couldn't load the claims. Please try again."
+    ),
+    "No pudimos consultar los prestadores. Intenta de nuevo.": (
+        "We couldn't load the providers. Please try again."
     ),
     "La ventana debe ser 15m, 1h, 24h o 7d.": ("The window must be 15m, 1h, 24h or 7d."),
     "No pudimos calcular el estado del sistema. Intenta de nuevo.": (

@@ -306,8 +306,39 @@ services:
     command: ["python", "-m", "app.sembrar_demo"]
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/policy
+      # HU-M05: póliza a nombre del CLIENTE demo de `crear-cliente-siniestros-demo` (mismo documento).
+      DEMO_CLIENTE_DOCUMENTO: "1090000001"
+      CLIENTE_ID_CLAVE: solo-local-no-secreta
     depends_on:
       migrar-policy: { condition: service_completed_successfully }
+
+  # HU-M05, solo local: el CLIENTE verificado que reporta siniestros desde el móvil. Entra con
+  # cliente.siniestros@demo.solventa.co y la clave de abajo (SOLO LOCAL). Su póliza la crea
+  # `sembrar-polizas-demo`. Idempotente.
+  crear-cliente-siniestros-demo:
+    <<: *tarea
+    profiles: ["semilla"]
+    image: solventa/auth:local
+    build: ./services/auth
+    command:
+      - python
+      - -m
+      - app.crear_cliente_demo
+      - --alias
+      - cliente.siniestros
+      - --correo
+      - cliente.siniestros@demo.solventa.co
+      - --nombre
+      - María Fernanda Ríos
+      - --documento
+      - "1090000001"
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/auth
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
+      CLIENTE_ID_CLAVE: solo-local-no-secreta
+      CLAVE_INICIAL: Cliente-local-1
+    depends_on:
+      migrar-auth: { condition: service_completed_successfully }
 
   sembrar-siniestros:
     <<: *tarea

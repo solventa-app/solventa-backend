@@ -147,11 +147,11 @@ Son las tareas que ya existen en Jira (`S2-M01-1…8`, en «KAN Sprint 2»). El 
 
 | ID | Actividad | Rol | Plan (h) | Pts | Horas Jira |
 |---|---|---|---|---|---|
-| T-M06-1 | API de prestadores: los 3 más cercanos (LAT-003) | Backend | 2 | 1 | 8,5 |
+| T-M06-1 | Catálogo maestro de prestadores versionado (LAT-003); la cercanía la calcula la app (KAN-263, 2026-11-04) | Backend | 2 | 1 | 8,5 |
 | T-M06-2 | Mapa con pines y lista | Móvil | 3 | 2 | 17,5 |
 | T-M06-3 | Formulario de envío y reenvío | Móvil | 2 | 1 | 8,5 |
 | T-M06-4 | Estados confirmada, no confirmada y cancelación | Backend | 2 | 1 | 8,5 |
-| T-M06-5 | Pruebas con la API de mapas simulada | Backend | 1 | 0,5 | 4,5 |
+| T-M06-5 | Pruebas del catálogo (Newman `hu-m06`, k6 EC011/EC012); ya no hay API de mapas en el backend | Backend | 1 | 0,5 | 4,5 |
 | T-M06-6 | Documentación | Backend | 1 | 0,5 | 4,5 |
 | | **Total** | | **11** | **6** | |
 
@@ -197,7 +197,7 @@ El sprint «KAN Sprint 3» (id 36, 3–23 nov 2026) existe en Jira con las tarea
 | R8 | Saga paramétrica y compensación | Probarla con fallo inyectado (CA-M04-04) antes de dispersar |
 | R10 | Pruebas móviles (cámara, biometría, push) | Firebase Test Lab o dispositivo; sin ellas M01-04 y M04-05 quedan sin verificar |
 | D-M04 | Fuente real de eventos de clima/vuelos | Decisión de producto; mientras tanto, stub |
-| D-M06 | Proveedor de mapas | Decisión de producto; mientras tanto, simulado |
+| D-M06 | Proveedor de mapas | **Cerrada (2026-11-04):** la app dibuja el mapa con `flutter_map` y OpenStreetMap, sin clave; el backend solo sirve el catálogo (`solventa-frontend-mobile/docs/hu-m06-backend.md`) |
 | D-DISP | Dispersión del pago (W05-3 cambiada) | Visto bueno de Frans sobre PAYMENTS |
 | D-ASIG | Responsables de M02, M04 y M06 | Reparto del equipo |
 

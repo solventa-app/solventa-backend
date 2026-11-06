@@ -82,6 +82,22 @@ class RepositorioFalso:
         s["estado"] = estado
         return True
 
+    # ---------- Reporte del cliente (HU-M05) ----------
+
+    def siguiente_radicado(self, anio):
+        self.contador = getattr(self, "contador", 0) + 1
+        return f"SIN-{anio}-{1000 + self.contador:04d}"
+
+    def crear_reporte(self, siniestro, evidencias, ahora):
+        if siniestro["id"] in self.siniestros:
+            return False
+        self.siniestros[siniestro["id"]] = copy.deepcopy(siniestro)
+        self.evidencias_por[siniestro["id"]] = copy.deepcopy(evidencias)
+        return True
+
+    def listar_de_cliente(self, cliente_id):
+        return [s for s in self.listar() if s.get("reportado_por") == cliente_id]
+
     # ---------- Escritura de la semilla ----------
 
     def guardar_perito(self, perito):
@@ -121,6 +137,12 @@ class RepositorioFalso:
         lista[:] = [v for v in lista if v["id"] != verificacion["id"]] + [
             copy.deepcopy(verificacion)
         ]
+
+    def borrar_reportados_por_clientes(self) -> int:
+        ids = [sid for sid, s in self.siniestros.items() if s.get("reportado_por")]
+        for sid in ids:
+            del self.siniestros[sid]
+        return len(ids)
 
     def reiniciar_resolucion(self, siniestro_id, asignacion, resolucion):
         self.asignaciones_por.pop(siniestro_id, None)
