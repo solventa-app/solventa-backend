@@ -294,6 +294,21 @@ class RepositorioSiniestrosMongo:
         doc = {**{k: v for k, v in verificacion.items() if k != "id"}, "_id": verificacion["id"]}
         self._db[VERIFICACIONES].replace_one({"_id": verificacion["id"]}, doc, upsert=True)
 
+    def borrar_reportados_por_clientes(self) -> int:
+        """Solo para el reinicio de la demo local (W04-15): quita los casos que reportaron los
+        clientes desde la app (HU-M05) con sus evidencias, verificaciones, derivaciones y
+        resoluciones, para que la mesa vuelva a tener solo la semilla. Devuelve cuántos borró."""
+        ids = [
+            d["_id"]
+            for d in self._db[SINIESTROS].find({"reportado_por": {"$ne": None}}, {"_id": 1})
+        ]
+        if not ids:
+            return 0
+        for nombre in (EVIDENCIAS, VERIFICACIONES, ASIGNACIONES, RESOLUCIONES):
+            self._db[nombre].delete_many({"siniestro_id": {"$in": ids}})
+        self._db[SINIESTROS].delete_many({"_id": {"$in": ids}})
+        return len(ids)
+
     def reiniciar_resolucion(
         self, siniestro_id: str, asignacion: dict | None, resolucion: dict | None
     ) -> None:

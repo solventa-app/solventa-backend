@@ -138,6 +138,12 @@ class RepositorioFalso:
             copy.deepcopy(verificacion)
         ]
 
+    def borrar_reportados_por_clientes(self) -> int:
+        ids = [sid for sid, s in self.siniestros.items() if s.get("reportado_por")]
+        for sid in ids:
+            del self.siniestros[sid]
+        return len(ids)
+
     def reiniciar_resolucion(self, siniestro_id, asignacion, resolucion):
         self.asignaciones_por.pop(siniestro_id, None)
         self.resoluciones_por.pop(siniestro_id, None)

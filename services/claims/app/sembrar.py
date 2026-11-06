@@ -106,6 +106,16 @@ def sembrar(
     return len(siniestros)
 
 
+def reiniciar(repositorio, datos: Path) -> int:
+    """`POST /_demo/reiniciar` (solo local): borra los casos reportados desde la app (HU-M05) y deja
+    los de la semilla como estaban. Así `hu-w04` cuenta los mismos casos aunque antes haya corrido
+    `hu-m05`."""
+    borrados = repositorio.borrar_reportados_por_clientes()
+    if borrados:
+        log.info("reinicio: %d casos reportados por clientes borrados", borrados)
+    return sembrar(repositorio, datos)
+
+
 def _sembrar_evidencia(repositorio, datos: Path, s: dict, e: dict, ahora, almacenamiento) -> None:
     existente = repositorio.evidencia(e["id"])
     if existente is not None:
