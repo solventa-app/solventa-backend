@@ -90,9 +90,11 @@ class ServicioSesiones:
         clave_correo: str = "",
         refrescos: RepositorioRefrescos | None = None,
         refresh_dias: int = 8,
+        refresh_gracia_segundos: int = 0,
     ) -> None:
         self._refrescos = refrescos
         self._refresh_vigencia = timedelta(days=refresh_dias)
+        self._refresh_gracia = timedelta(seconds=refresh_gracia_segundos)
         self._clave_correo = clave_correo
         self._repositorio = repositorio
         self._hasher = hasher
@@ -189,7 +191,10 @@ class ServicioSesiones:
     def renovar_con_refresh(self, refresh: str, canal: str | None) -> dict:
         """Cambia un refresh vigente por un par nuevo (acceso + refresh) y deja el anterior usado.
 
-        Revalida estado y rol en la base. Reusar un refresh ya usado revoca toda la cadena.
+        Revalida estado y rol en la base. Reusar un refresh ya usado revoca toda la cadena, salvo
+        dentro del período de gracia (HU-M02): si la respuesta anterior se perdió en la red y el
+        cliente reintenta con el mismo refresh antes de `refresh_gracia_segundos`, y nadie usó el
+        sucesor, se revoca ese sucesor (nunca llegó) y se emite otro par.
         Lanza `RefreshInvalido` (mismo mensaje) en cualquier otro caso."""
         if self._refrescos is None:
             raise RefreshInvalido(MENSAJE_REFRESH)
@@ -201,13 +206,19 @@ class ServicioSesiones:
             raise RefreshInvalido(MENSAJE_REFRESH)
         familia = fila["familia_id"]
         if fila["usado_en"] is not None or not self._refrescos.marcar_usado(fila["id"], ahora):
-            self._refrescos.revocar_familia(familia, ahora)
-            logger.warning(
-                "refresh reusado: cadena revocada usuario=%s canal=%s",
+            if not self._reintento_en_gracia(fila, ahora):
+                self._refrescos.revocar_familia(familia, ahora)
+                logger.warning(
+                    "refresh reusado: cadena revocada usuario=%s canal=%s",
+                    id_opaco(fila["usuario_id"]),
+                    fila["canal"],
+                )
+                raise RefreshInvalido(MENSAJE_REFRESH)
+            logger.info(
+                "refresh reintentado en gracia: sucesor reemplazado usuario=%s canal=%s",
                 id_opaco(fila["usuario_id"]),
                 fila["canal"],
             )
-            raise RefreshInvalido(MENSAJE_REFRESH)
         usuario = self._repositorio.obtener(fila["usuario_id"])
         # En la web una cuenta sin verificar no renueva; en la app sí (alcance de onboarding).
         permitido = usuario is not None and (
@@ -221,6 +232,20 @@ class ServicioSesiones:
         self._agregar_refresh(sesion, usuario["id"], familia, fila["canal"], ahora)
         logger.info("sesión renovada con refresh usuario=%s", id_opaco(usuario["id"]))
         return sesion
+
+    def _reintento_en_gracia(self, fila: dict, ahora: datetime) -> bool:
+        """`True` si el reuso es un reintento legítimo en la gracia (ver `renovar_con_refresh`).
+
+        Sin `usado_en` en la fila leída (otro proceso lo marcó a la vez) no hay gracia: los
+        clientes renuevan de a una por vez y dos usos simultáneos siguen revocando la cadena."""
+        usado_en = fila["usado_en"]
+        if self._refrescos is None or self._refresh_gracia <= timedelta(0) or usado_en is None:
+            return False
+        if ahora - usado_en > self._refresh_gracia:
+            return False
+        return self._refrescos.revocar_sucesor_sin_usar(
+            fila["familia_id"], fila["id"], usado_en, ahora
+        )
 
     def cerrar_sesion(self, refresh: str) -> None:
         """Revoca la cadena del refresh dado. Idempotente y sin revelar si existía."""

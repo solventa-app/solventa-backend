@@ -1,0 +1,913 @@
+{
+  "info": {
+    "name": "Solventa - HU-M02 (sesión con refresh de la app, por el gateway)",
+    "description": "KAN-227: iniciarSesion en el canal app trae refresh; renovarSesion rota; el período de gracia (REFRESH_GRACIA_SEGUNDOS, 30 s) acepta un reintento con el refresh anterior si el sucesor no se usó; el reuso con el sucesor ya usado revoca la cadena; cerrarSesion revoca; un refresh web no sirve en la app; una cuenta suspendida no renueva. Corre en orden y de una vez: las carpetas 3 y 4 dependen de que pasen menos de 30 s desde 2.1.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Preparación",
+      "item": [
+        {
+          "name": "0.1 iniciarSesion como BACKOFFICE (web)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}/graphql/web"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) { iniciarSesion(entrada: $e) { __typename ... on Sesion { token expiraEn refreshToken refreshExpiraEn usuario { id rol estado } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{usuario_backoffice}}\",\n      \"clave\": \"{{clave_backoffice}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Alias único por corrida, solo letras (6+ dígitos seguidos parecen un documento).",
+                  "const letras = 'abcdefghijklmnopqrstuvwxyz';",
+                  "let sufijo = '';",
+                  "for (let i = 0; i < 8; i++) sufijo += letras[Math.floor(Math.random() * letras.length)];",
+                  "pm.collectionVariables.set('alias_cliente', 'cliente.m02.' + sufijo);",
+                  "pm.collectionVariables.set('doc_cliente', '1' + String(Date.now()).slice(-9));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.iniciarSesion;",
+                  "pm.test('BACKOFFICE con sesión', () => pm.expect(r.__typename).to.eql('Sesion'));",
+                  "pm.test('en la web el refresh no viaja en el cuerpo', () => pm.expect(r.refreshToken).to.be.null);",
+                  "pm.collectionVariables.set('token_backoffice', r.token);",
+                  "// La cookie httpOnly solventa_refresh trae el refresh del canal web (se usa en 6.1).",
+                  "const cookie = pm.cookies.get('solventa_refresh');",
+                  "pm.test('el BFF pone la cookie solventa_refresh', () => pm.expect(cookie).to.be.a('string').and.not.empty);",
+                  "pm.collectionVariables.set('refresh_web', cookie);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.2 crearUsuario CLIENTE (activo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}/graphql/web"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) { crearUsuario(entrada: $entrada) { __typename ... on Usuario { id rol estado } ... on ErrorUsuario { mensaje } } }\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_cliente}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente HU-M02\",\n      \"documentoIdentidad\": \"{{doc_cliente}}\",\n      \"correo\": \"cliente.m02@ejemplo.co\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.crearUsuario;",
+                  "pm.test('CLIENTE activo', () => {",
+                  "  pm.expect(r.__typename).to.eql('Usuario');",
+                  "  pm.expect(r.estado).to.eql('ACTIVO');",
+                  "});",
+                  "pm.collectionVariables.set('id_cliente', r.id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Ingreso en la app trae refresh",
+      "item": [
+        {
+          "name": "1.1 iniciarSesion del CLIENTE en el canal app",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) { iniciarSesion(entrada: $e) { __typename ... on Sesion { token expiraEn refreshToken refreshExpiraEn usuario { id rol estado } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_cliente}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.iniciarSesion;",
+                  "pm.test('devuelve una Sesion del canal app con refresh', () => {",
+                  "  pm.expect(r.__typename).to.eql('Sesion');",
+                  "  pm.expect(r.token).to.be.a('string').and.not.empty;",
+                  "  pm.expect(r.refreshToken).to.be.a('string').and.not.empty;",
+                  "  pm.expect(new Date(r.refreshExpiraEn) > new Date(r.expiraEn)).to.be.true;",
+                  "});",
+                  "pm.collectionVariables.set('r1', r.refreshToken);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Rotación",
+      "item": [
+        {
+          "name": "2.1 renovarSesion(r1) rota el refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($r: String) { renovarSesion(refreshToken: $r) { __typename ... on Sesion { token expiraEn refreshToken refreshExpiraEn usuario { id rol estado } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"r\": \"{{r1}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.renovarSesion;",
+                  "pm.test('devuelve una Sesion del canal app con refresh', () => {",
+                  "  pm.expect(r.__typename).to.eql('Sesion');",
+                  "  pm.expect(r.token).to.be.a('string').and.not.empty;",
+                  "  pm.expect(r.refreshToken).to.be.a('string').and.not.empty;",
+                  "  pm.expect(new Date(r.refreshExpiraEn) > new Date(r.expiraEn)).to.be.true;",
+                  "});",
+                  "pm.test('el refresh es nuevo (distinto de r1)', () => pm.expect(r.refreshToken).to.not.eql(pm.collectionVariables.get('r1')));",
+                  "pm.collectionVariables.set('r2', r.refreshToken);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Período de gracia (respuesta perdida en la red)",
+      "item": [
+        {
+          "name": "3.1 reintento con r1 dentro de la gracia: par nuevo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($r: String) { renovarSesion(refreshToken: $r) { __typename ... on Sesion { token expiraEn refreshToken refreshExpiraEn usuario { id rol estado } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"r\": \"{{r1}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.renovarSesion;",
+                  "pm.test('devuelve una Sesion del canal app con refresh', () => {",
+                  "  pm.expect(r.__typename).to.eql('Sesion');",
+                  "  pm.expect(r.token).to.be.a('string').and.not.empty;",
+                  "  pm.expect(r.refreshToken).to.be.a('string').and.not.empty;",
+                  "  pm.expect(new Date(r.refreshExpiraEn) > new Date(r.expiraEn)).to.be.true;",
+                  "});",
+                  "pm.test('el refresh es nuevo (distinto de r1)', () => pm.expect(r.refreshToken).to.not.eql(pm.collectionVariables.get('r1')));",
+                  "pm.test('el refresh es nuevo (distinto de r2)', () => pm.expect(r.refreshToken).to.not.eql(pm.collectionVariables.get('r2')));",
+                  "pm.collectionVariables.set('r2b', r.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 el sucesor perdido (r2) quedó revocado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($r: String) { renovarSesion(refreshToken: $r) { __typename ... on Sesion { token expiraEn refreshToken refreshExpiraEn usuario { id rol estado } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"r\": \"{{r2}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.renovarSesion;",
+                  "pm.test('ErrorAutenticacion SESION_VENCIDA, sin decir el motivo', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorAutenticacion');",
+                  "  pm.expect(r.codigo).to.eql('SESION_VENCIDA');",
+                  "  pm.expect(r.mensaje).to.eql('Tu sesión ya no es válida. Inicia sesión de nuevo.');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Reuso real revoca la cadena",
+      "item": [
+        {
+          "name": "4.1 renovarSesion(r2b): el cliente legítimo avanza",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($r: String) { renovarSesion(refreshToken: $r) { __typename ... on Sesion { token expiraEn refreshToken refreshExpiraEn usuario { id rol estado } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"r\": \"{{r2b}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.renovarSesion;",
+                  "pm.test('devuelve una Sesion del canal app con refresh', () => {",
+                  "  pm.expect(r.__typename).to.eql('Sesion');",
+                  "  pm.expect(r.token).to.be.a('string').and.not.empty;",
+                  "  pm.expect(r.refreshToken).to.be.a('string').and.not.empty;",
+                  "  pm.expect(new Date(r.refreshExpiraEn) > new Date(r.expiraEn)).to.be.true;",
+                  "});",
+                  "pm.test('el refresh es nuevo (distinto de r2b)', () => pm.expect(r.refreshToken).to.not.eql(pm.collectionVariables.get('r2b')));",
+                  "pm.collectionVariables.set('r3', r.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 reusar r1 con el sucesor ya usado: SESION_VENCIDA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($r: String) { renovarSesion(refreshToken: $r) { __typename ... on Sesion { token expiraEn refreshToken refreshExpiraEn usuario { id rol estado } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"r\": \"{{r1}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.renovarSesion;",
+                  "pm.test('ErrorAutenticacion SESION_VENCIDA, sin decir el motivo', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorAutenticacion');",
+                  "  pm.expect(r.codigo).to.eql('SESION_VENCIDA');",
+                  "  pm.expect(r.mensaje).to.eql('Tu sesión ya no es válida. Inicia sesión de nuevo.');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 el vigente de la cadena (r3) también cae",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($r: String) { renovarSesion(refreshToken: $r) { __typename ... on Sesion { token expiraEn refreshToken refreshExpiraEn usuario { id rol estado } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"r\": \"{{r3}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.renovarSesion;",
+                  "pm.test('ErrorAutenticacion SESION_VENCIDA, sin decir el motivo', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorAutenticacion');",
+                  "  pm.expect(r.codigo).to.eql('SESION_VENCIDA');",
+                  "  pm.expect(r.mensaje).to.eql('Tu sesión ya no es válida. Inicia sesión de nuevo.');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Cerrar sesión",
+      "item": [
+        {
+          "name": "5.1 iniciarSesion de nuevo (cadena nueva)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) { iniciarSesion(entrada: $e) { __typename ... on Sesion { token expiraEn refreshToken refreshExpiraEn usuario { id rol estado } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_cliente}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.iniciarSesion;",
+                  "pm.test('devuelve una Sesion del canal app con refresh', () => {",
+                  "  pm.expect(r.__typename).to.eql('Sesion');",
+                  "  pm.expect(r.token).to.be.a('string').and.not.empty;",
+                  "  pm.expect(r.refreshToken).to.be.a('string').and.not.empty;",
+                  "  pm.expect(new Date(r.refreshExpiraEn) > new Date(r.expiraEn)).to.be.true;",
+                  "});",
+                  "pm.collectionVariables.set('r4', r.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.2 cerrarSesion(r4)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($r: String) { cerrarSesion(refreshToken: $r) }\",\n  \"variables\": {\n    \"r\": \"{{r4}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "pm.test('cerrarSesion devuelve true', () => pm.expect(cuerpo.data.cerrarSesion).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.3 renovar con el refresh cerrado: SESION_VENCIDA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($r: String) { renovarSesion(refreshToken: $r) { __typename ... on Sesion { token expiraEn refreshToken refreshExpiraEn usuario { id rol estado } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"r\": \"{{r4}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.renovarSesion;",
+                  "pm.test('ErrorAutenticacion SESION_VENCIDA, sin decir el motivo', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorAutenticacion');",
+                  "  pm.expect(r.codigo).to.eql('SESION_VENCIDA');",
+                  "  pm.expect(r.mensaje).to.eql('Tu sesión ya no es válida. Inicia sesión de nuevo.');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.4 cerrarSesion otra vez es idempotente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($r: String) { cerrarSesion(refreshToken: $r) }\",\n  \"variables\": {\n    \"r\": \"{{r4}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "pm.test('cerrarSesion devuelve true', () => pm.expect(cuerpo.data.cerrarSesion).to.be.true);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Canal",
+      "item": [
+        {
+          "name": "6.1 un refresh del canal web no sirve en la app",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($r: String) { renovarSesion(refreshToken: $r) { __typename ... on Sesion { token expiraEn refreshToken refreshExpiraEn usuario { id rol estado } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"r\": \"{{refresh_web}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.renovarSesion;",
+                  "pm.test('ErrorAutenticacion SESION_VENCIDA, sin decir el motivo', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorAutenticacion');",
+                  "  pm.expect(r.codigo).to.eql('SESION_VENCIDA');",
+                  "  pm.expect(r.mensaje).to.eql('Tu sesión ya no es válida. Inicia sesión de nuevo.');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Cuenta suspendida",
+      "item": [
+        {
+          "name": "7.1 iniciarSesion (cadena nueva)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) { iniciarSesion(entrada: $e) { __typename ... on Sesion { token expiraEn refreshToken refreshExpiraEn usuario { id rol estado } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_cliente}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.iniciarSesion;",
+                  "pm.test('devuelve una Sesion del canal app con refresh', () => {",
+                  "  pm.expect(r.__typename).to.eql('Sesion');",
+                  "  pm.expect(r.token).to.be.a('string').and.not.empty;",
+                  "  pm.expect(r.refreshToken).to.be.a('string').and.not.empty;",
+                  "  pm.expect(new Date(r.refreshExpiraEn) > new Date(r.expiraEn)).to.be.true;",
+                  "});",
+                  "pm.collectionVariables.set('r5', r.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.2 el BACKOFFICE suspende al CLIENTE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}/graphql/web"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($id: ID!) { suspenderUsuario(id: $id) { __typename ... on Usuario { id estado } ... on ErrorUsuario { mensaje } } }\",\n  \"variables\": {\n    \"id\": \"{{id_cliente}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.suspenderUsuario;",
+                  "pm.test('queda SUSPENDIDO', () => pm.expect(r.estado).to.eql('SUSPENDIDO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.3 la cuenta suspendida ya no renueva",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($r: String) { renovarSesion(refreshToken: $r) { __typename ... on Sesion { token expiraEn refreshToken refreshExpiraEn usuario { id rol estado } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"r\": \"{{r5}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('sin errores de GraphQL', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "const r = cuerpo.data.renovarSesion;",
+                  "pm.test('ErrorAutenticacion SESION_VENCIDA, sin decir el motivo', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorAutenticacion');",
+                  "  pm.expect(r.codigo).to.eql('SESION_VENCIDA');",
+                  "  pm.expect(r.mensaje).to.eql('Tu sesión ya no es válida. Inicia sesión de nuevo.');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "clave_cliente",
+      "value": "Clave-newman-m02-1"
+    },
+    {
+      "key": "alias_cliente",
+      "value": ""
+    },
+    {
+      "key": "doc_cliente",
+      "value": ""
+    },
+    {
+      "key": "id_cliente",
+      "value": ""
+    },
+    {
+      "key": "token_backoffice",
+      "value": ""
+    },
+    {
+      "key": "refresh_web",
+      "value": ""
+    },
+    {
+      "key": "r1",
+      "value": ""
+    },
+    {
+      "key": "r2",
+      "value": ""
+    },
+    {
+      "key": "r2b",
+      "value": ""
+    },
+    {
+      "key": "r3",
+      "value": ""
+    },
+    {
+      "key": "r4",
+      "value": ""
+    },
+    {
+      "key": "r5",
+      "value": ""
+    }
+  ]
+}

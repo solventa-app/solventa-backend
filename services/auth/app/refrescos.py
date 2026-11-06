@@ -39,6 +39,15 @@ class RepositorioRefrescos(Protocol):
 
     def revocar_familia(self, familia_id: str, ahora: datetime) -> None: ...
 
+    def revocar_sucesor_sin_usar(
+        self, familia_id: str, refresh_id: str, usado_en: datetime, ahora: datetime
+    ) -> bool:
+        """Período de gracia: revoca el refresh vigente de la familia que reemplazó a `refresh_id`.
+
+        Solo si nadie de la familia se usó después de `usado_en` (el cliente legítimo no avanzó)
+        y hay un vigente que revocar. Atómico: `True` solo si revocó alguno."""
+        ...
+
     def revocar_de_usuario(self, usuario_id: str, ahora: datetime) -> None: ...
 
 
@@ -97,6 +106,25 @@ class RepositorioRefrescosPostgres:
                 "WHERE familia_id = %(f)s AND revocado_en IS NULL",
                 {"f": familia_id, "a": ahora},
             )
+
+    def revocar_sucesor_sin_usar(
+        self, familia_id: str, refresh_id: str, usado_en: datetime, ahora: datetime
+    ) -> bool:
+        with self._pool.connection() as conexion:
+            filas = conexion.execute(
+                """
+                UPDATE refresh_tokens SET revocado_en = %(a)s
+                WHERE familia_id = %(f)s AND id <> %(id)s
+                  AND usado_en IS NULL AND revocado_en IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM refresh_tokens
+                      WHERE familia_id = %(f)s AND usado_en > %(u)s
+                  )
+                RETURNING id
+                """,
+                {"f": familia_id, "id": refresh_id, "u": usado_en, "a": ahora},
+            ).fetchall()
+            return len(filas) > 0
 
     def revocar_de_usuario(self, usuario_id: str, ahora: datetime) -> None:
         with self._pool.connection() as conexion:
