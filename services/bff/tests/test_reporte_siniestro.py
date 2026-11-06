@@ -1,5 +1,5 @@
-"""Reporte de siniestro del CLIENTE por GraphQL (HU-M05, contrato v0.35): solo CLIENTE; el nombre y
-el documento salen de AUTH y las reglas del caso las aplica CLAIMS."""
+"""Reporte de siniestro del CLIENTE por GraphQL (HU-M05, contratos v0.35 y v0.37): solo CLIENTE;
+el nombre y el documento salen de AUTH y las reglas del caso las aplica CLAIMS."""
 
 import pytest
 from fakes import (
@@ -175,3 +175,84 @@ def test_mis_siniestros_solo_trae_los_del_cliente():
         lista = _post(client, MIS)["data"]["misSiniestros"]
     assert [s["id"] for s in lista] == [ID]
     assert ("de_cliente", "c-1") in claims.llamadas
+
+
+# ---------- v0.37: la resolución que ve el cliente ----------
+
+MIS_CON_RESOLUCION = """{ misSiniestros { id estado resolucion {
+  tipo resueltaEn motivo viaRecurso indemnizacion { valor moneda } plazoDispersion } } }"""
+
+RESOLUCIONES = {
+    "APROBACION": {
+        "tipo": "APROBACION",
+        "resuelta_en": "2026-11-05T15:00:00+00:00",
+        "notificacion": "Correo al asegurado",
+        "comentario": "Nota interna del operador",
+        "indemnizacion": {"valor": "52000000", "moneda": "COP"},
+        "metodo_transferencia": "Transferencia",
+        "plazo_dispersion": "3 días hábiles",
+        "motivo": None,
+        "via_recurso": None,
+    },
+    "RECHAZO": {
+        "tipo": "RECHAZO",
+        "resuelta_en": "2026-11-05T15:00:00+00:00",
+        "notificacion": "Correo al asegurado",
+        "motivo": "FUERA_DE_COBERTURA",
+        "comentario": "Nota interna del operador",
+        "via_recurso": "Puedes pedir la revisión en 10 días hábiles.",
+        "indemnizacion": None,
+    },
+    "DERIVACION": {
+        "tipo": "DERIVACION",
+        "resuelta_en": "2026-11-05T15:00:00+00:00",
+        "notificacion": "Aviso al perito",
+        "perito": {"id": "per-01", "nombre": "Perito Uno"},
+        "instrucciones": "Revisar el bumper",
+        "comentario": None,
+    },
+}
+
+
+def _resolucion_del_cliente(resolucion):
+    client, claims = _montar()
+    with client:
+        _post(client, REPORTAR, {"e": entrada()})
+        claims.siniestros[ID]["resolucion"] = resolucion
+        cuerpo = _post(client, MIS_CON_RESOLUCION)
+    assert "errors" not in cuerpo, cuerpo
+    return cuerpo["data"]["misSiniestros"][0]["resolucion"]
+
+
+def test_pendiente_no_trae_resolucion():
+    assert _resolucion_del_cliente(None) is None
+
+
+def test_aprobado_trae_indemnizacion_y_plazo_sin_motivo():
+    r = _resolucion_del_cliente(RESOLUCIONES["APROBACION"])
+    assert r["tipo"] == "APROBACION"
+    assert r["indemnizacion"] == {"valor": "52000000", "moneda": "COP"}
+    assert r["plazoDispersion"] == "3 días hábiles"
+    assert r["motivo"] is None and r["viaRecurso"] is None
+
+
+def test_rechazado_trae_motivo_y_via_de_recurso_sin_indemnizacion():
+    r = _resolucion_del_cliente(RESOLUCIONES["RECHAZO"])
+    assert r["tipo"] == "RECHAZO"
+    assert r["motivo"] == "FUERA_DE_COBERTURA"
+    assert r["viaRecurso"].startswith("Puedes pedir")
+    assert r["indemnizacion"] is None and r["plazoDispersion"] is None
+
+
+def test_derivado_solo_dice_que_esta_en_revision():
+    r = _resolucion_del_cliente(RESOLUCIONES["DERIVACION"])
+    assert r["tipo"] == "DERIVACION"
+    assert all(r[c] is None for c in ("motivo", "viaRecurso", "indemnizacion", "plazoDispersion"))
+
+
+@pytest.mark.parametrize("campo", ["comentario", "perito", "instrucciones", "notificacion"])
+def test_el_cliente_no_puede_pedir_datos_del_operador(campo):
+    client, _ = _montar()
+    with client:
+        cuerpo = _post(client, f"{{ misSiniestros {{ resolucion {{ {campo} }} }} }}")
+    assert "Cannot query field" in cuerpo["errors"][0]["message"]

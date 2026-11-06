@@ -864,6 +864,17 @@ union ResultadoResolucion = Siniestro | ErrorSiniestro
 # mismo id devuelve el mismo caso. El nombre y el documento del asegurado salen de AUTH, nunca de la app.
 
 # Lo que ve el CLIENTE de un caso que reportó: sin datos del operador ni del perito.
+# v0.37 (HU-M05): lo que el CLIENTE ve de la resolución de su caso. Sin datos del operador ni del perito: ni el
+# comentario (texto libre del BACKOFFICE), ni el perito, ni sus instrucciones.
+type ResolucionCliente {
+  tipo: TipoResolucion! # APROBACION, RECHAZO o DERIVACION (en revisión con un perito)
+  resueltaEn: DateTime!
+  motivo: MotivoRechazo # solo RECHAZO
+  viaRecurso: String # solo RECHAZO: cómo pedir que lo revisen
+  indemnizacion: Monto # solo APROBACION
+  plazoDispersion: String # solo APROBACION
+}
+
 type SiniestroReportado {
   id: ID!
   radicado: String!
@@ -873,6 +884,8 @@ type SiniestroReportado {
   notificadoEn: DateTime!
   venceDictamenEn: DateTime!
   fotos: Int!
+  # v0.37: null mientras el caso está PENDIENTE.
+  resolucion: ResolucionCliente
 }
 
 # El error trae el mensaje para el cliente (póliza ajena o fuera de vigencia, foto inválida, relato muy corto, sin

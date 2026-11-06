@@ -16,7 +16,7 @@ móvil), pareja de la mesa de siniestros de HU-W04 (KAN-27). Escrito el 2026-11-
 
 ## Pendiente (en orden sugerido)
 
-### 1. Newman `hu-m05` (KAN-278)
+### 1. Newman `hu-m05` (KAN-278): **hecho** en `tests/newman/hu-m05.postman_collection.json` (2026-11-05)
 Colección en `tests/newman/`, como `hu-w04`, sobre el compose con las semillas. Casos:
 
 | # | Caso | Esperado |
@@ -30,7 +30,7 @@ Colección en `tests/newman/`, como `hu-w04`, sobre el compose con las semillas.
 | 7 | BACKOFFICE: `siniestros(estado: PENDIENTE)` | El caso del paso 1 aparece primero |
 | 8 | BACKOFFICE aprueba y el CLIENTE consulta `misSiniestros` | El caso sale `APROBADO` |
 
-### 2. La resolución que ve el cliente (contrato, aditivo)
+### 2. La resolución que ve el cliente (contrato, aditivo): **hecho**, contrato **v0.37** (2026-11-05)
 `SiniestroReportado` solo trae el estado. La app hoy muestra un texto genérico: «Tu indemnización está en proceso de
 pago» o «Te enviamos el motivo…». Propuesta: un campo `resolucion` reducido para el CLIENTE, sin datos del operador ni
 del perito:

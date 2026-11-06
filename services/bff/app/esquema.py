@@ -1445,6 +1445,18 @@ ResultadoResolucion = Annotated[Siniestro | ErrorSiniestro, strawberry.union("Re
 
 
 @strawberry.type
+class ResolucionCliente:
+    """v0.37: la resolución recortada para el CLIENTE. Sin comentario del operador ni perito."""
+
+    tipo: TipoResolucion
+    resuelta_en: datetime
+    motivo: MotivoRechazo | None
+    via_recurso: str | None
+    indemnizacion: Monto | None
+    plazo_dispersion: str | None
+
+
+@strawberry.type
 class SiniestroReportado:
     """Lo que ve el CLIENTE de un caso que reportó: sin datos del operador ni del perito."""
 
@@ -1456,6 +1468,7 @@ class SiniestroReportado:
     notificado_en: datetime
     vence_dictamen_en: datetime
     fotos: int
+    resolucion: ResolucionCliente | None = None
 
 
 ResultadoReporteSiniestro = Annotated[
@@ -1508,6 +1521,25 @@ def _siniestro_reportado(datos: dict) -> SiniestroReportado:
         notificado_en=_fecha(datos["notificado_en"]),
         vence_dictamen_en=_fecha(datos["vence_dictamen_en"]),
         fotos=sum(1 for e in datos.get("evidencias", []) if e["tipo"] == "FOTO"),
+        resolucion=_resolucion_cliente(datos.get("resolucion")),
+    )
+
+
+def _resolucion_cliente(datos: dict | None) -> ResolucionCliente | None:
+    """Recorta la resolución del expediente: cada dato solo en el desenlace que le corresponde, y
+    nunca el comentario, el perito ni las instrucciones (son del operador)."""
+    if not datos:
+        return None
+    tipo = TipoResolucion(datos["tipo"])
+    rechazo = tipo == TipoResolucion.RECHAZO
+    aprobacion = tipo == TipoResolucion.APROBACION
+    return ResolucionCliente(
+        tipo=tipo,
+        resuelta_en=_fecha(datos["resuelta_en"]),
+        motivo=MotivoRechazo(datos["motivo"]) if rechazo and datos.get("motivo") else None,
+        via_recurso=datos.get("via_recurso") if rechazo else None,
+        indemnizacion=_monto_siniestro(datos.get("indemnizacion")) if aprobacion else None,
+        plazo_dispersion=datos.get("plazo_dispersion") if aprobacion else None,
     )
 
 

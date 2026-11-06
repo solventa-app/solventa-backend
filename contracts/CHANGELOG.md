@@ -429,6 +429,14 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Propuesto por la app móvil en `solventa-frontend-mobile/docs/hu-m06-backend.md`. Solo cambios aditivos.
 - Afecta al frontend: sí (móvil: regenerar `lib/core/contrato/` y cambiar el fake por el datasource GraphQL).
 
+## v0.37 — 2026-11-05
+
+- KAN-35 (HU-M05): `SiniestroReportado.resolucion` (tipo nuevo `ResolucionCliente`) para que la app muestre el desenlace
+  real del caso en vez de un texto genérico: tipo y fecha; en un rechazo, el motivo y la vía de recurso; en una
+  aprobación, la indemnización y el plazo de dispersión. Nunca el comentario del operador ni los datos del perito.
+  `null` mientras el caso está PENDIENTE. Solo cambios aditivos.
+- Afecta al frontend: sí (móvil: «Mis siniestros» y el detalle del caso).
+
 ## v0.26 — 2026-11-01
 
 - KAN-26 (T22, `plan-cierre-HU-W03.md`): sesión con token de acceso corto y refresh largo. Aditivo:
