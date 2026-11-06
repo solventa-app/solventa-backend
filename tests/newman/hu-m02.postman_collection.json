@@ -18,13 +18,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}/graphql/web"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/web",
             "auth": {
               "type": "noauth"
             },
@@ -80,13 +74,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}/graphql/web"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/web",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -138,13 +126,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/app",
-              "host": [
-                "{{gateway_url}}/graphql/app"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/app",
             "auth": {
               "type": "noauth"
             },
@@ -191,13 +173,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/app",
-              "host": [
-                "{{gateway_url}}/graphql/app"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/app",
             "auth": {
               "type": "noauth"
             },
@@ -245,13 +221,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/app",
-              "host": [
-                "{{gateway_url}}/graphql/app"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/app",
             "auth": {
               "type": "noauth"
             },
@@ -295,13 +265,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/app",
-              "host": [
-                "{{gateway_url}}/graphql/app"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/app",
             "auth": {
               "type": "noauth"
             },
@@ -346,13 +310,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/app",
-              "host": [
-                "{{gateway_url}}/graphql/app"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/app",
             "auth": {
               "type": "noauth"
             },
@@ -395,13 +353,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/app",
-              "host": [
-                "{{gateway_url}}/graphql/app"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/app",
             "auth": {
               "type": "noauth"
             },
@@ -441,13 +393,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/app",
-              "host": [
-                "{{gateway_url}}/graphql/app"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/app",
             "auth": {
               "type": "noauth"
             },
@@ -492,13 +438,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/app",
-              "host": [
-                "{{gateway_url}}/graphql/app"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/app",
             "auth": {
               "type": "noauth"
             },
@@ -540,13 +480,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/app",
-              "host": [
-                "{{gateway_url}}/graphql/app"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/app",
             "auth": {
               "type": "noauth"
             },
@@ -581,13 +515,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/app",
-              "host": [
-                "{{gateway_url}}/graphql/app"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/app",
             "auth": {
               "type": "noauth"
             },
@@ -627,13 +555,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/app",
-              "host": [
-                "{{gateway_url}}/graphql/app"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/app",
             "auth": {
               "type": "noauth"
             },
@@ -673,13 +595,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/app",
-              "host": [
-                "{{gateway_url}}/graphql/app"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/app",
             "auth": {
               "type": "noauth"
             },
@@ -724,13 +640,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/app",
-              "host": [
-                "{{gateway_url}}/graphql/app"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/app",
             "auth": {
               "type": "noauth"
             },
@@ -772,13 +682,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/web",
-              "host": [
-                "{{gateway_url}}/graphql/web"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/web",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -821,13 +725,7 @@
                 "value": "application/json"
               }
             ],
-            "url": {
-              "raw": "{{gateway_url}}/graphql/app",
-              "host": [
-                "{{gateway_url}}/graphql/app"
-              ],
-              "path": []
-            },
+            "url": "{{gateway_url}}/graphql/app",
             "auth": {
               "type": "noauth"
             },
