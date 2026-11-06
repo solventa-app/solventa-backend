@@ -36,6 +36,10 @@ mismo algoritmo y clave de AUTH y el BFF: así se ligan las pólizas previas. Su
 (`estado = 'VERIFICADA'`) cierra la carrera entre dos sesiones con el mismo documento. Los datos leídos del documento se
 guardan cifrados (AES-GCM, sesión como dato asociado) y solo de las sesiones VERIFICADAS.
 
+Para repetir una demo con una cédula ya verificada en staging, usa `scripts/limpiar_onboarding_staging.py`: borra la
+cuenta anterior en AUTH y ONBOARDING. Detalle en [`docs/guia-demo-staging.md`](../../docs/guia-demo-staging.md),
+sección 7.
+
 ## API
 
 Las operaciones de la app llevan `X-Onboarding-Token` (30 min, solo se guarda su hash); el BFF lo reenvía.
