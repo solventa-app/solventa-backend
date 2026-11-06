@@ -1,8 +1,8 @@
 # Plan: ingreso sin selector de rol, recuperación de clave y panel de administración de usuarios
 
-Estado: **planeado, sin ejecutar** (2026-11-05; decisiones A-1, A-2, A-3 y A-6 cerradas por Frans el mismo día).
+Estado: **planeado, sin ejecutar** (2026-11-05; todas las decisiones, A-1 a A-6, cerradas por Frans el mismo día).
 Historia de Jira por asignar (`KAN-?`). Cubre backend y web; el móvil solo se toca en la recuperación de clave
-(sección 3). Antes de construir, cerrar A-4 y A-5.
+(sección 3). Listo para construir cuando haya clave de Jira.
 
 ## 0. Cómo está hoy (verificado en `develop` el 2026-11-05)
 
@@ -26,8 +26,8 @@ deja de pedir y de usar `CredencialesInput.rol`.
 | **A-1** | ¿Quién es «admin»? | **Cerrada:** rol nuevo `ADMIN` que administra **la plataforma**, no el negocio: el BACKOFFICE sigue operando cobros y siniestros. Por ahora el ADMIN solo tiene el módulo de usuarios; otros módulos de plataforma se agregan después. El panel no crea ni promueve ADMIN |
 | **A-2** | ¿Cómo se recupera la clave? | **Cerrada:** código de 6 dígitos **por correo, para todos los roles** (mismo patrón que el onboarding; sirve en web y app) |
 | **A-3** | ¿Y el personal, que hoy no tiene correo? | **Cerrada:** se guarda el correo de **todos los roles** (cifrado y con `correo_hmac`, como el del CLIENTE). El ADMIN no ve ni pone claves: solo **fuerza la recuperación**, que invalida la clave actual, revoca las sesiones y envía el código al correo del usuario. Se descarta la clave temporal |
-| **A-4** | ¿Quién envía el correo? | Abierta. Recomendación: AUTH genera el código, guarda su hash y lo valida; se lo entrega al BFF por la red privada y el **BFF lo envía por el ACL** (como el onboarding). Alternativa: AUTH llama al ACL directamente (el código no pasa por el BFF, pero AUTH depende del ACL) |
-| **A-5** | ¿Transición de `crearUsuario` y compañía? | Abierta. Recomendación: durante una liberación las usan ADMIN y BACKOFFICE; en la siguiente, solo ADMIN (aviso en `CHANGELOG.md`). Así no se rompen Newman ni las E2E que crean usuarios con `admin.solventa` |
+| **A-4** | ¿Quién envía el correo? | **Cerrada:** AUTH genera el código, guarda su hash y lo valida; se lo entrega al BFF por la red privada y el **BFF lo envía por el ACL** (como el onboarding). AUTH no depende del ACL; el código viaja solo por la red privada y nunca va a los logs |
+| **A-5** | ¿Transición de `crearUsuario` y compañía? | **Cerrada:** durante una liberación las usan ADMIN y BACKOFFICE; en la siguiente, solo ADMIN (aviso en `CHANGELOG.md`). Así no se rompen Newman ni las E2E que crean usuarios con `admin.solventa` |
 | **A-6** | ¿Cómo nace el primer ADMIN? | **Cerrada:** lo **siembra AUTH** con un job idempotente (`crear_usuario --rol ADMIN --correo ...`), y AUTH guarda **solo el hash** argon2id, nunca la clave. En local, clave fija no secreta (como `admin.solventa`). En staging, la clave inicial sale de Secret Manager (`clave-admin-inicial`, que lee el job) y el usuario queda con `debe_cambiar_clave`; si se pierde, se recupera por correo |
 
 ## 2. Bloque 1: ingreso sin selector de rol
