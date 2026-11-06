@@ -27,9 +27,10 @@ CLIENTE = "usr-cliente-1"
 
 
 class PolicyDeCliente:
-    def __init__(self, firmante=CLIENTE, falla=None):
+    def __init__(self, firmante=CLIENTE, falla=None, titular="titular-otro"):
         self.firmante = firmante
         self.falla = falla
+        self.titular = titular
 
     def obtener_poliza(self, poliza_id):
         if self.falla:
@@ -37,6 +38,7 @@ class PolicyDeCliente:
         return {
             "id": poliza_id,
             "estado": "EMITIDA",
+            "cliente_id": self.titular,
             "firmante_id": self.firmante,
             "actor_usuario_id": "asesor-1",
             "vigencia_desde": "2026-01-01T00:00:00+00:00",
@@ -212,6 +214,15 @@ def test_rechaza_fotos_ajenas_sin_confirmar_inexistentes_o_repetidas(almacen, fo
     with pytest.raises(ErrorNegocio, match=MENSAJE_REPORTE_FOTO_INVALIDA):
         servicio.reportar(datos)
     assert repo.siniestros == {}
+
+
+def test_la_poliza_del_titular_es_suya_aunque_la_haya_vendido_otro():
+    policy = PolicyDeCliente(firmante=None, titular="titular-maria")
+    servicio, _, _ = _servicio(policy=policy)
+    s = servicio.reportar(reporte(titular_id="titular-maria"))
+    assert s["estado"] == "PENDIENTE"
+    with pytest.raises(ErrorNegocio, match=MENSAJE_REPORTE_POLIZA):
+        _servicio(policy=policy)[0].reportar(reporte(titular_id="otro-titular"))
 
 
 def test_almacenamiento_caido_es_reintentable():

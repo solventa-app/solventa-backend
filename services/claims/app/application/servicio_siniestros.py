@@ -201,7 +201,7 @@ class ServicioSiniestros:
         if not MIN_FOTOS <= len(fotos) <= MAX_FOTOS:
             raise ErrorNegocio(MENSAJE_REPORTE_FOTOS)
 
-        poliza = self._poliza_del_cliente(reporte["poliza_id"], cliente)
+        poliza = self._poliza_del_cliente(reporte["poliza_id"], cliente, reporte.get("titular_id"))
         desde, hasta = (
             datetime.fromisoformat(str(poliza[k])) for k in ("vigencia_desde", "vigencia_hasta")
         )
@@ -242,16 +242,19 @@ class ServicioSiniestros:
         """Los casos que reportó el cliente, para su seguimiento en la app."""
         return self._armar(self._repo.listar_de_cliente(cliente_id), primaria=False)
 
-    def _poliza_del_cliente(self, poliza_id: str, cliente_id: str) -> dict:
+    def _poliza_del_cliente(self, poliza_id: str, cliente_id: str, titular_id: str | None) -> dict:
         try:
             poliza = self._policy.obtener_poliza(poliza_id)
         except SolicitudRechazada as error:
             raise ErrorNegocio(MENSAJE_REPORTE_POLIZA) from error
         except ServicioNoDisponible as error:
             raise DependenciaNoDisponible(MENSAJE_POLIZA) from error
-        # Titular: quien firmó; si la aceptó el propio cliente, también quien la aceptó.
-        duenos = {poliza.get("firmante_id"), poliza.get("actor_usuario_id")}
-        if cliente_id not in duenos or poliza.get("estado") != "EMITIDA":
+        # Es suya si es el titular (el HMAC de su documento, como en `propuestas` del BFF, sin
+        # importar quién la vendió), quien la firmó o quien la aceptó.
+        suya = cliente_id in {poliza.get("firmante_id"), poliza.get("actor_usuario_id")} or (
+            titular_id is not None and poliza.get("cliente_id") == titular_id
+        )
+        if not suya or poliza.get("estado") != "EMITIDA":
             raise ErrorNegocio(MENSAJE_REPORTE_POLIZA)
         return poliza
 

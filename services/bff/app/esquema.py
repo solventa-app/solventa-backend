@@ -3126,6 +3126,7 @@ class Mutation:
         reporte = {
             "id_reporte": id_reporte,
             "cliente_id": usuario.id,
+            "titular_id": identidad["titular_id"],
             "asegurado": {"nombre": perfil["nombre"], "documento": identidad["documento"]},
             "poliza_id": str(entrada.poliza_id),
             "cobertura_aplicada": RAMO_POLIZA,

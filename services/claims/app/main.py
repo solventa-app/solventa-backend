@@ -86,6 +86,8 @@ class ReporteRequest(BaseModel):
 
     id_reporte: str = Field(min_length=8, max_length=64)
     cliente_id: str = Field(min_length=1)
+    # El titular del cliente (HMAC de su documento, de AUTH): con él se reconocen sus pólizas.
+    titular_id: str | None = None
     asegurado: AseguradoReporte
     poliza_id: str = Field(min_length=1)
     cobertura_aplicada: str = Field(min_length=1)

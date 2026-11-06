@@ -89,6 +89,7 @@ def test_reporta_con_nombre_y_documento_de_auth_y_llega_pendiente():
     assert r["id"] == ID and r["estado"] == "PENDIENTE" and r["fotos"] == 2
     enviado = claims.llamadas[0][1]
     assert enviado["cliente_id"] == "c-1"
+    assert enviado["titular_id"]  # el HMAC del documento, para reconocer sus pólizas
     assert enviado["asegurado"] == {"nombre": "Ana Pérez", "documento": "1020304050"}
     assert enviado["cobertura_aplicada"] == RAMO_POLIZA
     assert enviado["evidencias"][1]["latitud"] is None
