@@ -7,6 +7,7 @@ import sys
 from pymongo import MongoClient
 
 from . import aplicar_pendientes
+from .catalogos import ErrorCatalogo, sincronizar_prestadores
 
 log = logging.getLogger("migraciones")
 
@@ -19,8 +20,15 @@ def main() -> int:
         return 1
     nombre_db = os.environ.get("MONGO_DB", "claims")
     cliente = MongoClient(uri, serverSelectionTimeoutMS=15_000)
-    aplicadas = aplicar_pendientes(cliente[nombre_db])
+    db = cliente[nombre_db]
+    aplicadas = aplicar_pendientes(db)
     log.info("Migraciones aplicadas: %s", ", ".join(aplicadas) if aplicadas else "ninguna (al día)")
+    # Datos maestros (HU-M06): se sincronizan en cada ejecución, no una sola vez.
+    try:
+        log.info("Catálogos: %s", sincronizar_prestadores(db))
+    except ErrorCatalogo as error:
+        log.error("Catálogo de prestadores: %s", error)
+        return 1
     return 0
 
 

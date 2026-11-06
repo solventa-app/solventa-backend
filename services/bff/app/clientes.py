@@ -335,6 +335,8 @@ class PuertoClaims(Protocol):
 
     async def peritos(self, siniestro_id: str) -> list[dict]: ...
 
+    async def catalogo_prestadores(self, version_local: str | None) -> dict: ...
+
     async def aprobar(self, siniestro_id: str, actor_usuario_id: str) -> dict: ...
 
     async def rechazar(
@@ -1362,6 +1364,17 @@ class ClienteClaimsHttp:
 
     async def peritos(self, siniestro_id: str) -> list[dict]:
         respuesta = await _pedir(self._cliente, "GET", f"/siniestros/{siniestro_id}/peritos")
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def catalogo_prestadores(self, version_local: str | None) -> dict:
+        """HU-M06: catálogo maestro de prestadores (sin datos personales)."""
+        parametros = {"version_local": version_local} if version_local else None
+        try:
+            respuesta = await self._cliente.get("/prestadores", params=parametros)
+        except httpx.HTTPError as error:
+            raise ErrorServicio(type(error).__name__) from error
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()

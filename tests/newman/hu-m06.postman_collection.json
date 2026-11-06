@@ -1,0 +1,490 @@
+{
+  "info": {
+    "name": "Solventa - HU-M06 (catálogo de prestadores por el gateway)",
+    "description": "KAN-263: catálogo maestro de prestadores en CLAIMS (sincronizado al migrar), expuesto por el BFF en el canal app con sesión de CLIENTE y versionado. Corre en orden: las carpetas comparten variables.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Preparación",
+      "item": [
+        {
+          "name": "0.1 iniciarSesion como BACKOFFICE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) { iniciarSesion(entrada: $e) { __typename ... on Sesion { token } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{usuario_backoffice}}\",\n      \"clave\": \"{{clave_backoffice}}\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const l = 'abcdefghijklmnopqrstuvwxyz'; let s = '';",
+                  "for (let i = 0; i < 8; i++) s += l[Math.floor(Math.random() * l.length)];",
+                  "pm.collectionVariables.set('alias_cliente', 'cliente.m06.' + s);",
+                  "pm.collectionVariables.set('correo_cliente', 'cliente.m06.' + s + '@example.com');",
+                  "pm.collectionVariables.set('doc_cliente', String(Math.floor(1e9 + Math.random() * 8e9)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.collectionVariables.set('token_backoffice', cuerpo.data.iniciarSesion.token);",
+                  "pm.test('Sesión de BACKOFFICE', () => pm.expect(cuerpo.data.iniciarSesion.__typename).to.eql('Sesion'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.2 crearUsuario CLIENTE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CrearUsuarioInput!) { crearUsuario(entrada: $e) { __typename ... on ErrorUsuario { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman M06\",\n      \"correo\": \"{{correo_cliente}}\",\n      \"documentoIdentidad\": \"{{doc_cliente}}\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('CLIENTE creado', () => pm.expect(cuerpo.data.crearUsuario.__typename).to.eql('Usuario'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.3 iniciarSesion como CLIENTE (canal app)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) { iniciarSesion(entrada: $e) { __typename ... on Sesion { token } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.collectionVariables.set('token_cliente', cuerpo.data.iniciarSesion.token);",
+                  "pm.test('Sesión de CLIENTE', () => pm.expect(cuerpo.data.iniciarSesion.__typename).to.eql('Sesion'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Catálogo versionado (KAN-263)",
+      "item": [
+        {
+          "name": "1.1 sin versión local: el catálogo completo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($v: String) { catalogoPrestadores(versionLocal: $v) { version vigente prestadores { id nombre tipo ciudad latitud longitud activo } } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const c = cuerpo.data.catalogoPrestadores;",
+                  "pm.collectionVariables.set('version_vigente', c.version);",
+                  "pm.test('Sin errores', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "pm.test('No vigente', () => pm.expect(c.vigente).to.eql(false));",
+                  "pm.test('Versión AAAA-MM-DD.n', () => pm.expect(c.version).to.match(/^\\d{4}-\\d{2}-\\d{2}\\.\\d+$/));",
+                  "pm.test('Los 12 prestadores de la semilla', () => pm.expect(c.prestadores.length).to.eql(12));",
+                  "pm.test('Solo MEDICO y MECANICO', () => pm.expect([...new Set(c.prestadores.map(p => p.tipo))].sort()).to.eql(['MECANICO', 'MEDICO']));",
+                  "pm.test('6 en Bogotá', () => pm.expect(c.prestadores.filter(p => p.ciudad === 'Bogotá').length).to.eql(6));",
+                  "const norte = c.prestadores.find(p => p.id === 'prs-bog-001');",
+                  "pm.test('Coordenadas como número', () => pm.expect([norte.latitud, norte.longitud]).to.eql([4.6859, -74.0524]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 con la versión vigente: vigente y lista vacía",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($v: String) { catalogoPrestadores(versionLocal: $v) { version vigente prestadores { id nombre tipo ciudad latitud longitud activo } } }\",\n  \"variables\": {\n    \"v\": \"{{version_vigente}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const c = cuerpo.data.catalogoPrestadores;",
+                  "pm.test('Vigente', () => pm.expect(c.vigente).to.eql(true));",
+                  "pm.test('Misma versión', () => pm.expect(c.version).to.eql(pm.collectionVariables.get('version_vigente')));",
+                  "pm.test('Lista vacía', () => pm.expect(c.prestadores).to.eql([]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 con una versión vieja: el catálogo completo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($v: String) { catalogoPrestadores(versionLocal: $v) { version vigente prestadores { id nombre tipo ciudad latitud longitud activo } } }\",\n  \"variables\": {\n    \"v\": \"2000-01-01.1\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const c = cuerpo.data.catalogoPrestadores;",
+                  "pm.test('No vigente', () => pm.expect(c.vigente).to.eql(false));",
+                  "pm.test('Los 12 prestadores', () => pm.expect(c.prestadores.length).to.eql(12));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 /v1/graphql/app responde igual",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($v: String) { catalogoPrestadores(versionLocal: $v) { version vigente prestadores { id nombre tipo ciudad latitud longitud activo } } }\",\n  \"variables\": {\n    \"v\": \"{{version_vigente}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Vigente por la ruta versionada', () => pm.expect(cuerpo.data.catalogoPrestadores.vigente).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Autorización",
+      "item": [
+        {
+          "name": "2.1 sin sesión: SIN_SESION",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($v: String) { catalogoPrestadores(versionLocal: $v) { version vigente prestadores { id nombre tipo ciudad latitud longitud activo } } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Código SIN_SESION', () => pm.expect(cuerpo.errors[0].extensions.code).to.eql('SIN_SESION'));",
+                  "pm.test('Sin datos', () => pm.expect(cuerpo.data).to.be.null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 un BACKOFFICE no lo usa",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($v: String) { catalogoPrestadores(versionLocal: $v) { version vigente prestadores { id nombre tipo ciudad latitud longitud activo } } }\",\n  \"variables\": {}\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Sin permiso', () => pm.expect(cuerpo.errors[0].message).to.eql('No tienes permiso para esta operación.'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "clave_nuevos",
+      "value": "Clave-newman-0001"
+    }
+  ]
+}

@@ -1520,6 +1520,58 @@ def _id_reporte_valido(id_reporte: str) -> bool:
 
 MENSAJE_SINIESTROS = "No pudimos consultar los siniestros. Intenta de nuevo."
 
+# ---------- Catálogo de prestadores (v0.36, HU-M06) ----------
+
+
+@strawberry.enum
+class TipoPrestador(Enum):
+    MEDICO = "MEDICO"
+    MECANICO = "MECANICO"
+
+
+@strawberry.type
+class Prestador:
+    id: strawberry.ID
+    nombre: str
+    tipo: TipoPrestador
+    ciudad: str
+    latitud: float
+    longitud: float
+    activo: bool
+
+
+@strawberry.type
+class CatalogoPrestadores:
+    version: str
+    vigente: bool
+    prestadores: list[Prestador]
+
+
+MENSAJE_PRESTADORES = "No pudimos consultar los prestadores. Intenta de nuevo."
+TIPOS_PRESTADOR = {t.value for t in TipoPrestador}
+
+
+def _catalogo_prestadores(datos: dict) -> CatalogoPrestadores:
+    """Un tipo que este BFF aún no conoce se omite en vez de romper la respuesta entera."""
+    return CatalogoPrestadores(
+        version=datos["version"],
+        vigente=datos["vigente"],
+        prestadores=[
+            Prestador(
+                id=strawberry.ID(p["id"]),
+                nombre=p["nombre"],
+                tipo=TipoPrestador(p["tipo"]),
+                ciudad=p["ciudad"],
+                latitud=float(p["latitud"]),
+                longitud=float(p["longitud"]),
+                activo=p["activo"],
+            )
+            for p in datos["prestadores"]
+            if p["tipo"] in TIPOS_PRESTADOR
+        ],
+    )
+
+
 # ---------- Estado del sistema (v0.22, HU-W07) ----------
 
 
@@ -2023,6 +2075,19 @@ class Query:
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_SINIESTROS) from error
         return [_siniestro_reportado(d) for d in datos]
+
+    @strawberry.field
+    async def catalogo_prestadores(
+        self, info: Info, version_local: str | None = None
+    ) -> CatalogoPrestadores:
+        """v0.36 (HU-M06): catálogo maestro de prestadores, con sesión de CLIENTE. CLAIMS lo lee
+        de la réplica. La ubicación del cliente no viaja: la app calcula la cercanía."""
+        exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        try:
+            datos = await _claims(info).catalogo_prestadores(version_local)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_PRESTADORES) from error
+        return _catalogo_prestadores(datos)
 
     @strawberry.field
     async def estado_sistema(self, info: Info, ventana: str | None = "1h") -> EstadoSistema:
