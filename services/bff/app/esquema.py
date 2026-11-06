@@ -23,6 +23,7 @@ matriz completa está en `docs/autenticacion-usuarios.md`."""
 import asyncio
 import logging
 import os
+import uuid
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Annotated
@@ -1439,7 +1440,169 @@ class ErrorSiniestro:
 
 ResultadoResolucion = Annotated[Siniestro | ErrorSiniestro, strawberry.union("ResultadoResolucion")]
 
+
+# ---------- Reporte del cliente (v0.35, HU-M05) ----------
+
+
+@strawberry.type
+class ResolucionCliente:
+    """v0.37: la resolución recortada para el CLIENTE. Sin comentario del operador ni perito."""
+
+    tipo: TipoResolucion
+    resuelta_en: datetime
+    motivo: MotivoRechazo | None
+    via_recurso: str | None
+    indemnizacion: Monto | None
+    plazo_dispersion: str | None
+
+
+@strawberry.type
+class SiniestroReportado:
+    """Lo que ve el CLIENTE de un caso que reportó: sin datos del operador ni del perito."""
+
+    id: strawberry.ID
+    radicado: str
+    estado: EstadoSiniestro
+    poliza_id: strawberry.ID
+    ocurrido_en: datetime
+    notificado_en: datetime
+    vence_dictamen_en: datetime
+    fotos: int
+    resolucion: ResolucionCliente | None = None
+
+
+ResultadoReporteSiniestro = Annotated[
+    SiniestroReportado | ErrorSiniestro, strawberry.union("ResultadoReporteSiniestro")
+]
+
+
+@strawberry.input
+class UbicacionReporteInput:
+    descripcion: str
+    ciudad: str
+    latitud: float
+    longitud: float
+
+
+@strawberry.input
+class FotoReporteInput:
+    archivo_id: strawberry.ID
+    tomada_en: datetime
+    # Donde se tomó la foto (GPS del teléfono); null si el cliente no dio permiso.
+    latitud: float | None = None
+    longitud: float | None = None
+
+
+@strawberry.input
+class ReporteSiniestroInput:
+    # Lo genera la app (UUID) y es el id del siniestro: reenviar con el mismo no crea otro caso.
+    id_reporte: strawberry.ID
+    poliza_id: strawberry.ID
+    ocurrido_en: datetime
+    descripcion: str
+    ubicacion: UbicacionReporteInput
+    fotos: list[FotoReporteInput]
+
+
+MENSAJE_REPORTE_SIN_IDENTIDAD = (
+    "Termina de verificar tu identidad para poder reportar un siniestro."
+)
+MENSAJE_REPORTE_NO_DISPONIBLE = "No pudimos registrar tu reporte. Intenta de nuevo."
+MENSAJE_ID_REPORTE = "El identificador del reporte no es válido."
+
+
+def _siniestro_reportado(datos: dict) -> SiniestroReportado:
+    return SiniestroReportado(
+        id=strawberry.ID(datos["id"]),
+        radicado=datos["radicado"],
+        estado=EstadoSiniestro(datos["estado"]),
+        poliza_id=strawberry.ID(datos["poliza_id"]),
+        ocurrido_en=_fecha(datos["ocurrido_en"]),
+        notificado_en=_fecha(datos["notificado_en"]),
+        vence_dictamen_en=_fecha(datos["vence_dictamen_en"]),
+        fotos=sum(1 for e in datos.get("evidencias", []) if e["tipo"] == "FOTO"),
+        resolucion=_resolucion_cliente(datos.get("resolucion")),
+    )
+
+
+def _resolucion_cliente(datos: dict | None) -> ResolucionCliente | None:
+    """Recorta la resolución del expediente: cada dato solo en el desenlace que le corresponde, y
+    nunca el comentario, el perito ni las instrucciones (son del operador)."""
+    if not datos:
+        return None
+    tipo = TipoResolucion(datos["tipo"])
+    rechazo = tipo == TipoResolucion.RECHAZO
+    aprobacion = tipo == TipoResolucion.APROBACION
+    return ResolucionCliente(
+        tipo=tipo,
+        resuelta_en=_fecha(datos["resuelta_en"]),
+        motivo=MotivoRechazo(datos["motivo"]) if rechazo and datos.get("motivo") else None,
+        via_recurso=datos.get("via_recurso") if rechazo else None,
+        indemnizacion=_monto_siniestro(datos.get("indemnizacion")) if aprobacion else None,
+        plazo_dispersion=datos.get("plazo_dispersion") if aprobacion else None,
+    )
+
+
+def _id_reporte_valido(id_reporte: str) -> bool:
+    try:
+        return str(uuid.UUID(id_reporte)) == id_reporte.lower()
+    except ValueError:
+        return False
+
+
 MENSAJE_SINIESTROS = "No pudimos consultar los siniestros. Intenta de nuevo."
+
+# ---------- Catálogo de prestadores (v0.36, HU-M06) ----------
+
+
+@strawberry.enum
+class TipoPrestador(Enum):
+    MEDICO = "MEDICO"
+    MECANICO = "MECANICO"
+
+
+@strawberry.type
+class Prestador:
+    id: strawberry.ID
+    nombre: str
+    tipo: TipoPrestador
+    ciudad: str
+    latitud: float
+    longitud: float
+    activo: bool
+
+
+@strawberry.type
+class CatalogoPrestadores:
+    version: str
+    vigente: bool
+    prestadores: list[Prestador]
+
+
+MENSAJE_PRESTADORES = "No pudimos consultar los prestadores. Intenta de nuevo."
+TIPOS_PRESTADOR = {t.value for t in TipoPrestador}
+
+
+def _catalogo_prestadores(datos: dict) -> CatalogoPrestadores:
+    """Un tipo que este BFF aún no conoce se omite en vez de romper la respuesta entera."""
+    return CatalogoPrestadores(
+        version=datos["version"],
+        vigente=datos["vigente"],
+        prestadores=[
+            Prestador(
+                id=strawberry.ID(p["id"]),
+                nombre=p["nombre"],
+                tipo=TipoPrestador(p["tipo"]),
+                ciudad=p["ciudad"],
+                latitud=float(p["latitud"]),
+                longitud=float(p["longitud"]),
+                activo=p["activo"],
+            )
+            for p in datos["prestadores"]
+            if p["tipo"] in TIPOS_PRESTADOR
+        ],
+    )
+
 
 # ---------- Estado del sistema (v0.22, HU-W07) ----------
 
@@ -1933,6 +2096,30 @@ class Query:
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_SINIESTROS) from error
         return [_perito(p) for p in datos]
+
+    @strawberry.field
+    async def mis_siniestros(self, info: Info) -> list[SiniestroReportado]:
+        """v0.35 (HU-M05): los casos que reportó el CLIENTE del token, del más reciente al más
+        antiguo."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        try:
+            datos = await _claims(info).de_cliente(usuario.id)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_SINIESTROS) from error
+        return [_siniestro_reportado(d) for d in datos]
+
+    @strawberry.field
+    async def catalogo_prestadores(
+        self, info: Info, version_local: str | None = None
+    ) -> CatalogoPrestadores:
+        """v0.36 (HU-M06): catálogo maestro de prestadores, con sesión de CLIENTE. CLAIMS lo lee
+        de la réplica. La ubicación del cliente no viaja: la app calcula la cercanía."""
+        exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        try:
+            datos = await _claims(info).catalogo_prestadores(version_local)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_PRESTADORES) from error
+        return _catalogo_prestadores(datos)
 
     @strawberry.field
     async def estado_sistema(self, info: Info, ventana: str | None = "1h") -> EstadoSistema:
@@ -2980,6 +3167,90 @@ class Mutation:
         return await _resolver_siniestro(
             lambda: _claims(info).derivar(str(id), str(perito_id), instrucciones, usuario.id)
         )
+
+    @strawberry.mutation
+    async def solicitar_subida_evidencia_siniestro(
+        self, info: Info, id_reporte: strawberry.ID, tipo_contenido: str, tamano_bytes: int
+    ) -> ResultadoSubidaArchivo:
+        """v0.35 (HU-M05): URL firmada para una foto del siniestro que el CLIENTE va a reportar.
+        La foto queda a nombre del caso (`idReporte`), no del usuario: así CLAIMS comprueba al
+        reportar que es de ese caso."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        if not _id_reporte_valido(str(id_reporte)):
+            return _error_archivo("PROPIETARIO_INVALIDO")
+        solicitud = {
+            "tipo": "siniestro-foto",
+            "tipo_contenido": tipo_contenido,
+            "tamano_bytes": tamano_bytes,
+            "propietario_id": str(id_reporte).lower(),
+            "consentimiento_id": None,
+        }
+        try:
+            datos = await _almacenamiento(info).solicitar_subida(usuario.rol, usuario.id, solicitud)
+        except ArchivoRechazado as error:
+            return _error_archivo(error.codigo)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_ARCHIVOS_NO_DISPONIBLES) from error
+        return SubidaArchivo(
+            archivo=_archivo(datos["archivo"]),
+            url=datos["url"],
+            metodo=datos["metodo"],
+            encabezados=[
+                EncabezadoSubida(nombre=nombre, valor=valor)
+                for nombre, valor in datos["encabezados"].items()
+            ],
+            vence_en=datetime.fromisoformat(datos["vence_en"]),
+        )
+
+    @strawberry.mutation
+    async def reportar_siniestro(
+        self, info: Info, entrada: ReporteSiniestroInput
+    ) -> ResultadoReporteSiniestro:
+        """v0.35 (HU-M05): el CLIENTE reporta y el caso llega PENDIENTE a la mesa de siniestros
+        (W04-01). Las reglas (póliza suya y vigente, fotos del caso, relato) las aplica CLAIMS;
+        aquí solo se agregan su nombre y documento, que salen de AUTH y nunca de la app."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        id_reporte = str(entrada.id_reporte).lower()
+        if not _id_reporte_valido(id_reporte):
+            return ErrorSiniestro(mensaje=MENSAJE_ID_REPORTE)
+        try:
+            identidad = await _auth(info).obtener_identidad(usuario.id)
+            perfil = await _auth(info).obtener_usuario(usuario.id)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_REPORTE_NO_DISPONIBLE) from error
+        if not identidad or not perfil or not perfil.get("nombre"):
+            return ErrorSiniestro(mensaje=MENSAJE_REPORTE_SIN_IDENTIDAD)
+        reporte = {
+            "id_reporte": id_reporte,
+            "cliente_id": usuario.id,
+            "titular_id": identidad["titular_id"],
+            "asegurado": {"nombre": perfil["nombre"], "documento": identidad["documento"]},
+            "poliza_id": str(entrada.poliza_id),
+            "cobertura_aplicada": RAMO_POLIZA,
+            "ocurrido_en": entrada.ocurrido_en.isoformat(),
+            "descripcion": entrada.descripcion,
+            "ubicacion": {
+                "descripcion": entrada.ubicacion.descripcion,
+                "ciudad": entrada.ubicacion.ciudad,
+                "latitud": entrada.ubicacion.latitud,
+                "longitud": entrada.ubicacion.longitud,
+            },
+            "evidencias": [
+                {
+                    "archivo_id": str(f.archivo_id),
+                    "tomada_en": f.tomada_en.isoformat(),
+                    "latitud": f.latitud,
+                    "longitud": f.longitud,
+                }
+                for f in entrada.fotos
+            ],
+        }
+        try:
+            return _siniestro_reportado(await _claims(info).reportar(reporte))
+        except ResolucionRechazada as error:
+            return ErrorSiniestro(mensaje=error.mensaje)
+        except ErrorServicio:
+            return ErrorSiniestro(mensaje=MENSAJE_REPORTE_NO_DISPONIBLE)
 
 
 schema = strawberry.Schema(

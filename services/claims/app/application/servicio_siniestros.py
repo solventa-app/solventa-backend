@@ -21,6 +21,7 @@ from app.application.bus_eventos import (
     evento_aprobado,
     evento_derivado,
     evento_rechazado,
+    evento_reportado,
 )
 from app.application.clientes import ServicioNoDisponible, SolicitudRechazada
 from app.application.dias_habiles import sumar_dias_habiles
@@ -50,6 +51,22 @@ MENSAJE_MOTIVO = "El motivo de rechazo no es válido."
 MENSAJE_POLIZA = "No pudimos consultar la póliza del siniestro. Intenta de nuevo."
 MENSAJE_ORDEN_PAGO = "No pudimos registrar la orden de pago de la indemnización. Intenta de nuevo."
 
+# ---------- Reporte del cliente (HU-M05) ----------
+# Mensajes para el CLIENTE en la app: qué pasó y qué hacer, sin detalles técnicos.
+SLA_DICTAMEN_DIAS_HABILES = 2  # W04-7
+MIN_FOTOS, MAX_FOTOS = 1, 3
+MIN_RELATO, MAX_RELATO = 10, 1000
+TIPO_ARCHIVO_FOTO = "siniestro-foto"
+ENTIDAD_POR_CONFIRMAR = "Por confirmar con el asegurado"
+MENSAJE_REPORTE_POLIZA = "La póliza no existe o no es tuya."
+MENSAJE_REPORTE_VIGENCIA = "La fecha del siniestro está fuera de la vigencia de la póliza."
+MENSAJE_REPORTE_FUTURO = "La fecha del siniestro no puede ser posterior a hoy."
+MENSAJE_REPORTE_RELATO = f"Cuéntanos qué pasó en {MIN_RELATO} a {MAX_RELATO} caracteres."
+MENSAJE_REPORTE_FOTOS = f"Adjunta de {MIN_FOTOS} a {MAX_FOTOS} fotos del daño."
+MENSAJE_REPORTE_FOTO_INVALIDA = "Una de las fotos no se subió bien. Tómala de nuevo."
+MENSAJE_REPORTE_DUPLICADO = "Ese reporte ya existe."
+MENSAJE_ALMACENAMIENTO = "No pudimos revisar las fotos. Intenta de nuevo."
+
 METODO_TRANSFERENCIA = "ACH Colombia Interbancario"
 PLAZO_DISPERSION = "1 a 3 días hábiles"
 NOTIFICACION_APROBACION = "Enviada al asegurado y a la entidad acreedora"
@@ -77,6 +94,10 @@ class PuertoPayments(Protocol):
     def ordenar_indemnizacion(
         self, siniestro_id: str, poliza_id: str, monto: str, moneda: str
     ) -> dict[str, Any]: ...
+
+
+class PuertoAlmacenamiento(Protocol):
+    def obtener(self, archivo_id: str) -> dict[str, Any] | None: ...
 
 
 class PuertoRepositorio(Protocol):
@@ -143,12 +164,140 @@ class ServicioSiniestros:
         policy: PuertoPolicy | None = None,
         payments: PuertoPayments | None = None,
         bus: PuertoBusEventos | None = None,
+        almacenamiento: PuertoAlmacenamiento | None = None,
     ) -> None:
         self._repo = repositorio
         self._reloj = reloj
         self._policy = policy
         self._payments = payments
         self._bus = bus
+        self._almacenamiento = almacenamiento
+
+    # ---------- Reporte del cliente (HU-M05, KAN-274) ----------
+
+    def reportar(self, reporte: dict) -> dict:
+        """Crea el caso PENDIENTE que llega a la mesa de siniestros (W04-01).
+
+        El BFF ya autenticó al CLIENTE y manda su id, su nombre y documento (de AUTH) y el
+        `id_reporte` que generó la app, que es el id del siniestro: reportar dos veces con el mismo
+        id devuelve el mismo caso (CA-M05-04). Las fotos ya están en el almacenamiento, subidas a
+        nombre de ese siniestro."""
+        sid = reporte["id_reporte"]
+        cliente = reporte["cliente_id"]
+        existente = self._repo.obtener(sid, primaria=True)
+        if existente is not None:
+            if existente.get("reportado_por") != cliente:
+                raise ErrorNegocio(MENSAJE_REPORTE_DUPLICADO)
+            return self.obtener(sid, primaria=True)
+
+        ahora = self._reloj()
+        ocurrido = reporte["ocurrido_en"]
+        if ocurrido > ahora:
+            raise ErrorNegocio(MENSAJE_REPORTE_FUTURO)
+        relato = (reporte.get("descripcion") or "").strip()
+        if not MIN_RELATO <= len(relato) <= MAX_RELATO:
+            raise ErrorNegocio(MENSAJE_REPORTE_RELATO)
+        fotos = reporte.get("evidencias") or []
+        if not MIN_FOTOS <= len(fotos) <= MAX_FOTOS:
+            raise ErrorNegocio(MENSAJE_REPORTE_FOTOS)
+
+        poliza = self._poliza_del_cliente(reporte["poliza_id"], cliente, reporte.get("titular_id"))
+        desde, hasta = (
+            datetime.fromisoformat(str(poliza[k])) for k in ("vigencia_desde", "vigencia_hasta")
+        )
+        if not desde <= ocurrido <= hasta:
+            raise ErrorNegocio(MENSAJE_REPORTE_VIGENCIA)
+        self._validar_fotos(sid, fotos)
+
+        siniestro = {
+            "id": sid,
+            "radicado": self._repo.siguiente_radicado(ahora.year),
+            "poliza_id": poliza["id"],
+            "estado": "PENDIENTE",
+            "asegurado": reporte["asegurado"],
+            "cobertura_aplicada": reporte["cobertura_aplicada"],
+            "entidad_acreedora": ENTIDAD_POR_CONFIRMAR,
+            "ocurrido_en": ocurrido,
+            "notificado_en": ahora,
+            "ubicacion": reporte["ubicacion"],
+            "descripcion": relato,
+            # El cliente no sabe el valor del daño: se reclama la cobertura y el operador la ajusta
+            # al aprobar (W04-8 la acota igual a la cobertura).
+            "suma_reclamada": {
+                "valor": str(poliza["cobertura"]["valor"]),
+                "moneda": poliza["cobertura"]["moneda"],
+            },
+            "vence_dictamen_en": sumar_dias_habiles(ahora, SLA_DICTAMEN_DIAS_HABILES),
+            "reportado_por": cliente,
+        }
+        evidencias = [self._evidencia_reportada(sid, i, f, ahora) for i, f in enumerate(fotos, 1)]
+        if not self._repo.crear_reporte(siniestro, evidencias, ahora):
+            # Otro intento con el mismo id ganó la carrera: se devuelve ese caso.
+            return self.reportar(reporte)
+        logger.info("siniestro=%s reportado fotos=%d", id_opaco(sid), len(evidencias))
+        self._publicar(evento_reportado(siniestro, len(evidencias)))
+        return self.obtener(sid, primaria=True)
+
+    def de_cliente(self, cliente_id: str) -> list[dict]:
+        """Los casos que reportó el cliente, para su seguimiento en la app."""
+        return self._armar(self._repo.listar_de_cliente(cliente_id), primaria=False)
+
+    def _poliza_del_cliente(self, poliza_id: str, cliente_id: str, titular_id: str | None) -> dict:
+        try:
+            poliza = self._policy.obtener_poliza(poliza_id)
+        except SolicitudRechazada as error:
+            raise ErrorNegocio(MENSAJE_REPORTE_POLIZA) from error
+        except ServicioNoDisponible as error:
+            raise DependenciaNoDisponible(MENSAJE_POLIZA) from error
+        # Es suya si es el titular (el HMAC de su documento, como en `propuestas` del BFF, sin
+        # importar quién la vendió), quien la firmó o quien la aceptó.
+        suya = cliente_id in {poliza.get("firmante_id"), poliza.get("actor_usuario_id")} or (
+            titular_id is not None and poliza.get("cliente_id") == titular_id
+        )
+        if not suya or poliza.get("estado") != "EMITIDA":
+            raise ErrorNegocio(MENSAJE_REPORTE_POLIZA)
+        return poliza
+
+    def _validar_fotos(self, siniestro_id: str, fotos: list[dict]) -> None:
+        """Cada foto debe estar DISPONIBLE, ser `siniestro-foto` y estar a nombre de este caso:
+        así nadie adjunta un archivo ajeno con solo conocer su id."""
+        ids = [f["archivo_id"] for f in fotos]
+        if len(set(ids)) != len(ids):
+            raise ErrorNegocio(MENSAJE_REPORTE_FOTO_INVALIDA)
+        for archivo_id in ids:
+            try:
+                archivo = self._almacenamiento.obtener(archivo_id)
+            except ServicioNoDisponible as error:
+                raise DependenciaNoDisponible(MENSAJE_ALMACENAMIENTO) from error
+            if (
+                archivo is None
+                or archivo.get("tipo") != TIPO_ARCHIVO_FOTO
+                or archivo.get("estado") != "DISPONIBLE"
+                or archivo.get("propietario_tipo") != "siniestro"
+                or archivo.get("propietario_id") != siniestro_id
+            ):
+                raise ErrorNegocio(MENSAJE_REPORTE_FOTO_INVALIDA)
+
+    @staticmethod
+    def _evidencia_reportada(sid: str, orden: int, foto: dict, ahora: datetime) -> dict:
+        lat, lon = foto.get("latitud"), foto.get("longitud")
+        geo = lat is not None and lon is not None
+        return {
+            "id": f"{sid}-foto-{orden}",
+            "siniestro_id": sid,
+            "archivo_id": foto["archivo_id"],
+            "tipo": "FOTO",
+            "titulo": f"Foto {orden} del daño (app)",
+            "nombre_archivo": f"{sid}-foto-{orden}.jpg",
+            "registrada_en": foto["tomada_en"],
+            "geoetiquetada": geo,
+            "latitud": float(lat) if geo else None,
+            "longitud": float(lon) if geo else None,
+            "nota": f"{lat:.4f}, {lon:.4f} · tomada en la app"
+            if geo
+            else "Sin ubicación: el cliente no dio permiso",
+            "creado_en": ahora,
+        }
 
     # ---------- Lectura ----------
 

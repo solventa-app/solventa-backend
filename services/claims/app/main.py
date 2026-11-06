@@ -7,6 +7,7 @@ la hace el BFF antes de llamar (W04-11).
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
@@ -15,11 +16,22 @@ from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 from pymongo import MongoClient
+from pymongo.errors import PyMongoError
 
 from app.application.autenticacion_servicios import autenticacion_para
 from app.application.bus_eventos import BusEventosLog
+from app.application.catalogo_prestadores import (
+    CatalogoNoDisponible,
+    LectorCatalogoPrestadores,
+    consultar,
+)
 from app.application.cifrado import CifradorAesGcm
-from app.application.clientes import ClientePayments, ClientePolicy
+from app.application.clientes import (
+    ClienteAlmacenamiento,
+    ClientePayments,
+    ClientePolicy,
+    reglas_de_reescritura,
+)
 from app.application.configuracion import Configuracion
 from app.application.repositorio import RepositorioSiniestrosMongo
 from app.application.servicio_siniestros import (
@@ -28,7 +40,7 @@ from app.application.servicio_siniestros import (
     ServicioSiniestros,
 )
 from app.observabilidad import configurar_trazas
-from app.sembrar import sembrar
+from app.sembrar import reiniciar as reiniciar_semilla
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 # httpx registra cada URL pedida en INFO, y las URLs firmadas del almacenamiento no deben quedar en
@@ -55,6 +67,42 @@ class RechazarRequest(BaseModel):
     actor_usuario_id: str | None = None
 
 
+class UbicacionReporte(BaseModel):
+    descripcion: str = Field(min_length=1, max_length=300)
+    ciudad: str = Field(min_length=1, max_length=100)
+    latitud: float = Field(ge=-90, le=90)
+    longitud: float = Field(ge=-180, le=180)
+
+
+class AseguradoReporte(BaseModel):
+    nombre: str = Field(min_length=1)
+    documento: str = Field(min_length=1)
+
+
+class FotoReporte(BaseModel):
+    archivo_id: str = Field(min_length=1)
+    tomada_en: datetime
+    latitud: float | None = Field(default=None, ge=-90, le=90)
+    longitud: float | None = Field(default=None, ge=-180, le=180)
+
+
+class ReporteRequest(BaseModel):
+    """HU-M05: lo arma el BFF con el CLIENTE ya autenticado (su id, su nombre y documento de AUTH)
+    y lo que capturó la app. `id_reporte` lo genera la app y es el id del siniestro."""
+
+    id_reporte: str = Field(min_length=8, max_length=64)
+    cliente_id: str = Field(min_length=1)
+    # El titular del cliente (HMAC de su documento, de AUTH): con él se reconocen sus pólizas.
+    titular_id: str | None = None
+    asegurado: AseguradoReporte
+    poliza_id: str = Field(min_length=1)
+    cobertura_aplicada: str = Field(min_length=1)
+    ocurrido_en: datetime
+    descripcion: str
+    ubicacion: UbicacionReporte
+    evidencias: list[FotoReporte]
+
+
 class DerivarRequest(BaseModel):
     perito_id: str = Field(min_length=1)
     instrucciones: str | None = Field(default=None, max_length=2000)
@@ -65,9 +113,10 @@ def create_app(
     config: Configuracion | None = None,
     servicio: ServicioSiniestros | None = None,
     reiniciar: Callable[[], int] | None = None,
+    catalogo=None,
 ) -> FastAPI:
-    """`servicio` y `reiniciar` permiten inyectar dobles de prueba sin levantar MongoDB (ver
-    `tests/fakes.py`)."""
+    """`servicio`, `reiniciar` y `catalogo` permiten inyectar dobles de prueba sin levantar
+    MongoDB (ver `tests/fakes.py`)."""
     config = config or Configuracion.desde_entorno()
 
     @asynccontextmanager
@@ -75,7 +124,9 @@ def create_app(
         cliente_mongo: MongoClient | None = None
         policy: ClientePolicy | None = None
         payments: ClientePayments | None = None
+        almacenamiento: ClienteAlmacenamiento | None = None
         app.state.reiniciar = reiniciar
+        app.state.catalogo = catalogo
         if servicio is not None:
             app.state.servicio = servicio
         else:
@@ -88,6 +139,10 @@ def create_app(
             repositorio = RepositorioSiniestrosMongo(
                 cliente_mongo, cifrador, config.mongo_db, config.lectura_max_ms
             )
+            if app.state.catalogo is None:
+                app.state.catalogo = LectorCatalogoPrestadores(
+                    cliente_mongo, config.mongo_db, config.lectura_max_ms
+                )
             modo = config.autenticacion_servicios
             policy = ClientePolicy(
                 config.policy_url,
@@ -99,16 +154,26 @@ def create_app(
                 config.servicios_timeout_segundos,
                 autenticacion_para(modo, "payments"),
             )
+            almacenamiento = ClienteAlmacenamiento(
+                config.almacenamiento_url,
+                config.servicios_timeout_segundos,
+                autenticacion_para(modo, "almacenamiento"),
+                reglas_de_reescritura(config.almacen_reescritura_origenes),
+            )
             app.state.servicio = ServicioSiniestros(
-                repositorio, policy=policy, payments=payments, bus=BusEventosLog()
+                repositorio,
+                policy=policy,
+                payments=payments,
+                bus=BusEventosLog(),
+                almacenamiento=almacenamiento,
             )
             if app.state.reiniciar is None:
                 datos = Path(config.semilla_dir)
-                app.state.reiniciar = lambda: sembrar(repositorio, datos)
+                app.state.reiniciar = lambda: reiniciar_semilla(repositorio, datos)
         try:
             yield
         finally:
-            for cliente in (policy, payments):
+            for cliente in (policy, payments, almacenamiento):
                 if cliente is not None:
                     cliente.cerrar()
             if cliente_mongo is not None:
@@ -136,6 +201,16 @@ def create_app(
     def peritos(siniestro_id: str) -> list[dict]:
         return app.state.servicio.peritos_para(siniestro_id)
 
+    @app.get("/prestadores", tags=["prestadores"])
+    def prestadores(version_local: str | None = None) -> dict:
+        """HU-M06: catálogo maestro de prestadores, versionado. Se lee de la réplica."""
+        try:
+            return consultar(app.state.catalogo, version_local)
+        except (CatalogoNoDisponible, PyMongoError):
+            # Sin catálogo cargado o con la réplica lenta: 503 y la app sigue con su copia.
+            detalle = "El catálogo de prestadores no está disponible."
+            return JSONResponse(status_code=503, content={"detail": detalle})
+
     def _accion(accion) -> dict | JSONResponse:
         """Un error de negocio es 409 y una dependencia caída 503, siempre con un `detail` en
         lenguaje del operador que el BFF muestra tal cual (nunca un 5xx crudo al cliente)."""
@@ -145,6 +220,17 @@ def create_app(
             return JSONResponse(status_code=409, content={"detail": str(error)})
         except DependenciaNoDisponible as error:
             return JSONResponse(status_code=503, content={"detail": str(error)})
+
+    @app.post("/siniestros", tags=["reporte"])
+    def reportar(body: ReporteRequest) -> dict:
+        """HU-M05: el cliente reporta desde la app y el caso llega PENDIENTE a la bandeja (W04-01).
+        Idempotente por `id_reporte`."""
+        return _accion(lambda: app.state.servicio.reportar(body.model_dump()))
+
+    @app.get("/clientes/{cliente_id}/siniestros", tags=["reporte"])
+    def de_cliente(cliente_id: str) -> list[dict]:
+        """Los casos que reportó un cliente (el BFF pasa el id del token, nunca uno ajeno)."""
+        return app.state.servicio.de_cliente(cliente_id)
 
     @app.post("/siniestros/_aprobar-vencidos", tags=["operacion"])
     def aprobar_vencidos() -> dict[str, int]:

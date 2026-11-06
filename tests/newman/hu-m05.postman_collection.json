@@ -1,0 +1,905 @@
+{
+  "info": {
+    "name": "Solventa - HU-M05 (reporte de siniestro desde la app, por el gateway)",
+    "description": "KAN-278: el CLIENTE demo reporta un siniestro con foto, llega PENDIENTE a la mesa, el BACKOFFICE lo aprueba y la app ve la resolución (v0.37). Requiere las semillas `sembrar-polizas-demo`, `crear-cliente-siniestros-demo` y `sembrar-siniestros`. Corre en orden.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Preparación",
+      "item": [
+        {
+          "name": "0.1 iniciarSesion como BACKOFFICE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}/graphql/web"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) { iniciarSesion(entrada: $e) { __typename ... on Sesion { token } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{usuario_backoffice}}\",\n      \"clave\": \"{{clave_backoffice}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('id_reporte', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('id_reporte_2', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.collectionVariables.set('token_backoffice', cuerpo.data.iniciarSesion.token);",
+                  "pm.test('Sesión de BACKOFFICE', () => pm.expect(cuerpo.data.iniciarSesion.__typename).to.eql('Sesion'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.2 iniciarSesion del CLIENTE demo (canal app)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) { iniciarSesion(entrada: $e) { __typename ... on Sesion { token } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{usuario_cliente_demo}}\",\n      \"clave\": \"{{clave_cliente_demo}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.collectionVariables.set('token_cliente', cuerpo.data.iniciarSesion.token);",
+                  "pm.test('Sesión de CLIENTE', () => pm.expect(cuerpo.data.iniciarSesion.__typename).to.eql('Sesion'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.3 la póliza EMITIDA del cliente demo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"{ propuestas(estado: EMITIDA) { propuestas { polizaId } } }\",\n  \"variables\": {}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const p = cuerpo.data.propuestas.propuestas.find(x => x.polizaId);",
+                  "pm.test('Tiene póliza emitida (sembrar-polizas-demo)', () => pm.expect(p).to.not.be.undefined);",
+                  "pm.collectionVariables.set('poliza_cliente', p.polizaId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.4 una póliza de otro titular (sin-01 de la semilla)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}/graphql/web"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"{ siniestro(id: \\\"sin-01\\\") { poliza { id } } }\",\n  \"variables\": {}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.collectionVariables.set('poliza_ajena', cuerpo.data.siniestro.poliza.id);",
+                  "pm.test('Póliza ajena', () => pm.expect(cuerpo.data.siniestro.poliza.id).to.not.eql(pm.collectionVariables.get('poliza_cliente')));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Reporte (CA-M05)",
+      "item": [
+        {
+          "name": "1.1a solicitarSubidaEvidenciaSiniestro",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($id: ID!) { solicitarSubidaEvidenciaSiniestro(idReporte: $id, tipoContenido: \\\"image/png\\\", tamanoBytes: 385) {\\n  __typename ... on SubidaArchivo { url metodo encabezados { nombre valor } archivo { id } } ... on ErrorArchivo { codigo mensaje } } }\",\n  \"variables\": {\n    \"id\": \"{{id_reporte}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const s = cuerpo.data.solicitarSubidaEvidenciaSiniestro;",
+                  "pm.test('URL firmada', () => pm.expect(s.__typename).to.eql('SubidaArchivo'));",
+                  "pm.collectionVariables.set('archivo_1', s.archivo.id);",
+                  "pm.collectionVariables.set('archivo_1_url', s.url);",
+                  "pm.collectionVariables.set('archivo_1_cab', JSON.stringify(s.encabezados));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.1b PUT de la foto a la URL firmada",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{archivo_1_url}}",
+              "host": [
+                "{{archivo_1_url}}"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": "tests/newman/archivos/firma-valida.png"
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "JSON.parse(pm.collectionVariables.get('archivo_1_cab')).forEach(c =>",
+                  "  pm.request.headers.upsert({ key: c.nombre, value: c.valor }));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('la foto quedó en el bucket', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.1c confirmarSubidaArchivo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($id: ID!) { confirmarSubidaArchivo(id: $id) { __typename ... on Archivo { id estado } ... on ErrorArchivo { codigo mensaje } } }\",\n  \"variables\": {\n    \"id\": \"{{archivo_1}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('DISPONIBLE', () => pm.expect(cuerpo.data.confirmarSubidaArchivo.estado).to.eql('DISPONIBLE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 reportarSiniestro llega PENDIENTE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"2026-11-01T13:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"2026-11-01T13:05:00-05:00\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.reportarSiniestro;",
+                  "pm.test('SiniestroReportado', () => pm.expect(r.__typename).to.eql('SiniestroReportado'));",
+                  "pm.test('PENDIENTE y sin resolución', () => { pm.expect(r.estado).to.eql('PENDIENTE'); pm.expect(r.resolucion).to.be.null; });",
+                  "pm.test('Radicado SIN-AAAA-1NNN', () => pm.expect(r.radicado).to.match(/^SIN-\\d{4}-1\\d{3}$/));",
+                  "pm.test('1 foto', () => pm.expect(r.fotos).to.eql(1));",
+                  "pm.test('Su póliza', () => pm.expect(r.polizaId).to.eql(pm.collectionVariables.get('poliza_cliente')));",
+                  "pm.collectionVariables.set('radicado', r.radicado);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 repetir con el mismo idReporte devuelve el mismo caso",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"2026-11-01T13:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"2026-11-01T13:05:00-05:00\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.reportarSiniestro;",
+                  "pm.test('Mismo caso', () => { pm.expect(r.id).to.eql(pm.collectionVariables.get('id_reporte')); pm.expect(r.radicado).to.eql(pm.collectionVariables.get('radicado')); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Errores controlados",
+      "item": [
+        {
+          "name": "2.1 póliza de otro titular",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_ajena}}\",\n      \"ocurridoEn\": \"2026-11-01T13:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"2026-11-01T13:05:00-05:00\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.reportarSiniestro;",
+                  "pm.test('ErrorSiniestro', () => pm.expect(r.__typename).to.eql('ErrorSiniestro'));",
+                  "pm.test('Mensaje de CLAIMS', () => pm.expect(r.mensaje).to.eql(\"La póliza no existe o no es tuya.\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 fecha futura",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"2099-01-01T10:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"2026-11-01T13:05:00-05:00\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.reportarSiniestro;",
+                  "pm.test('ErrorSiniestro', () => pm.expect(r.__typename).to.eql('ErrorSiniestro'));",
+                  "pm.test('Mensaje de CLAIMS', () => pm.expect(r.mensaje).to.eql(\"La fecha del siniestro no puede ser posterior a hoy.\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 fecha fuera de la vigencia",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"2025-06-01T10:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"2026-11-01T13:05:00-05:00\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.reportarSiniestro;",
+                  "pm.test('ErrorSiniestro', () => pm.expect(r.__typename).to.eql('ErrorSiniestro'));",
+                  "pm.test('Mensaje de CLAIMS', () => pm.expect(r.mensaje).to.eql(\"La fecha del siniestro está fuera de la vigencia de la póliza.\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 foto subida a nombre de otro reporte",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"2026-11-01T13:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"2026-11-01T13:05:00-05:00\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.reportarSiniestro;",
+                  "pm.test('ErrorSiniestro', () => pm.expect(r.__typename).to.eql('ErrorSiniestro'));",
+                  "pm.test('Mensaje de CLAIMS', () => pm.expect(r.mensaje).to.eql(\"Una de las fotos no se subió bien. Tómala de nuevo.\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Autorización",
+      "item": [
+        {
+          "name": "3.1 sin sesión: SIN_SESION",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"{ misSiniestros { id radicado estado fotos resolucion { tipo resueltaEn motivo viaRecurso\\n  indemnizacion { valor moneda } plazoDispersion } } }\",\n  \"variables\": {}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Código SIN_SESION', () => pm.expect(cuerpo.errors[0].extensions.code).to.eql('SIN_SESION'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 un BACKOFFICE no reporta",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}/graphql/web"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"2026-11-01T13:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"2026-11-01T13:05:00-05:00\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Sin permiso', () => pm.expect(cuerpo.errors[0].message).to.eql('No tienes permiso para esta operación.'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. De la mesa a la app",
+      "item": [
+        {
+          "name": "4.1 la mesa lo ve primero entre los PENDIENTE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}/graphql/web"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"{ siniestros(estado: PENDIENTE) { id radicado } }\",\n  \"variables\": {}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Primero el reportado', () => pm.expect(cuerpo.data.siniestros[0].id).to.eql(pm.collectionVariables.get('id_reporte')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 el BACKOFFICE lo aprueba",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}/graphql/web"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($id: ID!) { aprobarSiniestro(id: $id) { __typename ... on Siniestro { estado } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"id\": \"{{id_reporte}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('APROBADO', () => pm.expect(cuerpo.data.aprobarSiniestro.estado).to.eql('APROBADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 misSiniestros: APROBADO con su resolución (v0.37)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}/graphql/app"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"{ misSiniestros { id radicado estado fotos resolucion { tipo resueltaEn motivo viaRecurso\\n  indemnizacion { valor moneda } plazoDispersion } } }\",\n  \"variables\": {}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const s = cuerpo.data.misSiniestros.find(x => x.id === pm.collectionVariables.get('id_reporte'));",
+                  "pm.test('APROBADO', () => pm.expect(s.estado).to.eql('APROBADO'));",
+                  "pm.test('Resolución APROBACION', () => pm.expect(s.resolucion.tipo).to.eql('APROBACION'));",
+                  "pm.test('Indemnización en COP', () => pm.expect(s.resolucion.indemnizacion.moneda).to.eql('COP'));",
+                  "pm.test('Plazo de dispersión', () => pm.expect(s.resolucion.plazoDispersion).to.be.a('string'));",
+                  "pm.test('Sin motivo de rechazo', () => pm.expect(s.resolucion.motivo).to.be.null);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "usuario_cliente_demo",
+      "value": "cliente.siniestros"
+    },
+    {
+      "key": "clave_cliente_demo",
+      "value": "Cliente-local-1"
+    }
+  ]
+}

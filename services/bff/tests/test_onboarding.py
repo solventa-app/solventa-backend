@@ -414,7 +414,6 @@ def test_servicio_codigo_permite_reenviar_pasado_el_minuto_e_invalida_el_anterio
     asyncio.run(correr())
 
 
-
 def test_registrar_cuenta_con_clave_debil_no_gasta_el_codigo() -> None:
     """T17: la clave se valida antes del OTP; el mensaje dice qué falta, en español y en inglés."""
     from fakes import AclFalso

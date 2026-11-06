@@ -32,7 +32,7 @@ class BusQueGuarda(BusEventosLog):
 def test_las_copias_de_la_imagen_son_iguales_al_contrato():
     copias = {p.name: p.read_bytes() for p in ESQUEMAS.glob("siniestro.*.schema.json")}
     fuentes = {p.name: p.read_bytes() for p in CONTRATOS.glob("siniestro.*.schema.json")}
-    assert copias == fuentes and len(copias) == 3
+    assert copias == fuentes and len(copias) == 4
 
 
 def test_los_tres_eventos_cumplen_su_esquema_y_se_publican():

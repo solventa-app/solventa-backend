@@ -857,6 +857,67 @@ type ErrorSiniestro {
 
 union ResultadoResolucion = Siniestro | ErrorSiniestro
 
+# ---------- Reporte del cliente (v0.35, HU-M05, servicio CLAIMS) ----------
+# El CLIENTE reporta desde el móvil y el caso llega PENDIENTE a la mesa de siniestros (W04-01). Orden:
+# solicitarSubidaEvidenciaSiniestro + PUT + confirmarSubidaArchivo por cada foto -> reportarSiniestro.
+# `idReporte` lo genera la app (UUID) y es el id del siniestro: las fotos quedan a nombre del caso y reenviar con el
+# mismo id devuelve el mismo caso. El nombre y el documento del asegurado salen de AUTH, nunca de la app.
+
+# Lo que ve el CLIENTE de un caso que reportó: sin datos del operador ni del perito.
+# v0.37 (HU-M05): lo que el CLIENTE ve de la resolución de su caso. Sin datos del operador ni del perito: ni el
+# comentario (texto libre del BACKOFFICE), ni el perito, ni sus instrucciones.
+type ResolucionCliente {
+  tipo: TipoResolucion! # APROBACION, RECHAZO o DERIVACION (en revisión con un perito)
+  resueltaEn: DateTime!
+  motivo: MotivoRechazo # solo RECHAZO
+  viaRecurso: String # solo RECHAZO: cómo pedir que lo revisen
+  indemnizacion: Monto # solo APROBACION
+  plazoDispersion: String # solo APROBACION
+}
+
+type SiniestroReportado {
+  id: ID!
+  radicado: String!
+  estado: EstadoSiniestro!
+  polizaId: ID!
+  ocurridoEn: DateTime!
+  notificadoEn: DateTime!
+  venceDictamenEn: DateTime!
+  fotos: Int!
+  # v0.37: null mientras el caso está PENDIENTE.
+  resolucion: ResolucionCliente
+}
+
+# El error trae el mensaje para el cliente (póliza ajena o fuera de vigencia, foto inválida, relato muy corto, sin
+# identidad verificada o servicio caído con reintento).
+union ResultadoReporteSiniestro = SiniestroReportado | ErrorSiniestro
+
+input UbicacionReporteInput {
+  descripcion: String!
+  ciudad: String!
+  latitud: Float!
+  longitud: Float!
+}
+
+input FotoReporteInput {
+  archivoId: ID!
+  tomadaEn: DateTime!
+  # Donde se tomó la foto (GPS del teléfono); null si el cliente no dio permiso: la foto queda sin geoetiqueta.
+  latitud: Float = null
+  longitud: Float = null
+}
+
+input ReporteSiniestroInput {
+  idReporte: ID!
+  polizaId: ID!
+  ocurridoEn: DateTime!
+  # De 10 a 1000 caracteres.
+  descripcion: String!
+  ubicacion: UbicacionReporteInput!
+  # De 1 a 3 fotos `siniestro-foto`, ya confirmadas.
+  fotos: [FotoReporteInput!]!
+}
+
 # ---------- Estado del sistema (v0.22, HU-W07) ----------
 # Solo BACKOFFICE. Los pesos, los objetivos de latencia y los umbrales viven en contracts/salud.json. El socio ve una
 # versión sin micros internos en `GET /v1/estado` (contracts/openapi/socios-v1.json).
@@ -946,6 +1007,30 @@ type DireccionValidada {
   pais: String
 }
 
+# v0.36 (HU-M06, KAN-263). Catálogo maestro de prestadores para la asistencia en sitio. Sin datos personales: la app
+# guarda una copia, calcula la cercanía con la ubicación del teléfono (que no viaja) y solo descarga si cambia la versión.
+# La app descarta los tipos que no conoce, así que agregar uno no la rompe.
+enum TipoPrestador {
+  MEDICO
+  MECANICO
+}
+
+type Prestador {
+  id: ID!
+  nombre: String!
+  tipo: TipoPrestador!
+  ciudad: String!
+  latitud: Float! # WGS84
+  longitud: Float!
+  activo: Boolean! # false = dado de baja; la app lo descarta
+}
+
+type CatalogoPrestadores {
+  version: String! # versión vigente en el backend (AAAA-MM-DD.n)
+  vigente: Boolean! # true si versionLocal ya es la vigente: entonces prestadores viene vacía
+  prestadores: [Prestador!]! # completa (activos e inactivos) cuando vigente = false
+}
+
 type Query {
   # v0.32 (T19). Places detrás del ACL Worker (timeout 700 ms; sin llave, un stub). Lista vacía si no responde.
   autocompletarDireccion(texto: String!, pais: String = null): [SugerenciaDireccion!]!
@@ -982,9 +1067,14 @@ type Query {
   siniestro(id: ID!): Siniestro
   # Peritos disponibles para derivar este caso, cada uno con su fecha límite de informe si se le deriva hoy.
   peritos(siniestroId: ID!): [Perito!]!
+  # v0.35 (HU-M05): los casos que reportó el CLIENTE del token, del más reciente al más antiguo.
+  misSiniestros: [SiniestroReportado!]!
   # ---------- v0.22 (HU-W07) ----------
   # Solo BACKOFFICE. `ventana`: 15m, 1h, 24h o 7d.
   estadoSistema(ventana: String = "1h"): EstadoSistema!
+  # ---------- v0.36 (HU-M06) ----------
+  # Sesión de CLIENTE (SIN_SESION si no hay). versionLocal null o distinta de la vigente: la lista completa.
+  catalogoPrestadores(versionLocal: String = null): CatalogoPrestadores!
 }
 
 type Mutation {
@@ -1088,4 +1178,8 @@ type Mutation {
   aprobarSiniestro(id: ID!): ResultadoResolucion!
   rechazarSiniestro(id: ID!, motivo: MotivoRechazo!, comentario: String = null): ResultadoResolucion!
   derivarSiniestro(id: ID!, peritoId: ID!, instrucciones: String = null): ResultadoResolucion!
+  # ---------- v0.35 (HU-M05): reporte del cliente, solo CLIENTE ----------
+  # URL firmada para una foto del caso que va a reportar (tipo `siniestro-foto`, a nombre de `idReporte`).
+  solicitarSubidaEvidenciaSiniestro(idReporte: ID!, tipoContenido: String!, tamanoBytes: Int!): ResultadoSubidaArchivo!
+  reportarSiniestro(entrada: ReporteSiniestroInput!): ResultadoReporteSiniestro!
 }

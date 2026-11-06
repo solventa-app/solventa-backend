@@ -1,0 +1,17 @@
+{
+  "version": "2026-11-04.1",
+  "prestadores": [
+    { "id": "prs-bog-001", "nombre": "Clínica Norte", "tipo": "MEDICO", "ciudad": "Bogotá", "latitud": 4.6859, "longitud": -74.0524, "activo": true },
+    { "id": "prs-bog-002", "nombre": "Taller AutoAyuda", "tipo": "MECANICO", "ciudad": "Bogotá", "latitud": 4.6835, "longitud": -74.0322, "activo": true },
+    { "id": "prs-bog-003", "nombre": "Centro Médico Sur", "tipo": "MEDICO", "ciudad": "Bogotá", "latitud": 4.6536, "longitud": -74.0555, "activo": true },
+    { "id": "prs-bog-004", "nombre": "Taller Express 80", "tipo": "MECANICO", "ciudad": "Bogotá", "latitud": 4.6950, "longitud": -74.0870, "activo": true },
+    { "id": "prs-bog-005", "nombre": "Clínica del Parque", "tipo": "MEDICO", "ciudad": "Bogotá", "latitud": 4.6280, "longitud": -74.0650, "activo": true },
+    { "id": "prs-bog-006", "nombre": "Mecánica Rápida Occidente", "tipo": "MECANICO", "ciudad": "Bogotá", "latitud": 4.6290, "longitud": -74.1500, "activo": true },
+    { "id": "prs-med-001", "nombre": "Clínica El Poblado", "tipo": "MEDICO", "ciudad": "Medellín", "latitud": 6.2088, "longitud": -75.5680, "activo": true },
+    { "id": "prs-med-002", "nombre": "Taller Las Palmas", "tipo": "MECANICO", "ciudad": "Medellín", "latitud": 6.2200, "longitud": -75.5600, "activo": true },
+    { "id": "prs-cal-001", "nombre": "Centro Médico Granada", "tipo": "MEDICO", "ciudad": "Cali", "latitud": 3.4600, "longitud": -76.5320, "activo": true },
+    { "id": "prs-cal-002", "nombre": "Taller Autopista Sur", "tipo": "MECANICO", "ciudad": "Cali", "latitud": 3.4000, "longitud": -76.5200, "activo": true },
+    { "id": "prs-baq-001", "nombre": "Clínica Alto Prado", "tipo": "MEDICO", "ciudad": "Barranquilla", "latitud": 11.0040, "longitud": -74.8110, "activo": true },
+    { "id": "prs-baq-002", "nombre": "Taller Vía 40", "tipo": "MECANICO", "ciudad": "Barranquilla", "latitud": 11.0100, "longitud": -74.7900, "activo": true }
+  ]
+}

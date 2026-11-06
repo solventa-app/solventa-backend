@@ -99,6 +99,43 @@ npx --yes newman@6.2.2 run tests/newman/socios-w07.postman_collection.json \
   -e tests/newman/solventa-local.postman_environment.json
 ```
 
+## Colección de HU-M05 (`hu-m05.postman_collection.json`)
+
+Reporte de siniestro desde la app por el gateway (KAN-35, KAN-278): 18 peticiones en 5 carpetas, en orden.
+
+| Carpeta | Qué verifica |
+|---|---|
+| 0. Preparación | Sesión de BACKOFFICE y del CLIENTE demo (`cliente.siniestros`), su póliza EMITIDA y una póliza ajena (la de `sin-01`) |
+| 1. Reporte | Subida de la foto (URL firmada, PUT y confirmación), `reportarSiniestro` PENDIENTE con radicado `SIN-AAAA-1NNN`, y el mismo `idReporte` devuelve el mismo caso |
+| 2. Errores controlados | Póliza ajena, fecha futura, fecha fuera de la vigencia y foto subida a nombre de otro reporte, con el mensaje de CLAIMS |
+| 3. Autorización | Sin sesión: `SIN_SESION`; un BACKOFFICE no reporta |
+| 4. De la mesa a la app | El caso sale primero entre los PENDIENTE, el BACKOFFICE lo aprueba y `misSiniestros` lo muestra APROBADO con su `resolucion` (v0.37) |
+
+Requiere las semillas: `docker compose --profile semilla run --rm crear-cliente-siniestros-demo`, `sembrar-polizas-demo` y
+`sembrar-siniestros`. Cada corrida crea y aprueba un caso nuevo.
+
+```bash
+npx --yes newman@6.2.2 run tests/newman/hu-m05.postman_collection.json \
+  -e tests/newman/solventa-local.postman_environment.json
+```
+
+## Colección de HU-M06 (`hu-m06.postman_collection.json`)
+
+Catálogo maestro de prestadores por el gateway (KAN-263): 9 peticiones y 28 aserciones en 3 carpetas, en orden.
+
+| Carpeta | Qué verifica |
+|---|---|
+| 0. Preparación | Sesión de BACKOFFICE, alta de un CLIENTE (alias al azar) y su sesión en el canal `app` |
+| 1. Catálogo versionado | Sin versión: los 12 de la semilla, tipos y coordenadas; con la vigente: `vigente` y lista vacía; con una vieja: completa; `/v1/graphql/app` igual |
+| 2. Autorización | Sin sesión: `SIN_SESION`; un BACKOFFICE no lo usa |
+
+No necesita semilla: el catálogo lo carga `migrar-claims`.
+
+```bash
+npx --yes newman@6.2.2 run tests/newman/hu-m06.postman_collection.json \
+  -e tests/newman/solventa-local.postman_environment.json
+```
+
 ## Colección de HU-W04 (`hu-w04.postman_collection.json`)
 
 Mesa de siniestros por el gateway (KAN-27, KAN-248): 26 peticiones y 52 aserciones en 8 carpetas.

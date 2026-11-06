@@ -411,6 +411,32 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 
 - KAN-26: los errores de sesión llevan `extensions.code` (`SIN_SESION`, `SESION_INVALIDA`); el cliente deja de comparar el mensaje. El texto no cambia. Afecta al frontend: sí (aditivo).
 
+## v0.35 — 2026-11-04
+
+- KAN-35 (HU-M05, KAN-274 y KAN-275): el CLIENTE reporta un siniestro desde el móvil y llega `PENDIENTE` a la mesa de
+  siniestros de HU-W04. Aditivo: `Mutation.solicitarSubidaEvidenciaSiniestro`, `Mutation.reportarSiniestro`,
+  `Query.misSiniestros`, los tipos `SiniestroReportado`, `ResultadoReporteSiniestro` y los inputs `ReporteSiniestroInput`,
+  `UbicacionReporteInput` y `FotoReporteInput`. El tipo de archivo `siniestro-foto` admite que lo suba un `CLIENTE`
+  (a nombre del caso). Evento nuevo `siniestro.reportado` (v1). CLAIMS: `POST /siniestros`, `GET
+  /clientes/{id}/siniestros` y migración `0004`. Afecta al frontend: sí (aditivo; lo consume el móvil).
+
+## v0.36 — 2026-11-05
+
+- KAN-263 (HU-M06, KAN-36): catálogo maestro de prestadores. Tipos `TipoPrestador`, `Prestador` y `CatalogoPrestadores`;
+  consulta `catalogoPrestadores(versionLocal)` con sesión de CLIENTE. Con `versionLocal` igual a la vigente responde
+  `vigente: true` y la lista vacía; nula o distinta, la lista completa (incluidos los inactivos). Lo sirve CLAIMS desde
+  la réplica; el catálogo vive en `services/claims/migrations/datos/prestadores.json` y se sincroniza al migrar.
+  Propuesto por la app móvil en `solventa-frontend-mobile/docs/hu-m06-backend.md`. Solo cambios aditivos.
+- Afecta al frontend: sí (móvil: regenerar `lib/core/contrato/` y cambiar el fake por el datasource GraphQL).
+
+## v0.37 — 2026-11-05
+
+- KAN-35 (HU-M05): `SiniestroReportado.resolucion` (tipo nuevo `ResolucionCliente`) para que la app muestre el desenlace
+  real del caso en vez de un texto genérico: tipo y fecha; en un rechazo, el motivo y la vía de recurso; en una
+  aprobación, la indemnización y el plazo de dispersión. Nunca el comentario del operador ni los datos del perito.
+  `null` mientras el caso está PENDIENTE. Solo cambios aditivos.
+- Afecta al frontend: sí (móvil: «Mis siniestros» y el detalle del caso).
+
 ## v0.26 — 2026-11-01
 
 - KAN-26 (T22, `plan-cierre-HU-W03.md`): sesión con token de acceso corto y refresh largo. Aditivo:
