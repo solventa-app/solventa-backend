@@ -16,10 +16,9 @@ name: Costos staging
 # despliegue automático (deploy-staging.yml) lo respeta: un release no vuelve a encender lo que está apagado.
 # Solo toca Cloud SQL, Redis, el conector VPC y el escalado de los servicios: si el plan destruyera otra cosa, el workflow falla sin aplicar nada.
 #
-# SE APAGA SOLO todos los días a las 2:00 a.m. hora de Colombia (por si se olvida apagarlo): es el bloque `schedule`,
-# con tres reintentos más tarde por si GitHub retrasa o se salta la primera. Para quitarlo, borra ese bloque. GitHub puede demorar unos minutos en lanzar las ejecuciones programadas, y en un
-# repositorio público las desactiva tras 60 días sin actividad. Si algo falla, infra/README.md explica cómo hacer lo
-# mismo a mano desde Cloud Shell.
+# Solo se ejecuta a mano (2026-11-04): el apagado programado se quitó porque fallaba en cada pasada y no avisaba a
+# nadie. Hay que acordarse de apagar al terminar de usar staging. Si algo falla, infra/README.md explica cómo hacer
+# lo mismo a mano desde Cloud Shell.
 on:
   workflow_dispatch:
     inputs:
@@ -28,15 +27,6 @@ on:
         type: choice
         options: [estado, apagar, encender]
         default: estado
-  schedule:
-    # 2:00 a.m. en Colombia (UTC-5, sin horario de verano) = 07:00 UTC. Siempre apaga.
-    # Los cron de GitHub son de mejor esfuerzo: pueden llegar horas tarde o saltarse (el 18-oct llegó casi 5 h
-    # tarde y el 19-oct no llegó). Por eso hay reintentos: apagar es idempotente (si ya está apagado, el plan no
-    # tiene cambios y no se toca nada), así que las pasadas extra no cuestan nada cuando la primera funcionó.
-    - cron: '0 7 * * *'
-    - cron: '30 8 * * *'
-    - cron: '0 10 * * *'
-    - cron: '0 12 * * *'
 
 permissions:
   contents: read
@@ -49,17 +39,12 @@ concurrency:
 jobs:
   comprobar:
     # Como el resto del despliegue: no hace nada hasta que existan las variables y la protección de gasto.
-    # El horario corre desde `develop` (rama por defecto) pero lo que se aplica es la infraestructura de `main`: hasta
-    # que `main` traiga el apagado de costos, la ejecución programada se omite con un aviso en vez de fallar cada
-    # noche; la manual sí falla con un error claro.
+    # Se puede lanzar desde `develop` o `main`, pero lo que se aplica es siempre la infraestructura de `main`.
     if: >-
       vars.GCP_PROJECT_ID != '' && vars.GCP_PROTECCION_GASTO == 'activa' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: read # para saber si un apagado programado de hoy ya funcionó
     outputs:
       ok: ${{ steps.soporte.outputs.ok }}
     steps:
@@ -68,40 +53,14 @@ jobs:
           ref: main
       - name: ¿El Terraform de main ya sabe apagar y encender?
         id: soporte
-        env:
-          EVENTO: ${{ github.event_name }}
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
         run: |
-          # Los cron de las 08:30, 10:00 y 12:00 UTC son REINTENTOS del de las 07:00: si un apagado programado de hoy
-          # (día de Colombia) ya terminó bien, con su job `costos` en verde, los demás no hacen nada. El 1-nov GitHub
-          # entregó el primero a las 14:06 UTC y dos reintentos a las 15:19 y 16:31 UTC, que volvieron a apagar
-          # staging en pleno día justo después de que el equipo lo encendiera a mano.
-          if [ "$EVENTO" = "schedule" ]; then
-            desde=$(date -u -d "$(TZ=America/Bogota date +%F) 00:00 -0500" +%Y-%m-%dT%H:%M:%SZ)
-            corridas=$(gh api "repos/${REPO}/actions/workflows/costos-staging.yml/runs?event=schedule&status=success&created=%3E%3D${desde}" \
-              --jq ".workflow_runs[] | select(.id != ${RUN_ID}) | .id")
-            for id in $corridas; do
-              resultado=$(gh api "repos/${REPO}/actions/runs/${id}/jobs" --jq '.jobs[] | select(.name == "costos") | .conclusion')
-              if [ "$resultado" = "success" ]; then
-                echo "ok=false" >> "$GITHUB_OUTPUT"
-                echo "::notice title=Costos staging::el apagado programado de hoy ya funcionó (run ${id}); este reintento no hace nada."
-                exit 0
-              fi
-            done
-          fi
           if grep -q 'cloud_sql_encendida' infra/variables.tf; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "ok=false" >> "$GITHUB_OUTPUT"
-          if [ "$EVENTO" = "schedule" ]; then
-            echo "::notice title=Costos staging::main todavía no trae el apagado de costos; se omite el apagado programado."
-          else
-            echo "::error title=Costos staging::main todavía no trae el apagado de costos. Mezcla a main el release que incluye este workflow y vuelve a ejecutarlo."
-            exit 1
-          fi
+          echo "::error title=Costos staging::main todavía no trae el apagado de costos. Mezcla a main el release que incluye este workflow y vuelve a ejecutarlo."
+          exit 1
 
   costos:
     needs: comprobar
@@ -119,8 +78,7 @@ jobs:
       TF_VAR_billing_account_id: ${{ vars.GCP_BILLING_ACCOUNT_ID }}
       TF_VAR_mongodb_atlas_org_id: ${{ vars.MONGODB_ATLAS_ORG_ID }}
       PROYECTO: ${{ vars.GCP_PROJECT_ID }}
-      # La ejecución programada (`schedule`) siempre apaga.
-      ACCION: ${{ github.event_name == 'schedule' && 'apagar' || inputs.accion }}
+      ACCION: ${{ inputs.accion }}
     steps:
       # Las herramientas (la guardia de destrucciones) salen de la rama que se ejecuta; la infraestructura que se
       # aplica sale SIEMPRE de `main`, que es lo que está desplegado.

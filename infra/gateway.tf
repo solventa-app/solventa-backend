@@ -94,15 +94,20 @@ resource "google_api_gateway_gateway" "bff" {
 # (`x-google-jwks_uri`) y reenvía al BFF privado con el mismo corte de 700 ms (W07-25). Las rutas están en
 # `infra/gateway/openapi-socios.yaml`, sincronizadas con el contrato y con Envoy por `scripts/validar_gateway.py`.
 #
-# El JWKS tiene que ser público para ESPv2. AUTH es privado, así que se usa la ruta pública del propio gateway
-# de socios (`<url del gateway>/v1/.well-known/jwks.json`, que el BFF sirve sin token): en el primer despliegue
-# se crea con `jwks_socios_url` vacío y luego se pone la URL del output `gateway_socios_url`.
+# El JWKS tiene que ser público para ESPv2 y API Gateway rechaza la configuración si `x-google-jwks_uri` va vacío
+# («JWKS provider "socios_jwt" is missing a JWKS URI», 2026-11-04). AUTH y el BFF son privados, así que por defecto se
+# usa la ruta `/v1/.well-known/jwks.json` del gateway de los usuarios (`openapi.yaml`), que ya existe y cuya URL se
+# conoce antes de crear el de socios: así todo sale en una sola liberación. `jwks_socios_url` solo la reemplaza.
 #
 # Costo: gratis hasta 2 millones de llamadas al mes. Gate: var.crear_gateway_socios (default false); usa la
 # cuenta `gateway-bff`, así que también exige `crear_gateway`.
 
 locals {
   gateway_socios = var.crear_gateway && var.crear_gateway_socios
+  jwks_socios_url = (
+    var.jwks_socios_url != "" ? var.jwks_socios_url :
+    local.gateway_socios ? "https://${google_api_gateway_gateway.bff[0].default_hostname}/v1/.well-known/jwks.json" : ""
+  )
 }
 
 resource "google_api_gateway_api" "socios" {
@@ -127,7 +132,7 @@ resource "google_api_gateway_api_config" "socios" {
       path = "openapi-socios.yaml"
       contents = base64encode(templatefile("${path.module}/gateway/openapi-socios.yaml", {
         bff_url  = local.url["bff"]
-        jwks_url = var.jwks_socios_url
+        jwks_url = local.jwks_socios_url
       }))
     }
   }

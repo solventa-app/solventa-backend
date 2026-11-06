@@ -26,6 +26,8 @@ PLAZO_SEGUNDOS = 0.7
 # El canal móvil tiene 2 s: crear la cuenta del onboarding (hash de la clave) tarda ~1 s.
 PLAZO_CANAL_APP = 2.0
 RUTAS_CANAL_APP = {("POST", "/graphql/app"), ("POST", "/v1/graphql/app")}
+# El JWKS de los socios vive en los dos gateways: el de socios lo toma del de los usuarios.
+RUTA_JWKS = ("GET", "/v1/.well-known/jwks.json")
 RUTAS_ESPERADAS = {
     ("GET", "/health"),
     ("POST", "/graphql/web"),
@@ -36,6 +38,7 @@ RUTAS_ESPERADAS = {
     ("POST", "/v1/graphql/app"),
     ("GET", "/polizas/{*}/documento"),
     ("GET", "/propuestas/{*}/contrato.pdf"),
+    RUTA_JWKS,
 }
 PARAMETRO = "{*}"  # cómo se escribe cualquier parámetro de ruta al comparar OpenAPI con Envoy
 
@@ -156,7 +159,7 @@ def validar(texto_openapi: str | None = None, texto_envoy: str | None = None) ->
 
     rutas_oa = extraer_openapi(texto_openapi)
     todas_ev = extraer_envoy(texto_envoy)
-    rutas_ev = {k: v for k, v in todas_ev.items() if not es_de_socios(k[1])}
+    rutas_ev = {k: v for k, v in todas_ev.items() if not es_de_socios(k[1]) or k == RUTA_JWKS}
     if texto_envoy == (ENVOY.read_text(encoding="utf-8") if ENVOY.is_file() else None):
         errores.extend(validar_socios({k: v for k, v in todas_ev.items() if es_de_socios(k[1])}))
 
