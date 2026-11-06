@@ -704,7 +704,9 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(error)) from error
         return Response(status_code=204)
 
-    @app.get("/socios/{socio_id}/consumo", tags=["socios"], response_model=ConsumoSocioResponse)
+    @app.get(
+        "/socios/{socio_id}/consumo", tags=["socios"], response_model=ConsumoSocioResponse
+    )
     def consumo_socio(
         socio_id: str, entorno: Entorno, desde: date | None = None, hasta: date | None = None
     ) -> ConsumoSocioResponse:
