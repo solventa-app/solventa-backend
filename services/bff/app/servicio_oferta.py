@@ -16,7 +16,7 @@ from pathlib import Path
 
 from app.clientes import Clientes, DatosInsuficientes, ErrorServicio, SolicitudInvalida
 from app.identificadores import cliente_id_desde_documento, id_opaco
-from app.jurisdicciones import PLAZO_MAXIMO_MESES, PLAZO_MINIMO_MESES
+from app.jurisdicciones import JURISDICCIONES, PLAZO_MAXIMO_MESES, PLAZO_MINIMO_MESES
 
 logger = logging.getLogger("bff.oferta")
 
@@ -61,6 +61,8 @@ MENSAJE_PLAZO_INVALIDO = (
 MENSAJE_VALOR_INVALIDO = "El valor del crédito no es válido."
 MENSAJE_DOCUMENTO_INVALIDO = "El documento de identidad no es válido."
 MENSAJE_DIRECCION_INVALIDA = "Ingresa la dirección del inmueble."
+# T19: Google confirmó el lugar, pero está en un país que Solventa no atiende.
+MENSAJE_DIRECCION_PAIS_NO_SOPORTADO = "La dirección del inmueble está en un país que no atendemos."
 MENSAJE_DATOS_INSUFICIENTES = (
     "No pudimos consultar tu historial crediticio en este momento. "
     "Intenta de nuevo o habla con un asesor."
@@ -127,6 +129,7 @@ class ServicioOferta:
         direccion_inmueble: str,
         tipo_documento: str | None = None,
         pais: str | None = None,
+        place_id: str | None = None,
     ) -> dict | ErrorOfertaDatos:
         """Devuelve la oferta tal como la entrega RATING (ya en el camelCase del
         contrato) o un `ErrorOfertaDatos`. El plazo y la dirección los usa RATING en la
@@ -142,6 +145,12 @@ class ServicioOferta:
         if mensaje_invalido is not None:
             logger.info("oferta rechazada: solicitud invalida")
             return ErrorOfertaDatos(mensaje_invalido, puede_reintentar=False)
+
+        # 0b. T19: con `placeId`, Places (detrás del ACL) normaliza la dirección. Un país no
+        # soportado se rechaza; si Places no responde, sigue la dirección escrita «sin verificar».
+        direccion_inmueble = await self._direccion(place_id, direccion_inmueble)
+        if isinstance(direccion_inmueble, ErrorOfertaDatos):
+            return direccion_inmueble
 
         # 1. Consentimiento ANTES de consultar cualquier fuente (regla #7, CA-W01-01/02/08).
         try:
@@ -223,6 +232,26 @@ class ServicioOferta:
             sum(1 for f in fuentes if f.get("degradado") or f.get("de_cache")),
         )
         return oferta
+
+    async def _direccion(self, place_id: str | None, escrita: str) -> str | ErrorOfertaDatos:
+        """La dirección con la que se cotiza: la normalizada por Places si el lugar se verificó,
+        o la escrita («sin verificar») si no llegó `placeId` o Places no respondió. La dirección
+        nunca se loguea (regla #6)."""
+        if not place_id or not place_id.strip():
+            return escrita
+        try:
+            lugar = await self._clientes.acl.validar_direccion(place_id.strip()[:300])
+        except ErrorServicio:
+            logger.info("oferta: dirección sin verificar (Places no respondió)")
+            return escrita
+        if not lugar.get("verificado"):
+            logger.info("oferta: dirección sin verificar")
+            return escrita
+        if lugar.get("pais") not in {j.codigo for j in JURISDICCIONES}:
+            logger.info("oferta rechazada: dirección en un país no soportado")
+            return ErrorOfertaDatos(MENSAJE_DIRECCION_PAIS_NO_SOPORTADO, puede_reintentar=False)
+        normalizada = (lugar.get("direccion") or "").strip()
+        return normalizada[:MAX_LARGO_DIRECCION] if normalizada else escrita
 
     async def _consultar_fuente(self, cliente_id: str, consentimiento_id: str, fuente: str) -> dict:
         try:

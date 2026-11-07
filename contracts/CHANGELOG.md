@@ -437,6 +437,14 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `null` mientras el caso está PENDIENTE. Solo cambios aditivos.
 - Afecta al frontend: sí (móvil: «Mis siniestros» y el detalle del caso).
 
+## v0.39 — 2026-11-07
+
+- KAN-26 (T19): `SolicitudOfertaInput.placeId` (opcional). Con él, el BFF valida el lugar con Places (detrás del ACL,
+  700 ms): cotiza con la dirección normalizada y rechaza una de un país no soportado («La dirección del inmueble está
+  en un país que no atendemos.»). Sin él, o si Places no responde, la dirección escrita se usa «sin verificar» y no se
+  bloquea la cotización. Infra: APIs de Places y Geocoding y el secreto `google-places-api-key` del ACL Worker
+  (`PLACES_PROVEEDOR=google` en la nube). Afecta al frontend: sí (aditivo: mandar el `placeId` de la sugerencia).
+
 ## v0.38 — 2026-11-07
 
 - KAN-26 (T20, `plan-cierre-HU-W03.md`): tipo de documento y país en el resto del recorrido. Solo cambios aditivos:
