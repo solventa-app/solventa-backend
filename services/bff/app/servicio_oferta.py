@@ -84,13 +84,20 @@ class ErrorOfertaDatos:
 
 
 def validar_solicitud(
-    documento_identidad: str, valor_credito: str, plazo_meses: int, direccion_inmueble: str
+    documento_identidad: str,
+    valor_credito: str,
+    plazo_meses: int,
+    direccion_inmueble: str,
+    documento_tipado: bool = False,
 ) -> str | None:
     """Mensaje para el usuario si la solicitud no es válida, o `None`. Se valida antes de
-    tocar el consentimiento o las fuentes: un dato mal escrito no gasta una consulta."""
+    tocar el consentimiento o las fuentes: un dato mal escrito no gasta una consulta. T20: un
+    documento con tipo y país ya se validó con el formato de su país (`documento_tipado`)."""
     documento = documento_identidad.strip()
     digitos = sum(c.isdigit() for c in documento)
-    if digitos < MIN_DIGITOS_DOCUMENTO or len(documento) > MAX_LARGO_DOCUMENTO:
+    if not documento_tipado and (
+        digitos < MIN_DIGITOS_DOCUMENTO or len(documento) > MAX_LARGO_DOCUMENTO
+    ):
         return MENSAJE_DOCUMENTO_INVALIDO
     try:
         valor = Decimal(valor_credito)
@@ -118,13 +125,19 @@ class ServicioOferta:
         valor_credito: str,
         plazo_meses: int,
         direccion_inmueble: str,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
     ) -> dict | ErrorOfertaDatos:
         """Devuelve la oferta tal como la entrega RATING (ya en el camelCase del
         contrato) o un `ErrorOfertaDatos`. El plazo y la dirección los usa RATING en la
         prima; ni el documento ni la dirección se loguean nunca (regla #6)."""
         # 0. Datos de la solicitud (B3): un error aquí no se arregla reintentando.
         mensaje_invalido = validar_solicitud(
-            documento_identidad, valor_credito, plazo_meses, direccion_inmueble
+            documento_identidad,
+            valor_credito,
+            plazo_meses,
+            direccion_inmueble,
+            documento_tipado=tipo_documento is not None,
         )
         if mensaje_invalido is not None:
             logger.info("oferta rechazada: solicitud invalida")
@@ -147,7 +160,10 @@ class ServicioOferta:
             )
 
         # 2. REWIRE: ver `cliente_id_desde_documento` (app/identificadores.py).
-        cliente_id = cliente_id_desde_documento(documento_identidad, self._clave)
+        # T20: el tipo y el país entran al titular (la cédula colombiana conserva el de siempre).
+        cliente_id = cliente_id_desde_documento(
+            documento_identidad, self._clave, pais, tipo_documento
+        )
         titular_consentimiento = consentimiento.get("titular_id")
         if titular_consentimiento is not None and titular_consentimiento != cliente_id:
             logger.info("oferta rechazada: consentimiento de otro titular")

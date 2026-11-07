@@ -35,6 +35,10 @@ input ConsentimientoInput {
   tipoDato: String = null
   fuenteDatos: String = null
   canal: String = null
+  # v0.38 (T20): tipo del documento (de `Jurisdiccion.tiposDocumento`) y país (uno de los siete). Con alguno de
+  # los dos, el número se valida con el formato del país y ambos entran al titular; sin ninguno, cédula colombiana.
+  tipoDocumento: String = null
+  pais: String = null
 }
 
 # ---------- Oferta (CA-W01-03/04/05/06) ----------
@@ -120,6 +124,10 @@ input SolicitudOfertaInput {
   # Obligatorio para un ASESOR. Un CLIENTE con documento en su cuenta no lo manda: el BFF lo toma de AUTH y valida que
   # coincida con el titular del consentimiento (v0.18, W03-34).
   documentoIdentidad: String = null
+  # v0.38 (T20): como en `ConsentimientoInput`; deben ser los mismos del consentimiento. El CLIENTE con documento en
+  # su cuenta tampoco los manda.
+  tipoDocumento: String = null
+  pais: String = null
   valorCredito: String!
   plazoMeses: Int!
   direccionInmueble: String!
@@ -524,6 +532,11 @@ type Usuario {
   # `usuarios`, `crearUsuario` y los demás cambios va en null, y null si no tiene (solo los CLIENTE guardan correo).
   # Nunca viaja dentro del JWT. El teléfono sigue sin volver por GraphQL.
   correo: String
+  # v0.38 (T20): tipo del documento del CLIENTE (CC, CE, CURP...; nunca el número), null si no tiene documento.
+  tipoDocumento: String
+  # v0.38 (T20): país de la cuenta (uno de los siete); el CLIENTE lo trae de su documento y cualquiera lo cambia en
+  # `actualizarPreferencias`. Null si nunca se fijó.
+  pais: String
 }
 
 type Sesion {
@@ -575,11 +588,15 @@ input CrearUsuarioInput {
   # v0.18 (W03-27): obligatorio para un CLIENTE, junto con el correo. Se guarda cifrado y como titular (el mismo HMAC
   # del consentimiento): el BACKOFFICE da por verificada la identidad al crearlo.
   documentoIdentidad: String = null
+  # v0.38 (T20): tipo del documento del CLIENTE (del catálogo del país) y país de la cuenta (cualquier rol).
+  tipoDocumento: String = null
+  pais: String = null
 }
 
 input PreferenciasInput {
   idioma: String! # ES | EN
   moneda: String! # COP | USD | EUR | MXN | BRL | CLP | PEN
+  pais: String = null # v0.38 (T20): uno de los siete; si no llega, se conserva
 }
 
 # Al menos uno de los dos; lo que no llega se conserva (HU-W03, bloque 8).

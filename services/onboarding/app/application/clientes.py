@@ -50,7 +50,13 @@ class CuentaNoPendiente(Exception):
 
 class PuertoCuentas(Protocol):
     def cerrar_verificacion(
-        self, usuario_id: str, aprobada: bool, nombre: str | None, documento: str | None
+        self,
+        usuario_id: str,
+        aprobada: bool,
+        nombre: str | None,
+        documento: str | None,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
     ) -> None: ...
 
 
@@ -152,13 +158,20 @@ class ClienteCuentas:
         self._cliente = httpx.Client(base_url=url, timeout=timeout_s, auth=auth)
 
     def cerrar_verificacion(
-        self, usuario_id: str, aprobada: bool, nombre: str | None, documento: str | None
+        self,
+        usuario_id: str,
+        aprobada: bool,
+        nombre: str | None,
+        documento: str | None,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
     ) -> None:
+        # T20: el tipo y el país de la sesión entran al titular que fija AUTH.
+        cuerpo = {"aprobada": aprobada, "nombre": nombre, "documento": documento}
+        if documento:
+            cuerpo |= {"tipo_documento": tipo_documento, "pais": pais}
         try:
-            respuesta = self._cliente.post(
-                f"/usuarios/{usuario_id}/verificacion",
-                json={"aprobada": aprobada, "nombre": nombre, "documento": documento},
-            )
+            respuesta = self._cliente.post(f"/usuarios/{usuario_id}/verificacion", json=cuerpo)
         except httpx.HTTPError as error:
             raise ServicioNoDisponible(type(error).__name__) from error
         if respuesta.status_code == 409:

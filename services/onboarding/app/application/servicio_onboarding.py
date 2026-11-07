@@ -310,7 +310,13 @@ class ServicioOnboarding:
             return self._cerrar(sesion, "RECHAZADA", "ILEGIBLE", resultado)
         if _edad(nacimiento, self._reloj().date()) < self._reglas.edad_minima:
             return self._cerrar(sesion, "RECHAZADA", "MENOR_DE_EDAD", resultado)
-        titular_id = titular_id_desde_documento(numero, self._reglas.cliente_id_clave)
+        # T20: el titular lleva el país y el tipo de la sesión (CO/CC conserva el de siempre).
+        titular_id = titular_id_desde_documento(
+            numero,
+            self._reglas.cliente_id_clave,
+            sesion.get("jurisdiccion"),
+            sesion.get("tipo_documento"),
+        )
         if self._repo.titular_verificado_en_otra(titular_id, sesion["id"]):
             return self._cerrar(sesion, "RECHAZADA", "DOCUMENTO_YA_REGISTRADO", resultado)
         dueno = sesion["id"]
@@ -383,7 +389,14 @@ class ServicioOnboarding:
             return sesion
         nombre, documento = self._datos_para_cuenta(sesion) if aprobada else (None, None)
         try:
-            self._cuentas.cerrar_verificacion(sesion["usuario_id"], aprobada, nombre, documento)
+            self._cuentas.cerrar_verificacion(
+                sesion["usuario_id"],
+                aprobada,
+                nombre,
+                documento,
+                tipo_documento=sesion.get("tipo_documento"),
+                pais=sesion.get("jurisdiccion"),
+            )
         except DocumentoEnOtraCuenta:
             rechazada = self._repo.actualizar(
                 sesion["id"],

@@ -19,6 +19,7 @@ FUENTE = RAIZ / "contracts" / "jurisdicciones.json"
 COPIAS = [
     RAIZ / "services" / servicio / "app" / "jurisdicciones.json"
     for servicio in (
+        "auth",  # T20: valida el tipo de documento y el país de la cuenta
         "bff",
         "risk",
         "rating",

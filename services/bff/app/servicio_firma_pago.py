@@ -13,6 +13,7 @@ from typing import Any
 from app.autenticacion_usuarios import UsuarioActual
 from app.clientes import Acceso, Clientes, ErrorServicio, FlujoRechazado
 from app.identificadores import cliente_id_desde_documento, id_opaco
+from app.jurisdicciones import documento_tipado
 
 logger = logging.getLogger("bff.firma_pago")
 
@@ -36,6 +37,8 @@ MENSAJE_SESION_VENCIDA = "La sesión de pago venció. Empieza de nuevo."
 MENSAJE_PAGO_PENDIENTE = "Aún no recibimos tu pago. Intenta de nuevo en unos segundos."
 MENSAJE_POLIZA_YA_EMITIDA = "Tu póliza ya fue emitida."
 MENSAJE_DOCUMENTO_NO_COINCIDE = "El documento no coincide con el de tu cuenta."
+# T20: el número no cumple el formato del tipo elegido, o el tipo no es del país.
+MENSAJE_DOCUMENTO_INVALIDO_PAIS = "El documento de identidad no es válido para ese tipo y país."
 MENSAJE_PROPUESTAS_NO_DISPONIBLES = "No pudimos consultar las propuestas. Intenta de nuevo."
 MENSAJE_AVISOS_NO_DISPONIBLES = "No pudimos abrir los avisos. Intenta de nuevo."
 
@@ -447,10 +450,13 @@ class ServicioFirmaPago:
 
 @dataclass
 class DocumentoDelCliente:
-    """El documento con el que cotiza un CLIENTE, o el error de por qué no."""
+    """El documento con el que cotiza un CLIENTE (con su tipo y país, T20), o el error de por
+    qué no."""
 
     documento: str | None = None
     error: str | None = None
+    tipo_documento: str | None = None
+    pais: str | None = None
 
 
 async def documento_del_cliente(
@@ -458,22 +464,41 @@ async def documento_del_cliente(
     usuario: UsuarioActual | None,
     documento_enviado: str | None,
     clave_titular: str,
+    tipo_documento: str | None = None,
+    pais: str | None = None,
 ) -> DocumentoDelCliente:
     """W03-34: un CLIENTE que no manda `documentoIdentidad` cotiza con el de su cuenta (AUTH lo
     entrega en memoria y no se guarda ni se loguea). Si lo manda, debe ser el suyo: un CLIENTE no
     cotiza con la cédula de otro. El ASESOR lo escribe siempre. Si AUTH no responde o el CLIENTE no
-    tiene identidad verificada, se queda lo que mandó (y sin nada, el llamador lo pide)."""
+    tiene identidad verificada, se queda lo que mandó (y sin nada, el llamador lo pide).
+
+    T20: con `tipo_documento` o `pais` el número se valida con el formato del país; sin ellos se
+    trata como cédula colombiana, como antes."""
+    enviado = DocumentoDelCliente(documento_enviado)
+    if documento_enviado:
+        tipado = documento_tipado(documento_enviado, tipo_documento, pais)
+        if tipado is None:
+            return DocumentoDelCliente(error=MENSAJE_DOCUMENTO_INVALIDO_PAIS)
+        enviado = DocumentoDelCliente(tipado[0], None, tipado[1], tipado[2])
     if usuario is None or usuario.rol != "CLIENTE":
-        return DocumentoDelCliente(documento_enviado)
+        return enviado
     try:
         identidad = await clientes.auth.obtener_identidad(usuario.id)
     except ErrorServicio:
         logger.warning("AUTH no disponible al tomar el documento del cliente")
-        return DocumentoDelCliente(documento_enviado)
+        return enviado
     if identidad is None:
-        return DocumentoDelCliente(documento_enviado)
+        return enviado
     if not documento_enviado:
-        return DocumentoDelCliente(identidad["documento"])
-    if cliente_id_desde_documento(documento_enviado, clave_titular) != identidad["titular_id"]:
+        return DocumentoDelCliente(
+            identidad["documento"],
+            None,
+            identidad.get("tipo_documento"),
+            identidad.get("pais"),
+        )
+    titular = cliente_id_desde_documento(
+        enviado.documento, clave_titular, enviado.pais, enviado.tipo_documento
+    )
+    if titular != identidad["titular_id"]:
         return DocumentoDelCliente(error=MENSAJE_DOCUMENTO_NO_COINCIDE)
-    return DocumentoDelCliente(documento_enviado)
+    return enviado
