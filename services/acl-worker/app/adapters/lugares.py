@@ -97,6 +97,30 @@ class AdaptadorLugaresGoogle:
             return _sin_verificar()
 
 
+class AdaptadorLugaresSinLlave:
+    """`PLACES_PROVEEDOR=google` sin una llave real (el secreto aún tiene su valor marcador): nunca
+    inventa un lugar. Sin sugerencias y todo «sin verificar», como si Google no respondiera."""
+
+    def autocompletar(self, texto: str, pais: str | None) -> list[dict[str, str]]:
+        return []
+
+    def validar(self, place_id: str) -> dict[str, Any]:
+        return _sin_verificar()
+
+
+# Valor que Terraform deja en un secreto hasta que se carga el real (infra/servicios.tf).
+MARCADOR_SECRETO = "pendiente-de-cargar"
+
+
 def lugares_desde_entorno() -> PuertoLugares:
+    """`PLACES_PROVEEDOR`: `google` en la nube (nunca el stub: aceptaría direcciones inventadas) y
+    `simulado` o vacío en local y CI (Google si hay llave, si no el stub)."""
     llave = os.environ.get("GOOGLE_PLACES_API_KEY", "").strip()
+    if llave == MARCADOR_SECRETO:
+        llave = ""
+    if os.environ.get("PLACES_PROVEEDOR", "").strip().lower() == "google":
+        if not llave:
+            LOG.warning("PLACES_PROVEEDOR=google sin llave: direcciones sin verificar")
+            return AdaptadorLugaresSinLlave()
+        return AdaptadorLugaresGoogle(llave)
     return AdaptadorLugaresGoogle(llave) if llave else AdaptadorLugaresStub()

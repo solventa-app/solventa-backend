@@ -279,6 +279,24 @@ read -rsp "Resend API key: " K; echo; printf '%s' "$K" | gcloud secrets versions
    propósito.
 4. En POLICY, `URL_FRONT` debe ser la URL real del front: con ella se arma el enlace de firma del correo.
 
+### Google Places (T19, KAN-26)
+
+Terraform activa `places.googleapis.com` y `geocoding-backend.googleapis.com` y crea el secreto
+`google-places-api-key` (con su valor marcador), que el ACL Worker recibe como `GOOGLE_PLACES_API_KEY` con
+`PLACES_PROVEEDOR=google`. Mientras el secreto tenga el marcador, el ACL no inventa lugares: no sugiere nada y toda
+dirección queda «sin verificar» (la cotización no se bloquea). Para activarlo, crea la llave del servidor restringida a
+esas dos APIs y cárgala (pasos completos, con las llaves de la web y del móvil, en
+`hu-w03/configuracion-manual-google-places.md` de los archivos del proyecto):
+
+```bash
+P=solventa-511815
+gcloud services api-keys create --project=$P --display-name="places-servidor" \
+  --api-target=service=places.googleapis.com --api-target=service=geocoding-backend.googleapis.com
+read -rsp "Places API key: " K; echo; printf '%s' "$K" | gcloud secrets versions add google-places-api-key --project=$P --data-file=-; unset K
+```
+
+Places cobra por uso (con un crédito mensual de Google): crea una alerta de presupuesto antes de cargar la llave.
+
 Cada aviso viaja con su id como `Idempotency-Key`: si POLICY lo reintenta (p. ej. tras un corte a los 700 ms), Resend
 no manda otro correo. Un aviso sin correo, como el del asesor (AUTH no guarda su contacto), queda `rechazada` y POLICY
 lo omite.

@@ -326,6 +326,9 @@ class SolicitudOfertaInput:
     # v0.38 (T20): tipo del documento y país; el CLIENTE con documento en AUTH tampoco los manda.
     tipo_documento: str | None = None
     pais: str | None = None
+    # v0.39 (T19): el lugar elegido en `autocompletarDireccion`. Sin él (o si Places no responde)
+    # la dirección escrita se usa «sin verificar»; con él, un país no soportado se rechaza.
+    place_id: str | None = None
 
 
 @strawberry.type
@@ -2425,6 +2428,7 @@ class Mutation:
             entrada.direccion_inmueble,
             tipo_documento=titular.tipo_documento,
             pais=titular.pais,
+            place_id=entrada.place_id,
         )
         if isinstance(resultado, ErrorOfertaDatos):
             return ErrorOferta(

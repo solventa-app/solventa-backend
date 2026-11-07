@@ -53,7 +53,7 @@ Todo esto está en código y verificado **en local**; nada tiene medición de st
 | HU-M06 / KAN-263 | Catálogo maestro de prestadores en `claims` (`catalogoPrestadores`, v0.36); solicitar y cancelar asistencia pendientes | [`services/claims/README.md`](services/claims/README.md) |
 | KAN-250 | Almacenamiento de archivos | [ADR-10](docs/adr/ADR-10-almacenamiento-de-archivos.md) |
 
-Contrato en **v0.38**; la siguiente libre es **v0.39**. Últimas migraciones: AUTH `0012`, POLICY `0008`, PAYMENTS `0010`, RISK `0004`, CLAIMS `0005`.
+Contrato en **v0.39**; la siguiente libre es **v0.40**. Últimas migraciones: AUTH `0012`, POLICY `0008`, PAYMENTS `0010`, RISK `0004`, CLAIMS `0005`.
 
 ## Estado actual
 

@@ -134,3 +134,50 @@ def test_alta_y_preferencias_con_pais() -> None:
         )["data"]["actualizarPreferencias"]
 
     assert cambiado == {"idioma": "EN", "pais": "MX", "tipoDocumento": None}
+
+
+# ---------- v0.39 (T19): placeId en la cotización
+
+
+def _cotizar_con_lugar(place_id: str | None, fallan: set[str] | None = None):
+    from fakes import AclFalso
+
+    acl = AclFalso()
+    if fallan:
+        acl.fallan = fallan
+    entrada = {
+        "consentimientoId": "c-1",
+        "documentoIdentidad": "1020304050",
+        "valorCredito": "100000000",
+        "plazoMeses": 60,
+        "direccionInmueble": "calle 10 5 20",
+        "placeId": place_id,
+    }
+    clientes = clientes_falsos(auth=AuthFalso(), acl=acl)
+    with TestClient(create_app(config=Configuracion.desde_entorno(), clientes=clientes)) as c:
+        cuerpo = _post(c, COTIZAR, {"e": entrada})
+    return cuerpo["data"]["solicitarOferta"], clientes
+
+
+def test_lugar_de_un_pais_no_soportado_se_rechaza() -> None:
+    resultado, _ = _cotizar_con_lugar("stub:AR:Av. Corrientes 1234")
+
+    assert resultado == {
+        "mensaje": "La dirección del inmueble está en un país que no atendemos.",
+        "motivo": None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("place_id", "fallan", "esperada"),
+    [
+        ("stub:CO:Calle 10 # 5-20, Bogotá", None, "Calle 10 # 5-20, Bogotá"),  # normalizada
+        ("stub:CO:Calle 10 # 5-20, Bogotá", {"lugares"}, "calle 10 5 20"),  # sin verificar
+        (None, None, "calle 10 5 20"),  # sin placeId: la escrita
+    ],
+)
+def test_cotiza_con_la_direccion_normalizada_o_la_escrita(place_id, fallan, esperada) -> None:
+    resultado, clientes = _cotizar_con_lugar(place_id, fallan)
+
+    assert "id" in resultado, resultado
+    assert clientes.rating.llamadas[-1][4] == esperada
