@@ -10037,6 +10037,250 @@
           }
         }
       ]
+    },
+    {
+      "name": "7. Clave segura y sesión con refresh (T17 y T22)",
+      "description": "KAN-26: el registro rechaza una clave débil con CLAVE_DEBIL antes de validar el código (T17), y la sesión del CLIENTE en la app rota su refresh, se cierra y no se renueva después (T22). El período de gracia y el reuso se prueban en hu-m02.",
+      "item": [
+        {
+          "name": "7.1 registrarCuenta con clave débil -> CLAVE_DEBIL (antes de gastar el código)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.registrarCuenta;",
+                  "pm.test('CLAVE_DEBIL con lo que falta, sin crear la cuenta', () => {",
+                  "  pm.expect(cuerpo.errors).to.be.undefined;",
+                  "  pm.expect(r.__typename).to.eql('ErrorAutenticacion');",
+                  "  pm.expect(r.codigo).to.eql('CLAVE_DEBIL');",
+                  "  pm.expect(r.mensaje.toLowerCase()).to.include('mayúscula');",
+                  "  pm.expect(r.mensaje.toLowerCase()).to.include('especial');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($c: String!, $k: String!, $o: String!) { registrarCuenta(correo: $c, clave: $k, codigo: $o) { __typename ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"c\": \"debil.{{$timestamp}}@ejemplo.co\",\n    \"k\": \"clave1234\",\n    \"o\": \"000000\"\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "7.2 iniciarSesion del CLIENTE titular en el canal app -> trae refresh",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.iniciarSesion;",
+                  "pm.test('Sesion con refresh (canal app)', () => {",
+                  "  pm.expect(r.__typename).to.eql('Sesion');",
+                  "  pm.expect(r.refreshToken).to.be.a('string').and.not.empty;",
+                  "  pm.expect(r.refreshExpiraEn).to.be.a('string');",
+                  "});",
+                  "pm.collectionVariables.set('refresh_w03_1', r.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) { iniciarSesion(entrada: $e) { __typename ... on Sesion { token refreshToken refreshExpiraEn usuario { id rol } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{alias_titular}}\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "7.3 renovarSesion -> par nuevo (el refresh rota)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.renovarSesion;",
+                  "pm.test('Sesion nueva con otro refresh', () => {",
+                  "  pm.expect(r.__typename).to.eql('Sesion');",
+                  "  pm.expect(r.usuario.rol).to.eql('CLIENTE');",
+                  "  pm.expect(r.refreshToken).to.not.eql(pm.collectionVariables.get('refresh_w03_1'));",
+                  "});",
+                  "pm.collectionVariables.set('refresh_w03_2', r.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($r: String) { renovarSesion(refreshToken: $r) { __typename ... on Sesion { token refreshToken refreshExpiraEn usuario { id rol } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"r\": \"{{refresh_w03_1}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "7.4 cerrarSesion con el refresh vigente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('cerrarSesion -> true', () => pm.expect(cuerpo.data.cerrarSesion).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($r: String) { cerrarSesion(refreshToken: $r) }\",\n  \"variables\": {\n    \"r\": \"{{refresh_w03_2}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "7.5 renovarSesion con el refresh cerrado -> SESION_VENCIDA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4 de arquitectura: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.renovarSesion;",
+                  "pm.test('SESION_VENCIDA, sin token', () => {",
+                  "  pm.expect(r.__typename).to.eql('ErrorAutenticacion');",
+                  "  pm.expect(r.codigo).to.eql('SESION_VENCIDA');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($r: String) { renovarSesion(refreshToken: $r) { __typename ... on Sesion { token refreshToken refreshExpiraEn usuario { id rol } } ... on ErrorAutenticacion { codigo mensaje } } }\",\n  \"variables\": {\n    \"r\": \"{{refresh_w03_2}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
