@@ -99,6 +99,27 @@ npx --yes newman@6.2.2 run tests/newman/socios-w07.postman_collection.json \
   -e tests/newman/solventa-local.postman_environment.json
 ```
 
+## Colección de HU-M02 (`hu-m02.postman_collection.json`)
+
+Sesión de la app con refresh por el gateway (KAN-227, T22): 17 peticiones y 57 aserciones en 8 carpetas, en orden y de una
+sola corrida (las carpetas 3 y 4 necesitan menos de 30 s desde la 2.1, por el período de gracia).
+
+| Carpeta | Qué verifica |
+|---|---|
+| 0. Preparación | Sesión de BACKOFFICE en la web (refresh solo en la cookie `solventa_refresh`, nunca en el cuerpo) y alta de un CLIENTE (alias al azar) |
+| 1. Ingreso en la app trae refresh | `iniciarSesion` en `/graphql/app` devuelve `refreshToken` y `refreshExpiraEn` |
+| 2. Rotación | `renovarSesion` entrega un refresh distinto |
+| 3. Período de gracia | Reintentar con el refresh anterior antes de 30 s da un par nuevo y revoca el sucesor que «se perdió» |
+| 4. Reuso real | Con el sucesor ya usado, el refresh viejo da `SESION_VENCIDA` y cae toda la cadena |
+| 5. Cerrar sesión | `cerrarSesion` revoca, es idempotente y el refresh cerrado ya no renueva |
+| 6. Canal | El refresh de la cookie web no sirve en `/graphql/app` |
+| 7. Cuenta suspendida | Tras `suspenderUsuario`, el refresh del CLIENTE ya no renueva |
+
+```bash
+npx --yes newman@6.2.2 run tests/newman/hu-m02.postman_collection.json \
+  -e tests/newman/solventa-local.postman_environment.json
+```
+
 ## Colección de HU-M05 (`hu-m05.postman_collection.json`)
 
 Reporte de siniestro desde la app por el gateway (KAN-35, KAN-278): 18 peticiones en 5 carpetas, en orden.

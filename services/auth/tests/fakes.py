@@ -410,6 +410,19 @@ class RepositorioRefrescosMemoria:
             if fila["familia_id"] == familia_id and fila["revocado_en"] is None:
                 fila["revocado_en"] = ahora
 
+    def revocar_sucesor_sin_usar(self, familia_id, refresh_id, usado_en, ahora) -> bool:
+        familia = [f for f in self.filas.values() if f["familia_id"] == familia_id]
+        if any(f["usado_en"] is not None and f["usado_en"] > usado_en for f in familia):
+            return False
+        vigentes = [
+            f
+            for f in familia
+            if f["id"] != refresh_id and f["usado_en"] is None and f["revocado_en"] is None
+        ]
+        for fila in vigentes:
+            fila["revocado_en"] = ahora
+        return bool(vigentes)
+
     def revocar_de_usuario(self, usuario_id: str, ahora: datetime) -> None:
         for fila in self.filas.values():
             if fila["usuario_id"] == usuario_id and fila["revocado_en"] is None:

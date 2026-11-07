@@ -311,8 +311,17 @@ En el **Sprint 1** ya existe el API Gateway delante del BFF (`infra/gateway.tf`,
 - AUTH (`0011_refresh_tokens`) guarda solo el SHA-256 del refresh, atado al canal (`app` o `web`). Rota en cada uso; reusar uno
   ya usado revoca la cadena (`familia_id`) y deja un `warning` sin datos personales. Se revoca al cerrar sesión (`POST /sesiones/cerrar`)
   y al suspender la cuenta. `POST /sesiones/refresh` revalida estado y rol; un PENDIENTE_VERIFICACION o RECHAZADA renueva solo por `app`.
+- **Período de gracia (HU-M02, KAN-227):** `refresh_gracia_segundos` (30 s en `contracts/sesion.json`; `REFRESH_GRACIA_SEGUNDOS`
+  lo sobrescribe y `0` lo apaga). Un refresh ya usado que vuelve antes de la gracia, sin que nadie de su cadena se haya usado después,
+  es un reintento legítimo (la respuesta anterior se perdió en la red): AUTH revoca el sucesor que nunca llegó y emite otro par, y
+  deja un `info` sin datos personales. Fuera de la gracia, o con el sucesor ya usado, revoca la cadena como siempre. Costo aceptado:
+  quien robe un refresh tendría que usarlo dentro de esos 30 s. Dos reintentos simultáneos del mismo refresh no se coordinan (el
+  cliente renueva de a uno; la app móvil lo garantiza con un candado).
 - BFF: `renovarSesion` y `cerrarSesion`. En la web el refresh va en la cookie `solventa_refresh` (`httpOnly; Secure; SameSite=Strict`)
   que pone y lee el BFF, con la cabecera `X-Solventa-Csrf: 1` obligatoria y `Origin` verificado contra `ORIGENES_WEB_PERMITIDOS`
   (vacío en local). En la app viaja por el cuerpo. `COOKIE_REFRESH_SECURE=false` solo para HTTP local sin TLS.
-- Pendiente: cambiar la clave (hoy no existe el endpoint; al crearlo debe llamar `revocar_de_usuario`), verificación en vivo
-  contra Postgres/Docker y detrás del gateway.
+- Verificado en local detrás de Envoy `:8080` con Postgres real (2026-11-06): colección
+  `tests/newman/hu-m02.postman_collection.json`, 17 peticiones y 57 aserciones en verde (login app con refresh, rotación,
+  gracia, reuso, cierre, canal y suspensión); evidencia en `docs/evidencias/hu-m02-sesion-refresh-2026-11-06.md`.
+- Pendiente: cambiar la clave (hoy no existe el endpoint; al crearlo debe llamar `revocar_de_usuario`) y la verificación
+  detrás de GCP API Gateway en staging.

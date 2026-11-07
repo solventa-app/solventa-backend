@@ -321,6 +321,7 @@ def create_app(
                 clave_correo=config.cliente_id_clave,
                 refrescos=RepositorioRefrescosPostgres(pool),
                 refresh_dias=config.refresh_vigencia_dias,
+                refresh_gracia_segundos=config.refresh_gracia_segundos,
             )
         # Con todo lo demás inyectado (pruebas) no hay pool: las de socios inyectan el suyo.
         if servicio_socios is None and pool is not None:

@@ -449,3 +449,12 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
     `services/auth/app/sesion.json`, verificada por `scripts/sincronizar_fuentes.py --verificar`); el cliente las recibe en
     `expiraEn` y `refreshExpiraEn`.
 - Afecta al frontend: sí (web: temporizador y cookie; móvil: almacenamiento seguro e interceptor). Aditivo.
+
+## `sesion.json` — 2026-11-06 (sin cambio de esquema)
+
+- KAN-227 (HU-M02): `contracts/sesion.json` suma `refresh_gracia_segundos: 30` (copia en `services/auth/app/sesion.json`;
+  `REFRESH_GRACIA_SEGUNDOS` la sobrescribe y `0` vuelve al comportamiento anterior). Si la app reintenta `renovarSesion`
+  con el refresh anterior antes de 30 s y nadie usó su sucesor (la respuesta se perdió en la red), AUTH revoca ese sucesor
+  y entrega un par nuevo en vez de revocar la cadena. Fuera de la gracia, o con el sucesor ya usado, el reuso sigue
+  revocando todo. El esquema GraphQL no cambia.
+- Afecta al frontend: no cambia la forma; el móvil puede reintentar una vez con el mismo refresh ante un error de red.
