@@ -379,9 +379,9 @@ fastapi==0.162.0 \
     # via
     #   -r requirements.in
     #   strawberry-graphql
-google-auth==2.62.0 \
-    --hash=sha256:0bef0ce54bdf9ce226c5d66e4264413bd918141c31bbe49fb52eac882f513d69 \
-    --hash=sha256:4ff4319aeb4ad128409759d397a9fcafad126d0031d241cc0dd6b9a00b43e3f3
+google-auth==2.62.1 \
+    --hash=sha256:015399a5abde39033c69404cc1c079e6d4c2de2993e164c9f4eac6e5376ad72b \
+    --hash=sha256:3c8e1ce2553784ae17fd220e6f88df3281d86ab98019278f436d06dffab17a9e
     # via -r requirements.in
 googleapis-common-protos==1.75.5 \
     --hash=sha256:c7a866fc34ed29a3b10af627a4b9b1dc2433313ca6e959f0ae4feb132047ed72 \
@@ -884,9 +884,9 @@ starlette==1.8.0 \
     # via
     #   fastapi
     #   prometheus-fastapi-instrumentator
-strawberry-graphql==0.338.0 \
-    --hash=sha256:2be983dcaed17daa0501799cf524dafd53aab44ac178530aa3b6eb6d99b6943f \
-    --hash=sha256:74396fa0d968286c839dcf24a54c6a799d83d72fe8ea8f653765d1407707e6a8
+strawberry-graphql==0.339.1 \
+    --hash=sha256:16e8ac770dcbd6946b5725845e9b8b8c68aa3f811766627bda3902b00c928e23 \
+    --hash=sha256:574b28acf609cc8ee150c47e290a7bf5aaf1274aa7c52242fca00aec2e1a8146
     # via -r requirements.in
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
