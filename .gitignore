@@ -39,3 +39,7 @@ Thumbs.db
 
 # Claude Code: configuración local personal
 .claude/settings.local.json
+
+# Respaldos de scripts/limpiar_onboarding_staging.py (datos personales cifrados) y su entorno
+respaldo-onboarding-*.json
+.venv-ops/

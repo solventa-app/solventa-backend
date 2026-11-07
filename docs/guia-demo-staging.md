@@ -216,6 +216,83 @@ gcloud run services describe bff --region $REGION --project $PROYECTO --format="
 - Si el apagado falla por el plan (acceso público del BFF pendiente de aplicar), ver la memoria del proyecto y aplicar
   antes **Deploy staging** con `infra=true` y `permitir_destruir=true`.
 
+## 7. Repetir el onboarding móvil con la misma cédula (HU-M01)
+
+**Síntoma:** alguien crea otra cuenta en la app y, al verificar una cédula que ya usó, la sesión queda
+`RECHAZADA` con `DOCUMENTO_YA_REGISTRADO`. El rechazo es **nuestro, no de Didit**. Una cédula verificada queda
+amarrada a su cuenta en dos índices únicos: `usuarios_titular_unico` (AUTH) y `ux_sesiones_titular_verificado`
+(ONBOARDING, sesión `VERIFICADA`). Para repetir la demo hay que borrar la cuenta anterior con
+`scripts/limpiar_onboarding_staging.py`.
+
+```bash
+# Una vez: entorno aparte con las dependencias de operación (no son del repo)
+python -m venv .venv-ops
+.venv-ops/Scripts/pip install "cloud-sql-python-connector[pg8000]" pymongo   # en Linux/macOS: .venv-ops/bin/pip
+gcloud auth application-default login     # cuenta con acceso a solventa-511815
+
+# Solo la cuenta de una cédula: la pide sin mostrarla. Primero el simulacro, luego --aplicar
+.venv-ops/Scripts/python scripts/limpiar_onboarding_staging.py --cedula
+.venv-ops/Scripts/python scripts/limpiar_onboarding_staging.py --cedula --aplicar
+
+# Todas las cuentas y sesiones del onboarding móvil (p. ej. antes de una demo)
+.venv-ops/Scripts/python scripts/limpiar_onboarding_staging.py --todas --aplicar
+```
+
+- **Qué borra:** en AUTH, los usuarios CLIENTE del onboarding y sus `refresh_tokens`. En ONBOARDING, las sesiones
+  con `datos_extraidos`, `verificaciones` y la bitácora `eventos_onboarding`. La bitácora es append-only por trigger:
+  el script lo desactiva y lo reactiva **dentro de la misma transacción** y al final confirma que quedó activo.
+- **Qué no toca:** los consentimientos (append-only, no bloquean), los archivos de almacenamiento (se borran solos a
+  los 30 días), los perfiles de RISK (se reemplazan con el próximo cálculo) y los usuarios ASESOR, BACKOFFICE y socios.
+- **Se niega** a borrar si el titular tiene pólizas, propuestas o cobros. En POLICY y PAYMENTS, `cliente_id` es el
+  titular (HMAC de la cédula), no el id del usuario: así se buscan.
+- Antes de borrar escribe un respaldo `respaldo-onboarding-<fecha>.json` en el directorio actual (o en `--respaldo`).
+  Tiene los campos personales **cifrados**. No lo subas al repo y bórralo cuando la demo salga bien.
+- Después de limpiar, la persona vuelve a registrarse con el mismo correo (el `correo_hmac` también queda libre) y
+  repite la verificación de documento y la prueba de vida.
+- Primer uso: 2026-11-06. Con `--todas` se borraron 10 cuentas y 20 sesiones para que el equipo repitiera la demo
+  con una cédula ya verificada.
+
+## 8. Siniestros PENDIENTE para la mesa del operador (HU-W04)
+
+**Síntoma:** la mesa de siniestros no tiene casos en PENDIENTE. La semilla
+([guia-siembra-siniestros-staging.md](guia-siembra-siniestros-staging.md)) deja 7, pero sus plazos de dictamen son de
+10 a 70 horas, y el job `aprobar-siniestros-vencidos` (cada 15 min, D-3 de la revisión QA) **aprueba solo** los vencidos.
+Volver a sembrar reinicia los 20 casos y borra las resoluciones de las demos. Por eso existe
+`scripts/sembrar_pendientes_staging.py`, que solo **agrega** casos nuevos con un plazo largo.
+
+```bash
+.venv-ops/Scripts/pip install pymongo cryptography httpx      # una vez, en el entorno de la sección 7
+.venv-ops/Scripts/python scripts/sembrar_pendientes_staging.py                       # simulacro
+.venv-ops/Scripts/python scripts/sembrar_pendientes_staging.py --cantidad 6 --dias 10 --aplicar
+```
+
+- Cada caso copia uno de la semilla: su póliza demo, asegurado, relato, ubicación, verificaciones y evidencias (reusa
+  los archivos ya subidos). Lleva id `sin-pend-AAAAMMDD-NN`, un radicado nuevo del contador de CLAIMS (`SIN-2026-1001`
+  en adelante) y queda PENDIENTE, sin derivación ni resolución. Escribe con el repositorio y el cifrador de CLAIMS.
+- Es idempotente por día: repetirlo el mismo día renueva el plazo de los que siguen PENDIENTE y no toca los resueltos.
+- **Los casos se aprueban solos al vencer el plazo** (por diseño). Si la demo es después de esa fecha, vuelve a correrlo.
+- Corrido el 2026-11-06: 6 casos que vencen el 2026-11-16, verificados con `GET /siniestros/{id}` de CLAIMS.
+
+## 9. Medio de pago en la conciliación de cobros (HU-W05)
+
+**Síntoma:** en la conciliación de pagos del operador hay cobros con origen «Recurrente» sin medio de pago. Solo
+guardan medio la página de pago (`INTERACTIVO`) y el cobro recurrente programado. Los cobros creados con `crearCobro` /
+`POST /cobros` (el cobro a mano de la sección 2.3, `scripts/sembrar_cobros.py` y las pruebas de
+`scripts/probar_cobros.py`, pólizas `POL-E2E-*` y `DIAG-*`) quedan con origen `RECURRENTE` y `medio_pago_id` vacío.
+
+```bash
+.venv-ops/Scripts/python scripts/asignar_medios_cobros_staging.py             # simulacro
+.venv-ops/Scripts/python scripts/asignar_medios_cobros_staging.py --aplicar
+```
+
+- Crea un medio por (póliza, cliente), con el token del propio cobro descifrado y vuelto a cifrar con el id del medio
+  (llave `clave-cifrado`, la de PAYMENTS). Marca y tipo rotan entre VISA, MASTERCARD y AMEX, crédito y débito, porque el
+  cobro no guarda la marca: son **datos de demostración**. Después fija `medio_pago_id` en esos cobros, en una sola
+  transacción. No toca los cobros que ya tienen medio.
+- Mientras `crearCobro` no reciba el medio, cada corrida de esas pruebas vuelve a dejar cobros sin medio: corre el script
+  otra vez antes de la demo.
+- Corrido el 2026-11-06: 36 medios para 60 cobros. `POST /cobros/buscar` devuelve los 62 cobros con medio.
+
 ## Pendiente de verificar
 
 - Los comandos con `curl` a los stubs y la semilla contra staging se escribieron a partir del código; no los corrí
