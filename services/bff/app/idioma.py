@@ -231,6 +231,9 @@ EN: dict[str, str] = {
     "El documento no coincide con el de tu cuenta.": (
         "The document doesn't match the one on your account."
     ),
+    "El documento de identidad no es válido para ese tipo y país.": (
+        "The ID document isn't valid for that type and country."
+    ),
     "No pudimos consultar las propuestas. Intenta de nuevo.": (
         "We couldn't load the proposals. Please try again."
     ),

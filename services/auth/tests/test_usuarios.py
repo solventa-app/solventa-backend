@@ -33,6 +33,8 @@ def test_crear_devuelve_solo_datos_publicos() -> None:
         "idioma",
         "moneda",
         "tiene_contacto",  # solo dice si hay contacto, nunca cuál es
+        "tipo_documento",  # T20: el tipo, nunca el número
+        "pais",
     }
     assert usuario["estado"] == "ACTIVO"
     assert usuario["tiene_contacto"] is False

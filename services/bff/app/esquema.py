@@ -220,6 +220,9 @@ class ConsentimientoInput:
     tipo_dato: str | None = None
     fuente_datos: str | None = None
     canal: str | None = None
+    # v0.38 (T20): tipo del documento y país. Sin ellos, cédula colombiana (como antes).
+    tipo_documento: str | None = None
+    pais: str | None = None
 
 
 @strawberry.type
@@ -320,6 +323,9 @@ class SolicitudOfertaInput:
     direccion_inmueble: str
     # Obligatorio para un ASESOR; un CLIENTE con documento en AUTH no lo manda (v0.18, W03-34).
     documento_identidad: str | None = None
+    # v0.38 (T20): tipo del documento y país; el CLIENTE con documento en AUTH tampoco los manda.
+    tipo_documento: str | None = None
+    pais: str | None = None
 
 
 @strawberry.type
@@ -725,6 +731,9 @@ class Usuario:
     documento_enmascarado: str | None = None
     # v0.24: el correo del propio usuario (perfil común); solo en `iniciarSesion` y `yo`.
     correo: str | None = None
+    # v0.38 (T20): tipo del documento del CLIENTE (nunca el número) y país de la cuenta.
+    tipo_documento: str | None = None
+    pais: str | None = None
 
 
 @strawberry.type
@@ -777,12 +786,16 @@ class CrearUsuarioInput:
     telefono: str | None = None
     # v0.18 (W03-27): obligatorio para un CLIENTE, junto con el correo (lo exige AUTH).
     documento_identidad: str | None = None
+    # v0.38 (T20): tipo del documento (del catálogo del país) y país de la cuenta (cualquier rol).
+    tipo_documento: str | None = None
+    pais: str | None = None
 
 
 @strawberry.input
 class PreferenciasInput:
     idioma: str  # ES | EN
     moneda: str  # COP | USD | EUR | MXN | BRL | CLP | PEN
+    pais: str | None = None  # v0.38 (T20): uno de los siete; si no llega, se conserva
 
 
 @strawberry.input
@@ -991,6 +1004,8 @@ def _usuario(datos: dict) -> Usuario:
         tiene_contacto=bool(datos.get("tiene_contacto", False)),
         documento_enmascarado=datos.get("documento_enmascarado"),
         correo=datos.get("correo"),
+        tipo_documento=datos.get("tipo_documento"),
+        pais=datos.get("pais"),
     )
 
 
@@ -2334,12 +2349,19 @@ class Mutation:
         clave_titular = info.context.get("cliente_id_clave", "dev-cliente-id-clave-local")
         # W03-34: como en `solicitarOferta`, un CLIENTE consiente con el documento de su cuenta.
         titular = await documento_del_cliente(
-            info.context["clientes"], usuario, entrada.documento_identidad, clave_titular
+            info.context["clientes"],
+            usuario,
+            entrada.documento_identidad,
+            clave_titular,
+            entrada.tipo_documento,
+            entrada.pais,
         )
         if titular.error:
             raise ErrorPublico(titular.error)
         titular_id = (
-            cliente_id_desde_documento(titular.documento, clave_titular)
+            cliente_id_desde_documento(
+                titular.documento, clave_titular, titular.pais, titular.tipo_documento
+            )
             if titular.documento
             else None
         )
@@ -2386,6 +2408,8 @@ class Mutation:
             usuario,
             entrada.documento_identidad,
             info.context["cliente_id_clave"],
+            entrada.tipo_documento,
+            entrada.pais,
         )
         if titular.error or not titular.documento:
             return ErrorOferta(
@@ -2399,6 +2423,8 @@ class Mutation:
             entrada.valor_credito,
             entrada.plazo_meses,
             entrada.direccion_inmueble,
+            tipo_documento=titular.tipo_documento,
+            pais=titular.pais,
         )
         if isinstance(resultado, ErrorOfertaDatos):
             return ErrorOferta(
@@ -2583,6 +2609,8 @@ class Mutation:
                 entrada.correo,
                 entrada.telefono,
                 entrada.documento_identidad,
+                entrada.tipo_documento,
+                entrada.pais,
             )
         except SolicitudInvalida as error:
             return ErrorUsuario(mensaje=str(error))
@@ -2613,7 +2641,7 @@ class Mutation:
         usuario = exigir_rol(info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True)
         try:
             datos = await _auth(info).actualizar_preferencias(
-                usuario.id, entrada.idioma, entrada.moneda
+                usuario.id, entrada.idioma, entrada.moneda, entrada.pais
             )
         except SolicitudInvalida as error:
             return ErrorUsuario(mensaje=str(error))

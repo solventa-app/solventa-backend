@@ -66,3 +66,21 @@ def validar_documento(pais: str, tipo: str, numero: str) -> bool:
         return False
     limpio = re.sub(r"[\s.\-]", "", numero).upper()
     return re.fullmatch(definicion["formato"], limpio) is not None
+
+
+def documento_tipado(
+    numero: str, tipo: str | None, pais: str | None
+) -> tuple[str, str | None, str | None] | None:
+    """T20: el número limpio con su tipo y país, o `None` si no es válido para ellos. El país por
+    defecto es Colombia y el tipo por defecto, el nacional del país. Sin tipo ni país se devuelve
+    el número tal cual (como antes de T20: el llamador aplica su validación de siempre)."""
+    if tipo is None and pais is None:
+        return numero.strip(), None, None
+    pais_n = (pais or "CO").strip().upper()
+    jurisdiccion = next((x for x in JURISDICCIONES if x.codigo == pais_n), None)
+    if jurisdiccion is None:
+        return None
+    tipo_n = (tipo or jurisdiccion.tipo_documento).strip().upper()
+    if not validar_documento(pais_n, tipo_n, numero):
+        return None
+    return re.sub(r"[\s.\-]", "", numero).upper(), tipo_n, pais_n

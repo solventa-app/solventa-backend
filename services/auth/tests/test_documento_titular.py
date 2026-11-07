@@ -99,7 +99,9 @@ def test_el_cliente_queda_con_el_titular_del_consentimiento_y_el_documento_cifra
         CIFRADOR_PRUEBAS.descifrar(fila["documento_cifrado"], contexto_documento(creado["id"]))
         == DOCUMENTO
     )
-    assert "documento" not in str(creado) and "titular" not in str(creado)
+    assert DOCUMENTO not in str(creado) and "titular" not in str(creado)
+    # T20: sin tipo ni país se lee como cédula colombiana (el tipo no es el número).
+    assert (creado["tipo_documento"], creado["pais"]) == ("CC", "CO")
 
 
 @pytest.mark.parametrize(
@@ -158,6 +160,8 @@ def test_documento_enmascarado_e_identidad_del_propio_cliente() -> None:
     assert servicio.identidad_de(creado["id"]) == {
         "titular_id": _titular_como_el_bff(DOCUMENTO),
         "documento": DOCUMENTO,
+        "tipo_documento": "CC",
+        "pais": "CO",
     }
 
 
@@ -244,6 +248,8 @@ def test_http_identidad_solo_de_un_cliente_verificado() -> None:
     assert identidad.json() == {
         "titular_id": _titular_como_el_bff(DOCUMENTO),
         "documento": DOCUMENTO,
+        "tipo_documento": "CC",
+        "pais": "CO",
     }
     assert de_asesor.status_code == 404 and inexistente.status_code == 404
 

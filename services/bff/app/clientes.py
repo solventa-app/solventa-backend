@@ -123,6 +123,8 @@ class PuertoAuth(Protocol):
         correo: str | None = None,
         telefono: str | None = None,
         documento_identidad: str | None = None,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
     ) -> dict: ...
 
     async def nombres_de_clientes(self, ids: list[str]) -> dict[str, str]: ...
@@ -132,7 +134,7 @@ class PuertoAuth(Protocol):
     async def suspender_usuario(self, usuario_id: str) -> dict | None: ...
 
     async def actualizar_preferencias(
-        self, usuario_id: str, idioma: str, moneda: str
+        self, usuario_id: str, idioma: str, moneda: str, pais: str | None = None
     ) -> dict | None: ...
 
     async def actualizar_contacto(
@@ -681,6 +683,8 @@ class ClienteAuthHttp:
         correo: str | None = None,
         telefono: str | None = None,
         documento_identidad: str | None = None,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
     ) -> dict:
         # El nombre, el contacto, el documento (datos personales) y la clave viajan solo en el
         # cuerpo, nunca en la URL, y no se registran. AUTH calcula el titular (W03-27).
@@ -692,6 +696,8 @@ class ClienteAuthHttp:
             "correo": correo,
             "telefono": telefono,
             "documento_identidad": documento_identidad,
+            "tipo_documento": tipo_documento,  # T20
+            "pais": pais,
         }
         return _json_o_error(await _pedir(self._cliente, "POST", "/usuarios", cuerpo))
 
@@ -713,13 +719,13 @@ class ClienteAuthHttp:
         )
 
     async def actualizar_preferencias(
-        self, usuario_id: str, idioma: str, moneda: str
+        self, usuario_id: str, idioma: str, moneda: str, pais: str | None = None
     ) -> dict | None:
         respuesta = await _pedir(
             self._cliente,
             "POST",
             f"/usuarios/{usuario_id}/preferencias",
-            {"idioma": idioma, "moneda": moneda},
+            {"idioma": idioma, "moneda": moneda, "pais": pais},
         )
         if respuesta.status_code == 404:
             return None
