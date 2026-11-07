@@ -72,6 +72,9 @@ class SolicitudConsentimiento(BaseModel):
     actor: Actor | None = None
     titular_id: str | None = None
     documento_identidad: str | None = None
+    # T20: con el documento; sin ellos, cédula colombiana (el titular de siempre).
+    tipo_documento: str | None = None
+    pais: str | None = None
     tipo_dato: str | None = None
     fuente_datos: str | None = None
     canal: str | None = None
@@ -118,6 +121,9 @@ class SolicitudCierreVerificacion(BaseModel):
     # documento fija además el `titular_id` del CLIENTE (W03-36).
     nombre: str | None = None
     documento: str | None = None
+    # T20: tipo y país del documento leído; sin ellos, cédula colombiana.
+    tipo_documento: str | None = None
+    pais: str | None = None
 
 
 class SolicitudRenovacion(BaseModel):
@@ -136,6 +142,9 @@ class SolicitudUsuario(BaseModel):
     # Solo CLIENTE y obligatorio para él, junto con el correo (W03-27). Se guarda cifrado y como
     # titular verificado; nunca se devuelve.
     documento_identidad: str | None = None
+    # T20: tipo del documento (del catálogo del país) y país de la cuenta (cualquier rol).
+    tipo_documento: str | None = None
+    pais: str | None = None
 
 
 class SolicitudContacto(BaseModel):
@@ -157,6 +166,9 @@ class IdentidadResponse(BaseModel):
 
     titular_id: str
     documento: str
+    # T20: CO/CC para los titulares de antes de la `0012`.
+    tipo_documento: str | None = None
+    pais: str | None = None
 
 
 class SolicitudNombres(BaseModel):
@@ -187,11 +199,15 @@ class UsuarioResponse(BaseModel):
     documento_enmascarado: str | None = None
     # v0.24: el correo propio, como `nombre`: solo en `POST /sesiones` y `GET /usuarios/{id}`.
     correo: str | None = None
+    # T20: tipo del documento del CLIENTE (no es el número) y país de la cuenta.
+    tipo_documento: str | None = None
+    pais: str | None = None
 
 
 class SolicitudPreferencias(BaseModel):
     idioma: str
     moneda: str
+    pais: str | None = None  # T20: lo que no llega se conserva
 
 
 class SesionResponse(BaseModel):
@@ -355,7 +371,7 @@ def create_app(
         titular_id = body.titular_id
         if not titular_id and body.documento_identidad and body.documento_identidad.strip():
             titular_id = cliente_id_desde_documento(
-                body.documento_identidad, config.cliente_id_clave
+                body.documento_identidad, config.cliente_id_clave, body.pais, body.tipo_documento
             )
         consentimiento = app.state.consentimientos.registrar(
             body.finalidad,
@@ -460,6 +476,8 @@ def create_app(
                 body.correo,
                 body.telefono,
                 body.documento_identidad,
+                body.tipo_documento,
+                body.pais,
             )
         except DatoInvalido as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
@@ -499,7 +517,12 @@ def create_app(
         no existe o ya no está pendiente."""
         try:
             usuario = app.state.usuarios.cerrar_verificacion(
-                usuario_id, body.aprobada, body.nombre, body.documento
+                usuario_id,
+                body.aprobada,
+                body.nombre,
+                body.documento,
+                body.tipo_documento,
+                body.pais,
             )
         except DatoInvalido as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
@@ -585,7 +608,7 @@ def create_app(
         """Idioma y moneda por defecto. El BFF solo lo llama con el id del propio usuario."""
         try:
             usuario = app.state.usuarios.actualizar_preferencias(
-                usuario_id, body.idioma, body.moneda
+                usuario_id, body.idioma, body.moneda, body.pais
             )
         except DatoInvalido as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
@@ -705,9 +728,7 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(error)) from error
         return Response(status_code=204)
 
-    @app.get(
-        "/socios/{socio_id}/consumo", tags=["socios"], response_model=ConsumoSocioResponse
-    )
+    @app.get("/socios/{socio_id}/consumo", tags=["socios"], response_model=ConsumoSocioResponse)
     def consumo_socio(
         socio_id: str, entorno: Entorno, desde: date | None = None, hasta: date | None = None
     ) -> ConsumoSocioResponse:

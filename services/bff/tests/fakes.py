@@ -331,6 +331,8 @@ class AuthFalso:
         correo: str | None = None,
         telefono: str | None = None,
         documento_identidad: str | None = None,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
     ) -> dict:
         if "@" in usuario:
             raise SolicitudInvalida("El usuario no puede ser un correo ni un número de documento.")
@@ -392,7 +394,7 @@ class AuthFalso:
         return self.usuarios[usuario_id]
 
     async def actualizar_preferencias(
-        self, usuario_id: str, idioma: str, moneda: str
+        self, usuario_id: str, idioma: str, moneda: str, pais: str | None = None
     ) -> dict | None:
         if self.falla:
             raise ErrorServicio("caido")
@@ -405,6 +407,8 @@ class AuthFalso:
             "idioma": idioma,
             "moneda": moneda,
         }
+        if pais is not None:
+            self.usuarios[usuario_id]["pais"] = pais
         return self.usuarios[usuario_id]
 
 

@@ -52,6 +52,8 @@ class RepositorioUsuariosMemoria:
         telefono_cifrado: str | None = None,
         titular_id: str | None = None,
         documento_cifrado: str | None = None,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
     ) -> dict | None:
         if any(f["usuario"] == alias for f in self.filas.values()):
             return None
@@ -72,6 +74,8 @@ class RepositorioUsuariosMemoria:
             "correo_hmac": None,
             "idioma": "ES",
             "moneda": "COP",
+            "tipo_documento": tipo_documento,
+            "pais": pais,
         }
         self.filas[usuario_id] = fila
         return dict(fila)
@@ -123,10 +127,14 @@ class RepositorioUsuariosMemoria:
         self.filas[usuario_id]["estado"] = "SUSPENDIDO"
         return dict(self.filas[usuario_id])
 
-    def actualizar_preferencias(self, usuario_id: str, idioma: str, moneda: str) -> dict | None:
+    def actualizar_preferencias(
+        self, usuario_id: str, idioma: str, moneda: str, pais: str | None = None
+    ) -> dict | None:
         if usuario_id not in self.filas:
             return None
         self.filas[usuario_id] |= {"idioma": idioma, "moneda": moneda}
+        if pais is not None:
+            self.filas[usuario_id]["pais"] = pais
         return dict(self.filas[usuario_id])
 
     def actualizar_contacto(
@@ -171,7 +179,14 @@ class RepositorioUsuariosMemoria:
         return None
 
     def cerrar_verificacion(
-        self, usuario_id, estado, nombre_cifrado, titular_id=None, documento_cifrado=None
+        self,
+        usuario_id,
+        estado,
+        nombre_cifrado,
+        titular_id=None,
+        documento_cifrado=None,
+        tipo_documento=None,
+        pais=None,
     ):
         fila = self.filas.get(usuario_id)
         if fila is None or fila["estado"] not in ("PENDIENTE_VERIFICACION", estado):
@@ -181,6 +196,8 @@ class RepositorioUsuariosMemoria:
             ("nombre_cifrado", nombre_cifrado),
             ("titular_id", titular_id),
             ("documento_cifrado", documento_cifrado),
+            ("tipo_documento", tipo_documento),
+            ("pais", pais),
         ):
             if valor:
                 fila[campo] = valor

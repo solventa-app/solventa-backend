@@ -437,6 +437,27 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `null` mientras el caso está PENDIENTE. Solo cambios aditivos.
 - Afecta al frontend: sí (móvil: «Mis siniestros» y el detalle del caso).
 
+## v0.39 — 2026-11-07
+
+- KAN-26 (T19): `SolicitudOfertaInput.placeId` (opcional). Con él, el BFF valida el lugar con Places (detrás del ACL,
+  700 ms): cotiza con la dirección normalizada y rechaza una de un país no soportado («La dirección del inmueble está
+  en un país que no atendemos.»). Sin él, o si Places no responde, la dirección escrita se usa «sin verificar» y no se
+  bloquea la cotización. Infra: APIs de Places y Geocoding y el secreto `google-places-api-key` del ACL Worker
+  (`PLACES_PROVEEDOR=google` en la nube). Afecta al frontend: sí (aditivo: mandar el `placeId` de la sugerencia).
+
+## v0.38 — 2026-11-07
+
+- KAN-26 (T20, `plan-cierre-HU-W03.md`): tipo de documento y país en el resto del recorrido. Solo cambios aditivos:
+  - `ConsentimientoInput`, `SolicitudOfertaInput` y `CrearUsuarioInput` suman `tipoDocumento` y `pais` (opcionales).
+    Con alguno de los dos, el número se valida con el formato del catálogo del país (`contracts/jurisdicciones.json`,
+    el mismo de `documentoValido`); el tipo por defecto es el nacional del país y el país por defecto, `CO`.
+  - `Usuario.tipoDocumento` (nunca el número) y `Usuario.pais`; `PreferenciasInput.pais` (si no llega, se conserva).
+  - `titular_id` = HMAC de `PAIS:TIPO:NUMERO`, salvo la cédula colombiana (o sin tipo ni país), que sigue siendo el
+    HMAC del número: los titulares, consentimientos y pólizas que ya existen no cambian. AUTH `0012` guarda
+    `tipo_documento` y `pais` del usuario; el onboarding cierra la cuenta con el tipo y el país de su sesión.
+- Afecta al frontend: sí (aditivo). Web: el selector de país y de tipo en W01-01 y en el alta del operador, y el país en
+  Preferencias. Móvil: el país en el perfil.
+
 ## v0.26 — 2026-11-01
 
 - KAN-26 (T22, `plan-cierre-HU-W03.md`): sesión con token de acceso corto y refresh largo. Aditivo:
