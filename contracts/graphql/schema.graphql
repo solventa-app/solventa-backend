@@ -1051,6 +1051,55 @@ type CatalogoPrestadores {
   prestadores: [Prestador!]! # completa (activos e inactivos) cuando vigente = false
 }
 
+# v0.40 (HU-M06, KAN-265 y KAN-266). Solicitar y cancelar la asistencia en sitio. Transaccional: lo escribe CLAIMS en
+# la primaria. Aquí sí viaja la ubicación del cliente (adónde debe llegar el prestador): CLAIMS la guarda cifrada y
+# nunca va a logs ni vuelve en la respuesta. Mientras no haya prestadores reales el desenlace es simulado: el primer
+# intento queda NO_CONFIRMADA y el reintento con el mismo `idSolicitud` se confirma (M06-04b y M06-04a).
+enum EstadoAsistencia {
+  CONFIRMADA # el prestador va en camino (`minutosEstimados`)
+  NO_CONFIRMADA # no se pudo confirmar (`motivo`); reenviar con el mismo idSolicitud reintenta
+  CANCELADA
+}
+
+enum MotivoNoConfirmada {
+  PRESTADOR_SIN_RESPUESTA
+}
+
+enum CodigoErrorAsistencia {
+  PRESTADOR_NO_DISPONIBLE # dado de baja o inexistente: elegir otro desde el mapa
+  TIPO_NO_ATENDIDO # el prestador no atiende ese tipo de asistencia
+  DATOS_INVALIDOS # idSolicitud mal formado o de otra persona, o textos demasiado largos
+  NO_ENCONTRADA # cancelar una asistencia que no existe o no es del cliente
+}
+
+input SolicitudAsistenciaInput {
+  idSolicitud: ID! # UUID generado por la app: es el id de la asistencia y su clave de idempotencia
+  prestadorId: ID!
+  tipoAsistencia: TipoPrestador!
+  descripcion: String = null # opcional, hasta 500 caracteres
+  direccion: String = null # la que el cliente confirmó o corrigió, hasta 200 caracteres
+  latitud: Float! # WGS84, del GPS del teléfono
+  longitud: Float!
+}
+
+type Asistencia {
+  id: ID!
+  estado: EstadoAsistencia!
+  tipoAsistencia: TipoPrestador!
+  prestador: Prestador!
+  minutosEstimados: Int # solo CONFIRMADA (mismas reglas que la app: 20 km/h + 2 min)
+  motivo: MotivoNoConfirmada # solo NO_CONFIRMADA
+  solicitadaEn: DateTime!
+  canceladaEn: DateTime
+}
+
+type ErrorAsistencia {
+  codigo: CodigoErrorAsistencia!
+  mensaje: String!
+}
+
+union ResultadoAsistencia = Asistencia | ErrorAsistencia
+
 type Query {
   # v0.32 (T19). Places detrás del ACL Worker (timeout 700 ms; sin llave, un stub). Lista vacía si no responde.
   autocompletarDireccion(texto: String!, pais: String = null): [SugerenciaDireccion!]!
@@ -1202,4 +1251,10 @@ type Mutation {
   # URL firmada para una foto del caso que va a reportar (tipo `siniestro-foto`, a nombre de `idReporte`).
   solicitarSubidaEvidenciaSiniestro(idReporte: ID!, tipoContenido: String!, tamanoBytes: Int!): ResultadoSubidaArchivo!
   reportarSiniestro(entrada: ReporteSiniestroInput!): ResultadoReporteSiniestro!
+  # ---------- v0.40 (HU-M06): asistencia en sitio, solo CLIENTE ----------
+  # Idempotente por `idSolicitud`: reenviar una CONFIRMADA o CANCELADA la devuelve sin cambios; una NO_CONFIRMADA
+  # reintenta confirmarla. Sin sesión: SIN_SESION. CLAIMS caído: error público con reintento (nunca un 5xx).
+  solicitarAsistencia(entrada: SolicitudAsistenciaInput!): ResultadoAsistencia!
+  # Idempotente: cancelar dos veces devuelve la misma asistencia CANCELADA.
+  cancelarAsistencia(id: ID!): ResultadoAsistencia!
 }

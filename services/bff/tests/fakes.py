@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from app.clientes import (
     Acceso,
     ArchivoRechazado,
+    AsistenciaRechazada,
     Clientes,
     CredencialesSocioInvalidas,
     ErrorOnboardingServicio,
@@ -1148,6 +1149,8 @@ class ClaimsFalso:
         self.llamadas: list[tuple] = []
         self.error: Exception | None = None
         self.rechazo: str | None = None
+        self.asistencias: dict[str, dict] = {}
+        self.rechazo_asistencia: tuple[str, str] | None = None
 
     def _revisar(self, *llamada) -> None:
         self.llamadas.append(llamada)
@@ -1225,6 +1228,37 @@ class ClaimsFalso:
     async def de_cliente(self, cliente_id: str) -> list[dict]:
         self._revisar("de_cliente", cliente_id)
         return [s for s in self.siniestros.values() if s.get("reportado_por") == cliente_id]
+
+    async def solicitar_asistencia(self, solicitud: dict) -> dict:
+        """HU-M06: como CLAIMS con `primero_falla`; `rechazo_asistencia` simula un 409."""
+        self._revisar("solicitar_asistencia", solicitud)
+        if self.rechazo_asistencia is not None:
+            raise AsistenciaRechazada(*self.rechazo_asistencia)
+        aid = solicitud["id_solicitud"]
+        previa = self.asistencias.get(aid)
+        if previa is None:
+            previa = {
+                "id": aid,
+                "estado": "NO_CONFIRMADA",
+                "tipo_asistencia": solicitud["tipo_asistencia"],
+                "prestador": PRESTADORES_DE_PRUEBA[0],
+                "minutos_estimados": None,
+                "motivo": "PRESTADOR_SIN_RESPUESTA",
+                "solicitada_en": "2026-11-07T15:00:00+00:00",
+                "cancelada_en": None,
+            }
+        elif previa["estado"] == "NO_CONFIRMADA":
+            previa = {**previa, "estado": "CONFIRMADA", "motivo": None, "minutos_estimados": 6}
+        self.asistencias[aid] = previa
+        return previa
+
+    async def cancelar_asistencia(self, asistencia_id: str, cliente_id: str) -> dict:
+        self._revisar("cancelar_asistencia", asistencia_id, cliente_id)
+        previa = self.asistencias.get(asistencia_id)
+        if previa is None:
+            raise AsistenciaRechazada("NO_ENCONTRADA", "No encontramos esa asistencia.")
+        previa.update(estado="CANCELADA", cancelada_en="2026-11-07T15:05:00+00:00")
+        return previa
 
     async def derivar(self, siniestro_id, perito_id, instrucciones, actor_usuario_id) -> dict:
         self._revisar("derivar", siniestro_id, perito_id, instrucciones, actor_usuario_id)

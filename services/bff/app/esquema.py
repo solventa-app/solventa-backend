@@ -41,6 +41,7 @@ from app.autenticacion_usuarios import (
 )
 from app.clientes import (
     ArchivoRechazado,
+    AsistenciaRechazada,
     ErrorOnboardingServicio,
     ErrorServicio,
     ResolucionRechazada,
@@ -1620,6 +1621,106 @@ def _catalogo_prestadores(datos: dict) -> CatalogoPrestadores:
             if p["tipo"] in TIPOS_PRESTADOR
         ],
     )
+
+
+# ---------- Asistencia en sitio (v0.40, HU-M06) ----------
+
+
+@strawberry.enum
+class EstadoAsistencia(Enum):
+    CONFIRMADA = "CONFIRMADA"
+    NO_CONFIRMADA = "NO_CONFIRMADA"
+    CANCELADA = "CANCELADA"
+
+
+@strawberry.enum
+class MotivoNoConfirmada(Enum):
+    PRESTADOR_SIN_RESPUESTA = "PRESTADOR_SIN_RESPUESTA"
+
+
+@strawberry.enum
+class CodigoErrorAsistencia(Enum):
+    PRESTADOR_NO_DISPONIBLE = "PRESTADOR_NO_DISPONIBLE"
+    TIPO_NO_ATENDIDO = "TIPO_NO_ATENDIDO"
+    DATOS_INVALIDOS = "DATOS_INVALIDOS"
+    NO_ENCONTRADA = "NO_ENCONTRADA"
+
+
+@strawberry.input
+class SolicitudAsistenciaInput:
+    # UUID generado por la app: es el id de la asistencia y su clave de idempotencia.
+    id_solicitud: strawberry.ID
+    prestador_id: strawberry.ID
+    tipo_asistencia: TipoPrestador
+    latitud: float
+    longitud: float
+    descripcion: str | None = None
+    direccion: str | None = None
+
+
+@strawberry.type
+class Asistencia:
+    id: strawberry.ID
+    estado: EstadoAsistencia
+    tipo_asistencia: TipoPrestador
+    prestador: Prestador
+    minutos_estimados: int | None
+    motivo: MotivoNoConfirmada | None
+    solicitada_en: datetime
+    cancelada_en: datetime | None
+
+
+@strawberry.type
+class ErrorAsistencia:
+    codigo: CodigoErrorAsistencia
+    mensaje: str
+
+
+ResultadoAsistencia = Annotated[
+    Asistencia | ErrorAsistencia, strawberry.union("ResultadoAsistencia")
+]
+
+MENSAJE_ASISTENCIA_NO_DISPONIBLE = "No pudimos registrar la asistencia. Intenta de nuevo."
+MENSAJE_ID_SOLICITUD = "El identificador de la solicitud no es válido."
+CODIGOS_ASISTENCIA = {c.value for c in CodigoErrorAsistencia}
+
+
+def _asistencia(datos: dict) -> Asistencia:
+    p = datos["prestador"]
+    return Asistencia(
+        id=strawberry.ID(datos["id"]),
+        estado=EstadoAsistencia(datos["estado"]),
+        tipo_asistencia=TipoPrestador(datos["tipo_asistencia"]),
+        prestador=Prestador(
+            id=strawberry.ID(p["id"]),
+            nombre=p["nombre"],
+            tipo=TipoPrestador(p["tipo"]),
+            ciudad=p["ciudad"],
+            latitud=float(p["latitud"]),
+            longitud=float(p["longitud"]),
+            activo=p["activo"],
+        ),
+        minutos_estimados=datos.get("minutos_estimados"),
+        motivo=MotivoNoConfirmada(datos["motivo"]) if datos.get("motivo") else None,
+        solicitada_en=datetime.fromisoformat(datos["solicitada_en"]),
+        cancelada_en=_fecha(datos.get("cancelada_en")),
+    )
+
+
+def _error_asistencia(error: AsistenciaRechazada) -> ErrorAsistencia:
+    """Un código que este BFF no conoce se entrega como DATOS_INVALIDOS (nunca rompe la union)."""
+    codigo = error.codigo if error.codigo in CODIGOS_ASISTENCIA else "DATOS_INVALIDOS"
+    return ErrorAsistencia(codigo=CodigoErrorAsistencia(codigo), mensaje=error.mensaje)
+
+
+async def _accion_asistencia(accion) -> ResultadoAsistencia:
+    try:
+        return _asistencia(await accion())
+    except AsistenciaRechazada as error:
+        return _error_asistencia(error)
+    except ErrorServicio as error:
+        # Idempotente: la app reintenta con el mismo idSolicitud sin riesgo de duplicar.
+        raise ErrorPublico(MENSAJE_ASISTENCIA_NO_DISPONIBLE) from error
 
 
 # ---------- Estado del sistema (v0.22, HU-W07) ----------
@@ -3283,6 +3384,39 @@ class Mutation:
             return ErrorSiniestro(mensaje=error.mensaje)
         except ErrorServicio:
             return ErrorSiniestro(mensaje=MENSAJE_REPORTE_NO_DISPONIBLE)
+
+    @strawberry.mutation
+    async def solicitar_asistencia(
+        self, info: Info, entrada: SolicitudAsistenciaInput
+    ) -> ResultadoAsistencia:
+        """v0.40 (HU-M06, KAN-265): el CLIENTE pide asistencia en sitio a un prestador del
+        catálogo. Idempotente por `idSolicitud`; las reglas las aplica CLAIMS. La ubicación viaja
+        solo a CLAIMS (cifrada allí) y nunca a los logs."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        id_solicitud = str(entrada.id_solicitud).lower()
+        if not _id_reporte_valido(id_solicitud):
+            return ErrorAsistencia(
+                codigo=CodigoErrorAsistencia.DATOS_INVALIDOS, mensaje=MENSAJE_ID_SOLICITUD
+            )
+        solicitud = {
+            "id_solicitud": id_solicitud,
+            "cliente_id": usuario.id,
+            "prestador_id": str(entrada.prestador_id),
+            "tipo_asistencia": entrada.tipo_asistencia.value,
+            "descripcion": entrada.descripcion,
+            "direccion": entrada.direccion,
+            "latitud": entrada.latitud,
+            "longitud": entrada.longitud,
+        }
+        return await _accion_asistencia(lambda: _claims(info).solicitar_asistencia(solicitud))
+
+    @strawberry.mutation
+    async def cancelar_asistencia(self, info: Info, id: strawberry.ID) -> ResultadoAsistencia:
+        """v0.40 (HU-M06, KAN-266): solo el CLIENTE que la pidió; cancelar dos veces no falla."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        return await _accion_asistencia(
+            lambda: _claims(info).cancelar_asistencia(str(id).lower(), usuario.id)
+        )
 
 
 schema = strawberry.Schema(

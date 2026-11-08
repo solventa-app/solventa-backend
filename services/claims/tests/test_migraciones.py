@@ -46,12 +46,13 @@ def test_descubre_las_migraciones_en_orden():
         "0003_plazo_dictamen",
         "0004_reporte_cliente",
         "0005_prestadores",
+        "0006_asistencias",
     ]
 
 
 def test_segunda_ejecucion_no_reaplica():
     db = FakeDb()
-    assert len(aplicar_pendientes(db)) == 5
+    assert len(aplicar_pendientes(db)) == 6
     assert aplicar_pendientes(db) == []
     assert set(db[COLECCION].docs) == {
         "0001_base",
@@ -59,6 +60,7 @@ def test_segunda_ejecucion_no_reaplica():
         "0003_plazo_dictamen",
         "0004_reporte_cliente",
         "0005_prestadores",
+        "0006_asistencias",
     }
 
 
@@ -91,3 +93,16 @@ def test_los_datos_personales_solo_se_guardan_cifrados():
     propiedades = colecciones.COLECCIONES["siniestros"]["$jsonSchema"]["properties"]
     assert "asegurado_nombre_cifrado" in propiedades
     assert not {"asegurado", "nombre", "documento", "descripcion", "ubicacion"} & set(propiedades)
+
+
+def test_asistencias_con_validacion_y_reaplicable():
+    asistencias = importlib.import_module("migrations.versiones.0006_asistencias")
+    db = FakeDb()
+    asistencias.aplicar(db)
+    esquema = db.creadas["asistencias"]["$jsonSchema"]
+    assert "ubicacion_cifrada" in esquema["required"]
+    # Nunca la ubicación ni la descripción en claro.
+    assert "ubicacion" not in esquema["properties"]
+    assert "descripcion" not in esquema["properties"]
+    asistencias.aplicar(db)
+    assert db.comandos == [("collMod", "asistencias")]

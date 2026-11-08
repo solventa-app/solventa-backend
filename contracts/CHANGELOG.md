@@ -437,6 +437,22 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `null` mientras el caso está PENDIENTE. Solo cambios aditivos.
 - Afecta al frontend: sí (móvil: «Mis siniestros» y el detalle del caso).
 
+## v0.40 — 2026-11-07
+
+- KAN-265 y KAN-266 (HU-M06, KAN-36): solicitar y cancelar la asistencia en sitio. Solo cambios aditivos:
+  - Tipos `EstadoAsistencia`, `MotivoNoConfirmada`, `CodigoErrorAsistencia`, `SolicitudAsistenciaInput`, `Asistencia`,
+    `ErrorAsistencia` y la union `ResultadoAsistencia`.
+  - `Mutation.solicitarAsistencia(entrada)` y `Mutation.cancelarAsistencia(id)`, solo con sesión de CLIENTE.
+    Idempotentes: `idSolicitud` (UUID de la app) es el id de la asistencia; reenviar una CONFIRMADA o CANCELADA la
+    devuelve sin cambios y una NO_CONFIRMADA reintenta confirmarla (M06-03b). Cancelar dos veces no falla.
+  - Lo escribe CLAIMS en la primaria (colección `asistencias`, migración `0006`). La ubicación del cliente y su
+    descripción se guardan cifradas por campo y no vuelven en la respuesta. `minutosEstimados` usa las mismas reglas
+    que la app (Haversine, 20 km/h + 2 min).
+  - Desenlace **simulado** mientras no haya prestadores reales (`ASISTENCIA_SIMULACION`, por defecto `primero_falla`:
+    el primer intento queda NO_CONFIRMADA con `PRESTADOR_SIN_RESPUESTA` y el reintento se confirma; `confirma`
+    confirma siempre).
+- Afecta al frontend: sí (móvil: M06-02 a M06-06; regenerar `lib/core/contrato/`).
+
 ## v0.39 — 2026-11-07
 
 - KAN-26 (T19): `SolicitudOfertaInput.placeId` (opcional). Con él, el BFF valida el lugar con Places (detrás del ACL,

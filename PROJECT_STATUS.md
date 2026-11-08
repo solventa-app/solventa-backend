@@ -50,10 +50,10 @@ Todo esto está en código y verificado **en local**; nada tiene medición de st
 | HU-W04 / KAN-27 | Mesa de siniestros en `claims`; orden de indemnización sin dispersión | [`plan-completar-hu-w04`](docs/plan-completar-hu-w04.md) |
 | HU-W07 / KAN-30 | API de socios, rol `SOCIO`, presupuesto, comisión, modo prueba, salud | [`plan-completar-hu-w07`](docs/plan-completar-hu-w07.md) |
 | HU-M01 / KAN-31 | Onboarding móvil con verificación de identidad | [`services/onboarding/README.md`](services/onboarding/README.md) |
-| HU-M06 / KAN-263 | Catálogo maestro de prestadores en `claims` (`catalogoPrestadores`, v0.36); solicitar y cancelar asistencia pendientes | [`services/claims/README.md`](services/claims/README.md) |
+| HU-M06 / KAN-263, KAN-265, KAN-266 | Catálogo maestro de prestadores en `claims` (`catalogoPrestadores`, v0.36); solicitar y cancelar asistencia (`solicitarAsistencia`, `cancelarAsistencia`, v0.40, desenlace simulado) | [`services/claims/README.md`](services/claims/README.md) |
 | KAN-250 | Almacenamiento de archivos | [ADR-10](docs/adr/ADR-10-almacenamiento-de-archivos.md) |
 
-Contrato en **v0.39**; la siguiente libre es **v0.40**. Últimas migraciones: AUTH `0012`, POLICY `0008`, PAYMENTS `0010`, RISK `0004`, CLAIMS `0005`.
+Contrato en **v0.40**; la siguiente libre es **v0.41**. Últimas migraciones: AUTH `0012`, POLICY `0008`, PAYMENTS `0010`, RISK `0004`, CLAIMS `0006`.
 
 ## Estado actual
 

@@ -326,6 +326,27 @@ EN: dict[str, str] = {
     "No pudimos consultar los prestadores. Intenta de nuevo.": (
         "We couldn't load the providers. Please try again."
     ),
+    # Asistencia en sitio (HU-M06): mensajes del BFF y de CLAIMS, que llegan tal cual
+    "No pudimos registrar la asistencia. Intenta de nuevo.": (
+        "We couldn't register the assistance request. Please try again."
+    ),
+    "El identificador de la solicitud no es válido.": "The request identifier is not valid.",
+    "Este prestador ya no está disponible. Elige otro prestador cercano.": (
+        "This provider is no longer available. Choose another nearby provider."
+    ),
+    "Este prestador no atiende ese tipo de asistencia. Elige otro prestador.": (
+        "This provider doesn't handle that type of assistance. Choose another provider."
+    ),
+    "La descripción no puede pasar de 500 caracteres.": (
+        "The description can't be longer than 500 characters."
+    ),
+    "La dirección no puede pasar de 200 caracteres.": (
+        "The address can't be longer than 200 characters."
+    ),
+    "Esta solicitud ya existe. Vuelve a intentarlo desde el mapa.": (
+        "This request already exists. Try again from the map."
+    ),
+    "No encontramos esa asistencia.": "We couldn't find that assistance request.",
     "La ventana debe ser 15m, 1h, 24h o 7d.": ("The window must be 15m, 1h, 24h or 7d."),
     "No pudimos calcular el estado del sistema. Intenta de nuevo.": (
         "We couldn't compute the system status. Please try again."
