@@ -1658,6 +1658,16 @@ class SolicitudAsistenciaInput:
     direccion: str | None = None
 
 
+@strawberry.input
+class SolicitudAsistenciaDireccionInput:
+    # v0.41 (CA-M06-02): sin ubicación, el cliente escribe adónde debe llegar el prestador.
+    id_solicitud: strawberry.ID
+    prestador_id: strawberry.ID
+    tipo_asistencia: TipoPrestador
+    direccion: str
+    descripcion: str | None = None
+
+
 @strawberry.type
 class Asistencia:
     id: strawberry.ID
@@ -3407,6 +3417,28 @@ class Mutation:
             "direccion": entrada.direccion,
             "latitud": entrada.latitud,
             "longitud": entrada.longitud,
+        }
+        return await _accion_asistencia(lambda: _claims(info).solicitar_asistencia(solicitud))
+
+    @strawberry.mutation
+    async def solicitar_asistencia_con_direccion(
+        self, info: Info, entrada: SolicitudAsistenciaDireccionInput
+    ) -> ResultadoAsistencia:
+        """v0.41 (HU-M06, KAN-264, CA-M06-02): sin ubicación, con la dirección a mano. La dirección
+        viaja solo a CLAIMS (cifrada allí) y nunca a los logs."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        id_solicitud = str(entrada.id_solicitud).lower()
+        if not _id_reporte_valido(id_solicitud):
+            return ErrorAsistencia(
+                codigo=CodigoErrorAsistencia.DATOS_INVALIDOS, mensaje=MENSAJE_ID_SOLICITUD
+            )
+        solicitud = {
+            "id_solicitud": id_solicitud,
+            "cliente_id": usuario.id,
+            "prestador_id": str(entrada.prestador_id),
+            "tipo_asistencia": entrada.tipo_asistencia.value,
+            "descripcion": entrada.descripcion,
+            "direccion": entrada.direccion,
         }
         return await _accion_asistencia(lambda: _claims(info).solicitar_asistencia(solicitud))
 

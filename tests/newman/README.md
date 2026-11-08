@@ -142,13 +142,14 @@ npx --yes newman@6.2.2 run tests/newman/hu-m05.postman_collection.json \
 
 ## Colección de HU-M06 (`hu-m06.postman_collection.json`)
 
-Catálogo maestro de prestadores por el gateway (KAN-263): 9 peticiones y 28 aserciones en 3 carpetas, en orden.
+Catálogo maestro de prestadores y asistencia en sitio por el gateway (KAN-263 a KAN-267): 20 peticiones y 60 aserciones en 4 carpetas, en orden.
 
 | Carpeta | Qué verifica |
 |---|---|
 | 0. Preparación | Sesión de BACKOFFICE, alta de un CLIENTE (alias al azar) y su sesión en el canal `app` |
 | 1. Catálogo versionado | Sin versión: los 12 de la semilla, tipos y coordenadas; con la vigente: `vigente` y lista vacía; con una vieja: completa; `/v1/graphql/app` igual |
 | 2. Autorización | Sin sesión: `SIN_SESION`; un BACKOFFICE no lo usa |
+| 3. Asistencia en sitio | Solicitar, reenviar y cancelar (idempotentes), tipo no atendido, prestador inexistente y la dirección a mano sin ubicación (v0.41) |
 
 No necesita semilla: el catálogo lo carga `migrar-claims`.
 

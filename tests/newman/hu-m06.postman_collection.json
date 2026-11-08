@@ -479,6 +479,621 @@
           ]
         }
       ]
+    },
+    {
+      "name": "3. Asistencia en sitio (KAN-265, KAN-266, KAN-264)",
+      "item": [
+        {
+          "name": "3.1 solicitar: el primer intento no se confirma (simulación)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudAsistenciaInput!) { solicitarAsistencia(entrada: $e) { __typename ... on Asistencia { id estado motivo minutosEstimados canceladaEn prestador { id } } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idSolicitud\": \"{{id_gps}}\",\n      \"prestadorId\": \"prs-bog-001\",\n      \"tipoAsistencia\": \"MEDICO\",\n      \"descripcion\": \"Prueba de Newman\",\n      \"direccion\": \"Cra 15 # 93-20\",\n      \"latitud\": 4.676,\n      \"longitud\": -74.048\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('id_gps', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const a = cuerpo.data.solicitarAsistencia;",
+                  "pm.test('Es una asistencia', () => pm.expect(a.__typename).to.eql('Asistencia'));",
+                  "pm.test('NO_CONFIRMADA', () => pm.expect(a.estado).to.eql('NO_CONFIRMADA'));",
+                  "pm.test('Motivo PRESTADOR_SIN_RESPUESTA', () => pm.expect(a.motivo).to.eql('PRESTADOR_SIN_RESPUESTA'));",
+                  "pm.test('Sin tiempo estimado', () => pm.expect(a.minutosEstimados).to.eql(null));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 reenviar con el mismo id: se confirma con el tiempo estimado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudAsistenciaInput!) { solicitarAsistencia(entrada: $e) { __typename ... on Asistencia { id estado motivo minutosEstimados canceladaEn prestador { id } } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idSolicitud\": \"{{id_gps}}\",\n      \"prestadorId\": \"prs-bog-001\",\n      \"tipoAsistencia\": \"MEDICO\",\n      \"descripcion\": \"Prueba de Newman\",\n      \"direccion\": \"Cra 15 # 93-20\",\n      \"latitud\": 4.676,\n      \"longitud\": -74.048\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const a = cuerpo.data.solicitarAsistencia;",
+                  "pm.test('La misma asistencia', () => pm.expect(a.id).to.eql(pm.collectionVariables.get('id_gps')));",
+                  "pm.test('CONFIRMADA', () => pm.expect(a.estado).to.eql('CONFIRMADA'));",
+                  "pm.test('6 minutos: 1,2 km a 20 km/h más 2 de alistamiento', () => pm.expect(a.minutosEstimados).to.eql(6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 reenviar una confirmada: sin cambios",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudAsistenciaInput!) { solicitarAsistencia(entrada: $e) { __typename ... on Asistencia { id estado motivo minutosEstimados canceladaEn prestador { id } } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idSolicitud\": \"{{id_gps}}\",\n      \"prestadorId\": \"prs-bog-001\",\n      \"tipoAsistencia\": \"MEDICO\",\n      \"descripcion\": \"Prueba de Newman\",\n      \"direccion\": \"Cra 15 # 93-20\",\n      \"latitud\": 4.676,\n      \"longitud\": -74.048\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const a = cuerpo.data.solicitarAsistencia;",
+                  "pm.test('Sigue CONFIRMADA', () => pm.expect(a.estado).to.eql('CONFIRMADA'));",
+                  "pm.test('La misma asistencia', () => pm.expect(a.id).to.eql(pm.collectionVariables.get('id_gps')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 cancelar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($id: ID!) { cancelarAsistencia(id: $id) { __typename ... on Asistencia { id estado motivo minutosEstimados canceladaEn prestador { id } } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"id\": \"{{id_gps}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const a = cuerpo.data.cancelarAsistencia;",
+                  "pm.test('CANCELADA', () => pm.expect(a.estado).to.eql('CANCELADA'));",
+                  "pm.test('Con su fecha', () => pm.expect(a.canceladaEn).to.be.a('string'));",
+                  "pm.collectionVariables.set('cancelada_en', a.canceladaEn);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.5 cancelar dos veces no falla",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($id: ID!) { cancelarAsistencia(id: $id) { __typename ... on Asistencia { id estado motivo minutosEstimados canceladaEn prestador { id } } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"id\": \"{{id_gps}}\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const a = cuerpo.data.cancelarAsistencia;",
+                  "pm.test('Sigue CANCELADA', () => pm.expect(a.estado).to.eql('CANCELADA'));",
+                  "// Mongo guarda milisegundos: la primera respuesta traía microsegundos.",
+              "pm.test('La misma fecha', () => pm.expect(a.canceladaEn.slice(0, 23)).to.eql(pm.collectionVariables.get('cancelada_en').slice(0, 23)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.6 un prestador que no atiende ese tipo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudAsistenciaInput!) { solicitarAsistencia(entrada: $e) { __typename ... on Asistencia { id estado motivo minutosEstimados canceladaEn prestador { id } } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idSolicitud\": \"{{id_tipo}}\",\n      \"prestadorId\": \"prs-bog-001\",\n      \"tipoAsistencia\": \"MECANICO\",\n      \"descripcion\": \"Prueba de Newman\",\n      \"direccion\": \"Cra 15 # 93-20\",\n      \"latitud\": 4.676,\n      \"longitud\": -74.048\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('id_tipo', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const a = cuerpo.data.solicitarAsistencia;",
+                  "pm.test('TIPO_NO_ATENDIDO', () => pm.expect(a.codigo).to.eql('TIPO_NO_ATENDIDO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.7 un prestador que no existe",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudAsistenciaInput!) { solicitarAsistencia(entrada: $e) { __typename ... on Asistencia { id estado motivo minutosEstimados canceladaEn prestador { id } } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idSolicitud\": \"{{id_otro}}\",\n      \"prestadorId\": \"prs-no-existe\",\n      \"tipoAsistencia\": \"MEDICO\",\n      \"descripcion\": \"Prueba de Newman\",\n      \"direccion\": \"Cra 15 # 93-20\",\n      \"latitud\": 4.676,\n      \"longitud\": -74.048\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('id_otro', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const a = cuerpo.data.solicitarAsistencia;",
+                  "pm.test('PRESTADOR_NO_DISPONIBLE', () => pm.expect(a.codigo).to.eql('PRESTADOR_NO_DISPONIBLE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.8 con la dirección a mano, sin ubicación (CA-M06-02)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudAsistenciaDireccionInput!) { solicitarAsistenciaConDireccion(entrada: $e) { __typename ... on Asistencia { id estado motivo minutosEstimados canceladaEn prestador { id } } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idSolicitud\": \"{{id_mano}}\",\n      \"prestadorId\": \"prs-bog-001\",\n      \"tipoAsistencia\": \"MEDICO\",\n      \"direccion\": \"Cra 15 # 93-20, Bogotá\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('id_mano', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const a = cuerpo.data.solicitarAsistenciaConDireccion;",
+                  "pm.test('Es una asistencia', () => pm.expect(a.__typename).to.eql('Asistencia'));",
+                  "pm.test('NO_CONFIRMADA', () => pm.expect(a.estado).to.eql('NO_CONFIRMADA'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.9 reenviar con la dirección: se confirma sin tiempo estimado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudAsistenciaDireccionInput!) { solicitarAsistenciaConDireccion(entrada: $e) { __typename ... on Asistencia { id estado motivo minutosEstimados canceladaEn prestador { id } } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idSolicitud\": \"{{id_mano}}\",\n      \"prestadorId\": \"prs-bog-001\",\n      \"tipoAsistencia\": \"MEDICO\",\n      \"direccion\": \"Cra 15 # 93-20, Bogotá\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const a = cuerpo.data.solicitarAsistenciaConDireccion;",
+                  "pm.test('CONFIRMADA', () => pm.expect(a.estado).to.eql('CONFIRMADA'));",
+                  "pm.test('Sin coordenadas no hay tiempo estimado', () => pm.expect(a.minutosEstimados).to.eql(null));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.10 la dirección en blanco no sirve",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudAsistenciaDireccionInput!) { solicitarAsistenciaConDireccion(entrada: $e) { __typename ... on Asistencia { id estado motivo minutosEstimados canceladaEn prestador { id } } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idSolicitud\": \"{{id_blanco}}\",\n      \"prestadorId\": \"prs-bog-001\",\n      \"tipoAsistencia\": \"MEDICO\",\n      \"direccion\": \"   \"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('id_blanco', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const a = cuerpo.data.solicitarAsistenciaConDireccion;",
+                  "pm.test('DATOS_INVALIDOS', () => pm.expect(a.codigo).to.eql('DATOS_INVALIDOS'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.11 sin sesión: SIN_SESION",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudAsistenciaInput!) { solicitarAsistencia(entrada: $e) { __typename ... on Asistencia { id estado motivo minutosEstimados canceladaEn prestador { id } } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idSolicitud\": \"{{id_otro}}\",\n      \"prestadorId\": \"prs-bog-001\",\n      \"tipoAsistencia\": \"MEDICO\",\n      \"descripcion\": \"Prueba de Newman\",\n      \"direccion\": \"Cra 15 # 93-20\",\n      \"latitud\": 4.676,\n      \"longitud\": -74.048\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('SIN_SESION', () => pm.expect(cuerpo.errors[0].extensions.code).to.eql('SIN_SESION'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [

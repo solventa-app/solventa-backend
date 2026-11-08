@@ -53,7 +53,7 @@ por campo con AES-GCM (regla 6) y nunca van a los logs.
 | POST | `/siniestros` | HU-M05: el CLIENTE reporta desde la app (lo llama el BFF con su id y su nombre y documento de AUTH). Crea el caso PENDIENTE con radicado `SIN-AAAA-NNNN` (contador en `contadores`, desde 1000), plazo de 2 días hábiles y suma reclamada = cobertura. Idempotente por `id_reporte` (es el id del caso). Valida póliza suya, EMITIDA y vigente en la fecha, relato de 10 a 1000 y de 1 a 3 fotos `siniestro-foto` DISPONIBLE a nombre del caso (las consulta al almacenamiento). Publica `siniestro.reportado` |
 | GET | `/clientes/{id}/siniestros` | HU-M05: los casos que reportó un cliente (`reportado_por`, índice de la migración `0004`) |
 | GET | `/prestadores?version_local=` | HU-M06: catálogo de prestadores desde la secundaria. `version_local` igual a la vigente: `{version, vigente: true, prestadores: []}`; nula o distinta: la lista completa, con inactivos. 503 si no hay catálogo o la réplica no responde |
-| POST | `/asistencias` | HU-M06 (KAN-265): `{id_solicitud, cliente_id, prestador_id, tipo_asistencia, descripcion?, direccion?, latitud, longitud}`. Idempotente por `id_solicitud`: una CONFIRMADA o CANCELADA vuelve sin cambios; una NO_CONFIRMADA reintenta. Valida prestador activo y del tipo pedido. 409 con `{detail, codigo}` (`PRESTADOR_NO_DISPONIBLE`, `TIPO_NO_ATENDIDO`, `DATOS_INVALIDOS`) |
+| POST | `/asistencias` | HU-M06 (KAN-265): `{id_solicitud, cliente_id, prestador_id, tipo_asistencia, descripcion?, direccion?, latitud?, longitud?}`; sin coordenadas la dirección es obligatoria y no hay `minutos_estimados` (CA-M06-02). Idempotente por `id_solicitud`: una CONFIRMADA o CANCELADA vuelve sin cambios; una NO_CONFIRMADA reintenta. Valida prestador activo y del tipo pedido. 409 con `{detail, codigo}` (`PRESTADOR_NO_DISPONIBLE`, `TIPO_NO_ATENDIDO`, `DATOS_INVALIDOS`) |
 | POST | `/asistencias/{id}/cancelar` | HU-M06 (KAN-266): `{cliente_id}`. Idempotente; 404 `NO_ENCONTRADA` si no existe o es de otro cliente |
 | POST | `/_demo/reiniciar` | Solo con `DEMO_REINICIAR=true` (local): vuelve a la semilla. No toca las órdenes de PAYMENTS |
 
@@ -85,7 +85,7 @@ cd services/claims && python -m pytest
 ## Pendiente
 
 - HU-M06: el desenlace de la asistencia es simulado (`ASISTENCIA_SIMULACION`) hasta que haya prestadores reales que
-  acepten o rechacen; faltan el Newman de `solicitarAsistencia`/`cancelarAsistencia` y la verificación en staging.
+  acepten o rechacen; falta la verificación en staging.
 
 - Los plazos en días hábiles no descuentan festivos (falta un calendario oficial).
 - El radicado de los siniestros nuevos llega con HU-M04, cuando el móvil los cree; hoy los crea la semilla

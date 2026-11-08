@@ -39,6 +39,7 @@ MENSAJE_PRESTADOR_NO_DISPONIBLE = (
 MENSAJE_TIPO_NO_ATENDIDO = "Este prestador no atiende ese tipo de asistencia. Elige otro prestador."
 MENSAJE_DESCRIPCION_LARGA = f"La descripción no puede pasar de {MAX_DESCRIPCION} caracteres."
 MENSAJE_DIRECCION_LARGA = f"La dirección no puede pasar de {MAX_DIRECCION} caracteres."
+MENSAJE_DIRECCION_REQUERIDA = "Escribe la dirección a la que debe llegar el prestador."
 MENSAJE_SOLICITUD_AJENA = "Esta solicitud ya existe. Vuelve a intentarlo desde el mapa."
 MENSAJE_NO_ENCONTRADA = "No encontramos esa asistencia."
 
@@ -166,6 +167,9 @@ class ServicioAsistencias:
         if self._simulacion == SIMULACION_PRIMERO_FALLA and intento == 1:
             return {"estado": "NO_CONFIRMADA", "motivo": "PRESTADOR_SIN_RESPUESTA"}
         p, u = asistencia["prestador"], asistencia["ubicacion"]
+        if u["latitud"] is None or u["longitud"] is None:
+            # Dirección a mano (CA-M06-02): sin coordenadas no hay cómo estimar la llegada.
+            return {"estado": "CONFIRMADA", "motivo": None, "minutos_estimados": None}
         km = distancia_km(u["latitud"], u["longitud"], p["latitud"], p["longitud"])
         return {"estado": "CONFIRMADA", "motivo": None, "minutos_estimados": minutos_estimados(km)}
 
@@ -193,6 +197,9 @@ class ServicioAsistencias:
         direccion = (solicitud.get("direccion") or "").strip() or None
         if direccion and len(direccion) > MAX_DIRECCION:
             raise ErrorAsistencia("DATOS_INVALIDOS", MENSAJE_DIRECCION_LARGA)
+        latitud, longitud = solicitud.get("latitud"), solicitud.get("longitud")
+        if (latitud is None or longitud is None) and not direccion:
+            raise ErrorAsistencia("DATOS_INVALIDOS", MENSAJE_DIRECCION_REQUERIDA)
         prestador = self._repo.prestador(solicitud["prestador_id"])
         if prestador is None or not prestador["activo"]:
             raise ErrorAsistencia("PRESTADOR_NO_DISPONIBLE", MENSAJE_PRESTADOR_NO_DISPONIBLE)
@@ -207,8 +214,8 @@ class ServicioAsistencias:
             "tipo_asistencia": solicitud["tipo_asistencia"],
             "descripcion": descripcion,
             "ubicacion": {
-                "latitud": solicitud["latitud"],
-                "longitud": solicitud["longitud"],
+                "latitud": latitud,
+                "longitud": longitud,
                 "direccion": direccion,
             },
             "intentos": 1,

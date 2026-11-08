@@ -93,6 +93,34 @@ def test_el_primer_intento_no_se_confirma_y_el_reintento_si():
     assert repo.asistencias[ID]["intentos"] == 2
 
 
+def _sin_ubicacion(**cambios) -> dict:
+    return {k: v for k, v in _solicitud(**cambios).items() if k not in ("latitud", "longitud")}
+
+
+def test_con_la_direccion_a_mano_se_confirma_sin_tiempo_estimado():
+    repo = RepoAsistenciasFalso()
+    servicio = _servicio(repo)
+
+    primera = servicio.solicitar(_sin_ubicacion())
+    assert primera["estado"] == "NO_CONFIRMADA"
+
+    reintento = servicio.solicitar(_sin_ubicacion())
+    assert reintento["estado"] == "CONFIRMADA"
+    assert reintento["minutos_estimados"] is None
+    assert repo.asistencias[ID]["ubicacion"] == {
+        "latitud": None, "longitud": None, "direccion": "Cra 45 # 22-18",
+    }  # fmt: skip
+
+
+@pytest.mark.parametrize("direccion", [None, "", "   "])
+def test_sin_ubicacion_la_direccion_es_obligatoria(direccion):
+    repo = RepoAsistenciasFalso()
+    with pytest.raises(ErrorAsistencia) as error:
+        _servicio(repo).solicitar(_sin_ubicacion(direccion=direccion))
+    assert error.value.codigo == "DATOS_INVALIDOS"
+    assert repo.asistencias == {}
+
+
 def test_reenviar_una_confirmada_la_devuelve_sin_cambios():
     servicio = _servicio(simulacion=SIMULACION_CONFIRMA)
     primera = servicio.solicitar(_solicitud())
