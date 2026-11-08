@@ -21,9 +21,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/web",
               "host": [
-                "{{gateway_url}}/graphql/web"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "web"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -72,9 +75,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/app",
               "host": [
-                "{{gateway_url}}/graphql/app"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "app"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -113,9 +119,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/app",
               "host": [
-                "{{gateway_url}}/graphql/app"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "app"
+              ]
             },
             "auth": {
               "type": "bearer",
@@ -162,9 +171,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/web",
               "host": [
-                "{{gateway_url}}/graphql/web"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "web"
+              ]
             },
             "auth": {
               "type": "bearer",
@@ -215,9 +227,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/app",
               "host": [
-                "{{gateway_url}}/graphql/app"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "app"
+              ]
             },
             "auth": {
               "type": "bearer",
@@ -310,9 +325,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/app",
               "host": [
-                "{{gateway_url}}/graphql/app"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "app"
+              ]
             },
             "auth": {
               "type": "bearer",
@@ -357,9 +375,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/app",
               "host": [
-                "{{gateway_url}}/graphql/app"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "app"
+              ]
             },
             "auth": {
               "type": "bearer",
@@ -410,9 +431,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/app",
               "host": [
-                "{{gateway_url}}/graphql/app"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "app"
+              ]
             },
             "auth": {
               "type": "bearer",
@@ -463,9 +487,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/app",
               "host": [
-                "{{gateway_url}}/graphql/app"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "app"
+              ]
             },
             "auth": {
               "type": "bearer",
@@ -512,9 +539,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/app",
               "host": [
-                "{{gateway_url}}/graphql/app"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "app"
+              ]
             },
             "auth": {
               "type": "bearer",
@@ -561,9 +591,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/app",
               "host": [
-                "{{gateway_url}}/graphql/app"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "app"
+              ]
             },
             "auth": {
               "type": "bearer",
@@ -610,9 +643,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/app",
               "host": [
-                "{{gateway_url}}/graphql/app"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "app"
+              ]
             },
             "auth": {
               "type": "bearer",
@@ -664,9 +700,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/app",
               "host": [
-                "{{gateway_url}}/graphql/app"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "app"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -704,9 +743,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/web",
               "host": [
-                "{{gateway_url}}/graphql/web"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "web"
+              ]
             },
             "auth": {
               "type": "bearer",
@@ -756,9 +798,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/web",
               "host": [
-                "{{gateway_url}}/graphql/web"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "web"
+              ]
             },
             "auth": {
               "type": "bearer",
@@ -803,9 +848,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/web",
               "host": [
-                "{{gateway_url}}/graphql/web"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "web"
+              ]
             },
             "auth": {
               "type": "bearer",
@@ -850,9 +898,12 @@
             "url": {
               "raw": "{{gateway_url}}/graphql/app",
               "host": [
-                "{{gateway_url}}/graphql/app"
+                "{{gateway_url}}"
               ],
-              "path": []
+              "path": [
+                "graphql",
+                "app"
+              ]
             },
             "auth": {
               "type": "bearer",

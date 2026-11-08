@@ -123,8 +123,9 @@ class SolicitudAsistenciaRequest(BaseModel):
     tipo_asistencia: TipoAsistencia
     descripcion: str | None = Field(default=None, max_length=2000)
     direccion: str | None = Field(default=None, max_length=1000)
-    latitud: float = Field(ge=-90, le=90)
-    longitud: float = Field(ge=-180, le=180)
+    # Sin ubicación (CA-M06-02) la dirección es obligatoria: lo valida ServicioAsistencias.
+    latitud: float | None = Field(default=None, ge=-90, le=90)
+    longitud: float | None = Field(default=None, ge=-180, le=180)
 
 
 class CancelarAsistenciaRequest(BaseModel):

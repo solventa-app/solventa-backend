@@ -1082,12 +1082,21 @@ input SolicitudAsistenciaInput {
   longitud: Float!
 }
 
+# v0.41 (CA-M06-02): sin permiso de ubicación o con el GPS apagado, el cliente escribe adónde debe llegar el prestador.
+input SolicitudAsistenciaDireccionInput {
+  idSolicitud: ID! # UUID generado por la app: es el id de la asistencia y su clave de idempotencia
+  prestadorId: ID!
+  tipoAsistencia: TipoPrestador!
+  direccion: String! # obligatoria, hasta 200 caracteres
+  descripcion: String = null # opcional, hasta 500 caracteres
+}
+
 type Asistencia {
   id: ID!
   estado: EstadoAsistencia!
   tipoAsistencia: TipoPrestador!
   prestador: Prestador!
-  minutosEstimados: Int # solo CONFIRMADA (mismas reglas que la app: 20 km/h + 2 min)
+  minutosEstimados: Int # solo CONFIRMADA con ubicación (mismas reglas que la app: 20 km/h + 2 min); null si se pidió con la dirección a mano
   motivo: MotivoNoConfirmada # solo NO_CONFIRMADA
   solicitadaEn: DateTime!
   canceladaEn: DateTime
@@ -1255,6 +1264,8 @@ type Mutation {
   # Idempotente por `idSolicitud`: reenviar una CONFIRMADA o CANCELADA la devuelve sin cambios; una NO_CONFIRMADA
   # reintenta confirmarla. Sin sesión: SIN_SESION. CLAIMS caído: error público con reintento (nunca un 5xx).
   solicitarAsistencia(entrada: SolicitudAsistenciaInput!): ResultadoAsistencia!
+  # v0.41 (HU-M06, CA-M06-02): lo mismo sin ubicación, con la dirección a mano. Sin dirección: DATOS_INVALIDOS.
+  solicitarAsistenciaConDireccion(entrada: SolicitudAsistenciaDireccionInput!): ResultadoAsistencia!
   # Idempotente: cancelar dos veces devuelve la misma asistencia CANCELADA.
   cancelarAsistencia(id: ID!): ResultadoAsistencia!
 }

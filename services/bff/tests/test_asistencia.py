@@ -70,6 +70,41 @@ def test_solicitar_reintentar_y_cancelar():
     assert cancelada["canceladaEn"].startswith("2026-11-07T15:05")
 
 
+SOLICITAR_CON_DIRECCION = """
+mutation($e: SolicitudAsistenciaDireccionInput!) {
+  solicitarAsistenciaConDireccion(entrada: $e) {
+    __typename
+    ... on Asistencia { id estado minutosEstimados }
+    ... on ErrorAsistencia { codigo mensaje }
+  }
+}
+"""
+
+
+def _entrada_con_direccion(**cambios) -> dict:
+    e = _entrada(**cambios)
+    del e["latitud"], e["longitud"]
+    return e
+
+
+def test_con_la_direccion_a_mano_no_viaja_ubicacion():
+    claims = ClaimsFalso()
+    r = _pedir(claims, SOLICITAR_CON_DIRECCION, {"e": _entrada_con_direccion()})
+    assert r["data"]["solicitarAsistenciaConDireccion"]["__typename"] == "Asistencia"
+    nombre, solicitud = claims.llamadas[0]
+    assert nombre == "solicitar_asistencia"
+    assert solicitud["cliente_id"] == "cli-1"
+    assert solicitud["direccion"] == "Cra 45 # 22-18"
+    assert "latitud" not in solicitud and "longitud" not in solicitud
+
+
+def test_la_direccion_a_mano_es_solo_para_el_cliente():
+    r = _pedir(
+        ClaimsFalso(), SOLICITAR_CON_DIRECCION, {"e": _entrada_con_direccion()}, rol="ASESOR"
+    )
+    assert r["errors"]
+
+
 def test_el_bff_manda_el_cliente_del_token_y_el_id_en_minusculas():
     claims = ClaimsFalso()
     _pedir(claims, SOLICITAR, {"e": _entrada()})

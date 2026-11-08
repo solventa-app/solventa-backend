@@ -437,6 +437,16 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `null` mientras el caso está PENDIENTE. Solo cambios aditivos.
 - Afecta al frontend: sí (móvil: «Mis siniestros» y el detalle del caso).
 
+## v0.41 — 2026-11-08
+
+- KAN-264 (HU-M06, KAN-36, CA-M06-02): sin permiso de ubicación o con el GPS apagado, el cliente indica la dirección a
+  mano. Solo cambios aditivos:
+  - Tipo `SolicitudAsistenciaDireccionInput` y `Mutation.solicitarAsistenciaConDireccion(entrada)`, solo con sesión de
+    CLIENTE. Las mismas reglas de `solicitarAsistencia`, idempotente por `idSolicitud`. Sin dirección responde
+    `DATOS_INVALIDOS`.
+  - `Asistencia.minutosEstimados` llega `null` en una CONFIRMADA pedida así: sin coordenadas no hay cómo estimarlo.
+- Afecta al frontend: sí (móvil: M06-01, M06-02 y M06-04a; regenerar `lib/core/contrato/`).
+
 ## v0.40 — 2026-11-07
 
 - KAN-265 y KAN-266 (HU-M06, KAN-36): solicitar y cancelar la asistencia en sitio. Solo cambios aditivos:
