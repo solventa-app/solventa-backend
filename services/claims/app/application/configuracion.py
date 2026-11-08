@@ -26,6 +26,9 @@ class Configuracion:
     # Solo local (W04-15): `POST /_demo/reiniciar` vuelve a la semilla de `SEMILLA_DIR`.
     demo_reiniciar: bool = False
     semilla_dir: str = "/semilla"
+    # HU-M06: desenlace simulado de la asistencia mientras no haya prestadores reales
+    # (`primero_falla` o `confirma`, ver `app/application/asistencias.py`).
+    asistencia_simulacion: str = "primero_falla"
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -46,4 +49,5 @@ class Configuracion:
             almacen_reescritura_origenes=os.getenv("ALMACEN_REESCRITURA_ORIGENES", ""),
             demo_reiniciar=os.getenv("DEMO_REINICIAR", "false").strip().lower() == "true",
             semilla_dir=os.getenv("SEMILLA_DIR", "/semilla"),
+            asistencia_simulacion=os.getenv("ASISTENCIA_SIMULACION", "primero_falla").strip(),
         )

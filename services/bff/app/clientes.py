@@ -330,6 +330,16 @@ class ResolucionRechazada(Exception):
         self.mensaje = mensaje
 
 
+class AsistenciaRechazada(Exception):
+    """CLAIMS rechazó la asistencia (HU-M06): `codigo` estable para la app y `mensaje` para la
+    persona, escrito por CLAIMS."""
+
+    def __init__(self, codigo: str, mensaje: str) -> None:
+        super().__init__(mensaje)
+        self.codigo = codigo
+        self.mensaje = mensaje
+
+
 class PuertoClaims(Protocol):
     async def listar(self, estado: str | None) -> list[dict]: ...
 
@@ -352,6 +362,10 @@ class PuertoClaims(Protocol):
     async def reportar(self, reporte: dict) -> dict: ...
 
     async def de_cliente(self, cliente_id: str) -> list[dict]: ...
+
+    async def solicitar_asistencia(self, solicitud: dict) -> dict: ...
+
+    async def cancelar_asistencia(self, asistencia_id: str, cliente_id: str) -> dict: ...
 
 
 class PuertoSocios(Protocol):
@@ -1416,6 +1430,36 @@ class ClienteClaimsHttp:
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
+
+    async def _asistencia(self, ruta: str, cuerpo: dict) -> dict:
+        """HU-M06. 409/404 traen `codigo` y el mensaje de CLAIMS; 422 son datos mal formados; un
+        503 o la red caída es `ErrorServicio` (reintentar es seguro: es idempotente)."""
+        try:
+            respuesta = await self._cliente.post(ruta, json=cuerpo)
+        except httpx.HTTPError as error:
+            raise ErrorServicio(type(error).__name__) from error
+        if respuesta.status_code in (404, 409):
+            try:
+                cuerpo_error = respuesta.json()
+            except ValueError:
+                cuerpo_error = {}
+            raise AsistenciaRechazada(
+                str(cuerpo_error.get("codigo") or "DATOS_INVALIDOS"),
+                str(cuerpo_error.get("detail") or MENSAJE_DATOS_INVALIDOS),
+            )
+        if respuesta.status_code == 422:
+            raise AsistenciaRechazada("DATOS_INVALIDOS", MENSAJE_DATOS_INVALIDOS)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def solicitar_asistencia(self, solicitud: dict) -> dict:
+        return await self._asistencia("/asistencias", solicitud)
+
+    async def cancelar_asistencia(self, asistencia_id: str, cliente_id: str) -> dict:
+        return await self._asistencia(
+            f"/asistencias/{asistencia_id}/cancelar", {"cliente_id": cliente_id}
+        )
 
     async def de_cliente(self, cliente_id: str) -> list[dict]:
         respuesta = await _pedir(self._cliente, "GET", f"/clientes/{cliente_id}/siniestros")

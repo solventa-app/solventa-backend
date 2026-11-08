@@ -18,6 +18,11 @@ from pydantic import BaseModel, Field
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
+from app.application.asistencias import (
+    ErrorAsistencia,
+    RepositorioAsistenciasMongo,
+    ServicioAsistencias,
+)
 from app.application.autenticacion_servicios import autenticacion_para
 from app.application.bus_eventos import BusEventosLog
 from app.application.catalogo_prestadores import (
@@ -103,6 +108,29 @@ class ReporteRequest(BaseModel):
     evidencias: list[FotoReporte]
 
 
+class TipoAsistencia(StrEnum):
+    MEDICO = "MEDICO"
+    MECANICO = "MECANICO"
+
+
+class SolicitudAsistenciaRequest(BaseModel):
+    """HU-M06: lo arma el BFF con el CLIENTE del token y lo que mandó la app. `id_solicitud` lo
+    genera la app (UUID) y es el id de la asistencia: reenviar con el mismo no crea otra."""
+
+    id_solicitud: str = Field(min_length=8, max_length=64)
+    cliente_id: str = Field(min_length=1)
+    prestador_id: str = Field(min_length=1, max_length=64)
+    tipo_asistencia: TipoAsistencia
+    descripcion: str | None = Field(default=None, max_length=2000)
+    direccion: str | None = Field(default=None, max_length=1000)
+    latitud: float = Field(ge=-90, le=90)
+    longitud: float = Field(ge=-180, le=180)
+
+
+class CancelarAsistenciaRequest(BaseModel):
+    cliente_id: str = Field(min_length=1)
+
+
 class DerivarRequest(BaseModel):
     perito_id: str = Field(min_length=1)
     instrucciones: str | None = Field(default=None, max_length=2000)
@@ -114,9 +142,10 @@ def create_app(
     servicio: ServicioSiniestros | None = None,
     reiniciar: Callable[[], int] | None = None,
     catalogo=None,
+    asistencias: ServicioAsistencias | None = None,
 ) -> FastAPI:
-    """`servicio`, `reiniciar` y `catalogo` permiten inyectar dobles de prueba sin levantar
-    MongoDB (ver `tests/fakes.py`)."""
+    """`servicio`, `reiniciar`, `catalogo` y `asistencias` permiten inyectar dobles de prueba sin
+    levantar MongoDB (ver `tests/fakes.py`)."""
     config = config or Configuracion.desde_entorno()
 
     @asynccontextmanager
@@ -127,6 +156,7 @@ def create_app(
         almacenamiento: ClienteAlmacenamiento | None = None
         app.state.reiniciar = reiniciar
         app.state.catalogo = catalogo
+        app.state.asistencias = asistencias
         if servicio is not None:
             app.state.servicio = servicio
         else:
@@ -142,6 +172,11 @@ def create_app(
             if app.state.catalogo is None:
                 app.state.catalogo = LectorCatalogoPrestadores(
                     cliente_mongo, config.mongo_db, config.lectura_max_ms
+                )
+            if app.state.asistencias is None:
+                app.state.asistencias = ServicioAsistencias(
+                    RepositorioAsistenciasMongo(cliente_mongo, cifrador, config.mongo_db),
+                    simulacion=config.asistencia_simulacion,
                 )
             modo = config.autenticacion_servicios
             policy = ClientePolicy(
@@ -220,6 +255,29 @@ def create_app(
             return JSONResponse(status_code=409, content={"detail": str(error)})
         except DependenciaNoDisponible as error:
             return JSONResponse(status_code=503, content={"detail": str(error)})
+
+    def _asistencia(accion) -> dict | JSONResponse:
+        """409 con `codigo` estable (la app elige el texto) o 404 si no es del cliente."""
+        try:
+            return accion()
+        except ErrorAsistencia as error:
+            estado = 404 if error.codigo == "NO_ENCONTRADA" else 409
+            contenido = {"detail": str(error), "codigo": error.codigo}
+            return JSONResponse(status_code=estado, content=contenido)
+        except PyMongoError:
+            detalle = "No pudimos registrar la asistencia. Intenta de nuevo."
+            return JSONResponse(status_code=503, content={"detail": detalle})
+
+    @app.post("/asistencias", tags=["asistencia"])
+    def solicitar_asistencia(body: SolicitudAsistenciaRequest) -> dict:
+        """HU-M06 (KAN-265): idempotente por `id_solicitud`; reenviar una NO_CONFIRMADA
+        reintenta."""
+        return _asistencia(lambda: app.state.asistencias.solicitar(body.model_dump(mode="json")))
+
+    @app.post("/asistencias/{asistencia_id}/cancelar", tags=["asistencia"])
+    def cancelar_asistencia(asistencia_id: str, body: CancelarAsistenciaRequest) -> dict:
+        """HU-M06 (KAN-266): idempotente; solo el cliente que la pidió."""
+        return _asistencia(lambda: app.state.asistencias.cancelar(asistencia_id, body.cliente_id))
 
     @app.post("/siniestros", tags=["reporte"])
     def reportar(body: ReporteRequest) -> dict:
