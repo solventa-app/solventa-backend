@@ -467,6 +467,9 @@ def create_app(
 
     @app.post("/usuarios", tags=["usuarios"], response_model=UsuarioResponse)
     def crear_usuario(body: SolicitudUsuario) -> UsuarioResponse:
+        # Todos entran con correo y clave; un asesor u operador no lo valida (lo da quien lo crea).
+        if body.correo is None:
+            raise HTTPException(status_code=400, detail="Indica el correo para iniciar sesión.")
         try:
             usuario = app.state.usuarios.crear(
                 body.usuario,

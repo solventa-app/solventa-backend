@@ -40,6 +40,10 @@ Tabla `usuarios` en la base `auth`: `id`, `usuario` (alias único), `hash_clave`
 (`ACTIVO` / `SUSPENDIDO`), `intentos_fallidos`, `bloqueado_hasta`, `creado_en` y `actualizado_en`. La baja es lógica
 (`estado`): nunca se borran filas. El primer BACKOFFICE lo crea la tarea `crear-backoffice` (sección 6, paso 1).
 
+Todos los roles entran con **correo y clave** (el alias sigue valiendo). Al crear un asesor u operador el correo es
+obligatorio, no se verifica (lo da quien lo crea) y se guarda cifrado con su HMAC (`correo_hmac`), igual que el de un
+cliente; el teléfono es solo de los CLIENTE.
+
 ## 4. Matriz de permisos
 
 | Operación | CLIENTE | ASESOR | BACKOFFICE | Sin token (modo `opcional`) |

@@ -54,6 +54,7 @@ class RepositorioUsuariosMemoria:
         documento_cifrado: str | None = None,
         tipo_documento: str | None = None,
         pais: str | None = None,
+        correo_hmac: str | None = None,
     ) -> dict | None:
         if any(f["usuario"] == alias for f in self.filas.values()):
             return None
@@ -71,7 +72,7 @@ class RepositorioUsuariosMemoria:
             "telefono_cifrado": telefono_cifrado,
             "titular_id": titular_id,
             "documento_cifrado": documento_cifrado,
-            "correo_hmac": None,
+            "correo_hmac": correo_hmac,
             "idioma": "ES",
             "moneda": "COP",
             "tipo_documento": tipo_documento,
@@ -138,11 +139,17 @@ class RepositorioUsuariosMemoria:
         return dict(self.filas[usuario_id])
 
     def actualizar_contacto(
-        self, usuario_id: str, correo_cifrado: str | None, telefono_cifrado: str | None
+        self,
+        usuario_id: str,
+        correo_cifrado: str | None,
+        telefono_cifrado: str | None,
+        correo_hmac: str | None = None,
     ) -> dict | None:
         if usuario_id not in self.filas:
             return None
         fila = self.filas[usuario_id]
+        if correo_hmac is not None:
+            fila["correo_hmac"] = correo_hmac
         # Como el COALESCE de Postgres: lo que no llega se conserva.
         fila["correo_cifrado"] = (
             correo_cifrado if correo_cifrado is not None else fila["correo_cifrado"]

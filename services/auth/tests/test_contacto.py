@@ -52,7 +52,7 @@ def _cliente_anterior(
 ) -> dict:
     """Un CLIENTE creado antes de W03-27, cuando el correo era opcional: hoy ya no se puede crear
     así, pero los que existen siguen funcionando."""
-    creado = _cliente(servicio, alias, telefono=telefono)
+    creado = _cliente(servicio, alias, correo=f"{alias}@ejemplo.co", telefono=telefono)
     repositorio.filas[creado["id"]]["correo_cifrado"] = None
     return servicio.obtener(creado["id"])
 
@@ -186,8 +186,18 @@ def test_un_cifrado_de_otro_usuario_no_sirve() -> None:
 def test_solo_los_clientes_tienen_contacto(rol: str) -> None:
     servicio, _ = _servicio()
 
-    with pytest.raises(DatoInvalido, match="solo se guarda para clientes"):
-        servicio.crear("otro.rol", CLAVE, rol, correo=CORREO)
+    with pytest.raises(DatoInvalido, match="teléfono solo se guarda para clientes"):
+        servicio.crear("otro.rol", CLAVE, rol, correo=CORREO, telefono=TELEFONO)
+
+
+@pytest.mark.parametrize("rol", ["ASESOR", "BACKOFFICE"])
+def test_el_personal_si_guarda_el_correo_para_iniciar_sesion(rol: str) -> None:
+    servicio, repositorio = _servicio()
+
+    creado = servicio.crear("otro.rol", CLAVE, rol, correo=CORREO)
+
+    assert repositorio.filas[creado["id"]]["correo_hmac"] is not None
+    assert servicio.contacto_de(creado["id"]) is None
 
 
 def test_un_contacto_invalido_no_crea_el_usuario() -> None:
@@ -249,10 +259,10 @@ def test_actualizar_un_usuario_inexistente_es_none() -> None:
 
 def test_actualizar_el_contacto_de_un_asesor_se_rechaza() -> None:
     servicio, _ = _servicio()
-    asesor = servicio.crear("asesor.uno", CLAVE, "ASESOR")
+    asesor = servicio.crear("asesor.uno", CLAVE, "ASESOR", correo="asesor@ejemplo.co")
 
-    with pytest.raises(DatoInvalido, match="solo se guarda para clientes"):
-        servicio.actualizar_contacto(asesor["id"], CORREO, None)
+    with pytest.raises(DatoInvalido, match="teléfono solo se guarda para clientes"):
+        servicio.actualizar_contacto(asesor["id"], None, TELEFONO)
 
 
 def test_un_dato_invalido_al_actualizar_no_cambia_nada() -> None:
@@ -315,6 +325,8 @@ def _crear(client: TestClient, alias: str = "cliente.uno", rol: str = "CLIENTE",
     if rol == "CLIENTE":
         extra.setdefault("documento_identidad", documento_de(alias))
         extra.setdefault("correo", CORREO)
+    else:
+        extra.setdefault("correo", f"{alias}@ejemplo.co")
     return client.post("/usuarios", json={"usuario": alias, "clave": CLAVE, "rol": rol, **extra})
 
 
@@ -379,7 +391,7 @@ def test_http_actualizar_con_datos_invalidos_da_400(cuerpo: dict) -> None:
 
 def test_http_crear_un_asesor_con_contacto_da_400() -> None:
     with _http() as client:
-        r = _crear(client, "asesor.uno", "ASESOR", correo=CORREO)
+        r = _crear(client, "asesor.uno", "ASESOR", correo=CORREO, telefono=TELEFONO)
 
     assert r.status_code == 400
 
