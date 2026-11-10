@@ -27,7 +27,7 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.clientes import CredencialesSocioInvalidas, ErrorServicio, PresupuestoAgotado
-from app.esquema import RAMO_POLIZA, estado_visible
+from app.esquema import estado_visible, ramo_de
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.idioma import idioma_de, traducir
 from app.jurisdicciones import PLAZO_MAXIMO_MESES, PLAZO_MINIMO_MESES
@@ -164,7 +164,28 @@ def oferta_rest(datos: dict) -> dict:
         "cobertura": _monto(datos["cobertura"]),
         "nivelRiesgo": (datos.get("perfilRiesgo") or {}).get("nivelRiesgo"),
         "fuentes": [{"nombre": f["nombre"], "estado": f["estado"]} for f in datos["fuentes"]],
+        # v0.42 (KAN-290)
+        "producto": datos.get("producto") or "VIDA_DEUDOR",
+        "vehiculo": _vehiculo_rest(datos.get("vehiculo")),
+        "coberturas": _coberturas_rest(datos.get("coberturas")),
     }
+
+
+def _vehiculo_rest(datos: dict | None) -> dict | None:
+    if not datos:
+        return None
+    return {**datos, "valorComercial": _monto(datos["valorComercial"])}
+
+
+def _coberturas_rest(datos: list[dict] | None) -> list[dict]:
+    return [
+        {
+            "tipo": c["tipo"],
+            "valorAsegurado": _monto(c.get("valorAsegurado")),
+            "deducible": c.get("deducible"),
+        }
+        for c in datos or []
+    ]
 
 
 def propuesta_rest(datos: dict, idioma: str, ahora: datetime | None = None) -> dict:
@@ -199,11 +220,14 @@ def poliza_rest(datos: dict) -> dict:
         "id": datos["id"],
         "numero": str(datos["numero"]),
         "estado": datos["estado"],
-        "ramo": RAMO_POLIZA,
+        "ramo": ramo_de(datos.get("producto")),
         "vigenciaDesde": _iso(datos["vigencia_desde"]),
         "vigenciaHasta": _iso(datos["vigencia_hasta"]),
         "prima": _monto(datos["prima"]),
         "cobertura": _monto(datos["cobertura"]),
+        "producto": datos.get("producto") or "VIDA_DEUDOR",
+        "vehiculo": _vehiculo_rest(datos.get("vehiculo")),
+        "coberturas": _coberturas_rest(datos.get("coberturas")),
     }
 
 
@@ -423,11 +447,49 @@ def construir_router() -> APIRouter:
 
     @router.post("/v1/cotizaciones-auto")
     async def cotizar_auto(body: SolicitudCotizacionAuto, request: Request) -> dict:
-        """v0.42: esqueleto del contrato. La cotización de auto llega con la tarea 7 de
-        `docs/plan-poliza-auto.md`; hasta entonces responde «no disponible» sin gastar
-        presupuesto."""
-        await socio_de(request)
-        raise no_disponible()
+        """v0.42 (KAN-290): como `/v1/cotizaciones`, para la póliza de auto. Descuenta
+        presupuesto solo si la cotización se hizo: un dato inválido o un vehículo que no se oferta
+        lo devuelve."""
+        socio = await socio_de(request)
+        if socio.es_prueba:
+            return await modo_prueba(request).cotizar_auto(
+                socio, body.consentimiento_id, body.documento_identidad, body.placa
+            )
+        consentimiento = await _consentimiento_del_socio(request, socio, body.consentimiento_id)
+        if not consentimiento.get("vigente"):
+            raise ErrorApiSocio(409, "CONSENTIMIENTO_NO_VIGENTE", MENSAJE_SIN_CONSENTIMIENTO)
+        socios = estado(request).clientes.socios
+        try:
+            restantes = await socios.reservar(socio.id, socio.entorno)
+        except PresupuestoAgotado as error:
+            raise ErrorApiSocio(
+                429, "PRESUPUESTO_AGOTADO", MENSAJE_PRESUPUESTO_AGOTADO, False, None,
+                SEGUNDOS_PRESUPUESTO,
+            ) from error  # fmt: skip
+        except ErrorServicio as error:
+            raise no_disponible() from error
+        resultado = await estado(request).servicio_oferta.solicitar_auto(
+            body.consentimiento_id,
+            body.documento_identidad,
+            body.placa,
+            body.kilometraje_anual,
+            body.ciudad_circulacion,
+            body.uso,
+            body.deducible,
+        )
+        if isinstance(resultado, ErrorOfertaDatos):
+            try:
+                await socios.devolver(socio.id, socio.entorno)
+            except ErrorServicio:
+                logger.warning("no se pudo devolver una cotización socio=%s", id_opaco(socio.id))
+            if resultado.motivo == "CONSENTIMIENTO_NO_VIGENTE":
+                raise ErrorApiSocio(409, "CONSENTIMIENTO_NO_VIGENTE", resultado.mensaje)
+            if resultado.motivo in ("VEHICULO_NO_ENCONTRADO", "VEHICULO_NO_ASEGURABLE"):
+                raise ErrorApiSocio(422, resultado.motivo, resultado.mensaje)
+            if not resultado.puede_reintentar:
+                raise datos_invalidos(resultado.mensaje)
+            raise no_disponible()
+        return {"oferta": oferta_rest(resultado), "presupuestoRestante": restantes}
 
     # ---------- Propuesta, identidad y emisión ----------
 

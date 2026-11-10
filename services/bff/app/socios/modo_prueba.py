@@ -130,6 +130,9 @@ def _iso(momento: datetime) -> str:
     return momento.isoformat()
 
 
+MENSAJE_PLACA_NO_EXISTE = "No encontramos esa placa en el RUNT. Revísala e intenta de nuevo."
+
+
 def _monto(valor: str) -> dict:
     return {"valor": valor, "moneda": MONEDA}
 
@@ -212,6 +215,69 @@ class ModoPrueba:
             "fuentes": [
                 {"nombre": nombre, "estado": "OK" if completa else "CACHE"}
                 for nombre in ("cuentas-bancarias", "historial-crediticio", "afiliacion-pila")
+            ],
+        }
+        await self._guardar(socio.id, "oferta", {**oferta, "documento": documento.strip()})
+        return {"oferta": oferta, "presupuestoRestante": restantes}
+
+    async def cotizar_auto(self, socio, consentimiento_id: str, documento: str, placa: str) -> dict:
+        """v0.42 (KAN-290): la misma regla del modo prueba (W07-10): datos simulados, sin consultar
+        RUNT ni Fasecolda. La placa `NOX000` responde como una placa inexistente."""
+        consentimiento = await self._leer(socio.id, "consentimiento", consentimiento_id)
+        if not consentimiento["vigente"] or consentimiento["documento"] != documento.strip():
+            raise ErrorApiSocio(409, "CONSENTIMIENTO_NO_VIGENTE", MENSAJE_SIN_CONSENTIMIENTO)
+        if placa.strip().upper() == "NOX000":
+            raise ErrorApiSocio(422, "VEHICULO_NO_ENCONTRADO", MENSAJE_PLACA_NO_EXISTE)
+        try:
+            restantes = await self._socios.reservar(socio.id, socio.entorno)
+        except PresupuestoAgotado as error:
+            raise ErrorApiSocio(
+                429, "PRESUPUESTO_AGOTADO", MENSAJE_PRESUPUESTO_AGOTADO, False, None, 3600
+            ) from error
+        except ErrorServicio as error:
+            raise no_disponible() from error
+        valor = _monto("118500000.00")
+        deducible = "10 % mín. 1 SMMLV"
+        oferta = {
+            "id": f"prueba-o-{uuid.uuid4()}",
+            "tipo": "COMPLETA",
+            "prima": _monto("332198.00"),
+            "rangoPrima": None,
+            "cobertura": valor,
+            "nivelRiesgo": None,
+            "fuentes": [
+                {"nombre": nombre, "estado": "OK"}
+                for nombre in ("runt-vehiculo", "fasecolda-valor", "siniestralidad-placa")
+            ],
+            "producto": "AUTO",
+            "vehiculo": {
+                "placaEnmascarada": placa.strip().upper()[:3] + "•••",
+                "marca": "MAZDA",
+                "linea": "3 GRAND TOURING",
+                "modelo": 2024,
+                "clase": "AUTOMOVIL",
+                "uso": "PARTICULAR",
+                "valorComercial": valor,
+                "ciudadCirculacion": "Bogotá",
+                "kilometrajeAnual": 12000,
+                "deducible": "DIEZ_POR_CIENTO",
+            },
+            "coberturas": [
+                {
+                    "tipo": "RESPONSABILIDAD_CIVIL",
+                    "valorAsegurado": _monto("1000000000.00"),
+                    "deducible": None,
+                },
+                *[
+                    {"tipo": tipo, "valorAsegurado": valor, "deducible": deducible}
+                    for tipo in (
+                        "PERDIDA_TOTAL_DANOS",
+                        "PERDIDA_PARCIAL_DANOS",
+                        "PERDIDA_TOTAL_HURTO",
+                        "PERDIDA_PARCIAL_HURTO",
+                    )
+                ],
+                {"tipo": "ASISTENCIA", "valorAsegurado": None, "deducible": None},
             ],
         }
         await self._guardar(socio.id, "oferta", {**oferta, "documento": documento.strip()})

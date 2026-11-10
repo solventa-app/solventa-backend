@@ -87,6 +87,14 @@ from app.trazas_graphql import TrazaGraphQL
 logger = logging.getLogger("bff.cobros")
 # POLICY no tiene producto: hay uno solo y su ramo lo pone el BFF (W04-4, HU-W04).
 RAMO_POLIZA = os.getenv("RAMO_POLIZA", "Vida grupo deudor con amparo de daños al bien financiado")
+# v0.42 (KAN-290): el ramo sale del producto de la póliza.
+RAMO_POLIZA_AUTO = os.getenv("RAMO_POLIZA_AUTO", "Automóviles todo riesgo")
+
+
+def ramo_de(producto: str | None) -> str:
+    return RAMO_POLIZA_AUTO if producto == "AUTO" else RAMO_POLIZA
+
+
 TAMANO_LOTE_NOMBRES = 200  # el máximo de ids por llamada que admite AUTH
 
 
@@ -404,8 +412,6 @@ class ErrorOferta:
 
 
 ResultadoOferta = Annotated[Oferta | ErrorOferta, strawberry.union("ResultadoOferta")]
-
-MENSAJE_AUTO_NO_DISPONIBLE = "La póliza de auto todavía no está disponible."
 
 
 @strawberry.input
@@ -975,6 +981,8 @@ def _propuesta(
         nombre_titular=nombre_titular,
         nombre_asesor=nombre_asesor,
         nombre_socio=nombre_socio,
+        producto=Producto(datos.get("producto") or "VIDA_DEUDOR"),
+        vehiculo=_vehiculo(datos.get("vehiculo")),
     )
 
 
@@ -989,6 +997,9 @@ def _poliza_de_resumen(resumen: dict | None, propuesta: dict) -> Poliza | None:
             "estado": "EMITIDA",
             "prima": propuesta["prima"],
             "cobertura": propuesta["cobertura"],
+            "producto": propuesta.get("producto"),
+            "vehiculo": propuesta.get("vehiculo"),
+            "coberturas": propuesta.get("coberturas"),
         }
     )
 
@@ -1004,7 +1015,10 @@ def _poliza(datos: dict) -> Poliza:
         cobertura=Monto(valor=datos["cobertura"]["valor"], moneda=datos["cobertura"]["moneda"]),
         # El PDF lo entrega el BFF en esta ruta (bloque 5); hasta entonces responde 404.
         documento_url=f"/polizas/{datos['id']}/documento",
-        ramo=RAMO_POLIZA,
+        ramo=ramo_de(datos.get("producto")),
+        producto=Producto(datos.get("producto") or "VIDA_DEUDOR"),
+        vehiculo=_vehiculo(datos.get("vehiculo")),
+        coberturas=_coberturas(datos.get("coberturas")),
     )
 
 
@@ -1058,7 +1072,44 @@ def _oferta(datos: dict) -> Oferta:
             for f in datos["fuentes"]
         ],
         perfil_riesgo=_perfil_riesgo(datos.get("perfilRiesgo")),
+        producto=Producto(datos.get("producto") or "VIDA_DEUDOR"),
+        vehiculo=_vehiculo(datos.get("vehiculo")),
+        coberturas=_coberturas(datos.get("coberturas")),
+        factores_tarifa=[
+            FactorTarifa(nombre=f["nombre"], factor=f["factor"], detalle=f.get("detalle"))
+            for f in datos.get("factoresTarifa") or []
+        ],
     )
+
+
+def _vehiculo(datos: dict | None) -> VehiculoAsegurado | None:
+    """KAN-290: el vehículo como lo entregan RATING y POLICY (camelCase), con la placa ya
+    enmascarada: la placa completa nunca sale del backend."""
+    if not datos:
+        return None
+    return VehiculoAsegurado(
+        placa_enmascarada=datos["placaEnmascarada"],
+        marca=datos["marca"],
+        linea=datos["linea"],
+        modelo=int(datos["modelo"]),
+        clase=datos["clase"],
+        uso=UsoVehiculo(datos["uso"]),
+        valor_comercial=_monto(datos["valorComercial"]),
+        ciudad_circulacion=datos["ciudadCirculacion"],
+        kilometraje_anual=int(datos["kilometrajeAnual"]),
+        deducible=DeducibleAuto(datos["deducible"]),
+    )
+
+
+def _coberturas(datos: list[dict] | None) -> list[CoberturaAuto]:
+    return [
+        CoberturaAuto(
+            tipo=TipoCobertura(c["tipo"]),
+            valor_asegurado=_monto(c.get("valorAsegurado")),
+            deducible=c.get("deducible"),
+        )
+        for c in datos or []
+    ]
 
 
 def _cobro(datos: dict, nombres: dict[str, str] | None = None) -> Cobro:
@@ -2619,9 +2670,41 @@ class Mutation:
     async def solicitar_oferta_auto(
         self, info: Info, entrada: SolicitudOfertaAutoInput
     ) -> ResultadoOferta:
-        """v0.42: la oferta de la póliza de auto. Esqueleto del contrato: la cotización real llega
-        con la tarea 7 de `docs/plan-poliza-auto.md`; mientras tanto, un error de negocio claro."""
-        return ErrorOferta(mensaje=MENSAJE_AUTO_NO_DISPONIBLE, puede_reintentar=False)
+        """v0.42 (KAN-290): la oferta de la póliza de auto, con las mismas reglas de documento y
+        consentimiento que `solicitarOferta` (un CLIENTE cotiza con el documento de su cuenta)."""
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
+        titular = await documento_del_cliente(
+            info.context["clientes"],
+            usuario,
+            entrada.documento_identidad,
+            info.context["cliente_id_clave"],
+            entrada.tipo_documento,
+            entrada.pais,
+        )
+        if titular.error or not titular.documento:
+            return ErrorOferta(
+                mensaje=titular.error or MENSAJE_DOCUMENTO_REQUERIDO,
+                puede_reintentar=False,
+                motivo=MotivoErrorOferta.DATOS_INSUFICIENTES,
+            )
+        resultado = await info.context["servicio_oferta"].solicitar_auto(
+            str(entrada.consentimiento_id),
+            titular.documento,
+            entrada.placa,
+            entrada.kilometraje_anual,
+            entrada.ciudad_circulacion,
+            entrada.uso.value,
+            entrada.deducible.value,
+            tipo_documento=titular.tipo_documento,
+            pais=titular.pais,
+        )
+        if isinstance(resultado, ErrorOfertaDatos):
+            return ErrorOferta(
+                mensaje=resultado.mensaje,
+                puede_reintentar=resultado.puede_reintentar,
+                motivo=MotivoErrorOferta(resultado.motivo) if resultado.motivo else None,
+            )
+        return _oferta(resultado)
 
     @strawberry.mutation
     async def solicitar_oferta(self, info: Info, entrada: SolicitudOfertaInput) -> ResultadoOferta:

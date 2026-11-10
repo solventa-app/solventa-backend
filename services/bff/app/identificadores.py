@@ -5,6 +5,7 @@
 
 import hashlib
 import hmac
+import re
 
 
 def id_opaco(valor: str) -> str:
@@ -41,3 +42,27 @@ def valor_titular(numero: str, pais: str | None = None, tipo: str | None = None)
     if (pais_n, tipo_n) == ("CO", "CC"):
         return limpio
     return f"{pais_n}:{tipo_n}:{limpio}"
+
+
+# ---------- KAN-290: placas ----------
+
+# Placa colombiana: ABC123 (carros) o ABC12D (motos). Se escribe con o sin espacios y guiones.
+_PLACA = re.compile(r"^[A-Z]{3}[0-9]{2}[A-Z0-9]$")
+_SEPARADORES_PLACA = re.compile(r"[\s.\-]")
+
+
+def normalizar_placa(placa: str) -> str | None:
+    """La placa sin espacios ni guiones y en mayúsculas, o `None` si no tiene forma de placa."""
+    limpia = _SEPARADORES_PLACA.sub("", placa or "").upper()
+    return limpia if _PLACA.fullmatch(limpia) else None
+
+
+def vehiculo_id_desde_placa(placa: str, clave: str) -> str:
+    """El `vehiculo_id`: HMAC de la placa con la misma clave del titular y un prefijo propio, para
+    que nunca coincida con el de un documento. Es la llave de la caché del ACL y del perfil del
+    vehículo en RISK; la placa en claro solo viaja al proveedor (regla 6)."""
+    return hmac.new(clave.encode("utf-8"), f"vehiculo:{placa}".encode(), hashlib.sha256).hexdigest()
+
+
+def enmascarar_placa(placa: str) -> str:
+    return f"{placa[:3]}•••"

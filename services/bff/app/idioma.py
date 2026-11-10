@@ -302,7 +302,28 @@ EN: dict[str, str] = {
     ),
     "El identificador del reporte no es válido.": "The report identifier is not valid.",
     "La póliza no existe o no es tuya.": "The policy doesn't exist or isn't yours.",
-    "La póliza de auto todavía no está disponible.": "Car insurance is not available yet.",
+    "La placa no es válida. Escríbela como ABC123 (o ABC12D si es una moto).": (
+        "The plate isn't valid. Write it as ABC123 (or ABC12D for a motorcycle)."
+    ),
+    "El kilometraje anual debe estar entre 0 y 200.000 km.": (
+        "The annual mileage must be between 0 and 200,000 km."
+    ),
+    "Ingresa la ciudad donde circula el vehículo.": "Enter the city where the vehicle is driven.",
+    "No pudimos consultar los datos del vehículo en este momento. Intenta de nuevo en unos "
+    "minutos.": "We couldn't check the vehicle's data right now. Try again in a few minutes.",
+    "No encontramos esa placa en el RUNT. Revísala e intenta de nuevo.": (
+        "We couldn't find that plate in the vehicle registry. Check it and try again."
+    ),
+    "El vehículo tiene una limitación a la propiedad registrada en el RUNT.": (
+        "The vehicle has an ownership restriction in the vehicle registry."
+    ),
+    "El vehículo tiene una denuncia de hurto vigente en el RUNT.": (
+        "The vehicle has an active theft report in the vehicle registry."
+    ),
+    "El vehículo tiene más de 15 años: no lo aseguramos en todo riesgo.": (
+        "The vehicle is more than 15 years old: we don't offer comprehensive cover for it."
+    ),
+    "No aseguramos vehículos de esa clase.": "We don't insure that type of vehicle.",
     "La fecha del siniestro está fuera de la vigencia de la póliza.": (
         "The claim date is outside the policy's coverage period."
     ),
