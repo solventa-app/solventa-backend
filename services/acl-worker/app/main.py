@@ -29,6 +29,7 @@ from app.adapters.open_finance import AdaptadorOpenFinance
 from app.adapters.pasarela import AdaptadorPasarela
 from app.adapters.pasarela_alterna import AdaptadorPasarelaAlterna
 from app.adapters.tasas_cambio import AdaptadorTasasReferencia
+from app.adapters.vehiculos import AdaptadorVehiculos
 from app.application.cache import CacheFuentes
 from app.application.cache_identidad import CacheIdentidad
 from app.application.circuitos import (
@@ -39,6 +40,7 @@ from app.application.circuitos import (
     NOMBRE_CIRCUITO_OPEN_DATA,
     NOMBRE_CIRCUITO_OPEN_FINANCE,
     NOMBRE_CIRCUITO_PASARELA,
+    NOMBRE_CIRCUITO_VEHICULOS,
     construir_fabrica,
 )
 from app.application.cola_tareas import ColaReconciliacionCloudTasks
@@ -46,6 +48,7 @@ from app.application.configuracion import Configuracion
 from app.application.fuentes_config import (
     fuentes_open_data,
     fuentes_open_finance,
+    fuentes_vehiculo,
 )
 from app.application.reconciliacion import (
     NOMBRE_COLA,
@@ -92,6 +95,18 @@ class ConsultaFuenteRequest(BaseModel):
     consentimiento_id: str
     fuente: str
     finalidad: str = "perfilamiento"
+    forzar_proveedor: bool = False
+
+
+class ConsultaVehiculoRequest(BaseModel):
+    """KAN-290. `vehiculo_id` es el HMAC de la placa que calcula quien llama: es la llave de la
+    caché y lo único que ven los logs. La placa solo se reenvía al proveedor."""
+
+    vehiculo_id: str
+    placa: str
+    consentimiento_id: str
+    fuente: str
+    finalidad: str = "cotizacion-auto"
     forzar_proveedor: bool = False
 
 
@@ -322,6 +337,31 @@ def _construir_servicios_fuentes(
     return servicios_por_fuente, adaptador_open_finance, adaptador_open_data
 
 
+def _construir_servicio_vehiculos(
+    config: Configuracion, fabrica, cache: CacheFuentes
+) -> tuple[dict[str, ServicioConsultaFuentes], AdaptadorVehiculos]:
+    """KAN-290: las fuentes del vehículo, con su propio circuito. Sin reconciliación diferida: el
+    Consolidador reintenta por cliente, y aquí la llave es el vehículo."""
+    presupuesto_s = config.presupuesto_proveedor_s("vehiculos")
+    fuentes = fuentes_vehiculo()
+    adaptador = AdaptadorVehiculos(
+        config.vehiculos_url,
+        presupuesto_s,
+        auth=autenticacion_para(config.autenticacion_servicios, "stub-vehiculos"),
+        fuentes=fuentes,
+    )
+    servicio = ServicioConsultaFuentes(
+        adaptador,
+        fabrica,
+        NOMBRE_CIRCUITO_VEHICULOS,
+        cache,
+        presupuesto_s,
+        presupuesto_con_cache_s=min(presupuesto_s, config.presupuesto_con_cache_s),
+        servir_cache_en_ttl=config.cache_servir_en_ttl,
+    )
+    return {fuente: servicio for fuente in fuentes}, adaptador
+
+
 def _validar_adjuntos(body: SolicitudNotificacionRequest, maximo_bytes: int) -> list[Adjunto]:
     """Los adjuntos ya validados, o un 422 cuyo mensaje nunca repite el contenido ni el correo."""
     if not body.adjuntos:
@@ -382,6 +422,9 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             _construir_servicios_fuentes(
                 config, fabrica, cache_redis, productor_reconciliacion, cache=cache_fuentes
             )
+        )
+        servicios_vehiculo, adaptador_vehiculos = _construir_servicio_vehiculos(
+            config, fabrica, cache_fuentes
         )
 
         presupuesto_pasarela_s = config.presupuesto_proveedor_s("pasarela")
@@ -483,6 +526,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             sondeos={
                 NOMBRE_CIRCUITO_OPEN_FINANCE: adaptador_open_finance.sondear,
                 NOMBRE_CIRCUITO_OPEN_DATA: adaptador_open_data.sondear,
+                NOMBRE_CIRCUITO_VEHICULOS: adaptador_vehiculos.sondear,
                 NOMBRE_CIRCUITO_PASARELA: adaptador_pasarela.sondear,
                 NOMBRE_CIRCUITO_FIRMA: adaptador_firma.sondear,
                 NOMBRE_CIRCUITO_KYC: adaptador_kyc.sondear,
@@ -498,6 +542,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         app.state.sonda = sonda
         app.state.fabrica_circuitos = fabrica
         app.state.servicios_por_fuente = servicios_por_fuente
+        app.state.servicios_vehiculo = servicios_vehiculo
         app.state.cache_fuentes = cache_fuentes
         app.state.servicio_cobro = servicio_cobro
         app.state.servicio_firma = servicio_firma
@@ -512,6 +557,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             cierres = (
                 adaptador_open_finance.cerrar,
                 adaptador_open_data.cerrar,
+                adaptador_vehiculos.cerrar,
                 adaptador_pasarela.cerrar,
                 adaptador_firma.cerrar,
                 adaptador_kyc.cerrar,
@@ -542,6 +588,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         nombres = (
             NOMBRE_CIRCUITO_OPEN_FINANCE,
             NOMBRE_CIRCUITO_OPEN_DATA,
+            NOMBRE_CIRCUITO_VEHICULOS,
             NOMBRE_CIRCUITO_PASARELA,
             NOMBRE_CIRCUITO_FIRMA,
             NOMBRE_CIRCUITO_KYC,
@@ -571,6 +618,31 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             fuente=body.fuente,
             finalidad=body.finalidad,
             forzar_proveedor=body.forzar_proveedor,
+        )
+        datos = servicio.consultar(consulta)
+        return DatosFuenteResponse(
+            fuente=datos.fuente,
+            datos=datos.datos,
+            capturado_en=datos.capturado_en.isoformat(),
+            de_cache=datos.de_cache,
+            degradado=datos.degradado,
+        )
+
+    @app.post("/vehiculos/consultar", tags=["fuentes"], response_model=DatosFuenteResponse)
+    def consultar_vehiculo(body: ConsultaVehiculoRequest) -> DatosFuenteResponse:
+        """KAN-290: una fuente del vehículo (RUNT, Fasecolda o siniestralidad), con el mismo
+        Circuit Breaker, presupuesto y degradación a caché que las demás fuentes. Una placa que
+        el proveedor no tiene vuelve como `{"encontrada": false}`; una falla, como `degradado`."""
+        servicio = app.state.servicios_vehiculo.get(body.fuente)
+        if servicio is None:
+            raise HTTPException(status_code=404, detail=f"fuente desconocida: {body.fuente}")
+        consulta = ConsultaFuente(
+            cliente_id=body.vehiculo_id,
+            consentimiento_id=body.consentimiento_id,
+            fuente=body.fuente,
+            finalidad=body.finalidad,
+            forzar_proveedor=body.forzar_proveedor,
+            placa=body.placa,
         )
         datos = servicio.consultar(consulta)
         return DatosFuenteResponse(
