@@ -652,6 +652,12 @@ type ErrorAutenticacion {
 
 union ResultadoSesion = Sesion | ErrorAutenticacion
 
+# v0.44 (KAN-26): lo que el teléfono firma con su llave (tras la biometría) para entrar sin escribir la clave.
+type DesafioDispositivo {
+  reto: String!
+  venceEn: DateTime!
+}
+
 # v0.43 (KAN-26): la clave cambió y se cerraron todas las sesiones de la cuenta.
 type RestablecimientoExitoso {
   ok: Boolean!
@@ -1338,6 +1344,15 @@ type Mutation {
   ): ResultadoSubidaOnboarding!
   # Con `X-Onboarding-Token`, tras el PUT. Idempotente.
   confirmarSubidaOnboarding(onboardingId: ID!, archivoId: ID!): ResultadoOnboarding!
+  # v0.44 (KAN-26): con sesión de la app, guarda la llave pública del teléfono (EC P-256, SPKI en base64; la privada
+  # nunca sale del Keystore/Keychain y exige biometría). Un solo dispositivo por cuenta: registrar otro revoca el anterior.
+  # Cambiar la clave los revoca todos. Devuelve el id del dispositivo.
+  registrarDispositivo(clavePublica: String!): String!
+  # v0.44: pública. Entrega un reto de 60 s (exista o no el dispositivo, para no revelar cuáles existen).
+  desafioDispositivo(dispositivoId: ID!): DesafioDispositivo!
+  # v0.44: pública, solo canal app. Entra con la firma del reto (ECDSA SHA-256, DER en base64). Cualquier fallo responde
+  # ErrorAutenticacion con codigo DISPOSITIVO_NO_VALIDO; la app pide entonces correo y contraseña.
+  iniciarSesionConDispositivo(dispositivoId: ID!, reto: String!, firma: String!): ResultadoSesion!
   # v0.43 (KAN-26): «olvidé mi contraseña». Responde `true` siempre, exista o no la cuenta (o se tope el límite de 3 por
   # correo y 10 por IP por hora): nunca revela quién está registrado. Si hay cuenta activa envía un enlace que vence a los
   # 30 minutos, sirve una vez y reemplaza al anterior.

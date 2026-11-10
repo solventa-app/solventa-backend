@@ -341,3 +341,14 @@ En el **Sprint 1** ya existe el API Gateway delante del BFF (`infra/gateway.tf`,
   gasta el enlace), la cambia en AUTH (`POST /usuarios/{id}/clave`), levanta el bloqueo por intentos, **cierra todas las
   sesiones** de la cuenta y envía el aviso `clave-cambiada`. Enlace inexistente, vencido o usado: `ENLACE_INVALIDO`.
 - Pendiente: plantillas de correo solo en español (el ACL no recibe el idioma).
+
+## Acceso con huella o rostro tras cerrar sesión (KAN-26, contrato v0.44)
+
+- El teléfono genera un par EC P-256 en su Keystore/Keychain (la privada exige biometría y no sale de ahí) y, con sesión de
+  la app, registra la **pública** (`registrarDispositivo`, AUTH `dispositivos`, migración `0013`). Un dispositivo activo por
+  cuenta: registrar otro revoca el anterior; cambiar la clave los revoca todos.
+- Para entrar sin escribir la clave: `desafioDispositivo` entrega un reto de 60 s (`id.nonce.exp.mac`, MAC con la clave de
+  AUTH; lo entrega aunque el dispositivo no exista) y `iniciarSesionConDispositivo` verifica MAC, vencimiento y la firma
+  ECDSA SHA-256. Solo canal app y rol CLIENTE. Cualquier fallo es `DISPOSITIVO_NO_VALIDO`: la app pide correo y clave.
+- Pendiente: el reto no es de un solo uso dentro de sus 60 s (un reto firmado y capturado serviría ese minuto); si se exige,
+  guardar el nonce usado en Redis.

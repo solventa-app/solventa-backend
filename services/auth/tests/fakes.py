@@ -458,3 +458,33 @@ class RepositorioRefrescosMemoria:
         for fila in self.filas.values():
             if fila["usuario_id"] == usuario_id and fila["revocado_en"] is None:
                 fila["revocado_en"] = ahora
+
+
+class RepositorioDispositivosMemoria:
+    """Cumple el `Protocol` `RepositorioDispositivos` de `app/dispositivos.py`."""
+
+    def __init__(self) -> None:
+        self.filas: dict[str, dict] = {}
+
+    def registrar(self, dispositivo_id: str, usuario_id: str, clave_publica: str) -> None:
+        for fila in self.filas.values():
+            if fila["usuario_id"] == usuario_id:
+                fila["revocado"] = True
+        self.filas[dispositivo_id] = {
+            "id": dispositivo_id,
+            "usuario_id": usuario_id,
+            "clave_publica": clave_publica,
+            "revocado": False,
+        }
+
+    def obtener_activo(self, dispositivo_id: str) -> dict | None:
+        fila = self.filas.get(dispositivo_id)
+        return None if fila is None or fila["revocado"] else dict(fila)
+
+    def marcar_uso(self, dispositivo_id: str, ahora) -> None:
+        self.filas[dispositivo_id]["ultimo_uso"] = ahora
+
+    def revocar_de_usuario(self, usuario_id: str, ahora) -> None:
+        for fila in self.filas.values():
+            if fila["usuario_id"] == usuario_id:
+                fila["revocado"] = True

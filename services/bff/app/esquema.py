@@ -859,9 +859,24 @@ class ErrorAutenticacion:
     codigo: str | None = None
 
 
+MENSAJE_DISPOSITIVO = "No pudimos verificar este teléfono. Ingresa con tu correo y contraseña."
+
+
+def _dispositivo_no_valido() -> ErrorAutenticacion:
+    return ErrorAutenticacion(mensaje=MENSAJE_DISPOSITIVO, codigo="DISPOSITIVO_NO_VALIDO")
+
+
 MENSAJE_ENLACE_CLAVE = "El enlace no es válido o ya venció. Pide uno nuevo."
 
 ResultadoSesion = Annotated[Sesion | ErrorAutenticacion, strawberry.union("ResultadoSesion")]
+
+
+@strawberry.type
+class DesafioDispositivo:
+    """v0.44 (KAN-26): el texto que el teléfono firma con su llave tras la biometría."""
+
+    reto: str
+    vence_en: datetime
 
 
 @strawberry.type
@@ -2803,6 +2818,56 @@ class Mutation:
             raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
         if sesion is None:
             return ErrorAutenticacion(mensaje="Usuario o clave incorrectos.")
+        return _sesion(sesion, info.context)
+
+    @strawberry.mutation
+    async def registrar_dispositivo(self, info: Info, clave_publica: str) -> str:
+        """v0.44 (KAN-26): con sesión de la app, guarda la llave pública del teléfono (EC P-256,
+        SPKI en base64) para entrar luego con huella o rostro. Revoca la anterior; devuelve el id
+        del dispositivo."""
+        usuario = exigir_rol(info, "CLIENTE", siempre=True, admite_pendiente=True)
+        if info.context.get("canal") != CANAL_APP:
+            raise ErrorPublico(MENSAJE_SIN_PERMISO)
+        try:
+            dispositivo_id = await _auth(info).registrar_dispositivo(usuario.id, clave_publica)
+        except ErrorServicio as error:
+            raise ErrorPublico(
+                "No pudimos activar el acceso biométrico. Intenta de nuevo."
+            ) from error
+        if dispositivo_id is None:
+            raise ErrorPublico("No pudimos activar el acceso biométrico en este teléfono.")
+        return dispositivo_id
+
+    @strawberry.mutation
+    async def desafio_dispositivo(
+        self, info: Info, dispositivo_id: strawberry.ID
+    ) -> DesafioDispositivo:
+        """v0.44 (KAN-26): pública. Entrega un reto de 60 s, exista o no el dispositivo."""
+        try:
+            datos = await _auth(info).reto_dispositivo(str(dispositivo_id))
+        except ErrorServicio as error:
+            raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
+        return DesafioDispositivo(
+            reto=datos["reto"], vence_en=datetime.fromisoformat(str(datos["expira_en"]))
+        )
+
+    @strawberry.mutation
+    async def iniciar_sesion_con_dispositivo(
+        self, info: Info, dispositivo_id: strawberry.ID, reto: str, firma: str
+    ) -> ResultadoSesion:
+        """v0.44 (KAN-26): pública, solo en la app. Entra con la firma del reto hecha con la llave
+        del teléfono (tras la biometría), sin clave. Cualquier fallo responde lo mismo con el
+        código `DISPOSITIVO_NO_VALIDO`: la app pide entonces correo y contraseña."""
+        if info.context.get("canal") != CANAL_APP:
+            return _dispositivo_no_valido()
+        try:
+            sesion = await _auth(info).sesion_con_dispositivo(
+                str(dispositivo_id), reto, firma, CANAL_APP
+            )
+        except ErrorServicio as error:
+            raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
+        if sesion is None:
+            return _dispositivo_no_valido()
         return _sesion(sesion, info.context)
 
     @strawberry.mutation

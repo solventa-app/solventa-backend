@@ -549,3 +549,13 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   minutos, sirve una vez y uno nuevo anula el anterior; tope de 3 por correo y 10 por IP por hora. Restablecer cierra todas
   las sesiones de la cuenta. Solo cambios aditivos.
 - Afecta al frontend: sí (pantallas G-07 `/olvide-clave` y G-08 `/restablecer-clave#t=…` en la web y M02-04 en el móvil).
+
+## v0.44 — 2026-11-10
+
+- KAN-26 (autenticación): acceso con huella o rostro aunque la sesión se haya cerrado, con una llave por teléfono.
+  Mutaciones `registrarDispositivo(clavePublica)` (con sesión de la app), `desafioDispositivo(dispositivoId)` y
+  `iniciarSesionConDispositivo(dispositivoId, reto, firma)` (públicas, solo canal app); tipo `DesafioDispositivo`.
+  La llave privada nunca sale del dispositivo; el reto vive 60 s. Un dispositivo por cuenta; cambiar la clave los revoca.
+  Fallo siempre `DISPOSITIVO_NO_VALIDO` (sin decir el motivo). AUTH suma la tabla `dispositivos` (migración `0013`).
+  Solo cambios aditivos.
+- Afecta al frontend: el móvil (la web no usa dispositivos).

@@ -8,12 +8,14 @@ from fakes import (
     HASHER_RAPIDO,
     AlmacenConsentimientosMemoria,
     Reloj,
+    RepositorioDispositivosMemoria,
     RepositorioRefrescosMemoria,
     RepositorioUsuariosMemoria,
 )
 from fastapi.testclient import TestClient
 
 from app.configuracion import Configuracion
+from app.dispositivos import ServicioDispositivos
 from app.main import create_app
 from app.sesiones import CredencialesInvalidas, RefreshInvalido, ServicioSesiones
 from app.usuarios import CuentaNoActiva, DatoInvalido, ServicioUsuarios
@@ -114,6 +116,7 @@ def test_http_cierra_todas_las_sesiones_de_la_cuenta() -> None:
         almacen=AlmacenConsentimientosMemoria(),
         servicio_usuarios=usuarios,
         servicio_sesiones=sesiones,
+        servicio_dispositivos=ServicioDispositivos(RepositorioDispositivosMemoria(), SECRETO),
         config=Configuracion("postgresql://no-se-usa", SECRETO, 15),
     )
     with TestClient(app) as cliente:

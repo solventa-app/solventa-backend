@@ -25,6 +25,12 @@ from pydantic import BaseModel
 from app.cifrado import construir_cifrador
 from app.configuracion import Configuracion
 from app.consentimientos import AlmacenConsentimientos, AlmacenConsentimientosPostgres
+from app.dispositivos import (
+    MENSAJE_DISPOSITIVO,
+    DispositivoInvalido,
+    RepositorioDispositivosPostgres,
+    ServicioDispositivos,
+)
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.observabilidad import configurar_trazas
 from app.refrescos import RepositorioRefrescosPostgres
@@ -109,6 +115,17 @@ class Credenciales(BaseModel):
 
 class SolicitudClave(BaseModel):
     clave: str
+
+
+class SolicitudDispositivo(BaseModel):
+    usuario_id: str
+    clave_publica: str
+
+
+class SolicitudSesionDispositivo(BaseModel):
+    reto: str
+    firma: str
+    canal: str | None = None
 
 
 class SolicitudCorreo(BaseModel):
@@ -310,6 +327,7 @@ def create_app(
     servicio_sesiones: ServicioSesiones | None = None,
     config: Configuracion | None = None,
     servicio_socios: ServicioSocios | None = None,
+    servicio_dispositivos: ServicioDispositivos | None = None,
 ) -> FastAPI:
     """Los parámetros permiten inyectar dobles de prueba (ver `tests/fakes.py`) sin
     levantar PostgreSQL. Si se omiten, el lifespan arma todo desde `Configuracion`
@@ -343,6 +361,12 @@ def create_app(
                 refrescos=RepositorioRefrescosPostgres(pool),
                 refresh_dias=config.refresh_vigencia_dias,
                 refresh_gracia_segundos=config.refresh_gracia_segundos,
+            )
+        if servicio_dispositivos is not None:
+            app.state.dispositivos = servicio_dispositivos
+        elif pool is not None:
+            app.state.dispositivos = ServicioDispositivos(
+                RepositorioDispositivosPostgres(pool), config.jwt_secreto
             )
         # Con todo lo demás inyectado (pruebas) no hay pool: las de socios inyectan el suyo.
         if servicio_socios is None and pool is not None:
@@ -427,6 +451,47 @@ def create_app(
         except VerificacionPendiente as error:
             raise HTTPException(status_code=403, detail="VERIFICACION_PENDIENTE") from error
         usuario_id = sesion["usuario"]["id"]
+        sesion["usuario"]["nombre"] = app.state.usuarios.nombre_de(usuario_id)
+        sesion["usuario"]["documento_enmascarado"] = app.state.usuarios.documento_enmascarado_de(
+            usuario_id
+        )
+        sesion["usuario"]["correo"] = app.state.usuarios.correo_de(usuario_id)
+        return SesionResponse(**sesion)
+
+    # ---------- Dispositivos de confianza (huella o rostro tras cerrar sesión) ----------
+
+    @app.post("/dispositivos", tags=["dispositivos"])
+    def registrar_dispositivo(body: SolicitudDispositivo) -> dict[str, str]:
+        """Guarda la llave pública del teléfono (revoca la anterior). Solo lo llama el BFF, con el
+        usuario de un token de la app ya validado."""
+        try:
+            return {
+                "dispositivo_id": app.state.dispositivos.registrar(
+                    body.usuario_id, body.clave_publica
+                )
+            }
+        except DispositivoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/dispositivos/{dispositivo_id}/reto", tags=["dispositivos"])
+    def reto_dispositivo(dispositivo_id: str) -> dict:
+        reto, vence = app.state.dispositivos.reto(dispositivo_id)
+        return {"reto": reto, "expira_en": vence}
+
+    @app.post(
+        "/dispositivos/{dispositivo_id}/sesion",
+        tags=["dispositivos"],
+        response_model=SesionResponse,
+    )
+    def sesion_con_dispositivo(
+        dispositivo_id: str, body: SolicitudSesionDispositivo
+    ) -> SesionResponse:
+        """Entra con la firma del reto: mismo 401 genérico en cualquier fallo."""
+        try:
+            usuario_id = app.state.dispositivos.verificar(dispositivo_id, body.reto, body.firma)
+            sesion = app.state.sesiones.iniciar_sesion_de_confianza(usuario_id, body.canal)
+        except (DispositivoInvalido, CredencialesInvalidas) as error:
+            raise HTTPException(status_code=401, detail=MENSAJE_DISPOSITIVO) from error
         sesion["usuario"]["nombre"] = app.state.usuarios.nombre_de(usuario_id)
         sesion["usuario"]["documento_enmascarado"] = app.state.usuarios.documento_enmascarado_de(
             usuario_id
@@ -523,6 +588,7 @@ def create_app(
         except CuentaNoActiva as error:
             raise HTTPException(status_code=404, detail="usuario no encontrado") from error
         app.state.sesiones.revocar_de_usuario(usuario_id)
+        app.state.dispositivos.revocar_de_usuario(usuario_id)
         logger_usuarios.info("clave restablecida id=%s", id_opaco(usuario_id))
         return {"correo": correo}
 
