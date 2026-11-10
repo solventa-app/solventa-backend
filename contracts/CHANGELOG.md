@@ -461,6 +461,8 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
     `scripts/sincronizar_fuentes.py`.
   - En el BFF solo el esqueleto: `solicitarOfertaAuto` responde «La póliza de auto todavía no está disponible.» y
     `/v1/cotizaciones-auto` responde 503 sin gastar presupuesto, hasta la tarea 7 del plan.
+- `tarifas-auto.json` (2026-11-10, sin cambio de esquema): suma `valor_referencia_preliminar`, el valor de un vehículo nuevo
+  por clase depreciado 10 % por año, para tarifar como PRELIMINAR cuando la guía Fasecolda no responde (regla 4).
 - Afecta al frontend: sí (aditivo). Web y móvil: regenerar tipos; nada cambia de forma en lo existente.
 
 ## v0.41 — 2026-11-08
