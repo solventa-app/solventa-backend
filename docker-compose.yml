@@ -541,6 +541,7 @@ services:
       REDIS_URL: redis://redis:6379/1
       OPEN_FINANCE_URL: http://stub-open-finance:8101
       OPEN_DATA_URL: http://stub-open-data:8102
+      VEHICULOS_URL: http://stub-vehiculos:8107
       PASARELA_URL: http://stub-pasarela:8103
       FIRMA_URL: http://stub-firma:8104
       KYC_URL: http://stub-kyc:8105   # también la verificación de identidad de M01 (rutas de Didit)
@@ -587,6 +588,13 @@ services:
     <<: *servicio
     build: ./stubs/open-data
     ports: ["8102:8102"]
+
+  # KAN-290 (póliza de auto): RUNT, guía Fasecolda y siniestralidad por placa. Placas de demo en
+  # GET localhost:8107/control/placas.
+  stub-vehiculos:
+    <<: *servicio
+    build: ./stubs/vehiculos
+    ports: ["8107:8107"]
 
   stub-pasarela:
     <<: *servicio
