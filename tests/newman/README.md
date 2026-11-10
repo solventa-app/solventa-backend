@@ -215,3 +215,29 @@ npx --yes newman@6.2.2 run tests/newman/hu-w03.postman_collection.json \
   sondeos); resultados y hallazgos en `docs/evidencias/HU-W03-newman-EC009-EC010-2026-10-24.md`, `CA-W03-05-firma-2026-10-24.md` y `CA-W03-06-reapertura-2026-10-24.md`.
   Si el `:8080` o el `:5432` están ocupados, ver «Cómo correrlas».
 - **Carpeta 7 (2026-11-07):** agregada sin correr aún contra el stack (no había Docker donde se escribió); sirve contra local y staging.
+
+## Colección de HU-W08 (`hu-w08.postman_collection.json`)
+
+Póliza de auto todo riesgo de punta a punta por el gateway (KAN-290, [`docs/plan-poliza-auto.md`](../../docs/plan-poliza-auto.md)).
+
+| Carpeta | Qué verifica |
+|---|---|
+| 0. Preparación | Sesiones del BACKOFFICE y del CLIENTE demo; consentimiento de la cotización del auto (regla 7) |
+| 1. Cotización | Placas de demo de `stub-vehiculos`: `ABC123` completa con la prima exacta de la tarifa, 6 coberturas y 7 factores, sin la placa completa en la respuesta; `GHI789` más cara por hurto; `YZA456` preliminar con Fasecolda caída; `NOX000`, `STU901` y `PQR678` con su motivo; placa y kilometraje inválidos |
+| 2. Suscripción | Aceptar y emitir `ABC123` llega a `EN_FIRMA`; `JKL012` (3 siniestros) queda `EN_REVISION` |
+| 3. API de socios | `POST /v1/cotizaciones-auto` con producto, vehículo y coberturas; un vehículo no asegurable responde 422 y no gasta presupuesto |
+| 4. Siniestro de auto | Sobre la póliza de auto de la semilla: foto, reporte sin tipo rechazado, choque parcial PENDIENTE; aprobar sin valor, con un daño menor que el deducible y con 8.000.000 → 6.576.500 |
+| 5. Autorización | El BACKOFFICE y una petición sin sesión no cotizan; el CLIENTE no aprueba |
+
+```bash
+docker compose --profile servicios up -d --build --wait
+docker compose --profile servicios --profile semilla run --rm crear-cliente-siniestros-demo
+docker compose --profile servicios --profile semilla run --rm sembrar-polizas-demo
+npx --yes newman@6.2.2 run tests/newman/hu-w08.postman_collection.json \
+  -e tests/newman/solventa-local.postman_environment.json
+```
+
+- **Solo local:** usa las placas de demo de `stub-vehiculos` y la póliza de auto que siembra `sembrar-polizas-demo`.
+- Se puede repetir sin reiniciar el stack: cada corrida crea su reporte, sus ofertas y sus propuestas.
+- **Estado:** dos corridas seguidas contra el stack local el 2026-11-10 sin fallos (33 peticiones y 76 aserciones); evidencia en
+  `docs/evidencias/hu-w08-poliza-auto-2026-11-10.md`.
