@@ -112,6 +112,19 @@ paths:
       responses:
         "200":
           description: OK
+  /v1/cotizaciones-auto:
+    post:
+      summary: "Cotiza la póliza de auto (descuenta presupuesto)"
+      operationId: cotizarAuto
+      security:
+        - socios_jwt: []
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
   /v1/propuestas:
     post:
       summary: "Acepta una oferta COMPLETA con el contacto del titular"

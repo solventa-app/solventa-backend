@@ -378,6 +378,86 @@
         }
       }
     },
+    "/v1/cotizaciones-auto": {
+      "post": {
+        "operationId": "cotizarAuto",
+        "summary": "Cotiza la póliza de auto (descuenta presupuesto)",
+        "tags": [
+          "Cotización"
+        ],
+        "responses": {
+          "200": {
+            "description": "Oferta COMPLETA o PRELIMINAR.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cotizacion"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "422": {
+            "description": "Datos inválidos (`DATOS_INVALIDOS`) o vehículo no asegurable (`VEHICULO_NO_ASEGURABLE`, `VEHICULO_NO_ENCONTRADO`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Sin consentimiento vigente (`CONSENTIMIENTO_NO_VIGENTE`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Presupuesto agotado (`PRESUPUESTO_AGOTADO`).",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "description": "v0.42. Como `/v1/cotizaciones`, para la póliza de auto todo riesgo: consulta RUNT, la guía Fasecolda y la siniestralidad de la placa por el ACL. Descuenta presupuesto. Si una fuente falla, la oferta es PRELIMINAR. Un vehículo que no se puede asegurar responde 422 (`VEHICULO_NO_ASEGURABLE` o `VEHICULO_NO_ENCONTRADO`). Con un token de PRUEBAS responde el modo prueba.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SolicitudCotizacionAuto"
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/propuestas": {
       "post": {
         "operationId": "crearPropuesta",
@@ -1576,6 +1656,26 @@
             "items": {
               "$ref": "#/components/schemas/FuenteConsultada"
             }
+          },
+          "producto": {
+            "$ref": "#/components/schemas/Producto"
+          },
+          "vehiculo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Vehiculo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coberturas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoberturaAuto"
+            },
+            "description": "v0.42: solo AUTO; vacía en VIDA_DEUDOR."
           }
         },
         "required": [
@@ -1878,6 +1978,26 @@
           },
           "cobertura": {
             "$ref": "#/components/schemas/Monto"
+          },
+          "producto": {
+            "$ref": "#/components/schemas/Producto"
+          },
+          "vehiculo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Vehiculo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coberturas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoberturaAuto"
+            },
+            "description": "v0.42: solo AUTO; vacía en VIDA_DEUDOR."
           }
         },
         "required": [
@@ -2273,6 +2393,178 @@
             }
           }
         }
+      },
+      "Producto": {
+        "type": "string",
+        "enum": [
+          "VIDA_DEUDOR",
+          "AUTO"
+        ],
+        "description": "v0.42: el producto de la oferta o la póliza."
+      },
+      "SolicitudCotizacionAuto": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "v0.42: cotización de la póliza de auto todo riesgo. El consentimiento se registra antes, como en `/v1/cotizaciones`.",
+        "properties": {
+          "consentimientoId": {
+            "type": "string"
+          },
+          "documentoIdentidad": {
+            "type": "string",
+            "minLength": 6,
+            "maxLength": 20,
+            "description": "Al menos 6 dígitos."
+          },
+          "placa": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}[0-9]{2}[A-Za-z0-9]$",
+            "examples": [
+              "ABC123"
+            ],
+            "description": "Placa colombiana: ABC123 o, en motos, ABC12D."
+          },
+          "kilometrajeAnual": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 200000
+          },
+          "ciudadCirculacion": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 60
+          },
+          "uso": {
+            "type": "string",
+            "enum": [
+              "PARTICULAR",
+              "COMERCIAL"
+            ],
+            "default": "PARTICULAR"
+          },
+          "deducible": {
+            "type": "string",
+            "enum": [
+              "DIEZ_POR_CIENTO",
+              "SIN_DEDUCIBLE"
+            ],
+            "default": "DIEZ_POR_CIENTO"
+          }
+        },
+        "required": [
+          "consentimientoId",
+          "documentoIdentidad",
+          "placa",
+          "kilometrajeAnual",
+          "ciudadCirculacion"
+        ]
+      },
+      "Vehiculo": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "v0.42: el vehículo asegurado. La placa va enmascarada.",
+        "properties": {
+          "placaEnmascarada": {
+            "type": "string",
+            "examples": [
+              "ABC•••"
+            ]
+          },
+          "marca": {
+            "type": "string"
+          },
+          "linea": {
+            "type": "string"
+          },
+          "modelo": {
+            "type": "integer",
+            "description": "Año de fabricación."
+          },
+          "clase": {
+            "type": "string",
+            "enum": [
+              "AUTOMOVIL",
+              "CAMPERO",
+              "CAMIONETA",
+              "MOTOCICLETA"
+            ]
+          },
+          "uso": {
+            "type": "string",
+            "enum": [
+              "PARTICULAR",
+              "COMERCIAL"
+            ]
+          },
+          "valorComercial": {
+            "$ref": "#/components/schemas/Monto"
+          },
+          "ciudadCirculacion": {
+            "type": "string"
+          },
+          "kilometrajeAnual": {
+            "type": "integer"
+          },
+          "deducible": {
+            "type": "string",
+            "enum": [
+              "DIEZ_POR_CIENTO",
+              "SIN_DEDUCIBLE"
+            ]
+          }
+        },
+        "required": [
+          "placaEnmascarada",
+          "marca",
+          "linea",
+          "modelo",
+          "clase",
+          "uso",
+          "valorComercial",
+          "ciudadCirculacion",
+          "kilometrajeAnual",
+          "deducible"
+        ]
+      },
+      "CoberturaAuto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "RESPONSABILIDAD_CIVIL",
+              "PERDIDA_TOTAL_DANOS",
+              "PERDIDA_PARCIAL_DANOS",
+              "PERDIDA_TOTAL_HURTO",
+              "PERDIDA_PARCIAL_HURTO",
+              "ASISTENCIA"
+            ]
+          },
+          "valorAsegurado": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Monto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deducible": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "tipo"
+        ]
       }
     }
   }

@@ -437,6 +437,32 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `null` mientras el caso está PENDIENTE. Solo cambios aditivos.
 - Afecta al frontend: sí (móvil: «Mis siniestros» y el detalle del caso).
 
+## v0.42 — 2026-11-10
+
+- KAN-290 (HU-W08, póliza de auto todo riesgo, `docs/plan-poliza-auto.md`). Solo cambios aditivos (sin rompedores
+  contra v0.41):
+  - Enums `Producto` (`VIDA_DEUDOR`, `AUTO`), `UsoVehiculo`, `DeducibleAuto`, `TipoCobertura` y `TipoSiniestroAuto`;
+    tipos `VehiculoAsegurado` (placa enmascarada), `CoberturaAuto` y `FactorTarifa`.
+  - `Mutation.solicitarOfertaAuto(entrada: SolicitudOfertaAutoInput!)`: placa, kilometraje anual, ciudad, uso y
+    deducible. Devuelve la misma `Oferta`; desde ahí el recorrido es el de hoy (aceptar, firmar, pagar, emitir).
+  - `Oferta`, `Propuesta` y `Poliza` suman `producto` (VIDA_DEUDOR en todo lo existente) y, en AUTO, `vehiculo`;
+    `Oferta` y `Poliza`, `coberturas`; `Oferta`, `factoresTarifa`. `Poliza.ramo` sale del producto.
+  - `MotivoErrorOferta` suma `VEHICULO_NO_ENCONTRADO` y `VEHICULO_NO_ASEGURABLE` (valores nuevos de un enum de salida:
+    la web y el móvil deben tolerar valores desconocidos).
+  - Siniestros: `ReporteSiniestroInput.tipoSiniestroAuto` (opcional; obligatorio en pólizas de auto),
+    `Siniestro.tipoSiniestroAuto`, `SiniestroReportado.tipoSiniestroAuto` y `aprobarSiniestro(id, valorDano)`: en un
+    siniestro parcial o de RC el operador digita el valor del daño, con tope del valor asegurado; la indemnización le
+    resta el deducible.
+  - API de socios: `POST /v1/cotizaciones-auto` (`SolicitudCotizacionAuto`) y `producto`, `vehiculo` y `coberturas` en
+    `Oferta` y `Poliza`. También en Envoy y en `openapi-socios.yaml`.
+  - Evento `poliza.emitida`: `datos.producto` opcional.
+  - Configuración nueva: `contracts/fuentes-vehiculo.json` (RUNT, Fasecolda y siniestralidad, aparte de `fuentes.json`
+    para no tocar el score de vida) y `contracts/tarifas-auto.json` (tarifa ilustrativa). Copias en los servicios con
+    `scripts/sincronizar_fuentes.py`.
+  - En el BFF solo el esqueleto: `solicitarOfertaAuto` responde «La póliza de auto todavía no está disponible.» y
+    `/v1/cotizaciones-auto` responde 503 sin gastar presupuesto, hasta la tarea 7 del plan.
+- Afecta al frontend: sí (aditivo). Web y móvil: regenerar tipos; nada cambia de forma en lo existente.
+
 ## v0.41 — 2026-11-08
 
 - KAN-264 (HU-M06, KAN-36, CA-M06-02): sin permiso de ubicación o con el GPS apagado, el cliente indica la dirección a
