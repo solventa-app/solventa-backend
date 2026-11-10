@@ -161,6 +161,24 @@ class ServicioSesiones:
         logger.info("sesión iniciada usuario=%s rol=%s", id_opaco(fila["id"]), fila["rol"])
         return sesion
 
+    def iniciar_sesion_de_confianza(self, usuario_id: str, canal: str | None) -> dict:
+        """Sesión de la app para quien ya probó quién es sin clave (llave del dispositivo,
+        verificada por `ServicioDispositivos`). Mismas reglas de estado y canal que el login."""
+        fila = self._repositorio.obtener(usuario_id)
+        ahora = self._reloj()
+        if (
+            fila is None
+            or canal != CANAL_APP
+            or fila["rol"] != "CLIENTE"
+            or fila["estado"] not in ("ACTIVO", *ESTADOS_SIN_VERIFICAR)
+        ):
+            raise CredencialesInvalidas(MENSAJE_CREDENCIALES)
+        familia = str(uuid.uuid4())
+        sesion = self._emitir(fila, ahora, ahora + self._vigencia, familia)
+        self._agregar_refresh(sesion, fila["id"], familia, canal_de_sesion(canal), ahora)
+        logger.info("sesión iniciada con dispositivo usuario=%s", id_opaco(fila["id"]))
+        return sesion
+
     def renovar_permisos(
         self, usuario_id: str, expira_en: datetime, sid: str | None = None
     ) -> dict:

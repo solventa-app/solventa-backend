@@ -39,6 +39,23 @@ EN: dict[str, str] = {
     "El servicio no está disponible en este momento. Intenta de nuevo.": (
         "The service is not available right now. Please try again."
     ),
+    # Acceso biométrico del teléfono (KAN-26, contrato v0.44)
+    "No pudimos verificar este teléfono. Ingresa con tu correo y contraseña.": (
+        "We could not verify this phone. Sign in with your email and password."
+    ),
+    "No pudimos activar el acceso biométrico. Intenta de nuevo.": (
+        "We could not turn on biometric sign-in. Please try again."
+    ),
+    "No pudimos activar el acceso biométrico en este teléfono.": (
+        "We could not turn on biometric sign-in on this phone."
+    ),
+    # «Olvidé mi contraseña» (KAN-26, contrato v0.43)
+    "El enlace no es válido o ya venció. Pide uno nuevo.": (
+        "The link is not valid or has expired. Request a new one."
+    ),
+    "No pudimos cambiar tu clave. Intenta de nuevo.": (
+        "We could not change your password. Please try again."
+    ),
     # Onboarding del móvil (HU-M01, contrato v0.20)
     "Estamos verificando tu identidad. Podrás usar esto al terminar.": (
         "We are verifying your identity. You can use this once it is done."

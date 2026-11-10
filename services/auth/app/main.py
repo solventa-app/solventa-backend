@@ -25,6 +25,12 @@ from pydantic import BaseModel
 from app.cifrado import construir_cifrador
 from app.configuracion import Configuracion
 from app.consentimientos import AlmacenConsentimientos, AlmacenConsentimientosPostgres
+from app.dispositivos import (
+    MENSAJE_DISPOSITIVO,
+    DispositivoInvalido,
+    RepositorioDispositivosPostgres,
+    ServicioDispositivos,
+)
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.observabilidad import configurar_trazas
 from app.refrescos import RepositorioRefrescosPostgres
@@ -43,6 +49,7 @@ from app.socios import (
 )
 from app.tokens_socio import FirmadorTokensSocio
 from app.usuarios import (
+    CuentaNoActiva,
     DatoInvalido,
     RepositorioUsuariosPostgres,
     ServicioUsuarios,
@@ -104,6 +111,21 @@ class Credenciales(BaseModel):
     canal: str | None = None
     # T17: rol con el que se intenta entrar; si no es el de la cuenta, falla como una clave errada.
     rol: str | None = None
+
+
+class SolicitudClave(BaseModel):
+    clave: str
+
+
+class SolicitudDispositivo(BaseModel):
+    usuario_id: str
+    clave_publica: str
+
+
+class SolicitudSesionDispositivo(BaseModel):
+    reto: str
+    firma: str
+    canal: str | None = None
 
 
 class SolicitudCorreo(BaseModel):
@@ -306,6 +328,7 @@ def create_app(
     servicio_sesiones: ServicioSesiones | None = None,
     config: Configuracion | None = None,
     servicio_socios: ServicioSocios | None = None,
+    servicio_dispositivos: ServicioDispositivos | None = None,
 ) -> FastAPI:
     """Los parámetros permiten inyectar dobles de prueba (ver `tests/fakes.py`) sin
     levantar PostgreSQL. Si se omiten, el lifespan arma todo desde `Configuracion`
@@ -340,6 +363,12 @@ def create_app(
                 refresh_dias=config.refresh_vigencia_dias,
                 refresh_web_horas=config.refresh_web_horas,
                 refresh_gracia_segundos=config.refresh_gracia_segundos,
+            )
+        if servicio_dispositivos is not None:
+            app.state.dispositivos = servicio_dispositivos
+        elif pool is not None:
+            app.state.dispositivos = ServicioDispositivos(
+                RepositorioDispositivosPostgres(pool), config.jwt_secreto
             )
         # Con todo lo demás inyectado (pruebas) no hay pool: las de socios inyectan el suyo.
         if servicio_socios is None and pool is not None:
@@ -431,6 +460,47 @@ def create_app(
         sesion["usuario"]["correo"] = app.state.usuarios.correo_de(usuario_id)
         return SesionResponse(**sesion)
 
+    # ---------- Dispositivos de confianza (huella o rostro tras cerrar sesión) ----------
+
+    @app.post("/dispositivos", tags=["dispositivos"])
+    def registrar_dispositivo(body: SolicitudDispositivo) -> dict[str, str]:
+        """Guarda la llave pública del teléfono (revoca la anterior). Solo lo llama el BFF, con el
+        usuario de un token de la app ya validado."""
+        try:
+            return {
+                "dispositivo_id": app.state.dispositivos.registrar(
+                    body.usuario_id, body.clave_publica
+                )
+            }
+        except DispositivoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/dispositivos/{dispositivo_id}/reto", tags=["dispositivos"])
+    def reto_dispositivo(dispositivo_id: str) -> dict:
+        reto, vence = app.state.dispositivos.reto(dispositivo_id)
+        return {"reto": reto, "expira_en": vence}
+
+    @app.post(
+        "/dispositivos/{dispositivo_id}/sesion",
+        tags=["dispositivos"],
+        response_model=SesionResponse,
+    )
+    def sesion_con_dispositivo(
+        dispositivo_id: str, body: SolicitudSesionDispositivo
+    ) -> SesionResponse:
+        """Entra con la firma del reto: mismo 401 genérico en cualquier fallo."""
+        try:
+            usuario_id = app.state.dispositivos.verificar(dispositivo_id, body.reto, body.firma)
+            sesion = app.state.sesiones.iniciar_sesion_de_confianza(usuario_id, body.canal)
+        except (DispositivoInvalido, CredencialesInvalidas) as error:
+            raise HTTPException(status_code=401, detail=MENSAJE_DISPOSITIVO) from error
+        sesion["usuario"]["nombre"] = app.state.usuarios.nombre_de(usuario_id)
+        sesion["usuario"]["documento_enmascarado"] = app.state.usuarios.documento_enmascarado_de(
+            usuario_id
+        )
+        sesion["usuario"]["correo"] = app.state.usuarios.correo_de(usuario_id)
+        return SesionResponse(**sesion)
+
     @app.post("/sesiones/renovar", tags=["sesiones"], response_model=SesionResponse)
     def renovar_permisos(body: SolicitudRenovacion) -> SesionResponse:
         """`actualizarSesion` (HU-M01): un token nuevo con los scopes del estado actual y la misma
@@ -469,6 +539,9 @@ def create_app(
 
     @app.post("/usuarios", tags=["usuarios"], response_model=UsuarioResponse)
     def crear_usuario(body: SolicitudUsuario) -> UsuarioResponse:
+        # Todos entran con correo y clave; un asesor u operador no lo valida (lo da quien lo crea).
+        if body.correo is None:
+            raise HTTPException(status_code=400, detail="Indica el correo para iniciar sesión.")
         try:
             usuario = app.state.usuarios.crear(
                 body.usuario,
@@ -496,6 +569,30 @@ def create_app(
             return {"registrado": app.state.usuarios.correo_registrado(body.correo)}
         except DatoInvalido as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/usuarios/restablecimiento/buscar", tags=["usuarios"])
+    def buscar_para_restablecer(body: SolicitudCorreo) -> dict[str, str | None]:
+        """«Olvidé mi contraseña»: el id de la cuenta activa con ese correo (o `null`). Solo lo
+        llama el BFF, que nunca se lo dice al visitante. El correo llega solo en el cuerpo."""
+        try:
+            return {"usuario_id": app.state.usuarios.id_para_restablecer(body.correo)}
+        except DatoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/usuarios/{usuario_id}/clave", tags=["usuarios"])
+    def restablecer_clave(usuario_id: str, body: SolicitudClave) -> dict[str, str | None]:
+        """Cambia la clave tras un enlace válido (lo comprobó el BFF), cierra todas las sesiones de
+        la cuenta y devuelve su correo para avisarle. Mismo 404 si no hay cuenta activa."""
+        try:
+            correo = app.state.usuarios.restablecer_clave(usuario_id, body.clave)
+        except DatoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except CuentaNoActiva as error:
+            raise HTTPException(status_code=404, detail="usuario no encontrado") from error
+        app.state.sesiones.revocar_de_usuario(usuario_id)
+        app.state.dispositivos.revocar_de_usuario(usuario_id)
+        logger_usuarios.info("clave restablecida id=%s", id_opaco(usuario_id))
+        return {"correo": correo}
 
     @app.post("/usuarios/onboarding", tags=["usuarios"], response_model=UsuarioResponse)
     def crear_cuenta_onboarding(body: SolicitudCuentaOnboarding) -> UsuarioResponse:

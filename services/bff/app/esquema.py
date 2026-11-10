@@ -75,6 +75,7 @@ from app.servicio_firma_pago import (
     documento_del_cliente,
 )
 from app.servicio_oferta import ErrorOfertaDatos
+from app.servicio_restablecimiento import EnlaceInvalido
 from app.servicio_suscripcion import (
     MENSAJE_SUSCRIPCION_NO_DISPONIBLE,
     ErrorAceptacionDatos,
@@ -858,7 +859,36 @@ class ErrorAutenticacion:
     codigo: str | None = None
 
 
+MENSAJE_DISPOSITIVO = "No pudimos verificar este teléfono. Ingresa con tu correo y contraseña."
+
+
+def _dispositivo_no_valido() -> ErrorAutenticacion:
+    return ErrorAutenticacion(mensaje=MENSAJE_DISPOSITIVO, codigo="DISPOSITIVO_NO_VALIDO")
+
+
+MENSAJE_ENLACE_CLAVE = "El enlace no es válido o ya venció. Pide uno nuevo."
+
 ResultadoSesion = Annotated[Sesion | ErrorAutenticacion, strawberry.union("ResultadoSesion")]
+
+
+@strawberry.type
+class DesafioDispositivo:
+    """v0.44 (KAN-26): el texto que el teléfono firma con su llave tras la biometría."""
+
+    reto: str
+    vence_en: datetime
+
+
+@strawberry.type
+class RestablecimientoExitoso:
+    """v0.43 (KAN-26): la clave cambió y se cerraron todas las sesiones de la cuenta."""
+
+    ok: bool = True
+
+
+ResultadoRestablecimiento = Annotated[
+    RestablecimientoExitoso | ErrorAutenticacion, strawberry.union("ResultadoRestablecimiento")
+]
 
 
 @strawberry.type
@@ -2450,6 +2480,12 @@ class Query:
         return _onboarding_de(datos) if datos else None
 
     @strawberry.field
+    async def enlace_restablecimiento_vigente(self, info: Info) -> bool:
+        """v0.43 (KAN-26): ¿el enlace de `X-Enlace-Clave` sirve? Público; solo dice sí o no."""
+        servicio = info.context["servicio_restablecimiento"]
+        return await servicio.enlace_vigente(info.context.get("enlace_clave"))
+
+    @strawberry.field
     async def yo(self, info: Info) -> Usuario | None:
         usuario = exigir_rol(
             info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True, admite_pendiente=True
@@ -2782,6 +2818,56 @@ class Mutation:
             raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
         if sesion is None:
             return ErrorAutenticacion(mensaje="Usuario o clave incorrectos.")
+        return _sesion(sesion, info.context)
+
+    @strawberry.mutation
+    async def registrar_dispositivo(self, info: Info, clave_publica: str) -> str:
+        """v0.44 (KAN-26): con sesión de la app, guarda la llave pública del teléfono (EC P-256,
+        SPKI en base64) para entrar luego con huella o rostro. Revoca la anterior; devuelve el id
+        del dispositivo."""
+        usuario = exigir_rol(info, "CLIENTE", siempre=True, admite_pendiente=True)
+        if info.context.get("canal") != CANAL_APP:
+            raise ErrorPublico(MENSAJE_SIN_PERMISO)
+        try:
+            dispositivo_id = await _auth(info).registrar_dispositivo(usuario.id, clave_publica)
+        except ErrorServicio as error:
+            raise ErrorPublico(
+                "No pudimos activar el acceso biométrico. Intenta de nuevo."
+            ) from error
+        if dispositivo_id is None:
+            raise ErrorPublico("No pudimos activar el acceso biométrico en este teléfono.")
+        return dispositivo_id
+
+    @strawberry.mutation
+    async def desafio_dispositivo(
+        self, info: Info, dispositivo_id: strawberry.ID
+    ) -> DesafioDispositivo:
+        """v0.44 (KAN-26): pública. Entrega un reto de 60 s, exista o no el dispositivo."""
+        try:
+            datos = await _auth(info).reto_dispositivo(str(dispositivo_id))
+        except ErrorServicio as error:
+            raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
+        return DesafioDispositivo(
+            reto=datos["reto"], vence_en=datetime.fromisoformat(str(datos["expira_en"]))
+        )
+
+    @strawberry.mutation
+    async def iniciar_sesion_con_dispositivo(
+        self, info: Info, dispositivo_id: strawberry.ID, reto: str, firma: str
+    ) -> ResultadoSesion:
+        """v0.44 (KAN-26): pública, solo en la app. Entra con la firma del reto hecha con la llave
+        del teléfono (tras la biometría), sin clave. Cualquier fallo responde lo mismo con el
+        código `DISPOSITIVO_NO_VALIDO`: la app pide entonces correo y contraseña."""
+        if info.context.get("canal") != CANAL_APP:
+            return _dispositivo_no_valido()
+        try:
+            sesion = await _auth(info).sesion_con_dispositivo(
+                str(dispositivo_id), reto, firma, CANAL_APP
+            )
+        except ErrorServicio as error:
+            raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
+        if sesion is None:
+            return _dispositivo_no_valido()
         return _sesion(sesion, info.context)
 
     @strawberry.mutation
@@ -3222,6 +3308,36 @@ class Mutation:
             return await servicio.consultar(str(onboarding_id), token)
 
         return await _paso_onboarding(llamada)
+
+    @strawberry.mutation
+    async def solicitar_restablecimiento_clave(self, info: Info, correo: str) -> bool:
+        """v0.43 (KAN-26): «olvidé mi contraseña». Responde `true` siempre (exista o no la cuenta,
+        o se haya topado el límite): nunca revela quién está registrado."""
+        await info.context["servicio_restablecimiento"].solicitar(
+            correo, info.context.get("ip_cliente")
+        )
+        return True
+
+    @strawberry.mutation
+    async def restablecer_clave(self, info: Info, clave: str) -> ResultadoRestablecimiento:
+        """v0.43 (KAN-26): fija la clave nueva con el enlace de `X-Enlace-Clave` (1 uso, 30 min).
+        Cierra todas las sesiones de la cuenta. Enlace malo = mensaje genérico `ENLACE_INVALIDO`."""
+        motivo = motivo_clave_invalida(clave)
+        if motivo is not None:
+            return ErrorAutenticacion(mensaje=motivo, codigo="CLAVE_DEBIL")
+        try:
+            await info.context["servicio_restablecimiento"].restablecer(
+                info.context.get("enlace_clave"), clave
+            )
+        except EnlaceInvalido:
+            return ErrorAutenticacion(mensaje=MENSAJE_ENLACE_CLAVE, codigo="ENLACE_INVALIDO")
+        except SolicitudInvalida as error:
+            return ErrorAutenticacion(mensaje=str(error), codigo="CLAVE_DEBIL")
+        except ErrorServicio:
+            return ErrorAutenticacion(
+                mensaje="No pudimos cambiar tu clave. Intenta de nuevo.", codigo="NO_DISPONIBLE"
+            )
+        return RestablecimientoExitoso()
 
     @strawberry.mutation
     async def enviar_codigo_onboarding(self, info: Info, correo: str) -> ResultadoCodigoOnboarding:

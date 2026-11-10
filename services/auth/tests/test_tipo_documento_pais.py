@@ -135,7 +135,7 @@ def test_mismo_numero_en_otro_tipo_no_es_duplicado() -> None:
         "cliente.dos",
         CLAVE,
         "CLIENTE",
-        correo=CORREO,
+        correo="dos@ejemplo.co",
         documento="998877",
         tipo_documento="CE",
         pais="CO",

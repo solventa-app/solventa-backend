@@ -25,6 +25,7 @@ from app.clientes import (
 )
 from app.configuracion import CLAVE_CLIENTE_ID_LOCAL, JWT_SECRETO_LOCAL
 from app.identificadores import cliente_id_desde_documento
+from app.reglas_clave import motivo_clave_invalida
 
 CONSENTIMIENTO_VIGENTE = {
     "id": "c-1",
@@ -148,6 +149,11 @@ class AuthFalso:
             "u-bo": _usuario_publico("u-bo", "admin.solventa", "BACKOFFICE"),
         }
         self.claves = {"asesor.uno": "Clave-segura-1", "admin.solventa": "Clave-segura-1"}
+        # KAN-26: correo -> id de las cuentas activas que pueden restablecer su clave.
+        self.correos: dict[str, str] = {"asesor@solventa.test": "u-1"}
+        self.claves_restablecidas: list[str] = []
+        # KAN-26: dispositivo_id -> (usuario_id, llave pública) de los teléfonos registrados.
+        self.dispositivos: dict[str, tuple[str, str]] = {}
         self.canales: list[str | None] = []
         self.renovaciones: list[tuple[str, str]] = []
         # T22: refresh vigentes -> (usuario_id, canal); rotan en cada uso, como en AUTH.
@@ -159,6 +165,55 @@ class AuthFalso:
         if self.falla:
             raise ErrorServicio("caido")
         return correo in self.claves
+
+    async def registrar_dispositivo(self, usuario_id: str, clave_publica: str) -> str | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        if not clave_publica.startswith("llave-"):
+            return None
+        for d in [k for k, (u, _) in self.dispositivos.items() if u == usuario_id]:
+            del self.dispositivos[d]
+        dispositivo_id = f"disp-{len(self.dispositivos) + 1}-{usuario_id}"
+        self.dispositivos[dispositivo_id] = (usuario_id, clave_publica)
+        return dispositivo_id
+
+    async def reto_dispositivo(self, dispositivo_id: str) -> dict:
+        if self.falla:
+            raise ErrorServicio("caido")
+        return {"reto": f"{dispositivo_id}.nonce", "expira_en": "2099-01-01T00:00:00+00:00"}
+
+    async def sesion_con_dispositivo(
+        self, dispositivo_id: str, reto: str, firma: str, canal: str | None
+    ) -> dict | None:
+        """Como AUTH: la «firma» válida es `firma:<reto>:<llave>`."""
+        if self.falla:
+            raise ErrorServicio("caido")
+        registro = self.dispositivos.get(dispositivo_id)
+        if registro is None or firma != f"firma:{reto}:{registro[1]}":
+            return None
+        datos = self.usuarios.get(registro[0])
+        if datos is None or datos["estado"] == "SUSPENDIDO" or canal != "app":
+            return None
+        return self._con_refresh(self._sesion(datos), datos["id"], canal)
+
+    async def buscar_para_restablecer(self, correo: str) -> str | None:
+        """Como AUTH: solo las cuentas ACTIVAS con ese correo (el doble usa `correos`)."""
+        if self.falla:
+            raise ErrorServicio("caido")
+        return self.correos.get(correo)
+
+    async def restablecer_clave(self, usuario_id: str, clave: str) -> str | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        if motivo_clave_invalida(clave):
+            raise SolicitudInvalida(motivo_clave_invalida(clave))
+        correo = next((c for c, u in self.correos.items() if u == usuario_id), None)
+        if correo is None:
+            return None
+        alias = self.usuarios[usuario_id]["usuario"]
+        self.claves[alias] = clave
+        self.claves_restablecidas.append(usuario_id)
+        return correo
 
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
         """Como AUTH (HU-M01): el doble usa el correo como alias para poder iniciar sesión."""

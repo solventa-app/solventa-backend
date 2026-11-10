@@ -134,8 +134,10 @@ def crear_usuario_en_auth(
     auth: str, token: str | None, alias: str, clave: str, rol: str, nombre, extra=None
 ):
     """Igual que `crear_usuario`, pero llamando a `POST /usuarios` de AUTH. Solo crea el primer
-    BACKOFFICE, así que no usa `extra` (lo de un CLIENTE)."""
+    BACKOFFICE, así que de `extra` solo usa el correo (todos entran con correo y clave)."""
     entrada = {"usuario": alias, "clave": clave, "rol": rol}
+    if (extra or {}).get("correo"):
+        entrada["correo"] = extra["correo"]
     if nombre:
         entrada["nombre"] = nombre
     cabeceras = {"Content-Type": "application/json"}
@@ -225,6 +227,12 @@ def main(argumentos: list[str] | None = None) -> int:
         "--correo-cliente", default="cliente.demo@ejemplo.co", help="correo del CLIENTE"
     )
     parser.add_argument(
+        "--correo-asesor", default="asesor.demo@ejemplo.co", help="correo del ASESOR"
+    )
+    parser.add_argument(
+        "--correo-operador", default="operador.demo@ejemplo.co", help="correo del operador"
+    )
+    parser.add_argument(
         "--vault",
         metavar="PROYECTO",
         help="guarda en Secret Manager las claves generadas en vez de mostrarlas",
@@ -256,8 +264,14 @@ def main(argumentos: list[str] | None = None) -> int:
     }
     pedidos = [
         (opciones.cliente, "CLIENTE", opciones.nombre_cliente, "CLAVE_CLIENTE", extra_cliente),
-        (opciones.asesor, "ASESOR", None, "CLAVE_ASESOR", None),
-        (opciones.operador, "BACKOFFICE", None, "CLAVE_OPERADOR", None),
+        (opciones.asesor, "ASESOR", None, "CLAVE_ASESOR", {"correo": opciones.correo_asesor}),
+        (
+            opciones.operador,
+            "BACKOFFICE",
+            None,
+            "CLAVE_OPERADOR",
+            {"correo": opciones.correo_operador},
+        ),
     ]
     if opciones.auth:
         # Saltarse el BFF es solo para arrancar: el resto se crea por el BFF, con su control de rol.

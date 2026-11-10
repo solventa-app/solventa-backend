@@ -196,7 +196,15 @@ def test_endpoints_http_refresh_y_cerrar() -> None:
         config=config,
     )
     with TestClient(app) as client:
-        client.post("/usuarios", json={"usuario": "asesor.1", "clave": CLAVE, "rol": "ASESOR"})
+        client.post(
+            "/usuarios",
+            json={
+                "usuario": "asesor.1",
+                "clave": CLAVE,
+                "rol": "ASESOR",
+                "correo": "asesor.1@ejemplo.co",
+            },
+        )
         login = client.post(
             "/sesiones", json={"usuario": "asesor.1", "clave": CLAVE, "canal": "web"}
         ).json()

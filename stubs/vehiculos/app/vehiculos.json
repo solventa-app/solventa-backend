@@ -1,0 +1,64 @@
+{
+  "descripcion": "Placas de demo de stub-vehiculos (KAN-290). Cada una cubre un caso de la tarifa o de la suscripción (docs/plan-poliza-auto.md §3). Datos inventados. Cualquier otra placa válida da un vehículo sintético determinista; NOX000 no existe en RUNT.",
+  "placas": {
+    "ABC123": {
+      "caso": "Nuevo, sin siniestros: la póliza de demo del cliente de siniestros",
+      "runt": {"marca": "MAZDA", "linea": "3 GRAND TOURING", "modelo": 2024, "clase": "AUTOMOVIL", "servicio": "PARTICULAR", "codigo_fasecolda": "06401115", "estado": "ACTIVO", "odometro_km": 18500, "fecha_ultima_rtm": null},
+      "fasecolda": {"valor_comercial": "118500000", "indice_hurto": "MEDIO"},
+      "siniestros": []
+    },
+    "DEF456": {
+      "caso": "Viejo (14 años): factor de antigüedad alto",
+      "runt": {"marca": "CHEVROLET", "linea": "SPARK LT", "modelo": 2012, "clase": "AUTOMOVIL", "servicio": "PARTICULAR", "codigo_fasecolda": "01601092", "estado": "ACTIVO", "odometro_km": 164200, "fecha_ultima_rtm": "2026-03-14"},
+      "fasecolda": {"valor_comercial": "17800000", "indice_hurto": "ALTO"},
+      "siniestros": [{"fecha": "2025-02-20", "tipo": "CHOQUE_PARCIAL", "valor": "3200000"}]
+    },
+    "GHI789": {
+      "caso": "Camioneta con índice de hurto muy alto",
+      "runt": {"marca": "TOYOTA", "linea": "PRADO TXL", "modelo": 2021, "clase": "CAMIONETA", "servicio": "PARTICULAR", "codigo_fasecolda": "09001241", "estado": "ACTIVO", "odometro_km": 61300, "fecha_ultima_rtm": "2025-11-02"},
+      "fasecolda": {"valor_comercial": "285000000", "indice_hurto": "MUY_ALTO"},
+      "siniestros": []
+    },
+    "JKL012": {
+      "caso": "Tres siniestros en 3 años: queda en revisión",
+      "runt": {"marca": "KIA", "linea": "PICANTO VIBRANT", "modelo": 2019, "clase": "AUTOMOVIL", "servicio": "PARTICULAR", "codigo_fasecolda": "07801033", "estado": "ACTIVO", "odometro_km": 92800, "fecha_ultima_rtm": "2026-06-30"},
+      "fasecolda": {"valor_comercial": "41900000", "indice_hurto": "MEDIO"},
+      "siniestros": [
+        {"fecha": "2024-01-11", "tipo": "CHOQUE_PARCIAL", "valor": "2100000"},
+        {"fecha": "2024-09-03", "tipo": "HURTO_PARCIAL", "valor": "1450000"},
+        {"fecha": "2026-04-27", "tipo": "RESPONSABILIDAD_CIVIL", "valor": "5600000"}
+      ]
+    },
+    "MNO345": {
+      "caso": "Con limitación a la propiedad (embargo): no asegurable",
+      "runt": {"marca": "NISSAN", "linea": "SENTRA ADVANCE", "modelo": 2018, "clase": "AUTOMOVIL", "servicio": "PARTICULAR", "codigo_fasecolda": "08001207", "estado": "CON_LIMITACION", "odometro_km": 88100, "fecha_ultima_rtm": "2026-01-19"},
+      "fasecolda": {"valor_comercial": "52300000", "indice_hurto": "MEDIO"},
+      "siniestros": []
+    },
+    "PQR678": {
+      "caso": "Más de 15 años: no asegurable en todo riesgo",
+      "runt": {"marca": "RENAULT", "linea": "LOGAN EXPRESSION", "modelo": 2008, "clase": "AUTOMOVIL", "servicio": "PARTICULAR", "codigo_fasecolda": "08801019", "estado": "ACTIVO", "odometro_km": 231500, "fecha_ultima_rtm": "2026-08-08"},
+      "fasecolda": {"valor_comercial": "14200000", "indice_hurto": "BAJO"},
+      "siniestros": []
+    },
+    "STU901": {
+      "caso": "Hurtado (denuncia vigente): no asegurable",
+      "runt": {"marca": "MAZDA", "linea": "CX-30 TOURING", "modelo": 2022, "clase": "CAMIONETA", "servicio": "PARTICULAR", "codigo_fasecolda": "06401202", "estado": "HURTADO", "odometro_km": 40400, "fecha_ultima_rtm": null},
+      "fasecolda": {"valor_comercial": "109000000", "indice_hurto": "ALTO"},
+      "siniestros": []
+    },
+    "VWX23D": {
+      "caso": "Motocicleta de uso comercial (mensajería)",
+      "runt": {"marca": "HONDA", "linea": "CB 190R", "modelo": 2023, "clase": "MOTOCICLETA", "servicio": "PUBLICO", "codigo_fasecolda": "05101077", "estado": "ACTIVO", "odometro_km": 33900, "fecha_ultima_rtm": null},
+      "fasecolda": {"valor_comercial": "11900000", "indice_hurto": "MUY_ALTO"},
+      "siniestros": [{"fecha": "2025-10-05", "tipo": "CHOQUE_PARCIAL", "valor": "900000"}]
+    },
+    "YZA456": {
+      "caso": "La guía Fasecolda falla para esta referencia (503): la oferta sale preliminar",
+      "runt": {"marca": "SUZUKI", "linea": "SWIFT HYBRID", "modelo": 2023, "clase": "AUTOMOVIL", "servicio": "PARTICULAR", "codigo_fasecolda": "FALLA", "estado": "ACTIVO", "odometro_km": 21700, "fecha_ultima_rtm": null},
+      "fasecolda": null,
+      "siniestros": []
+    }
+  },
+  "no_encontradas": ["NOX000"]
+}

@@ -54,6 +54,7 @@ class RepositorioUsuariosMemoria:
         documento_cifrado: str | None = None,
         tipo_documento: str | None = None,
         pais: str | None = None,
+        correo_hmac: str | None = None,
     ) -> dict | None:
         if any(f["usuario"] == alias for f in self.filas.values()):
             return None
@@ -71,7 +72,7 @@ class RepositorioUsuariosMemoria:
             "telefono_cifrado": telefono_cifrado,
             "titular_id": titular_id,
             "documento_cifrado": documento_cifrado,
-            "correo_hmac": None,
+            "correo_hmac": correo_hmac,
             "idioma": "ES",
             "moneda": "COP",
             "tipo_documento": tipo_documento,
@@ -138,11 +139,17 @@ class RepositorioUsuariosMemoria:
         return dict(self.filas[usuario_id])
 
     def actualizar_contacto(
-        self, usuario_id: str, correo_cifrado: str | None, telefono_cifrado: str | None
+        self,
+        usuario_id: str,
+        correo_cifrado: str | None,
+        telefono_cifrado: str | None,
+        correo_hmac: str | None = None,
     ) -> dict | None:
         if usuario_id not in self.filas:
             return None
         fila = self.filas[usuario_id]
+        if correo_hmac is not None:
+            fila["correo_hmac"] = correo_hmac
         # Como el COALESCE de Postgres: lo que no llega se conserva.
         fila["correo_cifrado"] = (
             correo_cifrado if correo_cifrado is not None else fila["correo_cifrado"]
@@ -150,6 +157,13 @@ class RepositorioUsuariosMemoria:
         fila["telefono_cifrado"] = (
             telefono_cifrado if telefono_cifrado is not None else fila["telefono_cifrado"]
         )
+        return dict(fila)
+
+    def actualizar_clave(self, usuario_id: str, hash_clave: str) -> dict | None:
+        fila = self.filas.get(usuario_id)
+        if fila is None:
+            return None
+        fila.update(hash_clave=hash_clave, intentos_fallidos=0, bloqueado_hasta=None)
         return dict(fila)
 
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int:
@@ -444,3 +458,33 @@ class RepositorioRefrescosMemoria:
         for fila in self.filas.values():
             if fila["usuario_id"] == usuario_id and fila["revocado_en"] is None:
                 fila["revocado_en"] = ahora
+
+
+class RepositorioDispositivosMemoria:
+    """Cumple el `Protocol` `RepositorioDispositivos` de `app/dispositivos.py`."""
+
+    def __init__(self) -> None:
+        self.filas: dict[str, dict] = {}
+
+    def registrar(self, dispositivo_id: str, usuario_id: str, clave_publica: str) -> None:
+        for fila in self.filas.values():
+            if fila["usuario_id"] == usuario_id:
+                fila["revocado"] = True
+        self.filas[dispositivo_id] = {
+            "id": dispositivo_id,
+            "usuario_id": usuario_id,
+            "clave_publica": clave_publica,
+            "revocado": False,
+        }
+
+    def obtener_activo(self, dispositivo_id: str) -> dict | None:
+        fila = self.filas.get(dispositivo_id)
+        return None if fila is None or fila["revocado"] else dict(fila)
+
+    def marcar_uso(self, dispositivo_id: str, ahora) -> None:
+        self.filas[dispositivo_id]["ultimo_uso"] = ahora
+
+    def revocar_de_usuario(self, usuario_id: str, ahora) -> None:
+        for fila in self.filas.values():
+            if fila["usuario_id"] == usuario_id:
+                fila["revocado"] = True

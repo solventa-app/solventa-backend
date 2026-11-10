@@ -177,10 +177,12 @@ services:
     <<: *tarea
     image: solventa/auth:local
     build: ./services/auth
-    command: ["python", "-m", "app.crear_usuario", "--usuario", "admin.solventa", "--rol", "BACKOFFICE"]
+    command: ["python", "-m", "app.crear_usuario", "--usuario", "admin.solventa", "--rol", "BACKOFFICE", "--correo", "admin@solventa.local"]
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/auth
       CLAVE_INICIAL: Admin-local-solventa
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
+      CLIENTE_ID_CLAVE: solo-local-no-secreta
     depends_on:
       migrar-auth: { condition: service_completed_successfully }
 
@@ -541,6 +543,7 @@ services:
       REDIS_URL: redis://redis:6379/1
       OPEN_FINANCE_URL: http://stub-open-finance:8101
       OPEN_DATA_URL: http://stub-open-data:8102
+      VEHICULOS_URL: http://stub-vehiculos:8107
       PASARELA_URL: http://stub-pasarela:8103
       FIRMA_URL: http://stub-firma:8104
       KYC_URL: http://stub-kyc:8105   # también la verificación de identidad de M01 (rutas de Didit)
@@ -587,6 +590,13 @@ services:
     <<: *servicio
     build: ./stubs/open-data
     ports: ["8102:8102"]
+
+  # KAN-290 (póliza de auto): RUNT, guía Fasecolda y siniestralidad por placa. Placas de demo en
+  # GET localhost:8107/control/placas.
+  stub-vehiculos:
+    <<: *servicio
+    build: ./stubs/vehiculos
+    ports: ["8107:8107"]
 
   stub-pasarela:
     <<: *servicio

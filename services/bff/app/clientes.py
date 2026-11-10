@@ -108,6 +108,18 @@ class PuertoAuth(Protocol):
 
     async def correo_registrado(self, correo: str) -> bool: ...
 
+    async def buscar_para_restablecer(self, correo: str) -> str | None: ...
+
+    async def registrar_dispositivo(self, usuario_id: str, clave_publica: str) -> str | None: ...
+
+    async def reto_dispositivo(self, dispositivo_id: str) -> dict: ...
+
+    async def sesion_con_dispositivo(
+        self, dispositivo_id: str, reto: str, firma: str, canal: str | None
+    ) -> dict | None: ...
+
+    async def restablecer_clave(self, usuario_id: str, clave: str) -> str | None: ...
+
     async def obtener_usuario(self, usuario_id: str) -> dict | None: ...
 
     async def obtener_identidad(self, usuario_id: str) -> dict | None: ...
@@ -663,6 +675,58 @@ class ClienteAuthHttp:
         if respuesta.status_code in (400, 422):
             raise ErrorOnboardingServicio("DATO_INVALIDO")
         return bool(_json_o_error(respuesta)["registrado"])
+
+    async def buscar_para_restablecer(self, correo: str) -> str | None:
+        """Id de la cuenta ACTIVA con ese correo, o `None`. El correo va solo en el cuerpo."""
+        respuesta = await _pedir(
+            self._cliente, "POST", "/usuarios/restablecimiento/buscar", {"correo": correo}
+        )
+        if respuesta.status_code in (400, 422):
+            return None
+        return _json_o_error(respuesta).get("usuario_id")
+
+    async def registrar_dispositivo(self, usuario_id: str, clave_publica: str) -> str | None:
+        """Guarda la llave pública del teléfono (revoca la anterior). `None` si AUTH la rechaza
+        (no es una llave P-256 válida). Solo viaja en el cuerpo."""
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            "/dispositivos",
+            {"usuario_id": usuario_id, "clave_publica": clave_publica},
+        )
+        if respuesta.status_code in (400, 422):
+            return None
+        return _json_o_error(respuesta)["dispositivo_id"]
+
+    async def reto_dispositivo(self, dispositivo_id: str) -> dict:
+        respuesta = await _pedir(self._cliente, "POST", f"/dispositivos/{dispositivo_id}/reto")
+        return _json_o_error(respuesta)
+
+    async def sesion_con_dispositivo(
+        self, dispositivo_id: str, reto: str, firma: str, canal: str | None
+    ) -> dict | None:
+        """Sesión con la firma del reto. `None` ante cualquier rechazo de AUTH (401)."""
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            f"/dispositivos/{dispositivo_id}/sesion",
+            {"reto": reto, "firma": firma, "canal": canal},
+        )
+        if respuesta.status_code == 401:
+            return None
+        return _json_o_error(respuesta)
+
+    async def restablecer_clave(self, usuario_id: str, clave: str) -> str | None:
+        """Cambia la clave y cierra todas las sesiones; devuelve el correo para avisarle.
+        `SolicitudInvalida` si la clave no cumple las reglas, `None` si la cuenta ya no sirve."""
+        respuesta = await _pedir(
+            self._cliente, "POST", f"/usuarios/{usuario_id}/clave", {"clave": clave}
+        )
+        if respuesta.status_code == 404:
+            return None
+        if respuesta.status_code in (400, 422):
+            raise SolicitudInvalida(str(respuesta.json().get("detail", "clave inválida")))
+        return _json_o_error(respuesta).get("correo")
 
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
         """CLIENTE en PENDIENTE_VERIFICACION (HU-M01). Correo y clave van solo en el cuerpo."""
