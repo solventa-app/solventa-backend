@@ -330,6 +330,14 @@ En el **Sprint 1** ya existe el API Gateway delante del BFF (`infra/gateway.tf`,
 - Pendiente: cambiar la clave (hoy no existe el endpoint; al crearlo debe llamar `revocar_de_usuario`) y la verificación
   detrás de GCP API Gateway en staging.
 
+
+## Duración de la sesión (KAN-26)
+
+El token de acceso dura **15 minutos** y lleva `sid` (la cadena de refresh). En la web el refresh vence 8 horas después
+de iniciar sesión, se renueve o no; en la app, 8 días con rotación. Al cerrar sesión el BFF anota el `sid` en Redis hasta
+que el token venza, así ese acceso tampoco sirve (`app/sesiones_revocadas.py`); si Redis no responde, el token vence
+solo en minutos. Valores en `contracts/sesion.json`.
+
 ## Olvidé mi contraseña (KAN-26, contrato v0.43)
 
 - El visitante da **solo su correo** (`solicitarRestablecimientoClave`). La respuesta es siempre `true`: no revela si la

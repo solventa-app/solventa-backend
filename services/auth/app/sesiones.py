@@ -91,9 +91,12 @@ class ServicioSesiones:
         refrescos: RepositorioRefrescos | None = None,
         refresh_dias: int = 8,
         refresh_gracia_segundos: int = 0,
+        refresh_web_horas: int = 8,
     ) -> None:
         self._refrescos = refrescos
         self._refresh_vigencia = timedelta(days=refresh_dias)
+        # La web tiene un tope absoluto desde que se inicia sesión: renovar no lo alarga.
+        self._refresh_web = timedelta(hours=refresh_web_horas)
         self._refresh_gracia = timedelta(seconds=refresh_gracia_segundos)
         self._clave_correo = clave_correo
         self._repositorio = repositorio
@@ -152,8 +155,9 @@ class ServicioSesiones:
             raise CredencialesInvalidas(MENSAJE_CREDENCIALES)
 
         self._repositorio.registrar_exito(fila["id"])
-        sesion = self._emitir(fila, ahora, ahora + self._vigencia)
-        self._agregar_refresh(sesion, fila["id"], str(uuid.uuid4()), canal_de_sesion(canal), ahora)
+        familia = str(uuid.uuid4())
+        sesion = self._emitir(fila, ahora, ahora + self._vigencia, familia)
+        self._agregar_refresh(sesion, fila["id"], familia, canal_de_sesion(canal), ahora)
         logger.info("sesión iniciada usuario=%s rol=%s", id_opaco(fila["id"]), fila["rol"])
         return sesion
 
@@ -169,12 +173,15 @@ class ServicioSesiones:
             or fila["estado"] not in ("ACTIVO", *ESTADOS_SIN_VERIFICAR)
         ):
             raise CredencialesInvalidas(MENSAJE_CREDENCIALES)
-        sesion = self._emitir(fila, ahora, ahora + self._vigencia)
-        self._agregar_refresh(sesion, fila["id"], str(uuid.uuid4()), canal_de_sesion(canal), ahora)
+        familia = str(uuid.uuid4())
+        sesion = self._emitir(fila, ahora, ahora + self._vigencia, familia)
+        self._agregar_refresh(sesion, fila["id"], familia, canal_de_sesion(canal), ahora)
         logger.info("sesión iniciada con dispositivo usuario=%s", id_opaco(fila["id"]))
         return sesion
 
-    def renovar_permisos(self, usuario_id: str, expira_en: datetime) -> dict:
+    def renovar_permisos(
+        self, usuario_id: str, expira_en: datetime, sid: str | None = None
+    ) -> dict:
         """`actualizarSesion` (M01): relee el estado y emite un token con los scopes de ahora y
         **la misma expiración**: no alarga la sesión. El BFF ya validó el token vigente."""
         fila = self._repositorio.obtener(usuario_id)
@@ -189,16 +196,26 @@ class ServicioSesiones:
             )
         ):
             raise CredencialesInvalidas(MENSAJE_CREDENCIALES)
-        return self._emitir(fila, ahora, expira_en)
+        return self._emitir(fila, ahora, expira_en, sid)
 
     def _agregar_refresh(
-        self, sesion: dict, usuario_id: str, familia_id: str, canal: str, ahora: datetime
+        self,
+        sesion: dict,
+        usuario_id: str,
+        familia_id: str,
+        canal: str,
+        ahora: datetime,
+        tope: datetime | None = None,
     ) -> None:
         """Guarda el hash de un refresh nuevo (cadena `familia_id`) y lo agrega a la sesión."""
         if self._refrescos is None:
             return
         refresh = nuevo_refresh()
-        expira = ahora + self._refresh_vigencia
+        if canal == CANAL_WEB:
+            # En la web el refresh vence 8 h después de iniciar sesión, se renueve o no.
+            expira = tope or ahora + self._refresh_web
+        else:
+            expira = ahora + self._refresh_vigencia
         self._refrescos.crear(
             str(uuid.uuid4()), familia_id, usuario_id, hash_refresh(refresh), canal, expira
         )
@@ -245,8 +262,13 @@ class ServicioSesiones:
         if not permitido:
             self._refrescos.revocar_familia(familia, ahora)
             raise RefreshInvalido(MENSAJE_REFRESH)
-        sesion = self._emitir(usuario, ahora, ahora + self._vigencia)
-        self._agregar_refresh(sesion, usuario["id"], familia, fila["canal"], ahora)
+        acceso_hasta = ahora + self._vigencia
+        if fila["canal"] == CANAL_WEB:
+            acceso_hasta = min(acceso_hasta, fila["expira_en"])
+        sesion = self._emitir(usuario, ahora, acceso_hasta, familia)
+        self._agregar_refresh(
+            sesion, usuario["id"], familia, fila["canal"], ahora, tope=fila["expira_en"]
+        )
         logger.info("sesión renovada con refresh usuario=%s", id_opaco(usuario["id"]))
         return sesion
 
@@ -277,7 +299,9 @@ class ServicioSesiones:
         if self._refrescos is not None:
             self._refrescos.revocar_de_usuario(usuario_id, self._reloj())
 
-    def _emitir(self, fila: dict, ahora: datetime, expira_en: datetime) -> dict:
+    def _emitir(
+        self, fila: dict, ahora: datetime, expira_en: datetime, sid: str | None = None
+    ) -> dict:
         scopes = (
             SCOPES_VERIFICACION_PENDIENTE
             if fila["estado"] in ESTADOS_SIN_VERIFICAR
@@ -292,6 +316,8 @@ class ServicioSesiones:
                 "iat": int(ahora.timestamp()),
                 "exp": int(expira_en.timestamp()),
                 "jti": str(uuid.uuid4()),
+                # La cadena de refresh a la que pertenece: al cerrar sesión se revoca por aquí.
+                **({"sid": sid} if sid else {}),
             },
             self._secreto,
             algorithm=ALGORITMO_JWT,

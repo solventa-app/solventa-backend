@@ -534,6 +534,16 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   revocando todo. El esquema GraphQL no cambia.
 - Afecta al frontend: no cambia la forma; el móvil puede reintentar una vez con el mismo refresh ante un error de red.
 
+## `sesion.json` — 2026-11-10 (sin cambio de esquema GraphQL)
+
+- KAN-26 (autenticación, fase 3): el token de acceso pasa de 60 a **15 minutos**. En la web el refresh vence **8 horas
+  después de iniciar sesión** (`refresh_web_horas`) y renovar ya no lo alarga; en la app sigue siendo de 8 días con
+  rotación. El token suma el claim `sid` (la cadena de refresh) y, al cerrar sesión, el BFF lo anota en Redis hasta que
+  el token venza: ese acceso deja de servir aunque alguien lo conserve (`SESION_INVALIDA`). Un token sin `sid` sigue
+  valiendo hasta vencer.
+- Afecta al frontend: la web debe renovar antes de los 15 minutos y mostrar el aviso de inactividad; la app, lo mismo
+  con su bloqueo local.
+
 ## `POST /usuarios` de AUTH — 2026-11-10 (sin cambio de esquema GraphQL)
 
 - KAN-26 (autenticación): todos los roles entran con correo y clave. `POST /usuarios` (y `crearUsuario` del BFF) exige
