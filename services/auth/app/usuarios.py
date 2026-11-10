@@ -658,7 +658,7 @@ class ServicioUsuarios:
             if self._repositorio.obtener_por_titular(titular_id):
                 raise UsuarioDuplicado(MENSAJE_DOCUMENTO_DUPLICADO)
         if huella_correo and self._repositorio.obtener_por_correo_hmac(huella_correo):
-            # El alias primero: repetir un alta dice que el alias existe, no que el correo está en uso.
+            # El alias primero: repetir un alta dice que el alias existe.
             if self._repositorio.obtener_por_alias(alias):
                 raise UsuarioDuplicado("Ya existe un usuario con ese alias.")
             raise UsuarioDuplicado(MENSAJE_CORREO_DUPLICADO)
