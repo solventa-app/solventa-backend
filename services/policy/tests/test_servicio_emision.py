@@ -100,6 +100,7 @@ def test_under_recibe_el_riesgo_de_la_oferta_y_la_cobertura() -> None:
     assert cliente_id == "cliente-opaco"
     assert nivel == "BAJO"
     assert cobertura == {"valor": "200000000", "moneda": "COP"}
+    assert under.productos == [("VIDA_DEUDOR", False)]  # KAN-290: vida por defecto
 
 
 def test_si_under_rechaza_no_se_cobra_ni_se_emite() -> None:

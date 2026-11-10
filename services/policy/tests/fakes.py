@@ -258,6 +258,11 @@ class RepositorioPropuestasFalso:
                 "actualizado_en": datetime.now(UTC),
                 "actor_rol": datos.get("actor_rol"),
                 "tasa_comision": datos.get("tasa_comision"),
+                # KAN-290
+                "producto": datos.get("producto") or "VIDA_DEUDOR",
+                "vehiculo": datos.get("vehiculo"),
+                "coberturas": datos.get("coberturas") or [],
+                "requiere_revision": bool(datos.get("requiere_revision")),
             }
             self._por_oferta[datos["oferta_id"]] = propuesta
             return dict(propuesta), True
@@ -292,8 +297,18 @@ class UnderFalso:
         self.cae = cae
         self.llamadas: list[tuple] = []
 
-    def decidir(self, propuesta_id, cliente_id, nivel_riesgo, cobertura) -> ResultadoDecision:
+    def decidir(
+        self,
+        propuesta_id,
+        cliente_id,
+        nivel_riesgo,
+        cobertura,
+        producto="VIDA_DEUDOR",
+        requiere_revision=False,
+    ) -> ResultadoDecision:
         self.llamadas.append((propuesta_id, cliente_id, nivel_riesgo, cobertura))
+        # KAN-290: lo que llega de la póliza de auto, aparte para no cambiar las tuplas de arriba.
+        self.productos = [*getattr(self, "productos", []), (producto, requiere_revision)]
         if self.cae:
             raise UnderNoDisponible("caído")
         return ResultadoDecision(self.decision, list(self.motivos))

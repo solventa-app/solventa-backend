@@ -45,6 +45,9 @@ def test_under_manda_el_riesgo_la_cobertura_y_el_cliente_opaco() -> None:
             "cliente_id": "cliente-opaco",
             "nivel_riesgo": "ALTO",
             "cobertura": COBERTURA,
+            # KAN-290: vida por defecto; la póliza de auto manda su producto y la marca de RATING.
+            "producto": "VIDA_DEUDOR",
+            "requiere_revision": False,
         }
     ]
 

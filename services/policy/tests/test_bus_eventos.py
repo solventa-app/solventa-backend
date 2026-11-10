@@ -43,3 +43,13 @@ def test_el_log_redacta_los_identificadores(caplog) -> None:
     assert "cliente-opaco" not in caplog.text
     assert "SOL-2026-000001" not in caplog.text
     assert "propuesta-1" not in caplog.text
+
+
+def test_el_evento_de_una_poliza_de_auto_lleva_el_producto_y_valida() -> None:
+    """KAN-290: `datos.producto` (opcional en el contrato, VIDA_DEUDOR por defecto)."""
+    evento = construir_evento_poliza_emitida(
+        "poliza-1", "SOL-2026-000001", "propuesta-1", "cliente-opaco", DESDE, HASTA, "AUTO"
+    )
+    jsonschema.validate(evento, json.loads(RUTA_ESQUEMA.read_text(encoding="utf-8")))
+    assert evento["datos"]["producto"] == "AUTO"
+    assert _evento()["datos"]["producto"] == "VIDA_DEUDOR"
