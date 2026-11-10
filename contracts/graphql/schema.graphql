@@ -652,6 +652,15 @@ type ErrorAutenticacion {
 
 union ResultadoSesion = Sesion | ErrorAutenticacion
 
+# v0.43 (KAN-26): la clave cambió y se cerraron todas las sesiones de la cuenta.
+type RestablecimientoExitoso {
+  ok: Boolean!
+}
+
+# `ErrorAutenticacion.codigo`: ENLACE_INVALIDO (no existe, venció o ya se usó; mismo mensaje siempre) o CLAVE_DEBIL
+# (el mensaje dice qué falta; el enlace no se gasta).
+union ResultadoRestablecimiento = RestablecimientoExitoso | ErrorAutenticacion
+
 type ErrorUsuario {
   mensaje: String!
 }
@@ -1221,6 +1230,8 @@ type Query {
   archivo(id: ID!): Archivo
   oferta(id: ID!): Oferta
   cobros(polizaId: ID, estado: EstadoCobro, pagina: Int = 1, tamano: Int = 10): [Cobro!]!
+  # v0.43 (KAN-26): ¿sirve el enlace de la cabecera `X-Enlace-Clave`? Público; solo dice sí o no.
+  enlaceRestablecimientoVigente: Boolean!
   yo: Usuario
   usuarios(rol: RolUsuario): [Usuario!]!
   # Solo para mostrar: los montos en otra moneda con las tasas del ACL Worker (hasta 50 por llamada).
@@ -1327,6 +1338,12 @@ type Mutation {
   ): ResultadoSubidaOnboarding!
   # Con `X-Onboarding-Token`, tras el PUT. Idempotente.
   confirmarSubidaOnboarding(onboardingId: ID!, archivoId: ID!): ResultadoOnboarding!
+  # v0.43 (KAN-26): «olvidé mi contraseña». Responde `true` siempre, exista o no la cuenta (o se tope el límite de 3 por
+  # correo y 10 por IP por hora): nunca revela quién está registrado. Si hay cuenta activa envía un enlace que vence a los
+  # 30 minutos, sirve una vez y reemplaza al anterior.
+  solicitarRestablecimientoClave(correo: String!): Boolean!
+  # v0.43 (KAN-26): fija la clave nueva con el token de la cabecera `X-Enlace-Clave`. Cierra todas las sesiones de la cuenta.
+  restablecerClave(clave: String!): ResultadoRestablecimiento!
   # Envía un código de 6 dígitos al correo para verificarlo en el onboarding (10 min, hasta 5 intentos).
   # Si ya hay una cuenta con ese correo no envía nada y responde `ErrorOnboarding` con `CORREO_YA_REGISTRADO`.
   enviarCodigoOnboarding(correo: String!): ResultadoCodigoOnboarding!

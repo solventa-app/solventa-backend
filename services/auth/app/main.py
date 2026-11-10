@@ -43,6 +43,7 @@ from app.socios import (
 )
 from app.tokens_socio import FirmadorTokensSocio
 from app.usuarios import (
+    CuentaNoActiva,
     DatoInvalido,
     RepositorioUsuariosPostgres,
     ServicioUsuarios,
@@ -104,6 +105,10 @@ class Credenciales(BaseModel):
     canal: str | None = None
     # T17: rol con el que se intenta entrar; si no es el de la cuenta, falla como una clave errada.
     rol: str | None = None
+
+
+class SolicitudClave(BaseModel):
+    clave: str
 
 
 class SolicitudCorreo(BaseModel):
@@ -497,6 +502,29 @@ def create_app(
             return {"registrado": app.state.usuarios.correo_registrado(body.correo)}
         except DatoInvalido as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/usuarios/restablecimiento/buscar", tags=["usuarios"])
+    def buscar_para_restablecer(body: SolicitudCorreo) -> dict[str, str | None]:
+        """«Olvidé mi contraseña»: el id de la cuenta activa con ese correo (o `null`). Solo lo
+        llama el BFF, que nunca se lo dice al visitante. El correo llega solo en el cuerpo."""
+        try:
+            return {"usuario_id": app.state.usuarios.id_para_restablecer(body.correo)}
+        except DatoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/usuarios/{usuario_id}/clave", tags=["usuarios"])
+    def restablecer_clave(usuario_id: str, body: SolicitudClave) -> dict[str, str | None]:
+        """Cambia la clave tras un enlace válido (lo comprobó el BFF), cierra todas las sesiones de
+        la cuenta y devuelve su correo para avisarle. Mismo 404 si no hay cuenta activa."""
+        try:
+            correo = app.state.usuarios.restablecer_clave(usuario_id, body.clave)
+        except DatoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except CuentaNoActiva as error:
+            raise HTTPException(status_code=404, detail="usuario no encontrado") from error
+        app.state.sesiones.revocar_de_usuario(usuario_id)
+        logger_usuarios.info("clave restablecida id=%s", id_opaco(usuario_id))
+        return {"correo": correo}
 
     @app.post("/usuarios/onboarding", tags=["usuarios"], response_model=UsuarioResponse)
     def crear_cuenta_onboarding(body: SolicitudCuentaOnboarding) -> UsuarioResponse:

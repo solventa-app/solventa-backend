@@ -159,6 +159,13 @@ class RepositorioUsuariosMemoria:
         )
         return dict(fila)
 
+    def actualizar_clave(self, usuario_id: str, hash_clave: str) -> dict | None:
+        fila = self.filas.get(usuario_id)
+        if fila is None:
+            return None
+        fila.update(hash_clave=hash_clave, intentos_fallidos=0, bloqueado_hasta=None)
+        return dict(fila)
+
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int:
         fila = self.filas[usuario_id]
         if bloquear_hasta is None:

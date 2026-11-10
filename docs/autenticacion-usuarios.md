@@ -329,3 +329,15 @@ En el **Sprint 1** ya existe el API Gateway delante del BFF (`infra/gateway.tf`,
   gracia, reuso, cierre, canal y suspensión); evidencia en `docs/evidencias/hu-m02-sesion-refresh-2026-11-06.md`.
 - Pendiente: cambiar la clave (hoy no existe el endpoint; al crearlo debe llamar `revocar_de_usuario`) y la verificación
   detrás de GCP API Gateway en staging.
+
+## Olvidé mi contraseña (KAN-26, contrato v0.43)
+
+- El visitante da **solo su correo** (`solicitarRestablecimientoClave`). La respuesta es siempre `true`: no revela si la
+  cuenta existe, está suspendida o se topó el límite (3 por correo y 10 por IP por hora).
+- Si hay una cuenta ACTIVA con ese correo, el BFF genera un token de 256 bits, guarda **solo su huella** (Redis) y envía
+  por el ACL Worker `<URL_FRONT>/restablecer-clave#t=<token>`. Vence a los 30 minutos, sirve una vez y un enlace nuevo
+  anula el anterior. El token viaja en la cabecera `X-Enlace-Clave`, nunca en la URL de la API ni en el cuerpo.
+- `restablecerClave(clave)` valida las mismas reglas del alta (8–128, mayúscula, minúscula y especial; una clave débil no
+  gasta el enlace), la cambia en AUTH (`POST /usuarios/{id}/clave`), levanta el bloqueo por intentos, **cierra todas las
+  sesiones** de la cuenta y envía el aviso `clave-cambiada`. Enlace inexistente, vencido o usado: `ENLACE_INVALIDO`.
+- Pendiente: plantillas de correo solo en español (el ACL no recibe el idioma).

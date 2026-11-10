@@ -25,6 +25,7 @@ from app.clientes import (
 )
 from app.configuracion import CLAVE_CLIENTE_ID_LOCAL, JWT_SECRETO_LOCAL
 from app.identificadores import cliente_id_desde_documento
+from app.reglas_clave import motivo_clave_invalida
 
 CONSENTIMIENTO_VIGENTE = {
     "id": "c-1",
@@ -146,6 +147,9 @@ class AuthFalso:
             "u-bo": _usuario_publico("u-bo", "admin.solventa", "BACKOFFICE"),
         }
         self.claves = {"asesor.uno": "Clave-segura-1", "admin.solventa": "Clave-segura-1"}
+        # KAN-26: correo -> id de las cuentas activas que pueden restablecer su clave.
+        self.correos: dict[str, str] = {"asesor@solventa.test": "u-1"}
+        self.claves_restablecidas: list[str] = []
         self.canales: list[str | None] = []
         self.renovaciones: list[tuple[str, str]] = []
         # T22: refresh vigentes -> (usuario_id, canal); rotan en cada uso, como en AUTH.
@@ -157,6 +161,25 @@ class AuthFalso:
         if self.falla:
             raise ErrorServicio("caido")
         return correo in self.claves
+
+    async def buscar_para_restablecer(self, correo: str) -> str | None:
+        """Como AUTH: solo las cuentas ACTIVAS con ese correo (el doble usa `correos`)."""
+        if self.falla:
+            raise ErrorServicio("caido")
+        return self.correos.get(correo)
+
+    async def restablecer_clave(self, usuario_id: str, clave: str) -> str | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        if motivo_clave_invalida(clave):
+            raise SolicitudInvalida(motivo_clave_invalida(clave))
+        correo = next((c for c, u in self.correos.items() if u == usuario_id), None)
+        if correo is None:
+            return None
+        alias = self.usuarios[usuario_id]["usuario"]
+        self.claves[alias] = clave
+        self.claves_restablecidas.append(usuario_id)
+        return correo
 
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
         """Como AUTH (HU-M01): el doble usa el correo como alias para poder iniciar sesión."""
