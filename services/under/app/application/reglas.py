@@ -21,6 +21,8 @@ RIESGO_ALTO = "RIESGO_ALTO"
 RIESGO_DESCONOCIDO = "RIESGO_DESCONOCIDO"
 COBERTURA_ALTA = "COBERTURA_ALTA"
 MONEDA_NO_SOPORTADA = "MONEDA_NO_SOPORTADA"
+# KAN-290: póliza de auto con demasiados siniestros recientes (lo marca RATING con la tarifa).
+SINIESTRALIDAD_ALTA = "SINIESTRALIDAD_ALTA"
 
 MONEDA = "COP"
 NIVELES_QUE_APRUEBAN = ("BAJO", "MEDIO")
@@ -38,7 +40,11 @@ def decidir(
     cobertura: Decimal,
     moneda: str,
     cobertura_maxima: Decimal,
+    producto: str = "VIDA_DEUDOR",
+    requiere_revision: bool = False,
 ) -> Decision:
+    """KAN-290: en AUTO no hay perfil financiero (`nivel_riesgo` no aplica). El riesgo del vehículo
+    ya está en la prima; lo que no se aprueba solo es una siniestralidad alta, que RATING marca."""
     if estado_kyc == "rechazada":
         return Decision(RECHAZADA, [KYC_RECHAZADO])
 
@@ -46,11 +52,15 @@ def decidir(
     if estado_kyc != "aprobada":
         motivos.append(KYC_NO_DISPONIBLE)
 
-    nivel = (nivel_riesgo or "").strip().upper()
-    if nivel == "ALTO":
-        motivos.append(RIESGO_ALTO)
-    elif nivel not in NIVELES_QUE_APRUEBAN:
-        motivos.append(RIESGO_DESCONOCIDO)
+    if producto == "AUTO":
+        if requiere_revision:
+            motivos.append(SINIESTRALIDAD_ALTA)
+    else:
+        nivel = (nivel_riesgo or "").strip().upper()
+        if nivel == "ALTO":
+            motivos.append(RIESGO_ALTO)
+        elif nivel not in NIVELES_QUE_APRUEBAN:
+            motivos.append(RIESGO_DESCONOCIDO)
 
     if moneda != MONEDA:
         motivos.append(MONEDA_NO_SOPORTADA)

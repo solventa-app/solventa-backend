@@ -109,3 +109,13 @@ def test_los_logs_no_llevan_el_cliente_ni_la_cobertura(caplog) -> None:
     assert "cliente-opaco" not in caplog.text
     assert "propuesta-1" not in caplog.text
     assert "200000000" not in caplog.text
+
+
+def test_auto_sin_nivel_de_riesgo_se_aprueba_y_con_siniestralidad_alta_va_a_revision() -> None:
+    """KAN-290: la póliza de auto no trae perfil financiero; decide la marca de RATING."""
+    auto = {**SOLICITUD, "nivel_riesgo": None, "producto": "AUTO"}
+    with _cliente()[0] as client:
+        assert client.post("/decisiones", json=auto).json()["decision"] == "APROBADA"
+        revision = client.post("/decisiones", json={**auto, "requiere_revision": True}).json()
+    assert revision["decision"] == "REVISION_MANUAL"
+    assert revision["motivos"] == ["SINIESTRALIDAD_ALTA"]

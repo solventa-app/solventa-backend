@@ -14,6 +14,7 @@ from app.application.reglas import (
     REVISION_MANUAL,
     RIESGO_ALTO,
     RIESGO_DESCONOCIDO,
+    SINIESTRALIDAD_ALTA,
     decidir,
 )
 
@@ -93,3 +94,27 @@ def test_los_motivos_se_acumulan_en_revision() -> None:
 
     assert resultado.decision == REVISION_MANUAL
     assert resultado.motivos == [KYC_NO_DISPONIBLE, RIESGO_ALTO, COBERTURA_ALTA]
+
+
+# ---------- KAN-290: póliza de auto ----------
+
+
+def test_auto_sin_perfil_financiero_se_aprueba_con_kyc_aprobado() -> None:
+    """En AUTO `nivel_riesgo` no aplica: su ausencia no la manda a revisión."""
+    d = decidir(
+        "aprobada", None, Decimal("118500000"), "COP", Decimal("2000000000"), producto="AUTO"
+    )
+    assert d.decision == APROBADA and d.motivos == []
+
+
+def test_auto_con_siniestralidad_alta_va_a_revision() -> None:
+    d = decidir(
+        "aprobada", None, Decimal("41900000"), "COP", Decimal("2000000000"),
+        producto="AUTO", requiere_revision=True,
+    )  # fmt: skip
+    assert d.decision == REVISION_MANUAL and d.motivos == [SINIESTRALIDAD_ALTA]
+
+
+def test_auto_con_kyc_rechazado_se_rechaza() -> None:
+    d = decidir("rechazada", None, Decimal("1"), "COP", Decimal("2"), producto="AUTO")
+    assert d.decision == RECHAZADA

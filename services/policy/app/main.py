@@ -116,6 +116,10 @@ class PropuestaResponse(BaseModel):
     # HU-W07: cuándo vence el enlace de firma activo (solo en `GET /propuestas/{id}`); nunca
     # el token.
     enlace_vence_en: datetime | None = None
+    # KAN-290: el producto y, en AUTO, el vehículo (placa enmascarada) y las coberturas.
+    producto: str = "VIDA_DEUDOR"
+    vehiculo: dict[str, Any] | None = None
+    coberturas: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PolizaResumenResponse(BaseModel):
@@ -321,6 +325,10 @@ class PolizaResponse(BaseModel):
     firmante_id: str | None = None
     # Cuándo se avisó al cliente; nulo mientras el aviso siga pendiente.
     notificada_en: datetime | None = None
+    # KAN-290
+    producto: str = "VIDA_DEUDOR"
+    vehiculo: dict[str, Any] | None = None
+    coberturas: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class DocumentoRequest(BaseModel):

@@ -33,9 +33,19 @@ class ServicioDecisiones:
         nivel_riesgo: str | None,
         cobertura: Decimal,
         moneda: str,
+        producto: str = "VIDA_DEUDOR",
+        requiere_revision: bool = False,
     ) -> ResultadoDecision:
         kyc = self._acl.verificar_kyc(propuesta_id, cliente_id)
-        decision = decidir(kyc.estado, nivel_riesgo, cobertura, moneda, self._cobertura_maxima)
+        decision = decidir(
+            kyc.estado,
+            nivel_riesgo,
+            cobertura,
+            moneda,
+            self._cobertura_maxima,
+            producto=producto,
+            requiere_revision=requiere_revision,
+        )
         logger.info(
             "decisión %s motivos=%s propuesta=%s cliente=%s",
             decision.decision,
