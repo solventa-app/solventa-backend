@@ -178,6 +178,9 @@ class MotivoErrorOferta(Enum):
     CONSENTIMIENTO_NO_VIGENTE = "CONSENTIMIENTO_NO_VIGENTE"
     DATOS_INSUFICIENTES = "DATOS_INSUFICIENTES"
     FUENTES_NO_DISPONIBLES = "FUENTES_NO_DISPONIBLES"
+    # v0.42 (póliza de auto)
+    VEHICULO_NO_ENCONTRADO = "VEHICULO_NO_ENCONTRADO"
+    VEHICULO_NO_ASEGURABLE = "VEHICULO_NO_ASEGURABLE"
 
 
 @strawberry.enum
@@ -294,6 +297,87 @@ class FuenteConsultada:
     capturado_en: datetime | None
 
 
+# ---------- Póliza de auto (v0.42, docs/plan-poliza-auto.md) ----------
+
+
+@strawberry.enum
+class Producto(Enum):
+    VIDA_DEUDOR = "VIDA_DEUDOR"
+    AUTO = "AUTO"
+
+
+@strawberry.enum
+class UsoVehiculo(Enum):
+    PARTICULAR = "PARTICULAR"
+    COMERCIAL = "COMERCIAL"
+
+
+@strawberry.enum
+class DeducibleAuto(Enum):
+    DIEZ_POR_CIENTO = "DIEZ_POR_CIENTO"
+    SIN_DEDUCIBLE = "SIN_DEDUCIBLE"
+
+
+@strawberry.enum
+class TipoCobertura(Enum):
+    RESPONSABILIDAD_CIVIL = "RESPONSABILIDAD_CIVIL"
+    PERDIDA_TOTAL_DANOS = "PERDIDA_TOTAL_DANOS"
+    PERDIDA_PARCIAL_DANOS = "PERDIDA_PARCIAL_DANOS"
+    PERDIDA_TOTAL_HURTO = "PERDIDA_TOTAL_HURTO"
+    PERDIDA_PARCIAL_HURTO = "PERDIDA_PARCIAL_HURTO"
+    ASISTENCIA = "ASISTENCIA"
+
+
+@strawberry.enum
+class TipoSiniestroAuto(Enum):
+    CHOQUE_PARCIAL = "CHOQUE_PARCIAL"
+    PERDIDA_TOTAL_DANOS = "PERDIDA_TOTAL_DANOS"
+    HURTO_TOTAL = "HURTO_TOTAL"
+    HURTO_PARCIAL = "HURTO_PARCIAL"
+    RESPONSABILIDAD_CIVIL = "RESPONSABILIDAD_CIVIL"
+
+
+@strawberry.type
+class VehiculoAsegurado:
+    placa_enmascarada: str
+    marca: str
+    linea: str
+    modelo: int
+    clase: str
+    uso: UsoVehiculo
+    valor_comercial: Monto
+    ciudad_circulacion: str
+    kilometraje_anual: int
+    deducible: DeducibleAuto
+
+
+@strawberry.type
+class CoberturaAuto:
+    tipo: TipoCobertura
+    valor_asegurado: Monto | None = None
+    deducible: str | None = None
+
+
+@strawberry.type
+class FactorTarifa:
+    nombre: str
+    factor: float
+    detalle: str | None = None
+
+
+@strawberry.input
+class SolicitudOfertaAutoInput:
+    consentimiento_id: strawberry.ID
+    placa: str
+    kilometraje_anual: int
+    ciudad_circulacion: str
+    documento_identidad: str | None = None
+    tipo_documento: str | None = None
+    pais: str | None = None
+    uso: UsoVehiculo = UsoVehiculo.PARTICULAR
+    deducible: DeducibleAuto = DeducibleAuto.DIEZ_POR_CIENTO
+
+
 @strawberry.type
 class Oferta:
     id: strawberry.ID
@@ -304,6 +388,12 @@ class Oferta:
     desglose_score: list[FactorScore]
     fuentes: list[FuenteConsultada]
     perfil_riesgo: PerfilRiesgo | None = None
+    # v0.42: las ofertas de `solicitarOferta` son de VIDA_DEUDOR; las de auto traen vehículo y
+    # coberturas.
+    producto: Producto = Producto.VIDA_DEUDOR
+    vehiculo: VehiculoAsegurado | None = None
+    coberturas: list[CoberturaAuto] = strawberry.field(default_factory=list)
+    factores_tarifa: list[FactorTarifa] = strawberry.field(default_factory=list)
 
 
 @strawberry.type
@@ -314,6 +404,8 @@ class ErrorOferta:
 
 
 ResultadoOferta = Annotated[Oferta | ErrorOferta, strawberry.union("ResultadoOferta")]
+
+MENSAJE_AUTO_NO_DISPONIBLE = "La póliza de auto todavía no está disponible."
 
 
 @strawberry.input
@@ -489,6 +581,10 @@ class Poliza:
     cobertura: Monto
     documento_url: str  # ruta del BFF que entrega el PDF
     ramo: str  # v0.21 (HU-W04): un solo producto hoy, por configuración (RAMO_POLIZA)
+    # v0.42
+    producto: Producto = Producto.VIDA_DEUDOR
+    vehiculo: VehiculoAsegurado | None = None
+    coberturas: list[CoberturaAuto] = strawberry.field(default_factory=list)
 
 
 @strawberry.type
@@ -513,6 +609,9 @@ class Propuesta:
     nombre_titular: str | None = None
     nombre_asesor: str | None = None  # solo para el BACKOFFICE
     nombre_socio: str | None = None  # v0.22 (HU-W07): solo para el BACKOFFICE
+    # v0.42
+    producto: Producto = Producto.VIDA_DEUDOR
+    vehiculo: VehiculoAsegurado | None = None
 
 
 @strawberry.type
@@ -1439,6 +1538,7 @@ class Siniestro:
     evidencias: list[Evidencia]
     verificaciones: list[Verificacion]
     resolucion: Resolucion | None
+    tipo_siniestro_auto: TipoSiniestroAuto | None = None  # v0.42: solo en pólizas de AUTO
 
     @strawberry.field
     async def poliza(self, info: Info) -> Poliza:
@@ -1488,6 +1588,7 @@ class SiniestroReportado:
     vence_dictamen_en: datetime
     fotos: int
     resolucion: ResolucionCliente | None = None
+    tipo_siniestro_auto: TipoSiniestroAuto | None = None  # v0.42: solo en pólizas de AUTO
 
 
 ResultadoReporteSiniestro = Annotated[
@@ -1521,6 +1622,8 @@ class ReporteSiniestroInput:
     descripcion: str
     ubicacion: UbicacionReporteInput
     fotos: list[FotoReporteInput]
+    # v0.42: obligatorio si la póliza es de AUTO; se ignora en VIDA_DEUDOR.
+    tipo_siniestro_auto: TipoSiniestroAuto | None = None
 
 
 MENSAJE_REPORTE_SIN_IDENTIDAD = (
@@ -2513,6 +2616,14 @@ class Mutation:
         return _consentimiento(datos)
 
     @strawberry.mutation
+    async def solicitar_oferta_auto(
+        self, info: Info, entrada: SolicitudOfertaAutoInput
+    ) -> ResultadoOferta:
+        """v0.42: la oferta de la póliza de auto. Esqueleto del contrato: la cotización real llega
+        con la tarea 7 de `docs/plan-poliza-auto.md`; mientras tanto, un error de negocio claro."""
+        return ErrorOferta(mensaje=MENSAJE_AUTO_NO_DISPONIBLE, puede_reintentar=False)
+
+    @strawberry.mutation
     async def solicitar_oferta(self, info: Info, entrada: SolicitudOfertaInput) -> ResultadoOferta:
         usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
         # W03-34: un CLIENTE cotiza con el documento de su cuenta (AUTH lo da en memoria); el
@@ -3280,8 +3391,12 @@ class Mutation:
         return _sesion(sesion)
 
     @strawberry.mutation
-    async def aprobar_siniestro(self, info: Info, id: strawberry.ID) -> ResultadoResolucion:
-        """HU-W04 (W04-6): CLAIMS registra primero la orden de pago en PAYMENTS y luego aprueba."""
+    async def aprobar_siniestro(
+        self, info: Info, id: strawberry.ID, valor_dano: str | None = None
+    ) -> ResultadoResolucion:
+        """HU-W04 (W04-6): CLAIMS registra primero la orden de pago en PAYMENTS y luego aprueba.
+        v0.42: `valor_dano` lo usa la indemnización de auto (tarea 8 del plan); hoy no cambia
+        nada."""
         usuario = exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
         return await _resolver_siniestro(lambda: _claims(info).aprobar(str(id), usuario.id))
 

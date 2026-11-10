@@ -302,6 +302,7 @@ EN: dict[str, str] = {
     ),
     "El identificador del reporte no es válido.": "The report identifier is not valid.",
     "La póliza no existe o no es tuya.": "The policy doesn't exist or isn't yours.",
+    "La póliza de auto todavía no está disponible.": "Car insurance is not available yet.",
     "La fecha del siniestro está fuera de la vigencia de la póliza.": (
         "The claim date is outside the policy's coverage period."
     ),

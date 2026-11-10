@@ -19,7 +19,7 @@ import logging
 from datetime import UTC, date, datetime
 from functools import cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -89,6 +89,18 @@ class SolicitudCotizacion(_Entrada):
     valor_credito: str = Field(alias="valorCredito", pattern=r"^\d+(\.\d+)?$")
     plazo_meses: int = Field(alias="plazoMeses", ge=PLAZO_MINIMO_MESES, le=PLAZO_MAXIMO_MESES)
     direccion_inmueble: str = Field(alias="direccionInmueble", min_length=1, max_length=200)
+
+
+class SolicitudCotizacionAuto(_Entrada):
+    """v0.42 (póliza de auto, `docs/plan-poliza-auto.md`)."""
+
+    consentimiento_id: str = Field(alias="consentimientoId", min_length=1)
+    documento_identidad: str = Field(alias="documentoIdentidad", min_length=6, max_length=20)
+    placa: str = Field(pattern=r"^[A-Za-z]{3}[0-9]{2}[A-Za-z0-9]$")
+    kilometraje_anual: int = Field(alias="kilometrajeAnual", ge=0, le=200000)
+    ciudad_circulacion: str = Field(alias="ciudadCirculacion", min_length=2, max_length=60)
+    uso: Literal["PARTICULAR", "COMERCIAL"] = "PARTICULAR"
+    deducible: Literal["DIEZ_POR_CIENTO", "SIN_DEDUCIBLE"] = "DIEZ_POR_CIENTO"
 
 
 class Contacto(_Entrada):
@@ -408,6 +420,14 @@ def construir_router() -> APIRouter:
                 raise datos_invalidos(resultado.mensaje)
             raise no_disponible()
         return {"oferta": oferta_rest(resultado), "presupuestoRestante": restantes}
+
+    @router.post("/v1/cotizaciones-auto")
+    async def cotizar_auto(body: SolicitudCotizacionAuto, request: Request) -> dict:
+        """v0.42: esqueleto del contrato. La cotización de auto llega con la tarea 7 de
+        `docs/plan-poliza-auto.md`; hasta entonces responde «no disponible» sin gastar
+        presupuesto."""
+        await socio_de(request)
+        raise no_disponible()
 
     # ---------- Propuesta, identidad y emisión ----------
 

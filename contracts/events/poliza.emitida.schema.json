@@ -21,7 +21,11 @@
         "propuestaId": { "type": "string" },
         "clienteId": { "type": "string" },
         "vigenciaDesde": { "type": "string", "format": "date-time" },
-        "vigenciaHasta": { "type": "string", "format": "date-time" }
+        "vigenciaHasta": { "type": "string", "format": "date-time" },
+        "producto": {
+          "enum": ["VIDA_DEUDOR", "AUTO"],
+          "description": "v0.42: el producto emitido. Opcional: sin él es VIDA_DEUDOR."
+        }
       }
     }
   }

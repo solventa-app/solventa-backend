@@ -67,6 +67,10 @@ type PerfilRiesgo {
 }
 
 enum MotivoErrorOferta {
+  # v0.42 (auto): la placa no existe en RUNT, o el vehículo no se puede asegurar (más de 15 años, limitación o hurto
+  # vigente). El mensaje dice cuál.
+  VEHICULO_NO_ENCONTRADO
+  VEHICULO_NO_ASEGURABLE
   CONSENTIMIENTO_NO_VIGENTE
   DATOS_INSUFICIENTES
   FUENTES_NO_DISPONIBLES
@@ -109,6 +113,81 @@ type Oferta {
   desgloseScore: [FactorScore!]!
   fuentes: [FuenteConsultada!]!
   perfilRiesgo: PerfilRiesgo
+  # v0.42 (póliza de auto): VIDA_DEUDOR en las ofertas de `solicitarOferta`. En AUTO, `cobertura` es el valor comercial
+  # del vehículo, `desgloseScore` va vacío y los factores de la tarifa vienen en `factoresTarifa`.
+  producto: Producto!
+  vehiculo: VehiculoAsegurado # solo AUTO
+  coberturas: [CoberturaAuto!]! # solo AUTO; vacía en VIDA_DEUDOR
+  factoresTarifa: [FactorTarifa!]! # solo AUTO; vacía en VIDA_DEUDOR
+}
+
+# ---------- Póliza de auto (v0.42, docs/plan-poliza-auto.md) ----------
+# Se cotiza con `solicitarOfertaAuto` (los datos del crédito hipotecario no aplican) y desde la oferta el recorrido es el
+# mismo de hoy: aceptarOferta, firma, pago y emisión. Los datos del vehículo salen de RUNT, la guía Fasecolda y la
+# siniestralidad por placa, siempre por el ACL Worker y con el consentimiento registrado antes (regla 7).
+
+enum Producto {
+  VIDA_DEUDOR
+  AUTO
+}
+
+enum UsoVehiculo {
+  PARTICULAR
+  COMERCIAL
+}
+
+enum DeducibleAuto {
+  DIEZ_POR_CIENTO # 10 % de la pérdida, mínimo 1 SMMLV
+  SIN_DEDUCIBLE
+}
+
+enum TipoCobertura {
+  RESPONSABILIDAD_CIVIL
+  PERDIDA_TOTAL_DANOS
+  PERDIDA_PARCIAL_DANOS
+  PERDIDA_TOTAL_HURTO
+  PERDIDA_PARCIAL_HURTO
+  ASISTENCIA # grúa, mecánico y conductor elegido
+}
+
+input SolicitudOfertaAutoInput {
+  consentimientoId: ID!
+  # Como en `SolicitudOfertaInput`: obligatorio para un ASESOR; un CLIENTE con documento en su cuenta no lo manda.
+  documentoIdentidad: String = null
+  tipoDocumento: String = null
+  pais: String = null
+  # Placa colombiana: 3 letras y 3 números (ABC123) o, en motos, 3 letras, 2 números y 1 letra (ABC12D). Se guarda cifrada.
+  placa: String!
+  kilometrajeAnual: Int! # declarado por el cliente; se contrasta con el odómetro de la última revisión (RUNT)
+  ciudadCirculacion: String!
+  uso: UsoVehiculo! = PARTICULAR
+  deducible: DeducibleAuto! = DIEZ_POR_CIENTO
+}
+
+type VehiculoAsegurado {
+  placaEnmascarada: String! # «ABC•••»; la placa completa nunca sale del backend
+  marca: String!
+  linea: String!
+  modelo: Int! # año de fabricación
+  clase: String! # AUTOMOVIL, CAMIONETA, CAMPERO, MOTOCICLETA
+  uso: UsoVehiculo!
+  valorComercial: Monto! # guía Fasecolda
+  ciudadCirculacion: String!
+  kilometrajeAnual: Int!
+  deducible: DeducibleAuto!
+}
+
+type CoberturaAuto {
+  tipo: TipoCobertura!
+  valorAsegurado: Monto # null en ASISTENCIA
+  deducible: String # texto legible («10 % mín. 1 SMMLV»); null si no aplica
+}
+
+# Un factor de la tarifa de auto (contracts/tarifas-auto.json): nombre estable y multiplicador aplicado.
+type FactorTarifa {
+  nombre: String! # ANTIGUEDAD, KILOMETRAJE, INDICE_HURTO, SINIESTRALIDAD, CIUDAD, DEDUCIBLE, USO
+  factor: Float!
+  detalle: String # «3 años», «12.000 km/año», «índice alto»…
 }
 
 type ErrorOferta {
@@ -307,6 +386,9 @@ type Propuesta {
   # v0.22 (HU-W07): solo para el BACKOFFICE; el socio de distribución que la vendió por la API. Entonces
   # `nombreAsesor` es null.
   nombreSocio: String
+  # v0.42: el producto vendido; en AUTO, el vehículo (con la placa enmascarada).
+  producto: Producto!
+  vehiculo: VehiculoAsegurado
 }
 
 type PaginaPropuestas {
@@ -368,8 +450,12 @@ type Poliza {
   prima: Monto!
   cobertura: Monto!
   documentoUrl: String! # ruta del BFF que entrega el PDF; solo el titular, su asesor o un BACKOFFICE
-  # v0.21 (HU-W04): ramo del producto. Hoy hay uno solo y lo pone el BFF por configuración (RAMO_POLIZA).
+  # v0.21 (HU-W04): ramo del producto. v0.42: sale del producto («Vida grupo deudor…» o «Automóviles todo riesgo»).
   ramo: String!
+  # v0.42
+  producto: Producto!
+  vehiculo: VehiculoAsegurado # solo AUTO
+  coberturas: [CoberturaAuto!]! # solo AUTO; vacía en VIDA_DEUDOR
 }
 
 # ---------- Firma y pago con el asesor o en la sesión del CLIENTE (v0.18, HU-W03 bloque 9) ----------
@@ -867,6 +953,8 @@ type Siniestro {
   evidencias: [Evidencia!]!
   verificaciones: [Verificacion!]!
   resolucion: Resolucion
+  # v0.42: solo en pólizas de AUTO. Si es parcial o de responsabilidad civil, `aprobarSiniestro` exige `valorDano`.
+  tipoSiniestroAuto: TipoSiniestroAuto
 }
 
 # Error de negocio en lenguaje del operador (caso ya resuelto, perito no disponible, texto de más de 500 caracteres,
@@ -906,6 +994,7 @@ type SiniestroReportado {
   fotos: Int!
   # v0.37: null mientras el caso está PENDIENTE.
   resolucion: ResolucionCliente
+  tipoSiniestroAuto: TipoSiniestroAuto # v0.42: solo en pólizas de AUTO
 }
 
 # El error trae el mensaje para el cliente (póliza ajena o fuera de vigencia, foto inválida, relato muy corto, sin
@@ -927,9 +1016,20 @@ input FotoReporteInput {
   longitud: Float = null
 }
 
+# v0.42: qué pasó, en una póliza de AUTO. Decide la cobertura y cómo se calcula la indemnización.
+enum TipoSiniestroAuto {
+  CHOQUE_PARCIAL # pérdida parcial por daños: el operador digita el valor del daño al aprobar
+  PERDIDA_TOTAL_DANOS # valor asegurado menos deducible
+  HURTO_TOTAL # valor asegurado menos deducible
+  HURTO_PARCIAL # el operador digita el valor al aprobar
+  RESPONSABILIDAD_CIVIL # daños a terceros: el operador digita el valor al aprobar
+}
+
 input ReporteSiniestroInput {
   idReporte: ID!
   polizaId: ID!
+  # v0.42: obligatorio si la póliza es de AUTO; se ignora en VIDA_DEUDOR.
+  tipoSiniestroAuto: TipoSiniestroAuto = null
   ocurridoEn: DateTime!
   # De 10 a 1000 caracteres.
   descripcion: String!
@@ -1159,6 +1259,8 @@ type Mutation {
   registrarConsentimiento(entrada: ConsentimientoInput!): Consentimiento!
   revocarConsentimiento(id: ID!): Consentimiento!
   solicitarOferta(entrada: SolicitudOfertaInput!): ResultadoOferta!
+  # v0.42: la oferta de la póliza de auto. Mismas reglas de consentimiento y degradación que `solicitarOferta`.
+  solicitarOfertaAuto(entrada: SolicitudOfertaAutoInput!): ResultadoOferta!
   contactarAsesor(ofertaId: ID!, canal: CanalContacto!): ConfirmacionContacto!
   # PENDIENTE: concilia y cobra con la misma clave. RECHAZADO: un intento nuevo ante la pasarela,
   # hasta 3 veces. COBRADO o COBRANDO: lo devuelve sin cambios.
@@ -1253,7 +1355,10 @@ type Mutation {
   # ---------- v0.21 (HU-W04): mesa de siniestros, solo BACKOFFICE ----------
   # Aprobar registra la orden de pago de la indemnización en PAYMENTS (sin
   # dispersión); si no se puede registrar, responde ErrorSiniestro y el caso sigue abierto.
-  aprobarSiniestro(id: ID!): ResultadoResolucion!
+  # v0.42: `valorDano` (decimal en la moneda de la póliza) es obligatorio en un siniestro de AUTO parcial o de
+  # responsabilidad civil, con tope del valor asegurado; la indemnización es ese valor menos el deducible. En pérdida
+  # total se ignora: es el valor asegurado menos el deducible.
+  aprobarSiniestro(id: ID!, valorDano: String = null): ResultadoResolucion!
   rechazarSiniestro(id: ID!, motivo: MotivoRechazo!, comentario: String = null): ResultadoResolucion!
   derivarSiniestro(id: ID!, peritoId: ID!, instrucciones: String = null): ResultadoResolucion!
   # ---------- v0.35 (HU-M05): reporte del cliente, solo CLIENTE ----------
