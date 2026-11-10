@@ -125,3 +125,26 @@ def test_si_la_oferta_no_trae_perfil_de_riesgo_la_propuesta_lo_deja_vacio() -> N
     servicio, _ = _servicio(RatingFalso({"oferta-1": oferta}))
 
     assert servicio.aceptar("oferta-1", "usuario-1")["nivel_riesgo"] is None
+
+
+def test_aceptar_una_oferta_de_auto_guarda_el_vehiculo_y_las_coberturas() -> None:
+    """KAN-290: el producto, el vehículo, las coberturas y la marca de revisión salen de RATING."""
+    vehiculo = {"placaEnmascarada": "ABC•••", "marca": "MAZDA", "modelo": 2024}
+    coberturas = [{"tipo": "ASISTENCIA", "valorAsegurado": None, "deducible": None}]
+    oferta = oferta_de_rating(
+        producto="AUTO", vehiculo=vehiculo, coberturas=coberturas, requiereRevision=True
+    )
+    servicio, _ = _servicio(RatingFalso({"oferta-1": oferta}))
+
+    propuesta = servicio.aceptar("oferta-1", "usuario-1")
+
+    assert propuesta["producto"] == "AUTO"
+    assert propuesta["vehiculo"] == vehiculo
+    assert propuesta["coberturas"] == coberturas
+    assert propuesta["requiere_revision"] is True
+
+
+def test_una_oferta_de_vida_queda_como_vida_deudor() -> None:
+    servicio, _ = _servicio()
+    propuesta = servicio.aceptar("oferta-1", "usuario-1")
+    assert propuesta["producto"] == "VIDA_DEUDOR" and propuesta["vehiculo"] is None

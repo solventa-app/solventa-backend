@@ -123,3 +123,57 @@ def test_formatea_el_monto_con_puntos_de_miles(valor: str, esperado: str) -> Non
 
 def test_un_monto_que_no_es_decimal_se_muestra_tal_cual_sin_romper() -> None:
     assert formatear_monto("mucho", "COP") == "mucho COP"
+
+
+# ---------- KAN-290: póliza de auto ----------
+
+PROPUESTA_AUTO = {
+    "producto": "AUTO",
+    "prima": {"valor": "332198.00", "moneda": "COP"},
+    "cobertura": {"valor": "118500000.00", "moneda": "COP"},
+    "plazo_meses": 12,
+    "vehiculo": {
+        "placaEnmascarada": "ABC•••",
+        "marca": "MAZDA",
+        "linea": "3 GRAND TOURING",
+        "modelo": 2024,
+        "uso": "PARTICULAR",
+        "ciudadCirculacion": "Bogotá",
+    },  # fmt: skip
+    "coberturas": [
+        {
+            "tipo": "RESPONSABILIDAD_CIVIL",
+            "valorAsegurado": {"valor": "1000000000", "moneda": "COP"},
+            "deducible": None,
+        },
+        {
+            "tipo": "PERDIDA_PARCIAL_DANOS",
+            "valorAsegurado": {"valor": "118500000", "moneda": "COP"},
+            "deducible": "10 % mín. 1 SMMLV",
+        },
+        {"tipo": "ASISTENCIA", "valorAsegurado": None, "deducible": None},
+    ],  # fmt: skip
+}
+
+
+def test_la_poliza_de_auto_lleva_el_vehiculo_y_las_coberturas() -> None:
+    texto = _pdf(propuesta=PROPUESTA_AUTO).decode("latin-1")
+    for esperado in (
+        "Seguro de autom",
+        "MAZDA 3 GRAND TOURING",
+        "ABC***",
+        "Responsabilidad civil extracontractual",
+        "deducible 10 % m",
+        "conductor elegido",
+    ):
+        assert esperado in texto
+    assert "Crédito asegurado".encode("latin-1").decode("latin-1") not in texto
+    assert "Plazo del cr" not in texto
+
+
+def test_el_contrato_borrador_de_auto_habla_del_seguro_de_autos() -> None:
+    from app.application.documento_poliza import generar_borrador
+
+    texto = generar_borrador(PROPUESTA_AUTO).decode("latin-1")
+    assert "seguro de autom" in texto and "Coberturas" in texto
+    assert "cr\xe9dito hipotecario" not in texto

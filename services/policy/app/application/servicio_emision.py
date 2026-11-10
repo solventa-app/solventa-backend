@@ -232,6 +232,8 @@ class ServicioEmision:
                 propuesta["cliente_id"],
                 propuesta.get("nivel_riesgo"),
                 propuesta["cobertura"],
+                producto=propuesta.get("producto") or "VIDA_DEUDOR",
+                requiere_revision=bool(propuesta.get("requiere_revision")),
             )
         except UnderNoDisponible as error:
             raise EmisionPendiente("UNDER no disponible") from error
@@ -395,6 +397,7 @@ class ServicioEmision:
                     propuesta["cliente_id"],
                     poliza["vigencia_desde"],
                     poliza["vigencia_hasta"],
+                    producto=propuesta.get("producto") or "VIDA_DEUDOR",
                 )
             )
             logger.info("póliza emitida propuesta=%s", id_opaco(propuesta["id"]))

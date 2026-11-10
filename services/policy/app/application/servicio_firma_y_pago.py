@@ -331,6 +331,8 @@ class ServicioFirmaYPago:
                 propuesta["cliente_id"],
                 propuesta.get("nivel_riesgo"),
                 propuesta["cobertura"],
+                producto=propuesta.get("producto") or "VIDA_DEUDOR",
+                requiere_revision=bool(propuesta.get("requiere_revision")),
             )
         except UnderNoDisponible as error:
             raise ErrorFlujo(NO_DISPONIBLE) from error
