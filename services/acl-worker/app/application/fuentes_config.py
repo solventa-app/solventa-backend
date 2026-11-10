@@ -118,5 +118,21 @@ def fuentes_open_data(ruta: str | Path | None = None) -> tuple[str, ...]:
     return fuentes_por_origen("OPEN_DATA", ruta)
 
 
+def fuentes_vehiculo() -> tuple[str, ...]:
+    """KAN-290: las fuentes del vehículo (`contracts/fuentes-vehiculo.json`, copia en
+    `app/fuentes-vehiculo.json`). Van aparte de `fuentes.json` para no tocar el score de vida."""
+    actual = Path(__file__).resolve()
+    candidatas = [actual.parents[1] / "fuentes-vehiculo.json"] + [
+        ancestro / "contracts" / "fuentes-vehiculo.json" for ancestro in actual.parents
+    ]
+    for archivo in candidatas:
+        try:
+            if archivo.is_file():
+                return tuple(f["nombre"] for f in json.loads(archivo.read_text(encoding="utf-8")))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return ("runt-vehiculo", "fasecolda-valor", "siniestralidad-placa")
+
+
 def todas_las_fuentes(ruta: str | Path | None = None) -> tuple[str, ...]:
     return tuple(f.nombre for f in cargar_fuentes(ruta))
