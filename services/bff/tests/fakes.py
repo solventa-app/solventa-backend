@@ -88,6 +88,7 @@ def token_de_prueba(
     secreto: str = JWT_SECRETO_LOCAL,
     segundos: int = 3600,
     scopes: list[str] | None = None,
+    sid: str | None = None,
 ) -> str:
     """JWT firmado como lo firma AUTH (`services/auth/app/sesiones.py`)."""
     ahora = int(time.time())
@@ -98,6 +99,7 @@ def token_de_prueba(
             "scopes": scopes or [],
             "iat": ahora,
             "exp": ahora + segundos,
+            **({"sid": sid} if sid else {}),
         },
         secreto,
         algorithm="HS256",

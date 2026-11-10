@@ -129,6 +129,7 @@ class SolicitudCierreVerificacion(BaseModel):
 class SolicitudRenovacion(BaseModel):
     usuario_id: str
     expira_en: datetime
+    sid: str | None = None
 
 
 class SolicitudUsuario(BaseModel):
@@ -337,6 +338,7 @@ def create_app(
                 clave_correo=config.cliente_id_clave,
                 refrescos=RepositorioRefrescosPostgres(pool),
                 refresh_dias=config.refresh_vigencia_dias,
+                refresh_web_horas=config.refresh_web_horas,
                 refresh_gracia_segundos=config.refresh_gracia_segundos,
             )
         # Con todo lo demás inyectado (pruebas) no hay pool: las de socios inyectan el suyo.
@@ -434,7 +436,7 @@ def create_app(
         """`actualizarSesion` (HU-M01): un token nuevo con los scopes del estado actual y la misma
         expiración. Solo lo llama el BFF con el id y la expiración de un token que ya validó."""
         try:
-            sesion = app.state.sesiones.renovar_permisos(body.usuario_id, body.expira_en)
+            sesion = app.state.sesiones.renovar_permisos(body.usuario_id, body.expira_en, body.sid)
         except CredencialesInvalidas as error:
             raise HTTPException(status_code=401, detail=str(error)) from error
         sesion["usuario"]["nombre"] = app.state.usuarios.nombre_de(body.usuario_id)

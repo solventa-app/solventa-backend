@@ -25,6 +25,7 @@ from strawberry.fastapi import GraphQLRouter
 from app.autenticacion_usuarios import (
     MENSAJE_SIN_PERMISO,
     MENSAJE_SIN_SESION,
+    MENSAJE_TOKEN_INVALIDO,
     TokenInvalido,
     extraer_cabecera_autorizacion,
     leer_usuario,
@@ -46,6 +47,7 @@ from app.servicio_codigo_onboarding import ServicioCodigoOnboarding
 from app.servicio_firma_pago import ErrorFlujoDatos, ServicioFirmaPago
 from app.servicio_oferta import ServicioOferta
 from app.servicio_suscripcion import MENSAJE_DOCUMENTO_NO_DISPONIBLE, ServicioSuscripcion
+from app.sesiones_revocadas import SesionesRevocadasMemoria, SesionesRevocadasRedis
 from app.socios.api import api_de, construir_router, es_ruta_de_socios
 from app.socios.autenticacion import VerificadorTokensSocio
 from app.socios.errores import ErrorApiSocio, datos_invalidos, no_disponible, respuesta_de_error
@@ -109,6 +111,14 @@ def create_app(
         app.state.servicio_codigo_onboarding = ServicioCodigoOnboarding(
             app.state.clientes, almacen_codigo, config.cliente_id_clave
         )
+        sesiones_revocadas = (
+            SesionesRevocadasRedis(config.redis_url)
+            if clientes is None
+            else SesionesRevocadasMemoria()
+        )
+        if clientes is None:
+            abiertos.append(sesiones_revocadas)
+        app.state.sesiones_revocadas = sesiones_revocadas
         # API de socios (HU-W07).
         app.state.cliente_id_clave = config.cliente_id_clave
         if app.state.clientes.socios is not None:
@@ -153,6 +163,9 @@ def create_app(
                 usuario = leer_usuario(cabecera_auth, config.jwt_secreto)
             except TokenInvalido as error:
                 error_token = str(error)
+            if usuario is not None and usuario.sid:
+                if await app.state.sesiones_revocadas.esta_revocada(usuario.sid):
+                    usuario, error_token = None, MENSAJE_TOKEN_INVALIDO
             return {
                 "canal": canal,
                 "clientes": app.state.clientes,
@@ -162,6 +175,7 @@ def create_app(
                 # Token del enlace de firma (W03-33): viaja en esta cabecera, nunca en la URL.
                 "enlace_firma": request.headers.get("x-enlace-firma"),
                 "usuario": usuario,
+                "sesiones_revocadas": app.state.sesiones_revocadas,
                 "error_token": error_token,
                 # Idioma del selector del header (lo manda el frontend); ver app/idioma.py.
                 "idioma": idioma_de(request.headers.get("accept-language")),

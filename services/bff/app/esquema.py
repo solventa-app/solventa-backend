@@ -2816,6 +2816,11 @@ class Mutation:
         refresh = contexto.get("cookie_refresh") if web else refresh_token
         if web:
             borrar_cookie(contexto)
+        usuario = contexto.get("usuario")
+        if usuario is not None and usuario.sid and usuario.expira:
+            # El token de acceso tampoco debe servir tras cerrar sesión: se anota hasta que venza.
+            restante = usuario.expira - int(datetime.now(UTC).timestamp())
+            await contexto["sesiones_revocadas"].revocar(usuario.sid, restante)
         if refresh:
             try:
                 await _auth(info).cerrar_sesion(refresh)

@@ -325,3 +325,11 @@ En el **Sprint 1** ya existe el API Gateway delante del BFF (`infra/gateway.tf`,
   gracia, reuso, cierre, canal y suspensión); evidencia en `docs/evidencias/hu-m02-sesion-refresh-2026-11-06.md`.
 - Pendiente: cambiar la clave (hoy no existe el endpoint; al crearlo debe llamar `revocar_de_usuario`) y la verificación
   detrás de GCP API Gateway en staging.
+
+
+## Duración de la sesión (KAN-26)
+
+El token de acceso dura **15 minutos** y lleva `sid` (la cadena de refresh). En la web el refresh vence 8 horas después
+de iniciar sesión, se renueve o no; en la app, 8 días con rotación. Al cerrar sesión el BFF anota el `sid` en Redis hasta
+que el token venza, así ese acceso tampoco sirve (`app/sesiones_revocadas.py`); si Redis no responde, el token vence
+solo en minutos. Valores en `contracts/sesion.json`.
