@@ -5,7 +5,11 @@ Corre como tarea de un solo uso (`crear-backoffice` en docker-compose; en stagin
 Cloud Run Job con la misma imagen), igual que las migraciones.
 
 Uso:
-    CLAVE_INICIAL=... python -m app.crear_usuario --usuario admin.solventa --rol BACKOFFICE
+    CLAVE_INICIAL=... python -m app.crear_usuario --usuario admin.solventa --rol BACKOFFICE \\
+        --correo admin@solventa.local
+
+Todos entran con correo y clave: el correo es obligatorio. Un asesor u operador no lo valida
+(se lo da quien lo crea).
 
 La clave llega por la variable `CLAVE_INICIAL` y nunca como argumento: los argumentos
 quedan en el historial de la terminal y en la lista de procesos.
@@ -20,6 +24,7 @@ import sys
 
 from argon2 import PasswordHasher
 
+from app.cifrado import construir_cifrador
 from app.configuracion import Configuracion
 from app.usuarios import (
     ROLES,
@@ -35,10 +40,19 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 logger = logging.getLogger("auth.crear_usuario")
 
 
-def crear_si_no_existe(repositorio: RepositorioUsuarios, alias: str, clave: str, rol: str) -> bool:
+def crear_si_no_existe(
+    repositorio: RepositorioUsuarios,
+    alias: str,
+    clave: str,
+    rol: str,
+    correo: str | None = None,
+    servicio: ServicioUsuarios | None = None,
+) -> bool:
     """`True` si lo creó; `False` si ya existía."""
     try:
-        ServicioUsuarios(repositorio, PasswordHasher()).crear(alias, clave, rol)
+        (servicio or ServicioUsuarios(repositorio, PasswordHasher())).crear(
+            alias, clave, rol, correo=correo
+        )
     except UsuarioDuplicado:
         return False
     return True
@@ -50,6 +64,7 @@ def main(argumentos: list[str] | None = None) -> int:
         "--usuario", required=True, help="Alias de acceso (no un correo ni un documento)"
     )
     parser.add_argument("--rol", required=True, choices=ROLES)
+    parser.add_argument("--correo", required=True, help="Correo con el que inicia sesión")
     opciones = parser.parse_args(argumentos)
 
     clave = os.getenv("CLAVE_INICIAL")
@@ -57,10 +72,15 @@ def main(argumentos: list[str] | None = None) -> int:
         logger.error("falta la variable de entorno CLAVE_INICIAL")
         return 2
 
-    pool = construir_pool(Configuracion.desde_entorno().database_url)
+    config = Configuracion.desde_entorno()
+    pool = construir_pool(config.database_url)
     try:
+        repositorio = RepositorioUsuariosPostgres(pool)
+        servicio = ServicioUsuarios(
+            repositorio, PasswordHasher(), construir_cifrador(config), config.cliente_id_clave
+        )
         creado = crear_si_no_existe(
-            RepositorioUsuariosPostgres(pool), opciones.usuario, clave, opciones.rol
+            repositorio, opciones.usuario, clave, opciones.rol, opciones.correo, servicio
         )
     except DatoInvalido as error:
         logger.error("datos inválidos: %s", error)

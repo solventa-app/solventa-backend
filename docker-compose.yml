@@ -177,10 +177,12 @@ services:
     <<: *tarea
     image: solventa/auth:local
     build: ./services/auth
-    command: ["python", "-m", "app.crear_usuario", "--usuario", "admin.solventa", "--rol", "BACKOFFICE"]
+    command: ["python", "-m", "app.crear_usuario", "--usuario", "admin.solventa", "--rol", "BACKOFFICE", "--correo", "admin@solventa.local"]
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/auth
       CLAVE_INICIAL: Admin-local-solventa
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
+      CLIENTE_ID_CLAVE: solo-local-no-secreta
     depends_on:
       migrar-auth: { condition: service_completed_successfully }
 

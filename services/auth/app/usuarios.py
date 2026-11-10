@@ -88,6 +88,7 @@ class UsuarioDuplicado(Exception):
 
 
 MENSAJE_DOCUMENTO_DUPLICADO = "Ya existe un cliente con ese documento."
+MENSAJE_CORREO_DUPLICADO = "Ya existe una cuenta con ese correo."
 
 
 def validar_alias(alias: str) -> None:
@@ -273,6 +274,7 @@ class RepositorioUsuarios(Protocol):
         documento_cifrado: str | None = None,
         tipo_documento: str | None = None,
         pais: str | None = None,
+        correo_hmac: str | None = None,
     ) -> dict | None: ...
 
     def obtener_por_titular(self, titular_id: str) -> dict | None: ...
@@ -296,7 +298,11 @@ class RepositorioUsuarios(Protocol):
     ) -> dict | None: ...
 
     def actualizar_contacto(
-        self, usuario_id: str, correo_cifrado: str | None, telefono_cifrado: str | None
+        self,
+        usuario_id: str,
+        correo_cifrado: str | None,
+        telefono_cifrado: str | None,
+        correo_hmac: str | None = None,
     ) -> dict | None: ...
 
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int: ...
@@ -345,6 +351,7 @@ class RepositorioUsuariosPostgres:
         documento_cifrado: str | None = None,
         tipo_documento: str | None = None,
         pais: str | None = None,
+        correo_hmac: str | None = None,
     ) -> dict | None:
         """`None` si el alias ya existe (índice único: correcto también bajo concurrencia). Un
         documento repetido choca con `usuarios_titular_unico` y lanza `UsuarioDuplicado`."""
@@ -353,10 +360,10 @@ class RepositorioUsuariosPostgres:
                 f"""
                 INSERT INTO usuarios (id, usuario, hash_clave, rol, nombre_cifrado,
                                       correo_cifrado, telefono_cifrado, titular_id,
-                                      documento_cifrado, tipo_documento, pais)
+                                      documento_cifrado, tipo_documento, pais, correo_hmac)
                 VALUES (%(id)s, %(usuario)s, %(hash_clave)s, %(rol)s, %(nombre_cifrado)s,
                         %(correo_cifrado)s, %(telefono_cifrado)s, %(titular_id)s,
-                        %(documento_cifrado)s, %(tipo_documento)s, %(pais)s)
+                        %(documento_cifrado)s, %(tipo_documento)s, %(pais)s, %(correo_hmac)s)
                 ON CONFLICT (usuario) DO NOTHING
                 RETURNING {_TODAS}
                 """,
@@ -372,9 +379,12 @@ class RepositorioUsuariosPostgres:
                     "documento_cifrado": documento_cifrado,
                     "tipo_documento": tipo_documento,
                     "pais": pais,
+                    "correo_hmac": correo_hmac,
                 },
             )
         except UniqueViolation as error:
+            if error.diag.constraint_name == "ux_usuarios_correo_hmac":
+                raise UsuarioDuplicado(MENSAJE_CORREO_DUPLICADO) from error
             raise UsuarioDuplicado(MENSAJE_DOCUMENTO_DUPLICADO) from error
 
     def obtener_por_titular(self, titular_id: str) -> dict | None:
@@ -459,19 +469,33 @@ class RepositorioUsuariosPostgres:
         )
 
     def actualizar_contacto(
-        self, usuario_id: str, correo_cifrado: str | None, telefono_cifrado: str | None
+        self,
+        usuario_id: str,
+        correo_cifrado: str | None,
+        telefono_cifrado: str | None,
+        correo_hmac: str | None = None,
     ) -> dict | None:
-        """Solo cambia lo que llega: un campo en `None` conserva el valor que ya tenía."""
-        return self._una(
-            f"""
-            UPDATE usuarios SET
-                correo_cifrado = COALESCE(%(correo)s, correo_cifrado),
-                telefono_cifrado = COALESCE(%(telefono)s, telefono_cifrado),
-                actualizado_en = now()
-            WHERE id = %(id)s RETURNING {_TODAS}
-            """,
-            {"id": usuario_id, "correo": correo_cifrado, "telefono": telefono_cifrado},
-        )
+        """Solo cambia lo que llega: un campo en `None` conserva el valor que ya tenía. Un correo
+        que ya es de otra cuenta lanza `UsuarioDuplicado`."""
+        try:
+            return self._una(
+                f"""
+                UPDATE usuarios SET
+                    correo_cifrado = COALESCE(%(correo)s, correo_cifrado),
+                    telefono_cifrado = COALESCE(%(telefono)s, telefono_cifrado),
+                    correo_hmac = COALESCE(%(hmac)s, correo_hmac),
+                    actualizado_en = now()
+                WHERE id = %(id)s RETURNING {_TODAS}
+                """,
+                {
+                    "id": usuario_id,
+                    "correo": correo_cifrado,
+                    "telefono": telefono_cifrado,
+                    "hmac": correo_hmac,
+                },
+            )
+        except UniqueViolation as error:
+            raise UsuarioDuplicado(MENSAJE_CORREO_DUPLICADO) from error
 
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int:
         """Suma un intento fallido y, si `bloquear_hasta` llega, bloquea y reinicia el contador."""
@@ -620,6 +644,7 @@ class ServicioUsuarios:
                 raise DatoInvalido("Este servicio no está configurado para guardar nombres.")
             nombre_cifrado = self._cifrador.cifrar(limpio, usuario_id)
         correo_cifrado, telefono_cifrado = self._cifrar_contacto(usuario_id, rol, correo, telefono)
+        huella_correo = self._huella_correo(correo)
         titular_id, documento_cifrado, tipo_documento, pais_documento = self._titular(
             usuario_id, rol, documento, tipo_documento, pais
         )
@@ -632,6 +657,11 @@ class ServicioUsuarios:
                 raise UsuarioDuplicado("Ya existe un usuario con ese alias.")
             if self._repositorio.obtener_por_titular(titular_id):
                 raise UsuarioDuplicado(MENSAJE_DOCUMENTO_DUPLICADO)
+        if huella_correo and self._repositorio.obtener_por_correo_hmac(huella_correo):
+            # El alias primero: repetir un alta dice que el alias existe.
+            if self._repositorio.obtener_por_alias(alias):
+                raise UsuarioDuplicado("Ya existe un usuario con ese alias.")
+            raise UsuarioDuplicado(MENSAJE_CORREO_DUPLICADO)
         creado = self._repositorio.crear(
             usuario_id,
             alias,
@@ -644,6 +674,7 @@ class ServicioUsuarios:
             documento_cifrado,
             tipo_documento,
             pais_cuenta,
+            huella_correo,
         )
         if creado is None:
             raise UsuarioDuplicado("Ya existe un usuario con ese alias.")
@@ -755,11 +786,12 @@ class ServicioUsuarios:
         self, usuario_id: str, rol: str, correo: str | None, telefono: str | None
     ) -> tuple[str | None, str | None]:
         """Valida y cifra lo que llegue; `(None, None)` si no llegó nada. Solo los CLIENTE tienen
-        contacto: es a quienes se les envía el PDF, y así no se guardan datos de más."""
+        contacto: es a quienes se les envía el PDF, y así no se guardan datos de más. El correo lo
+        tienen todos los roles (es con lo que se inicia sesión); el teléfono, solo los CLIENTE."""
         if correo is None and telefono is None:
             return None, None
-        if rol != "CLIENTE":
-            raise DatoInvalido("El contacto solo se guarda para clientes.")
+        if rol != "CLIENTE" and telefono is not None:
+            raise DatoInvalido("El teléfono solo se guarda para clientes.")
         correo_limpio = normalizar_correo(correo) if correo is not None else None
         telefono_limpio = normalizar_telefono(telefono) if telefono is not None else None
         if self._cifrador is None:
@@ -776,6 +808,13 @@ class ServicioUsuarios:
         )
         return correo_cifrado, telefono_cifrado
 
+    def _huella_correo(self, correo: str | None) -> str | None:
+        """El HMAC del correo normalizado (con él se busca la cuenta al iniciar sesión), o `None`
+        si no llegó correo o el servicio no tiene la clave."""
+        if correo is None or not self._clave_titular:
+            return None
+        return correo_hmac(normalizar_correo(correo), self._clave_titular)
+
     def actualizar_contacto(
         self, usuario_id: str, correo: str | None, telefono: str | None
     ) -> dict | None:
@@ -789,8 +828,13 @@ class ServicioUsuarios:
         correo_cifrado, telefono_cifrado = self._cifrar_contacto(
             usuario_id, fila["rol"], correo, telefono
         )
+        huella_correo = self._huella_correo(correo)
+        if huella_correo:
+            existente = self._repositorio.obtener_por_correo_hmac(huella_correo)
+            if existente and existente["id"] != usuario_id:
+                raise UsuarioDuplicado(MENSAJE_CORREO_DUPLICADO)
         actualizado = self._repositorio.actualizar_contacto(
-            usuario_id, correo_cifrado, telefono_cifrado
+            usuario_id, correo_cifrado, telefono_cifrado, huella_correo
         )
         return publico(actualizado) if actualizado else None
 

@@ -164,6 +164,7 @@ def main() -> int:
         {
             "entrada": {
                 "usuario": alias_asesor,
+                "correo": f"{alias_asesor}@ejemplo.co",
                 "clave": CLAVE_ASESOR,
                 "rol": "ASESOR",
                 "nombre": "Asesor Humo Prueba",

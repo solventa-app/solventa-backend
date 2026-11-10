@@ -531,3 +531,11 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   y entrega un par nuevo en vez de revocar la cadena. Fuera de la gracia, o con el sucesor ya usado, el reuso sigue
   revocando todo. El esquema GraphQL no cambia.
 - Afecta al frontend: no cambia la forma; el móvil puede reintentar una vez con el mismo refresh ante un error de red.
+
+## `POST /usuarios` de AUTH — 2026-11-10 (sin cambio de esquema GraphQL)
+
+- KAN-26 (autenticación): todos los roles entran con correo y clave. `POST /usuarios` (y `crearUsuario` del BFF) exige
+  `correo` también para ASESOR y BACKOFFICE; no se verifica (lo da quien crea la cuenta) y se guarda cifrado y con su
+  HMAC (`correo_hmac`), así `iniciarSesion` lo encuentra por correo igual que a un cliente. El teléfono sigue siendo solo
+  de CLIENTE. Un correo repetido responde 409. La tarea `crear_usuario` suma `--correo` obligatorio.
+- Afecta al frontend: la web puede pedir «Correo» en el ingreso de todos los roles; el alias sigue funcionando.
