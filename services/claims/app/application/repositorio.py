@@ -294,6 +294,15 @@ class RepositorioSiniestrosMongo:
         doc = {**{k: v for k, v in verificacion.items() if k != "id"}, "_id": verificacion["id"]}
         self._db[VERIFICACIONES].replace_one({"_id": verificacion["id"]}, doc, upsert=True)
 
+    def fijar_vencimiento(self, siniestro_id: str, vence_en: datetime) -> bool:
+        """Solo para la demo local (QA 2026-11-10, Q-03): mueve el plazo del dictamen de un caso
+        PENDIENTE para probar la aprobación automática sin esperar horas. False si no está
+        pendiente."""
+        resultado = self._db[SINIESTROS].update_one(
+            {"_id": siniestro_id, "estado": "PENDIENTE"}, {"$set": {"vence_dictamen_en": vence_en}}
+        )
+        return resultado.matched_count == 1
+
     def borrar_reportados_por_clientes(self) -> int:
         """Solo para el reinicio de la demo local (W04-15): quita los casos que reportaron los
         clientes desde la app (HU-M05) con sus evidencias, verificaciones, derivaciones y

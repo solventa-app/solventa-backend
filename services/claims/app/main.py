@@ -11,7 +11,7 @@ from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
@@ -324,6 +324,12 @@ def create_app(
             """Solo local (W04-15, `DEMO_REINICIAR=true`): deja los casos como en la semilla para
             las pruebas E2E de la web. Nunca existe en staging."""
             return {"siniestros": app.state.reiniciar()}
+
+        @app.post("/_demo/siniestros/{siniestro_id}/vencer", tags=["operacion"])
+        def vencer_demo(siniestro_id: str, minutos: int = Query(2, ge=0, le=1440)) -> dict:
+            """Solo local (Q-03): el plazo del dictamen de un caso PENDIENTE vence en `minutos`.
+            El disparador local (`aprobar-vencidos-local`) lo aprueba en el minuto siguiente."""
+            return _accion(lambda: app.state.servicio.vencer_en(siniestro_id, minutos))
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app

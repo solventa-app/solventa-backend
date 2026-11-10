@@ -29,6 +29,13 @@ class RepositorioFalso:
             todos = [s for s in todos if s["estado"] == estado]
         return sorted(todos, key=lambda s: s["notificado_en"], reverse=True)
 
+    def fijar_vencimiento(self, siniestro_id, vence_en):
+        caso = self.siniestros.get(siniestro_id)
+        if not caso or caso["estado"] != "PENDIENTE":
+            return False
+        caso["vence_dictamen_en"] = vence_en
+        return True
+
     def pendientes_vencidos(self, ahora):
         return [
             s["id"]

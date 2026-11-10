@@ -12,7 +12,7 @@ deja el caso EN_REVISION.
 import logging
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Protocol
 
@@ -412,6 +412,14 @@ class ServicioSiniestros:
                     "siniestro=%s sin aprobar por vencimiento: %s", id_opaco(siniestro_id), error
                 )
         return {"aprobados": aprobados, "pendientes": pendientes}
+
+    def vencer_en(self, siniestro_id: str, minutos: int) -> dict:
+        """Solo demo local (Q-03): deja un caso PENDIENTE venciendo en `minutos` para que QA vea el
+        contador llegar a cero y la aprobación automática. El endpoint no existe en staging."""
+        vence_en = self._reloj() + timedelta(minutes=minutos)
+        if not self._repo.fijar_vencimiento(siniestro_id, vence_en):
+            raise ErrorNegocio("Solo se puede mover el plazo de un caso pendiente.")
+        return {"id": siniestro_id, "venceDictamenEn": vence_en.isoformat()}
 
     def aprobar(self, siniestro_id: str, actor: str | None, automatica: bool = False) -> dict:
         """W04-6: primero la orden de pago en PAYMENTS (idempotente por siniestro) y después la
