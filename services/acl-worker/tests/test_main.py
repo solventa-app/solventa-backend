@@ -18,6 +18,7 @@ CONFIG_SIN_PROVEEDORES = Configuracion(
     firma_url="http://127.0.0.1:1",
     kyc_url="http://127.0.0.1:1",
     notificaciones_url="http://127.0.0.1:1",
+    vehiculos_url="http://127.0.0.1:1",
     timeout_s=0.2,
     breaker_umbral_fallos=3,
     breaker_ttl_segundos=5,
@@ -163,3 +164,27 @@ def test_enviar_notificacion_con_el_proveedor_caido_responde_200_pendiente_sin_5
     assert r.status_code == 200
     assert r.json()["estado"] == "pendiente"
     assert r.json()["motivo"] == "notificaciones_no_disponibles"
+
+
+# ---------- KAN-290: datos del vehículo ----------
+
+CONSULTA_VEHICULO = {
+    "vehiculo_id": "hmac-de-la-placa",
+    "placa": "ABC123",
+    "consentimiento_id": "k-1",
+    "fuente": "runt-vehiculo",
+}
+
+
+def test_vehiculo_con_proveedor_caido_degrada_sin_5xx() -> None:
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post("/vehiculos/consultar", json=CONSULTA_VEHICULO)
+        assert r.status_code == 200
+        assert r.json()["degradado"] is True
+        assert "vehiculos" in client.get("/circuitos").json()
+
+
+def test_vehiculo_fuente_desconocida_responde_404() -> None:
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post("/vehiculos/consultar", json={**CONSULTA_VEHICULO, "fuente": "simit"})
+        assert r.status_code == 404

@@ -128,6 +128,8 @@ class Configuracion:
     proveedores_ruta_sincrona: tuple[str, ...] = ("firma", "pasarela")
     # Bloque 5: ruta opcional al catálogo de fuentes (contracts/fuentes.json).
     fuentes_config_path: str | None = None
+    # KAN-290: el proveedor de los datos del vehículo (stub-vehiculos en local).
+    vehiculos_url: str = "http://localhost:8107"
 
     @property
     def techo_ruta_sincrona_s(self) -> float:
@@ -208,6 +210,7 @@ class Configuracion:
             redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/1"),
             open_finance_url=os.getenv("OPEN_FINANCE_URL", "http://localhost:8101"),
             open_data_url=os.getenv("OPEN_DATA_URL", "http://localhost:8102"),
+            vehiculos_url=os.getenv("VEHICULOS_URL", "http://localhost:8107"),
             pasarela_url=os.getenv("PASARELA_URL", "http://localhost:8103"),
             firma_url=os.getenv("FIRMA_URL", "http://localhost:8104"),
             kyc_url=os.getenv("KYC_URL", "http://localhost:8105"),
