@@ -55,6 +55,10 @@ def sembrar(repositorio, polizas: list[dict]) -> list[dict]:
                 "cobertura": p["cobertura"],
                 "plazo_meses": _meses(desde, hasta),
                 "nivel_riesgo": "BAJO",
+                # KAN-290: la póliza de auto de demo lleva su vehículo y sus coberturas.
+                "producto": p.get("producto", "VIDA_DEUDOR"),
+                "vehiculo": p.get("vehiculo"),
+                "coberturas": p.get("coberturas"),
             },
         )
         poliza, _ = repositorio.emitir_poliza(
@@ -81,6 +85,51 @@ def poliza_cliente_demo(documento: str, clave: str) -> dict:
     }
 
 
+def poliza_auto_cliente_demo(documento: str, clave: str) -> dict:
+    """KAN-290: la póliza de auto todo riesgo del CLIENTE demo (el Mazda 3 2024 de la placa de demo
+    `ABC123` de stub-vehiculos), para reportar un choque desde la app y pedir grúa."""
+    poliza = poliza_cliente_demo(documento, clave)
+    valor = {"valor": "118500000.00", "moneda": "COP"}
+    deducible = "10 % mín. 1 SMMLV"
+    return {
+        **poliza,
+        "propuesta_id": "demo-auto-prop-01",
+        "oferta_id": "demo-auto-oferta-01",
+        "prima": {"valor": "332198.00", "moneda": "COP"},
+        "cobertura": valor,
+        "producto": "AUTO",
+        "vehiculo": {
+            "placaEnmascarada": "ABC•••",
+            "marca": "MAZDA",
+            "linea": "3 GRAND TOURING",
+            "modelo": 2024,
+            "clase": "AUTOMOVIL",
+            "uso": "PARTICULAR",
+            "valorComercial": valor,
+            "ciudadCirculacion": "Bogotá",
+            "kilometrajeAnual": 12000,
+            "deducible": "DIEZ_POR_CIENTO",
+        },
+        "coberturas": [
+            {
+                "tipo": "RESPONSABILIDAD_CIVIL",
+                "valorAsegurado": {"valor": "1000000000.00", "moneda": "COP"},
+                "deducible": None,
+            },
+            *[
+                {"tipo": tipo, "valorAsegurado": valor, "deducible": deducible}
+                for tipo in (
+                    "PERDIDA_TOTAL_DANOS",
+                    "PERDIDA_PARCIAL_DANOS",
+                    "PERDIDA_TOTAL_HURTO",
+                    "PERDIDA_PARCIAL_HURTO",
+                )
+            ],
+            {"tipo": "ASISTENCIA", "valorAsegurado": None, "deducible": None},
+        ],
+    }
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)-5s [%(name)s] %(message)s")
     database_url = os.environ.get("DATABASE_URL")
@@ -95,6 +144,7 @@ def main() -> int:
         if documento:
             clave = os.environ.get("CLIENTE_ID_CLAVE", "solo-local-no-secreta")
             polizas.append(poliza_cliente_demo(documento, clave))
+            polizas.append(poliza_auto_cliente_demo(documento, clave))
         creadas = sembrar(repositorio, polizas)
     finally:
         pool.close()

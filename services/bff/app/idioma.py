@@ -324,6 +324,13 @@ EN: dict[str, str] = {
         "The vehicle is more than 15 years old: we don't offer comprehensive cover for it."
     ),
     "No aseguramos vehículos de esa clase.": "We don't insure that type of vehicle.",
+    "Indica qué le pasó al vehículo.": "Tell us what happened to the vehicle.",
+    "Digita el valor del daño para aprobar este siniestro.": (
+        "Enter the amount of the damage to approve this claim."
+    ),
+    "El valor del daño no supera el deducible: no hay indemnización. Rechaza el caso.": (
+        "The damage doesn't exceed the deductible: there's no payout. Reject the claim."
+    ),
     "La fecha del siniestro está fuera de la vigencia de la póliza.": (
         "The claim date is outside the policy's coverage period."
     ),

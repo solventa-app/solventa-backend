@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -64,6 +65,8 @@ class EstadoSiniestro(StrEnum):
 
 class AprobarRequest(BaseModel):
     actor_usuario_id: str | None = None  # el BACKOFFICE que resuelve (id opaco de AUTH)
+    # KAN-290: el valor del daño en un siniestro de auto parcial o de RC (decimal como texto).
+    valor_dano: str | None = Field(default=None, pattern=r"^\d{1,13}(\.\d{1,2})?$")
 
 
 class RechazarRequest(BaseModel):
@@ -102,6 +105,17 @@ class ReporteRequest(BaseModel):
     asegurado: AseguradoReporte
     poliza_id: str = Field(min_length=1)
     cobertura_aplicada: str = Field(min_length=1)
+    # KAN-290: obligatorio si la póliza es de AUTO.
+    tipo_siniestro_auto: (
+        Literal[
+            "CHOQUE_PARCIAL",
+            "PERDIDA_TOTAL_DANOS",
+            "HURTO_TOTAL",
+            "HURTO_PARCIAL",
+            "RESPONSABILIDAD_CIVIL",
+        ]
+        | None
+    ) = None
     ocurrido_en: datetime
     descripcion: str
     ubicacion: UbicacionReporte
@@ -299,7 +313,11 @@ def create_app(
     @app.post("/siniestros/{siniestro_id}/aprobar", tags=["resolucion"])
     def aprobar(siniestro_id: str, body: AprobarRequest) -> dict:
         """Registra la orden de pago en PAYMENTS y aprueba (W04-6)."""
-        return _accion(lambda: app.state.servicio.aprobar(siniestro_id, body.actor_usuario_id))
+        return _accion(
+            lambda: app.state.servicio.aprobar(
+                siniestro_id, body.actor_usuario_id, valor_dano=body.valor_dano
+            )
+        )
 
     @app.post("/siniestros/{siniestro_id}/rechazar", tags=["resolucion"])
     def rechazar(siniestro_id: str, body: RechazarRequest) -> dict:

@@ -1684,6 +1684,10 @@ MENSAJE_REPORTE_NO_DISPONIBLE = "No pudimos registrar tu reporte. Intenta de nue
 MENSAJE_ID_REPORTE = "El identificador del reporte no es válido."
 
 
+def _tipo_siniestro_auto(valor: str | None) -> TipoSiniestroAuto | None:
+    return TipoSiniestroAuto(valor) if valor else None
+
+
 def _siniestro_reportado(datos: dict) -> SiniestroReportado:
     return SiniestroReportado(
         id=strawberry.ID(datos["id"]),
@@ -1695,6 +1699,7 @@ def _siniestro_reportado(datos: dict) -> SiniestroReportado:
         vence_dictamen_en=_fecha(datos["vence_dictamen_en"]),
         fotos=sum(1 for e in datos.get("evidencias", []) if e["tipo"] == "FOTO"),
         resolucion=_resolucion_cliente(datos.get("resolucion")),
+        tipo_siniestro_auto=_tipo_siniestro_auto(datos.get("tipo_siniestro_auto")),
     )
 
 
@@ -2050,6 +2055,7 @@ def _siniestro(datos: dict) -> Siniestro:
             for v in datos["verificaciones"]
         ],
         resolucion=_resolucion(datos.get("resolucion")),
+        tipo_siniestro_auto=_tipo_siniestro_auto(datos.get("tipo_siniestro_auto")),
     )
 
 
@@ -3481,7 +3487,9 @@ class Mutation:
         v0.42: `valor_dano` lo usa la indemnización de auto (tarea 8 del plan); hoy no cambia
         nada."""
         usuario = exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
-        return await _resolver_siniestro(lambda: _claims(info).aprobar(str(id), usuario.id))
+        return await _resolver_siniestro(
+            lambda: _claims(info).aprobar(str(id), usuario.id, valor_dano)
+        )
 
     @strawberry.mutation
     async def rechazar_siniestro(
@@ -3568,6 +3576,10 @@ class Mutation:
             "asegurado": {"nombre": perfil["nombre"], "documento": identidad["documento"]},
             "poliza_id": str(entrada.poliza_id),
             "cobertura_aplicada": RAMO_POLIZA,
+            # KAN-290: CLAIMS lo exige si la póliza es de auto y fija la cobertura según el tipo.
+            "tipo_siniestro_auto": entrada.tipo_siniestro_auto.value
+            if entrada.tipo_siniestro_auto
+            else None,
             "ocurrido_en": entrada.ocurrido_en.isoformat(),
             "descripcion": entrada.descripcion,
             "ubicacion": {

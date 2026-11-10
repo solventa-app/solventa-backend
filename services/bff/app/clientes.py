@@ -377,7 +377,9 @@ class PuertoClaims(Protocol):
 
     async def catalogo_prestadores(self, version_local: str | None) -> dict: ...
 
-    async def aprobar(self, siniestro_id: str, actor_usuario_id: str) -> dict: ...
+    async def aprobar(
+        self, siniestro_id: str, actor_usuario_id: str, valor_dano: str | None = None
+    ) -> dict: ...
 
     async def rechazar(
         self, siniestro_id: str, motivo: str, comentario: str | None, actor_usuario_id: str
@@ -1548,8 +1550,14 @@ class ClienteClaimsHttp:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
 
-    async def aprobar(self, siniestro_id: str, actor_usuario_id: str) -> dict:
-        return await self._resolver(siniestro_id, "aprobar", {"actor_usuario_id": actor_usuario_id})
+    async def aprobar(
+        self, siniestro_id: str, actor_usuario_id: str, valor_dano: str | None = None
+    ) -> dict:
+        return await self._resolver(
+            siniestro_id,
+            "aprobar",
+            {"actor_usuario_id": actor_usuario_id, "valor_dano": valor_dano},
+        )
 
     async def rechazar(
         self, siniestro_id: str, motivo: str, comentario: str | None, actor_usuario_id: str
