@@ -37,6 +37,17 @@ PLANTILLAS: dict[str, tuple[str, str]] = {
         'Tu asesor preparó tu póliza. <a href="{enlace}">Revisa y firma aquí</a>. '
         "El enlace vence en {minutos} minutos.",
     ),
+    "restablecer-clave": (
+        "Restablece tu contraseña de Solventa",
+        'Pediste cambiar tu contraseña. <a href="{enlace}">Elige una nueva aquí</a>. '
+        "El enlace vence en {minutos} minutos y sirve una sola vez. "
+        "Si no lo pediste, ignora este correo: tu contraseña sigue igual.",
+    ),
+    "clave-cambiada": (
+        "Cambiaste tu contraseña de Solventa",
+        "Tu contraseña de Solventa se cambió y cerramos tus sesiones abiertas. "
+        "Si no fuiste tú, escríbenos de inmediato.",
+    ),
     "poliza-emitida": (
         "Tu póliza de Solventa {numero_poliza} está emitida",
         "Tu póliza <b>{numero_poliza}</b> quedó emitida. Adjuntamos el documento en PDF.",

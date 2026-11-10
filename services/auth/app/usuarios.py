@@ -83,6 +83,10 @@ class DatoInvalido(Exception):
     """La solicitud no cumple las reglas (alias, clave o rol). Mensaje apto para el cliente."""
 
 
+class CuentaNoActiva(Exception):
+    """La cuenta no existe o no está activa (no se le puede restablecer la clave)."""
+
+
 class UsuarioDuplicado(Exception):
     """Ya existe un usuario con ese alias, o un CLIENTE con ese documento."""
 
@@ -305,6 +309,8 @@ class RepositorioUsuarios(Protocol):
         correo_hmac: str | None = None,
     ) -> dict | None: ...
 
+    def actualizar_clave(self, usuario_id: str, hash_clave: str) -> dict | None: ...
+
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int: ...
 
     def registrar_exito(self, usuario_id: str) -> None: ...
@@ -496,6 +502,17 @@ class RepositorioUsuariosPostgres:
             )
         except UniqueViolation as error:
             raise UsuarioDuplicado(MENSAJE_CORREO_DUPLICADO) from error
+
+    def actualizar_clave(self, usuario_id: str, hash_clave: str) -> dict | None:
+        """Cambia el hash y levanta el bloqueo por intentos fallidos."""
+        return self._una(
+            f"""
+            UPDATE usuarios SET hash_clave = %(hash)s, intentos_fallidos = 0,
+                bloqueado_hasta = NULL, actualizado_en = now()
+            WHERE id = %(id)s RETURNING {_TODAS}
+            """,
+            {"id": usuario_id, "hash": hash_clave},
+        )
 
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int:
         """Suma un intento fallido y, si `bloquear_hasta` llega, bloquea y reinicia el contador."""
@@ -881,6 +898,29 @@ class ServicioUsuarios:
         """Baja lógica: el usuario se conserva, pero ya no puede iniciar sesión."""
         fila = self._repositorio.suspender(usuario_id)
         return publico(fila) if fila else None
+
+    def id_para_restablecer(self, correo: str) -> str | None:
+        """El id de la cuenta ACTIVA con ese correo, o `None` (no existe o no está activa).
+        Solo lo llama el BFF para el «olvidé mi contraseña»: al visitante nunca se le dice."""
+        if not self._clave_titular:
+            raise DatoInvalido("Este servicio no está configurado para buscar por correo.")
+        try:
+            limpio = normalizar_correo(correo)
+        except DatoInvalido:
+            return None
+        fila = self._repositorio.obtener_por_correo_hmac(correo_hmac(limpio, self._clave_titular))
+        return fila["id"] if fila is not None and fila["estado"] == "ACTIVO" else None
+
+    def restablecer_clave(self, usuario_id: str, clave: str) -> str | None:
+        """Cambia la clave con las mismas reglas del alta y devuelve el correo de la cuenta (para
+        avisarle del cambio). Lanza `CuentaNoActiva` si no existe o no está activa. El BFF ya
+        comprobó el enlace de un solo uso; las sesiones abiertas las cierra quien llama."""
+        validar_clave(clave)
+        fila = self._repositorio.obtener(usuario_id)
+        if fila is None or fila["estado"] != "ACTIVO":
+            raise CuentaNoActiva(usuario_id)
+        self._repositorio.actualizar_clave(usuario_id, self._hasher.hash(clave))
+        return self._descifrar_contacto(fila, "correo_cifrado", contexto_correo(usuario_id))
 
     def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
         """Cuenta CLIENTE del onboarding del móvil (M01-05b): correo y clave, en
