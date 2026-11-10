@@ -40,6 +40,8 @@ class ClienteUnder:
         cliente_id: str,
         nivel_riesgo: str | None,
         cobertura: dict[str, Any],
+        producto: str = "VIDA_DEUDOR",
+        requiere_revision: bool = False,
     ) -> ResultadoDecision:
         try:
             respuesta = self._cliente.post(
@@ -49,6 +51,8 @@ class ClienteUnder:
                     "cliente_id": cliente_id,
                     "nivel_riesgo": nivel_riesgo,
                     "cobertura": {"valor": cobertura["valor"], "moneda": cobertura["moneda"]},
+                    "producto": producto,
+                    "requiere_revision": requiere_revision,
                 },
             )
             respuesta.raise_for_status()

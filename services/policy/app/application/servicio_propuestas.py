@@ -149,6 +149,12 @@ class ServicioPropuestas:
                 "plazo_meses": oferta.get("plazoMeses"),
                 # Lo necesita UNDER al decidir; si la oferta no lo trae, UNDER la manda a revisión.
                 "nivel_riesgo": (oferta.get("perfilRiesgo") or {}).get("nivelRiesgo"),
+                # KAN-290: el producto y, en AUTO, el vehículo, las coberturas y si UNDER debe
+                # revisarla (demasiados siniestros). Todo sale de RATING, nunca del cliente.
+                "producto": oferta.get("producto") or "VIDA_DEUDOR",
+                "vehiculo": oferta.get("vehiculo"),
+                "coberturas": oferta.get("coberturas"),
+                "requiere_revision": oferta.get("requiereRevision", False),
             },
         )
         logger.info(
