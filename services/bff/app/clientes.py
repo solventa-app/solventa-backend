@@ -108,6 +108,10 @@ class PuertoAuth(Protocol):
 
     async def correo_registrado(self, correo: str) -> bool: ...
 
+    async def buscar_para_restablecer(self, correo: str) -> str | None: ...
+
+    async def restablecer_clave(self, usuario_id: str, clave: str) -> str | None: ...
+
     async def obtener_usuario(self, usuario_id: str) -> dict | None: ...
 
     async def obtener_identidad(self, usuario_id: str) -> dict | None: ...
@@ -663,6 +667,27 @@ class ClienteAuthHttp:
         if respuesta.status_code in (400, 422):
             raise ErrorOnboardingServicio("DATO_INVALIDO")
         return bool(_json_o_error(respuesta)["registrado"])
+
+    async def buscar_para_restablecer(self, correo: str) -> str | None:
+        """Id de la cuenta ACTIVA con ese correo, o `None`. El correo va solo en el cuerpo."""
+        respuesta = await _pedir(
+            self._cliente, "POST", "/usuarios/restablecimiento/buscar", {"correo": correo}
+        )
+        if respuesta.status_code in (400, 422):
+            return None
+        return _json_o_error(respuesta).get("usuario_id")
+
+    async def restablecer_clave(self, usuario_id: str, clave: str) -> str | None:
+        """Cambia la clave y cierra todas las sesiones; devuelve el correo para avisarle.
+        `SolicitudInvalida` si la clave no cumple las reglas, `None` si la cuenta ya no sirve."""
+        respuesta = await _pedir(
+            self._cliente, "POST", f"/usuarios/{usuario_id}/clave", {"clave": clave}
+        )
+        if respuesta.status_code == 404:
+            return None
+        if respuesta.status_code in (400, 422):
+            raise SolicitudInvalida(str(respuesta.json().get("detail", "clave inválida")))
+        return _json_o_error(respuesta).get("correo")
 
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
         """CLIENTE en PENDIENTE_VERIFICACION (HU-M01). Correo y clave van solo en el cuerpo."""

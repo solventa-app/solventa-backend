@@ -539,3 +539,13 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   HMAC (`correo_hmac`), así `iniciarSesion` lo encuentra por correo igual que a un cliente. El teléfono sigue siendo solo
   de CLIENTE. Un correo repetido responde 409. La tarea `crear_usuario` suma `--correo` obligatorio.
 - Afecta al frontend: la web puede pedir «Correo» en el ingreso de todos los roles; el alias sigue funcionando.
+
+## v0.43 — 2026-11-10
+
+- KAN-26 (autenticación): «olvidé mi contraseña». Consulta `enlaceRestablecimientoVigente` y mutaciones
+  `solicitarRestablecimientoClave(correo)` (siempre `true`, no revela si la cuenta existe) y `restablecerClave(clave)`,
+  con el token del enlace en la cabecera `X-Enlace-Clave` (nunca en la URL ni en el cuerpo). Tipo `RestablecimientoExitoso` y
+  unión `ResultadoRestablecimiento` (`ErrorAutenticacion` con `ENLACE_INVALIDO` o `CLAVE_DEBIL`). El enlace vence a los 30
+  minutos, sirve una vez y uno nuevo anula el anterior; tope de 3 por correo y 10 por IP por hora. Restablecer cierra todas
+  las sesiones de la cuenta. Solo cambios aditivos.
+- Afecta al frontend: sí (pantallas G-07 `/olvide-clave` y G-08 `/restablecer-clave#t=…` en la web y M02-04 en el móvil).

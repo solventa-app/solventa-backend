@@ -45,6 +45,7 @@ from app.salud import (
 from app.servicio_codigo_onboarding import ServicioCodigoOnboarding
 from app.servicio_firma_pago import ErrorFlujoDatos, ServicioFirmaPago
 from app.servicio_oferta import ServicioOferta
+from app.servicio_restablecimiento import ServicioRestablecimiento
 from app.servicio_suscripcion import MENSAJE_DOCUMENTO_NO_DISPONIBLE, ServicioSuscripcion
 from app.socios.api import api_de, construir_router, es_ruta_de_socios
 from app.socios.autenticacion import VerificadorTokensSocio
@@ -109,6 +110,9 @@ def create_app(
         app.state.servicio_codigo_onboarding = ServicioCodigoOnboarding(
             app.state.clientes, almacen_codigo, config.cliente_id_clave
         )
+        app.state.servicio_restablecimiento = ServicioRestablecimiento(
+            app.state.clientes, almacen_codigo, config.cliente_id_clave, config.url_front
+        )
         # API de socios (HU-W07).
         app.state.cliente_id_clave = config.cliente_id_clave
         if app.state.clientes.socios is not None:
@@ -142,6 +146,13 @@ def create_app(
     def health() -> dict[str, str]:
         return {"servicio": "bff", "estado": "ok"}
 
+    def _ip_de(request: Request) -> str | None:
+        """Primera IP de `X-Forwarded-For` (el gateway) o la del socket; solo para el tope."""
+        reenviada = request.headers.get("x-forwarded-for")
+        if reenviada:
+            return reenviada.split(",")[0].strip() or None
+        return request.client.host if request.client else None
+
     def contexto_para(canal: str) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
         async def contexto(request: Request, response: Response) -> dict[str, Any]:
             # El token se lee aquí, una vez por petición; cada resolutor decide con
@@ -159,6 +170,10 @@ def create_app(
                 "servicio_oferta": app.state.servicio_oferta,
                 "servicio_firma_pago": app.state.servicio_firma_pago,
                 "servicio_codigo_onboarding": app.state.servicio_codigo_onboarding,
+                # «Olvidé mi contraseña» (KAN-26): el token del enlace viaja en esta cabecera.
+                "servicio_restablecimiento": app.state.servicio_restablecimiento,
+                "enlace_clave": request.headers.get("x-enlace-clave"),
+                "ip_cliente": _ip_de(request),
                 # Token del enlace de firma (W03-33): viaja en esta cabecera, nunca en la URL.
                 "enlace_firma": request.headers.get("x-enlace-firma"),
                 "usuario": usuario,

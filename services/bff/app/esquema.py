@@ -75,6 +75,7 @@ from app.servicio_firma_pago import (
     documento_del_cliente,
 )
 from app.servicio_oferta import ErrorOfertaDatos
+from app.servicio_restablecimiento import EnlaceInvalido
 from app.servicio_suscripcion import (
     MENSAJE_SUSCRIPCION_NO_DISPONIBLE,
     ErrorAceptacionDatos,
@@ -858,7 +859,21 @@ class ErrorAutenticacion:
     codigo: str | None = None
 
 
+MENSAJE_ENLACE_CLAVE = "El enlace no es válido o ya venció. Pide uno nuevo."
+
 ResultadoSesion = Annotated[Sesion | ErrorAutenticacion, strawberry.union("ResultadoSesion")]
+
+
+@strawberry.type
+class RestablecimientoExitoso:
+    """v0.43 (KAN-26): la clave cambió y se cerraron todas las sesiones de la cuenta."""
+
+    ok: bool = True
+
+
+ResultadoRestablecimiento = Annotated[
+    RestablecimientoExitoso | ErrorAutenticacion, strawberry.union("ResultadoRestablecimiento")
+]
 
 
 @strawberry.type
@@ -2450,6 +2465,12 @@ class Query:
         return _onboarding_de(datos) if datos else None
 
     @strawberry.field
+    async def enlace_restablecimiento_vigente(self, info: Info) -> bool:
+        """v0.43 (KAN-26): ¿el enlace de `X-Enlace-Clave` sirve? Público; solo dice sí o no."""
+        servicio = info.context["servicio_restablecimiento"]
+        return await servicio.enlace_vigente(info.context.get("enlace_clave"))
+
+    @strawberry.field
     async def yo(self, info: Info) -> Usuario | None:
         usuario = exigir_rol(
             info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True, admite_pendiente=True
@@ -3217,6 +3238,36 @@ class Mutation:
             return await servicio.consultar(str(onboarding_id), token)
 
         return await _paso_onboarding(llamada)
+
+    @strawberry.mutation
+    async def solicitar_restablecimiento_clave(self, info: Info, correo: str) -> bool:
+        """v0.43 (KAN-26): «olvidé mi contraseña». Responde `true` siempre (exista o no la cuenta,
+        o se haya topado el límite): nunca revela quién está registrado."""
+        await info.context["servicio_restablecimiento"].solicitar(
+            correo, info.context.get("ip_cliente")
+        )
+        return True
+
+    @strawberry.mutation
+    async def restablecer_clave(self, info: Info, clave: str) -> ResultadoRestablecimiento:
+        """v0.43 (KAN-26): fija la clave nueva con el enlace de `X-Enlace-Clave` (1 uso, 30 min).
+        Cierra todas las sesiones de la cuenta. Enlace malo = mensaje genérico `ENLACE_INVALIDO`."""
+        motivo = motivo_clave_invalida(clave)
+        if motivo is not None:
+            return ErrorAutenticacion(mensaje=motivo, codigo="CLAVE_DEBIL")
+        try:
+            await info.context["servicio_restablecimiento"].restablecer(
+                info.context.get("enlace_clave"), clave
+            )
+        except EnlaceInvalido:
+            return ErrorAutenticacion(mensaje=MENSAJE_ENLACE_CLAVE, codigo="ENLACE_INVALIDO")
+        except SolicitudInvalida as error:
+            return ErrorAutenticacion(mensaje=str(error), codigo="CLAVE_DEBIL")
+        except ErrorServicio:
+            return ErrorAutenticacion(
+                mensaje="No pudimos cambiar tu clave. Intenta de nuevo.", codigo="NO_DISPONIBLE"
+            )
+        return RestablecimientoExitoso()
 
     @strawberry.mutation
     async def enviar_codigo_onboarding(self, info: Info, correo: str) -> ResultadoCodigoOnboarding:
