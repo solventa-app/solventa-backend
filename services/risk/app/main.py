@@ -16,6 +16,10 @@ from app.application.cache_score import CacheScore
 from app.application.cifrado import CifradorAesGcm
 from app.application.configuracion import Configuracion
 from app.application.motor_decision import ResultadoDecision
+from app.application.perfiles_vehiculo import (
+    RepositorioPerfilesVehiculoMongo,
+    ServicioPerfilesVehiculo,
+)
 from app.application.repositorio_perfiles import RepositorioPerfilesMongo
 from app.application.servicio_perfiles import ServicioPerfiles
 from app.observabilidad import configurar_trazas
@@ -51,6 +55,25 @@ class CrearPerfilRequest(BaseModel):
     consentimiento_vence_en: datetime | None = None
 
 
+class CrearPerfilVehiculoRequest(BaseModel):
+    """KAN-290: las respuestas del ACL Worker (`POST /vehiculos/consultar`) para una placa.
+    `vehiculo_id` es el HMAC de la placa (lo calcula el BFF); la placa nunca llega a RISK."""
+
+    vehiculo_id: str
+    titular_id: str
+    consentimiento_id: str
+    consentimiento_vence_en: datetime | None = None
+    fuentes: list[DatosFuenteEntrada]
+
+
+class CrearPerfilVehiculoResponse(BaseModel):
+    vehiculo_id: str
+    perfil_version: int
+    operation_time: str
+    completo: bool
+    encontrado: bool
+
+
 class ConsentimientoRevocadoRequest(BaseModel):
     """Mismo cuerpo que `POST /propuestas/consentimiento-revocado` de POLICY."""
 
@@ -82,6 +105,7 @@ class EvaluarPreaprobacionRequest(BaseModel):
 def create_app(
     config: Configuracion | None = None,
     servicio_perfiles: ServicioPerfiles | None = None,
+    servicio_vehiculos: ServicioPerfilesVehiculo | None = None,
 ) -> FastAPI:
     """`servicio_perfiles` permite inyectar un `ServicioPerfiles` ya
     construido (p. ej. con dobles de prueba) sin levantar MongoDB — así las
@@ -95,6 +119,7 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         cliente_mongo: MongoClient | None = None
         cliente_redis = None
+        app.state.servicio_vehiculos = servicio_vehiculos
         if servicio_perfiles is not None:
             app.state.servicio_perfiles = servicio_perfiles
         else:
@@ -116,6 +141,10 @@ def create_app(
                 bus,
                 cache_score=cache_score,
             )
+            if app.state.servicio_vehiculos is None:
+                app.state.servicio_vehiculos = ServicioPerfilesVehiculo(
+                    RepositorioPerfilesVehiculoMongo(cliente_mongo, cifrador)
+                )
         try:
             yield
         finally:
@@ -146,12 +175,33 @@ def create_app(
     @app.post("/perfiles/consentimiento-revocado", tags=["perfiles"], status_code=204)
     def consentimiento_revocado(body: ConsentimientoRevocadoRequest) -> Response:
         app.state.servicio_perfiles.consentimiento_revocado(body.titular_id, body.consentimiento_id)
+        # KAN-290: también el perfil del vehículo que se armó con ese consentimiento.
+        if app.state.servicio_vehiculos is not None:
+            app.state.servicio_vehiculos.consentimiento_revocado(
+                body.titular_id, body.consentimiento_id
+            )
         return Response(status_code=204)
 
     @app.post("/perfiles/_purgar", tags=["operacion"], response_model=PurgaResponse)
     def purgar_perfiles() -> PurgaResponse:
         """Lo llama Cloud Scheduler una vez al día."""
-        return PurgaResponse(perfiles_borrados=app.state.servicio_perfiles.purgar_vencidos())
+        borrados = app.state.servicio_perfiles.purgar_vencidos()
+        if app.state.servicio_vehiculos is not None:
+            borrados += app.state.servicio_vehiculos.purgar_vencidos()
+        return PurgaResponse(perfiles_borrados=borrados)
+
+    @app.post("/vehiculos/perfiles", tags=["perfiles"], response_model=CrearPerfilVehiculoResponse)
+    def crear_perfil_vehiculo(body: CrearPerfilVehiculoRequest) -> CrearPerfilVehiculoResponse:
+        """KAN-290: guarda el perfil de riesgo del vehículo (cifrado) y devuelve su versión y el
+        `operation_time` para que RATING lo lea de la secundaria con sesión causal."""
+        resultado = app.state.servicio_vehiculos.registrar(
+            body.vehiculo_id,
+            body.titular_id,
+            body.consentimiento_id,
+            [fuente.model_dump() for fuente in body.fuentes],
+            consentimiento_vence_en=body.consentimiento_vence_en,
+        )
+        return CrearPerfilVehiculoResponse(**resultado)
 
     @app.post(
         "/preaprobaciones/evaluar", tags=["preaprobaciones"], response_model=ResultadoDecision
