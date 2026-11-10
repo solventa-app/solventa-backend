@@ -2,8 +2,9 @@
 
 > **Corte: 2026-11-10.** Cruce del enunciado oficial (`MISW4501-202614-Proyecto.pdf`, secciones 5.1 y 5.2) con el código
 > de los tres repos (`solventa-backend`, `solventa-frontend` y `solventa-frontend-mobile`).
-> **Decisión de Frans (2026-11-10):** se sigue primero con la póliza de auto ([`plan-poliza-auto.md`](plan-poliza-auto.md),
-> KAN-290) y lo de abajo queda anotado para después.
+> **Decisión de Frans (2026-11-10): lo de abajo no se revisa ni se desarrolla en este proyecto.** El foco es garantizar
+> que todo lo ya construido funcione de punta a punta, empezando por la póliza de auto ([`plan-poliza-auto.md`](plan-poliza-auto.md),
+> KAN-290) y los ajustes de la revisión QA. Este documento queda como registro de lo que el enunciado pide y no se entrega.
 
 ## Recorridos críticos (5.1)
 
@@ -32,7 +33,7 @@
 La «administración de pólizas» se queda en listar y ver el PDF (G-06): no se puede modificar, renovar ni cancelar. Depende del
 recorrido 6.
 
-## Orden recomendado (cuando se retome)
+## Orden que se había recomendado (descartado por la decisión de arriba)
 
 1. **M04 en el backend** (KAN-38): ya está comprometido en el Sprint 3 y es un recorrido crítico completo.
 2. **Ciclo de vida, mínimo:** cancelar y renovar la póliza, y un reporte al regulador y uno ACORD a reaseguradoras que se

@@ -71,9 +71,10 @@ Contrato en **v0.41**; la siguiente libre es **v0.42**. Últimas migraciones: AU
 
 ## Pendiente
 
-**Alcance del enunciado sin construir** ([`alcance-faltante`](docs/alcance-faltante.md), corte 2026-11-10): backend del
-siniestro paramétrico (M04), ciclo de vida de la póliza (renovar, modificar, cancelar, reportes al regulador y ACORD),
-notificaciones push, billetera offline (M03) y escaneo de documentos. Se sigue primero con la póliza de auto (KAN-290).
+**Fuera de alcance por decisión (2026-11-10)** ([`alcance-faltante`](docs/alcance-faltante.md)): backend del siniestro
+paramétrico (M04), ciclo de vida de la póliza (renovar, modificar, cancelar, reportes al regulador y ACORD), notificaciones
+push, billetera offline (M03) y escaneo de documentos. **No se revisan ni se desarrollan**; el foco es garantizar lo
+construido (póliza de auto KAN-290 y revisión QA).
 
 **Staging** (validación con infraestructura aplazada a una fase posterior; por ahora solo código)
 - Medir EC003/EC004/EC005/EC007/EC008-EC012/EC017 y FC-10 (los guiones k6 de FC-10 están sin correr).
