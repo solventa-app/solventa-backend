@@ -41,5 +41,15 @@
   "factor_ciudad": {"BOGOTA": "1.10", "MEDELLIN": "1.10", "CALI": "1.10", "_OTRAS": "1.00"},
   "factor_deducible": {"DIEZ_POR_CIENTO": "1.00", "SIN_DEDUCIBLE": "1.25"},
   "deducible": {"porcentaje": "0.10", "minimo_smmlv": "1"},
-  "rango_preliminar": "0.20"
+  "rango_preliminar": "0.20",
+  "valor_referencia_preliminar": {
+    "descripcion": "Si la guía Fasecolda no responde, el valor comercial se estima con el valor de un vehículo nuevo de su clase, depreciado 10 % por año, y la oferta es PRELIMINAR (regla 4).",
+    "depreciacion_anual": "0.10",
+    "valor_nuevo": {
+      "AUTOMOVIL": "80000000",
+      "CAMPERO": "120000000",
+      "CAMIONETA": "140000000",
+      "MOTOCICLETA": "12000000"
+    }
+  }
 }

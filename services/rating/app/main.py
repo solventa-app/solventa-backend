@@ -7,12 +7,12 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from decimal import InvalidOperation
-from typing import Any
+from typing import Any, Literal
 
 import redis
 from fastapi import FastAPI, HTTPException, Query
 from prometheus_fastapi_instrumentator import Instrumentator
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pymongo import MongoClient
 
 from app.application.almacen_ofertas import AlmacenOfertas
@@ -21,7 +21,13 @@ from app.application.cifrado import CifradorAesGcm
 from app.application.configuracion import Configuracion
 from app.application.identificadores import id_opaco
 from app.application.lector_perfiles import LectorPerfiles, LectorPerfilesMongo
+from app.application.oferta_auto import LectorVehiculosMongo, ServicioOfertaAuto
 from app.application.servicio_oferta import DatosInsuficientes, ServicioOferta
+from app.application.tarifa_auto import (
+    DatosVehiculoInsuficientes,
+    VehiculoNoAsegurable,
+    VehiculoNoEncontrado,
+)
 from app.observabilidad import configurar_trazas
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -32,6 +38,7 @@ logger_eventos = logging.getLogger("rating.eventos")
 
 # Contrato con el BFF: 422 con este `detail` = falta una fuente obligatoria (CA-W01-05).
 DETALLE_DATOS_INSUFICIENTES = "datos_insuficientes"
+MENSAJE_PLACA_NO_EXISTE = "No encontramos esa placa en el RUNT. Revísala e intenta de nuevo."
 
 
 class SolicitudOferta(BaseModel):
@@ -42,6 +49,21 @@ class SolicitudOferta(BaseModel):
     direccion_inmueble: str | None = None
     # Para poder aceptar la oferta después (HU-W03): a qué consentimiento pertenece.
     consentimiento_id: str | None = None
+
+
+class SolicitudOfertaAuto(BaseModel):
+    """KAN-290. `cliente_id` es el titular (como en la de vida) y `vehiculo_id` el HMAC de la
+    placa; `operation_time` es el que devolvió RISK en `POST /vehiculos/perfiles`."""
+
+    cliente_id: str
+    vehiculo_id: str
+    operation_time: str
+    consentimiento_id: str
+    placa_enmascarada: str
+    kilometraje_anual: int = Field(ge=0, le=200_000)
+    ciudad_circulacion: str = Field(min_length=2, max_length=60)
+    uso: Literal["PARTICULAR", "COMERCIAL"] = "PARTICULAR"
+    deducible: Literal["DIEZ_POR_CIENTO", "SIN_DEDUCIBLE"] = "DIEZ_POR_CIENTO"
 
 
 def _extraer_datos_evento_perfil_actualizado(
@@ -84,6 +106,7 @@ def create_app(
     servicio_oferta: ServicioOferta | None = None,
     cache_score: CacheScore | None = None,
     almacen_ofertas: AlmacenOfertas | None = None,
+    servicio_oferta_auto: ServicioOfertaAuto | None = None,
 ) -> FastAPI:
     """`lector_perfiles`/`servicio_oferta`/`cache_score` permiten inyectar
     dobles de prueba (ver `tests/fakes.py`) sin levantar un replica set ni un
@@ -96,6 +119,7 @@ def create_app(
         cliente_primaria: MongoClient | None = None
         cliente_secundaria: MongoClient | None = None
         cliente_redis: redis.Redis | None = None
+        app.state.servicio_oferta_auto = servicio_oferta_auto
         if lector_perfiles is not None:
             app.state.lector_perfiles = lector_perfiles
         else:
@@ -117,6 +141,12 @@ def create_app(
                 config.max_time_ms,
                 cifrador=cifrador,
             )
+            if app.state.servicio_oferta_auto is None:
+                app.state.servicio_oferta_auto = ServicioOfertaAuto(
+                    LectorVehiculosMongo(
+                        cliente_primaria, cliente_secundaria, config.max_time_ms, cifrador
+                    )
+                )
 
         if cache_score is not None:
             app.state.cache_score = cache_score
@@ -197,6 +227,42 @@ def create_app(
         # HU-W03: se guarda para poder aceptarla; la respuesta al BFF no cambia.
         app.state.almacen_ofertas.guardar(
             oferta, body.cliente_id, body.consentimiento_id, body.plazo_meses
+        )
+        return oferta
+
+    @app.post("/ofertas/auto", tags=["ofertas"])
+    def generar_oferta_auto(body: SolicitudOfertaAuto) -> dict:
+        """KAN-290: la oferta de la póliza de auto sobre el perfil del vehículo que escribió RISK.
+        Placa inexistente o vehículo no asegurable: 422 con `detail.motivo` (el BFF lo traduce a
+        `ErrorOferta`). RUNT caído: 422 `datos_insuficientes`, como en vida. Sin perfil: 404."""
+        try:
+            oferta = app.state.servicio_oferta_auto.generar(
+                body.vehiculo_id,
+                body.operation_time,
+                body.placa_enmascarada,
+                body.kilometraje_anual,
+                body.ciudad_circulacion,
+                body.uso,
+                body.deducible,
+            )
+        except VehiculoNoEncontrado as error:
+            raise HTTPException(
+                status_code=422,
+                detail={"motivo": "VEHICULO_NO_ENCONTRADO", "mensaje": MENSAJE_PLACA_NO_EXISTE},
+            ) from error
+        except VehiculoNoAsegurable as error:
+            raise HTTPException(
+                status_code=422, detail={"motivo": "VEHICULO_NO_ASEGURABLE", "mensaje": str(error)}
+            ) from error
+        except DatosVehiculoInsuficientes as error:
+            raise HTTPException(status_code=422, detail=DETALLE_DATOS_INSUFICIENTES) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=f"solicitud invalida: {error}") from error
+        if oferta is None:
+            raise HTTPException(status_code=404, detail="perfil no encontrado")
+        # Para aceptarla después (HU-W03): POLICY toma el precio de aquí. El plazo es la vigencia.
+        app.state.almacen_ofertas.guardar(
+            oferta, body.cliente_id, body.consentimiento_id, oferta["vigenciaMeses"]
         )
         return oferta
 
