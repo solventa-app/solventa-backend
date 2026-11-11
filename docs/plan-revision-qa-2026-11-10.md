@@ -89,6 +89,14 @@ recargar.
    sin la opción del menú y sin acceso a la ruta).
 
 **T6 · Documentos firmados guardados** · Q-02 · Media · L · backend, contrato y almacenamiento · KAN-26 · Depende de D-1
+
+> **Backend hecho (2026-11-10):** catálogo (`poliza-pdf` activo y `contrato-firmado` nuevo, ambos `application/octet-stream`),
+> `almacenamiento` solo confirma el contenedor cifrado (`SOLVENC1`), POLICY `0010` y `servicio_documentos` / `sobre_documentos`,
+> Terraform da la llave de KMS a POLICY. Ajustes frente a lo escrito abajo: **(a)** el catálogo no deja leer a otros roles:
+> el PDF está cifrado, así que el único lector útil es POLICY, que lo sirve con la autorización de siempre (el punto 1 dice
+> «leen el titular, su asesor y BACKOFFICE»: eso es a través de POLICY y el BFF, no del bucket); **(b)** el reintento no es un
+> barrido: se vuelve a intentar la próxima vez que se pide el documento; **(c)** `contrato-firmado` lleva retención de 1 día
+> (la pide la purga de una propuesta cancelada antes de emitir). Falta el punto 5 (recorrido real en Cypress) y staging.
 1. Catálogo: activar `poliza-pdf` y crear `contrato-firmado` (solo sube POLICY; leen el titular, su asesor y BACKOFFICE).
 2. POLICY: al firmar guarda el contrato firmado; al emitir, la póliza. **Cifrado (D-1):** AES-256-GCM con una clave de
    datos por documento, envuelta por Cloud KMS (en local, la clave fija de desarrollo), con el id de la propuesta como

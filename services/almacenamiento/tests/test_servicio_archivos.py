@@ -356,3 +356,13 @@ def test_el_actor_debe_ser_coherente() -> None:
         Actor("CLIENTE")
     assert ONBOARDING.nombre == "servicio:onboarding"
     assert CLIENTE.nombre == "CLIENTE"
+
+
+def test_el_contenedor_cifrado_solo_admite_lo_que_empieza_con_su_marca() -> None:
+    """T6: `application/octet-stream` es solo para los documentos que POLICY cifra; un PDF en claro
+    declarado así se rechaza (el bucket nunca ve un documento firmado en claro)."""
+    from app.application.servicio_archivos import MAGIA_CONTENEDOR_CIFRADO, _firma_coincide
+
+    assert _firma_coincide("application/octet-stream", MAGIA_CONTENEDOR_CIFRADO + bytes(8))
+    assert not _firma_coincide("application/octet-stream", b"%PDF-1.4 un documento en claro")
+    assert not _firma_coincide("application/octet-stream", b"")

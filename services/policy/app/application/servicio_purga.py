@@ -3,8 +3,9 @@
 El contacto que dio el ASESOR, el texto y la imagen de la firma siguen al consentimiento. Si el
 consentimiento **vence o se revoca antes de emitir**, la propuesta pasa a CANCELADA, se borran el
 nombre, el correo y el texto de la firma, se anulan sus enlaces y se pide a ALMACENAMIENTO la
-retención de la imagen (se borra en un día como máximo). La evidencia conserva la huella, la versión
-y el sello. **Con la póliza emitida el contacto se conserva por el contrato.**
+retención de la imagen y del **contrato firmado guardado** (T6; se borran en un día como máximo).
+La evidencia conserva la huella, la versión y el sello. **Con la póliza emitida el contacto, el
+contrato firmado y la póliza se conservan por el contrato.**
 
 - Revocación: el BFF avisa a POLICY al revocar (`consentimiento_revocado`, idempotente).
 - Vencimiento: una pasada diaria con Cloud Scheduler (`purgar_vencidos`) le pregunta a AUTH por el
@@ -22,6 +23,7 @@ from app.application.cliente_almacenamiento import (
 )
 from app.application.cliente_auth import AuthNoDisponible, PuertoConsentimientos
 from app.application.identificadores import id_opaco
+from app.application.servicio_documentos import ServicioDocumentos
 
 logger = logging.getLogger("policy.purga")
 
@@ -46,9 +48,11 @@ class ServicioPurga:
         almacenamiento: PuertoAlmacenamiento | None,
         avisos: PuertoAvisos | None = None,
         lote: int = 200,
+        documentos: ServicioDocumentos | None = None,
     ) -> None:
         self._repo = repositorio
         self._consentimientos = consentimientos
+        self._documentos = documentos
         self._almacen = almacenamiento
         self._avisos = avisos or AvisosNulos()
         self._lote = lote
@@ -93,6 +97,31 @@ class ServicioPurga:
                     id_opaco(propuesta_id),
                     type(error).__name__,
                 )
+        self._retener_documentos(propuesta_id)
         propuesta = self._repo.obtener(propuesta_id)
         if propuesta is not None:
             self._avisos.publicar(propuesta, propuesta["estado"])
+
+    def _retener_documentos(self, propuesta_id: str) -> None:
+        """T6: el contrato firmado de una propuesta que no se emitió sigue al consentimiento: se
+        pide su retención (1 día) como la de la imagen de la firma."""
+        if self._documentos is None or self._almacen is None:
+            return
+        try:
+            archivos = self._documentos.archivos_de(propuesta_id)
+        except Exception as error:
+            logger.warning(
+                "no se pudieron leer los documentos para retenerlos propuesta=%s error=%s",
+                id_opaco(propuesta_id),
+                type(error).__name__,
+            )
+            return
+        for archivo in archivos:
+            try:
+                self._almacen.retener(archivo)
+            except (ArchivoRechazado, AlmacenamientoNoDisponible) as error:
+                logger.warning(
+                    "no se pudo pedir la retención de un documento propuesta=%s error=%s",
+                    id_opaco(propuesta_id),
+                    type(error).__name__,
+                )

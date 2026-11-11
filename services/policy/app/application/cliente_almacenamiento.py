@@ -6,7 +6,9 @@ no tiene sesión, así que no puede pedir la subida ella misma. El tipo `firma-i
 lee solo `servicio:policy`, con propietario `poliza/<propuesta>` y el consentimiento de la
 propuesta.
 
-- Los bytes de la subida nunca pasan por POLICY: el navegador hace el `PUT` directo al bucket.
+- Los bytes de la imagen de la firma nunca pasan por POLICY: el navegador hace el `PUT` directo al
+  bucket. Los documentos firmados (T6, `subir_documento`) sí: POLICY los cifra y hace el `PUT` ella
+  misma con la URL firmada de minutos.
 - Al firmar, POLICY confirma el archivo (síncrono), pide una URL de lectura de minutos y baja la
   imagen para validarla y estamparla en el PDF. **Las URLs no se guardan ni se registran.**
 - `ArchivoRechazado` es una respuesta del servicio (tipo, tamaño, contenido): la firma se rechaza
@@ -19,6 +21,8 @@ from typing import Any, Protocol
 import httpx
 
 TIPO_FIRMA = "firma-imagen"
+# Los documentos firmados llegan cifrados: para el bucket son bytes opacos (T6).
+TIPO_CONTENIDO_DOCUMENTO = "application/octet-stream"
 CABECERAS_ACTOR = {"X-Actor-Rol": "SERVICIO", "X-Actor-Id": "policy"}
 
 
@@ -46,12 +50,19 @@ class Subida:
 
 class PuertoAlmacenamiento(Protocol):
     def solicitar_subida(
-        self, propuesta_id: str, consentimiento_id: str | None, tipo_contenido: str, tamano: int
+        self,
+        propuesta_id: str,
+        consentimiento_id: str | None,
+        tipo_contenido: str,
+        tamano: int,
+        tipo: str = TIPO_FIRMA,
     ) -> Subida: ...
 
     def confirmar(self, archivo_id: str) -> dict[str, Any]: ...
 
-    def bajar(self, archivo_id: str) -> bytes: ...
+    def bajar(self, archivo_id: str, tamano_max: int | None = None) -> bytes: ...
+
+    def subir_documento(self, tipo: str, propuesta_id: str, contenido: bytes) -> str: ...
 
     def retener(self, archivo_id: str) -> None: ...
 
@@ -112,13 +123,18 @@ class ClienteAlmacenamiento:
             raise AlmacenamientoNoDisponible("RespuestaIlegible") from error
 
     def solicitar_subida(
-        self, propuesta_id: str, consentimiento_id: str | None, tipo_contenido: str, tamano: int
+        self,
+        propuesta_id: str,
+        consentimiento_id: str | None,
+        tipo_contenido: str,
+        tamano: int,
+        tipo: str = TIPO_FIRMA,
     ) -> Subida:
         cuerpo = self._pedir(
             "POST",
             "/archivos/subidas",
             json={
-                "tipo": TIPO_FIRMA,
+                "tipo": tipo,
                 "tipo_contenido": tipo_contenido,
                 "tamano_bytes": tamano,
                 "propietario_id": propuesta_id,
@@ -136,8 +152,30 @@ class ClienteAlmacenamiento:
     def confirmar(self, archivo_id: str) -> dict[str, Any]:
         return self._pedir("POST", f"/archivos/{archivo_id}/confirmar")
 
-    def bajar(self, archivo_id: str) -> bytes:
-        """Los bytes de un archivo DISPONIBLE, por una URL firmada de minutos que no se guarda."""
+    def subir_documento(self, tipo: str, propuesta_id: str, contenido: bytes) -> str:
+        """Sube el contenedor cifrado de un documento firmado (`application/octet-stream`) con la
+        URL firmada de minutos, lo confirma y devuelve el id del archivo ya DISPONIBLE. Si el
+        servicio lo rechaza (tipo, tamaño o contenido) lanza `ArchivoRechazado`; si no responde,
+        `AlmacenamientoNoDisponible`. La URL no se guarda ni se registra."""
+        subida = self.solicitar_subida(
+            propuesta_id, None, TIPO_CONTENIDO_DOCUMENTO, len(contenido), tipo=tipo
+        )
+        url, encabezados = _reescribir(subida.url, self._reescritura)
+        try:
+            respuesta = self._bucket.request(
+                subida.metodo, url, content=contenido, headers={**subida.encabezados, **encabezados}
+            )
+            respuesta.raise_for_status()
+        except httpx.HTTPError as error:
+            raise AlmacenamientoNoDisponible(type(error).__name__) from error
+        archivo = self.confirmar(subida.archivo["id"])
+        if archivo.get("estado") != "DISPONIBLE":
+            raise ArchivoRechazado(str(archivo.get("motivo") or "ARCHIVO_RECHAZADO"))
+        return subida.archivo["id"]
+
+    def bajar(self, archivo_id: str, tamano_max: int | None = None) -> bytes:
+        """Los bytes de un archivo DISPONIBLE, por una URL firmada de minutos que no se guarda.
+        `tamano_max` sustituye el tope de la firma (512 KB) para los documentos firmados."""
         url, encabezados = _reescribir(
             self._pedir("GET", f"/archivos/{archivo_id}/descarga")["url"], self._reescritura
         )
@@ -146,7 +184,7 @@ class ClienteAlmacenamiento:
             respuesta.raise_for_status()
         except httpx.HTTPError as error:
             raise AlmacenamientoNoDisponible(type(error).__name__) from error
-        if len(respuesta.content) > self._tamano_max:
+        if len(respuesta.content) > (tamano_max or self._tamano_max):
             raise ArchivoRechazado("TAMANO_NO_ADMITIDO")
         return respuesta.content
 

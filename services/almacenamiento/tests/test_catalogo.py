@@ -23,14 +23,23 @@ def test_el_catalogo_del_contrato_es_valido() -> None:
     catalogo = Catalogo.desde_archivo()
     video = catalogo.obtener("onboarding-video")
     assert video is not None and video.retencion_dias == 30
-    assert catalogo.obtener("poliza-pdf") is None  # inactivo: no se puede subir
-    assert catalogo.definicion("poliza-pdf") is not None  # pero lo existente se sigue leyendo
     assert {t.tipo for t in catalogo.con_retencion()} == {
         "onboarding-documento",
         "onboarding-rostro",
         "onboarding-video",
         "firma-imagen",
+        "contrato-firmado",
     }
+    # T6 (KAN-26): los documentos firmados los sube y los lee solo POLICY, y llegan cifrados.
+    for tipo in ("poliza-pdf", "contrato-firmado"):
+        documento = catalogo.obtener(tipo)
+        assert documento is not None, tipo
+        assert documento.tipos_contenido == ("application/octet-stream",)
+        assert documento.quien_sube == ("servicio:policy",)
+        assert documento.quien_lee == ("servicio:policy",)
+        assert documento.propietario == "poliza" and not documento.requiere_consentimiento
+    assert catalogo.obtener("poliza-pdf").retencion_dias is None  # type: ignore[union-attr]
+    assert catalogo.obtener("contrato-firmado").retencion_dias == 1  # type: ignore[union-attr]
     firma = catalogo.obtener("firma-imagen")  # HU-W03: solo POLICY la sube y la lee
     assert firma is not None and firma.quien_sube == ("servicio:policy",)
     assert firma.propietario == "poliza" and firma.requiere_consentimiento

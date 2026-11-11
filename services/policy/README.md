@@ -76,7 +76,7 @@ EN_EMISION ──UNDER──► RECHAZADA        ─► NO_EMITIDA
   (`GET /usuarios/{id}/contacto`) y su nombre (`POST /usuarios/nombres`), y los descarta: **no guarda ni el contacto ni el nombre,
   ni los escribe en logs** (regla #6). Según lo que tenga el cliente:
   - **Correo:** el aviso sale por correo con la póliza en PDF adjunta, generada con el nombre que dio AUTH (el nombre vive solo en
-    memoria mientras se genera el PDF; el PDF tampoco se guarda, W03-9).
+    memoria mientras se genera el PDF; desde la T6 el PDF sí se guarda, pero cifrado: ver «Documentos firmados»).
   - **Solo teléfono:** sale por SMS con el enlace, sin PDF (un SMS no lleva archivos).
   - **Ninguno (hoy son todos los clientes ya creados):** la póliza se emite igual y el aviso se **omite** con
     `polizas.aviso_omitido_motivo = SIN_CONTACTO`, sin reintentar para siempre; el cliente la descarga desde la web. Si el ACL
@@ -117,6 +117,28 @@ los dos: EN_FIRMA ─firma (trazo, imagen o nombre)─► FIRMADA ─pago en la 
 - **Emisión y avisos:** confirmar el pago emite (desde `FIRMADA`) y deja a una tarea (`_emitir`) el correo con el PDF al titular (no hay correo al asesor: lo ve en «Pólizas emitidas»). El PDF estampa la firma: la imagen se baja de ALMACENAMIENTO al generarlo (URL de minutos, nunca se guarda ni se registra) o el nombre con letra cursiva.
 - **Avisos en vivo (W03-37):** cada cambio de estado del flujo nuevo publica en Redis (`avisos:asesor:<usuario>`, `avisos:titular:<hmac>`, `avisos:todos`) `{tipo, propuestaId, estado, estadoVisible, polizaId, numero}`, sin datos personales. Sin `REDIS_URL` no se publica (mejor esfuerzo).
 - **La imagen de la firma y la purga:** `evidencias_firma` es append-only, así que la purga no borra `imagen_firma_archivo_id`; pide la retención del archivo y el bucket lo borra en un día.
+
+## Documentos firmados, guardados y cifrados (KAN-26, T6, migración `0010`)
+
+El contrato firmado y la póliza **ya no se regeneran en cada consulta**: se guardan, cifrados, en `almacenamiento`
+(`app/application/servicio_documentos.py` y `sobre_documentos.py`; tabla `documentos_firmados`).
+
+- **Cuándo:** el `contrato-firmado` al firmar (la evidencia, la huella y la firma estampada); la `poliza-pdf` la primera vez
+  que se genera (el correo del aviso o la primera consulta). **Inmutables:** el primero que se guarda es el que se entrega.
+- **Cifrado (D-1):** AES-256-GCM con **una llave de datos por documento**, envuelta por Cloud KMS (`KMS_KEY_NAME`, la llave
+  `campos-personales` de D-04) o, en local o sin KMS, por `CIFRADO_CLAVE`. El dato asociado es `<propuesta>:<tipo>`: copiar un
+  contenedor a otra propuesta falla. La etiqueta GCM y el SHA-256 se verifican siempre. El bucket recibe
+  `application/octet-stream` con la marca `SOLVENC1` (ALMACENAMIENTO rechaza un PDF en claro declarado así) y nunca ve el
+  documento; en POLICY solo quedan el id del archivo, la llave **envuelta**, la huella y el tamaño.
+- **Servir:** `POST /polizas/{id}/documento` y `GET /propuestas/{id}/contrato.pdf` (borrador antes de firmar, firmado después)
+  descifran en memoria y entregan, con la misma autorización de siempre. Un documento que no pasa la integridad no se
+  entrega: `503 DOCUMENTO_NO_DISPONIBLE` y un error en el log.
+- **Nunca tumba el flujo (regla 4):** si ALMACENAMIENTO, el bucket o KMS fallan al guardar, la firma y la emisión siguen y el
+  PDF se genera como antes; la próxima vez que se pida se vuelve a intentar. Si falla la lectura del documento guardado, se
+  regenera (si el almacenamiento está caído del todo tampoco se baja la imagen de la firma: `503`, como antes).
+- **Purga:** el contrato firmado de una propuesta cancelada porque el consentimiento venció o se revocó antes de emitir se
+  retiene (1 día) y se borra, como la imagen de la firma. Con la póliza emitida, ambos documentos se conservan.
+- **Pendiente:** la retención legal de la póliza (hoy no vence) y reintentar guardar con un barrido en vez de al próximo pedido.
 
 ## Socios de distribución (HU-W07, migración `0008`)
 
@@ -178,6 +200,7 @@ socio. Plan: `docs/plan-completar-hu-w07.md`.
 | `COBRO_PENDIENTE_DEMORA_SEGUNDOS`, `EMISION_MAX_INTENTOS` | `10`, `12` | Cada cuánto se vuelve a consultar un cobro pendiente y cuántas veces |
 | `RECONCILIACION_LOTE_MAX`, `RECONCILIACION_DIAS` | `100`, `30` | Cuántas propuestas revisa el barrido por pasada y hasta cuántos días atrás mira un pago rechazado o pendiente |
 | `ALMACENAMIENTO_URL`, `POLICY_ALMACENAMIENTO_TIMEOUT_SEGUNDOS` | `http://localhost:8009`, `3.0` | La imagen de la firma (bloque 9) |
+| `KMS_KEY_NAME` | — | Cloud KMS: con él, la llave de datos de cada documento firmado se envuelve en KMS (Terraform lo fija si `crear_kms`); sin él, con `CIFRADO_CLAVE` (T6) |
 | `ALMACEN_REESCRITURA_ORIGENES` | — | Solo local: `http://localhost:4443/=http://fake-gcs:4443/` para bajar las URLs firmadas del emulador |
 | `REDIS_URL` | — | Avisos en vivo para `avisos` (W03-37); vacío = no se publican |
 | `URL_FRONT` | `http://localhost:5173` | Dónde vive la página del enlace (`/firma#t=…`) |
