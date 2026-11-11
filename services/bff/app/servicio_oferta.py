@@ -14,8 +14,21 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from app.clientes import Clientes, DatosInsuficientes, ErrorServicio, SolicitudInvalida
-from app.identificadores import cliente_id_desde_documento, enmascarar_documento, id_opaco
+from app.clientes import (
+    Clientes,
+    DatosInsuficientes,
+    ErrorServicio,
+    SolicitudInvalida,
+    VehiculoRechazado,
+)
+from app.identificadores import (
+    cliente_id_desde_documento,
+    enmascarar_documento,
+    enmascarar_placa,
+    id_opaco,
+    normalizar_placa,
+    vehiculo_id_desde_placa,
+)
 from app.jurisdicciones import JURISDICCIONES, PLAZO_MAXIMO_MESES, PLAZO_MINIMO_MESES
 
 logger = logging.getLogger("bff.oferta")
@@ -71,6 +84,16 @@ MENSAJE_DATOS_INSUFICIENTES = (
 MOTIVO_CONSENTIMIENTO_NO_VIGENTE = "CONSENTIMIENTO_NO_VIGENTE"
 MOTIVO_DATOS_INSUFICIENTES = "DATOS_INSUFICIENTES"
 MOTIVO_FUENTES_NO_DISPONIBLES = "FUENTES_NO_DISPONIBLES"
+
+# ---------- KAN-290: póliza de auto ----------
+FUENTES_VEHICULO = ("runt-vehiculo", "fasecolda-valor", "siniestralidad-placa")
+MENSAJE_PLACA_INVALIDA = "La placa no es válida. Escríbela como ABC123 (o ABC12D si es una moto)."
+MENSAJE_KILOMETRAJE_INVALIDO = "El kilometraje anual debe estar entre 0 y 200.000 km."
+MENSAJE_CIUDAD_INVALIDA = "Ingresa la ciudad donde circula el vehículo."
+MENSAJE_DATOS_VEHICULO = (
+    "No pudimos consultar los datos del vehículo en este momento. Intenta de nuevo en unos minutos."
+)
+KILOMETRAJE_MAXIMO = 200_000
 
 # Mismos límites que el formulario W01-01 (solventa-frontend: SolicitudYConsentimiento.vue).
 MIN_DIGITOS_DOCUMENTO = 6
@@ -232,6 +255,131 @@ class ServicioOferta:
             sum(1 for f in fuentes if f.get("degradado") or f.get("de_cache")),
         )
         return oferta
+
+    async def _consentimiento_del_titular(
+        self, consentimiento_id: str, cliente_id: str
+    ) -> dict | ErrorOfertaDatos:
+        """Regla 7: el consentimiento debe estar vigente y ser del titular, ANTES de consultar."""
+        try:
+            consentimiento = await self._clientes.auth.obtener_consentimiento(consentimiento_id)
+        except ErrorServicio as error:
+            logger.warning("AUTH no disponible error=%s", error)
+            return ErrorOfertaDatos(
+                MENSAJE_REINTENTAR, puede_reintentar=True, motivo=MOTIVO_FUENTES_NO_DISPONIBLES
+            )
+        titular = (consentimiento or {}).get("titular_id")
+        if (
+            not consentimiento
+            or not consentimiento.get("vigente")
+            or titular not in (None, cliente_id)
+        ):
+            logger.info("oferta rechazada: sin consentimiento vigente del titular")
+            return ErrorOfertaDatos(
+                MENSAJE_SIN_CONSENTIMIENTO,
+                puede_reintentar=False,
+                motivo=MOTIVO_CONSENTIMIENTO_NO_VIGENTE,
+            )
+        return consentimiento
+
+    async def solicitar_auto(
+        self,
+        consentimiento_id: str,
+        documento_identidad: str,
+        placa: str,
+        kilometraje_anual: int,
+        ciudad: str,
+        uso: str,
+        deducible: str,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
+    ) -> dict | ErrorOfertaDatos:
+        """KAN-290: la oferta de la póliza de auto. Mismo camino que la de vida: consentimiento
+        primero (regla 7), las tres fuentes del vehículo por el ACL en paralelo, RISK escribe el
+        perfil y RATING tarifa con sesión causal. La placa solo viaja al ACL; RISK y RATING
+        reciben su HMAC (`vehiculo_id`). Ni la placa ni el documento se loguean (regla 6)."""
+        placa_n = normalizar_placa(placa)
+        if placa_n is None:
+            return ErrorOfertaDatos(MENSAJE_PLACA_INVALIDA, puede_reintentar=False)
+        if not 0 <= kilometraje_anual <= KILOMETRAJE_MAXIMO:
+            return ErrorOfertaDatos(MENSAJE_KILOMETRAJE_INVALIDO, puede_reintentar=False)
+        ciudad = (ciudad or "").strip()
+        if not 2 <= len(ciudad) <= 60:
+            return ErrorOfertaDatos(MENSAJE_CIUDAD_INVALIDA, puede_reintentar=False)
+
+        cliente_id = cliente_id_desde_documento(
+            documento_identidad, self._clave, pais, tipo_documento
+        )
+        consentimiento = await self._consentimiento_del_titular(consentimiento_id, cliente_id)
+        if isinstance(consentimiento, ErrorOfertaDatos):
+            return consentimiento
+
+        vehiculo_id = vehiculo_id_desde_placa(placa_n, self._clave)
+        fuentes = await asyncio.gather(
+            *(
+                self._consultar_vehiculo(vehiculo_id, placa_n, consentimiento_id, f)
+                for f in FUENTES_VEHICULO
+            )
+        )
+        try:
+            perfil = await self._clientes.risk.registrar_perfil_vehiculo(
+                vehiculo_id,
+                cliente_id,
+                consentimiento_id,
+                list(fuentes),
+                consentimiento.get("vence_en"),
+            )
+            oferta = await self._clientes.rating.generar_oferta_auto(
+                {
+                    "cliente_id": cliente_id,
+                    "vehiculo_id": vehiculo_id,
+                    "operation_time": perfil["operation_time"],
+                    "consentimiento_id": consentimiento_id,
+                    "placa_enmascarada": enmascarar_placa(placa_n),
+                    "kilometraje_anual": kilometraje_anual,
+                    "ciudad_circulacion": ciudad,
+                    "uso": uso,
+                    "deducible": deducible,
+                }
+            )
+        except VehiculoRechazado as error:
+            logger.info("oferta de auto rechazada motivo=%s", error.motivo)
+            return ErrorOfertaDatos(error.mensaje, puede_reintentar=False, motivo=error.motivo)
+        except DatosInsuficientes:
+            return ErrorOfertaDatos(
+                MENSAJE_DATOS_VEHICULO, puede_reintentar=True, motivo=MOTIVO_DATOS_INSUFICIENTES
+            )
+        except SolicitudInvalida:
+            return ErrorOfertaDatos(MENSAJE_PLACA_INVALIDA, puede_reintentar=False)
+        except ErrorServicio as error:
+            logger.warning(
+                "oferta de auto no disponible vehiculo=%s error=%s", id_opaco(vehiculo_id), error
+            )
+            return ErrorOfertaDatos(
+                MENSAJE_REINTENTAR, puede_reintentar=True, motivo=MOTIVO_FUENTES_NO_DISPONIBLES
+            )
+        logger.info(
+            "oferta de auto entregada vehiculo=%s tipo=%s",
+            id_opaco(vehiculo_id),
+            oferta.get("tipo"),
+        )
+        return oferta
+
+    async def _consultar_vehiculo(
+        self, vehiculo_id: str, placa: str, consentimiento_id: str, fuente: str
+    ) -> dict:
+        try:
+            return await self._clientes.acl.consultar_vehiculo(
+                vehiculo_id, placa, consentimiento_id, fuente
+            )
+        except ErrorServicio as error:
+            logger.warning("ACL no disponible fuente=%s error=%s", fuente, error)
+            return {
+                "fuente": fuente,
+                "datos": {},
+                "capturado_en": datetime.now(UTC).isoformat(),
+                "de_cache": False,
+                "degradado": True,
+            }
 
     async def registrar_consulta(
         self,

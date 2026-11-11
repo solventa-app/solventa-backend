@@ -55,6 +55,16 @@ class DatosInsuficientes(Exception):
     puede arreglarlo cuando el proveedor se recupere."""
 
 
+class VehiculoRechazado(Exception):
+    """KAN-290: RATING no oferta este vehículo. `motivo` es un `MotivoErrorOferta` del contrato
+    (`VEHICULO_NO_ENCONTRADO` o `VEHICULO_NO_ASEGURABLE`) y `mensaje`, el texto para el usuario."""
+
+    def __init__(self, motivo: str, mensaje: str) -> None:
+        super().__init__(motivo)
+        self.motivo = motivo
+        self.mensaje = mensaje
+
+
 class VerificacionPendiente(Exception):
     """AUTH respondió 403 VERIFICACION_PENDIENTE: clave correcta, identidad sin verificar y el
     canal no es la app (HU-M01)."""
@@ -181,6 +191,11 @@ class PuertoAcl(Protocol):
 
     async def invalidar_cache_cliente(self, cliente_id: str) -> None: ...
 
+    # KAN-290: una fuente del vehículo (RUNT, Fasecolda o siniestralidad).
+    async def consultar_vehiculo(
+        self, vehiculo_id: str, placa: str, consentimiento_id: str, fuente: str
+    ) -> dict: ...
+
     async def tasas_cambio(self) -> dict[str, str]: ...
 
     # T19: Places detrás del ACL. Si falla, el BFF degrada a «sin verificar».
@@ -212,6 +227,16 @@ class PuertoRisk(Protocol):
 
     async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None: ...
 
+    # KAN-290
+    async def registrar_perfil_vehiculo(
+        self,
+        vehiculo_id: str,
+        titular_id: str,
+        consentimiento_id: str,
+        fuentes: list[dict],
+        consentimiento_vence_en: str | None = None,
+    ) -> dict: ...
+
     # QA 2026-11-10 (Q-08): el historial de fuentes consultadas de un asesor.
     async def registrar_consulta(self, consulta: dict) -> str: ...
 
@@ -232,6 +257,9 @@ class PuertoRating(Protocol):
     ) -> dict: ...
 
     async def obtener_oferta(self, oferta_id: str) -> dict | None: ...
+
+    # KAN-290
+    async def generar_oferta_auto(self, solicitud: dict) -> dict: ...
 
 
 class PuertoPolicy(Protocol):
@@ -388,7 +416,9 @@ class PuertoClaims(Protocol):
 
     async def catalogo_prestadores(self, version_local: str | None) -> dict: ...
 
-    async def aprobar(self, siniestro_id: str, actor_usuario_id: str) -> dict: ...
+    async def aprobar(
+        self, siniestro_id: str, actor_usuario_id: str, valor_dano: str | None = None
+    ) -> dict: ...
 
     async def rechazar(
         self, siniestro_id: str, motivo: str, comentario: str | None, actor_usuario_id: str
@@ -960,6 +990,24 @@ class ClienteAclHttp:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
 
+    async def consultar_vehiculo(
+        self, vehiculo_id: str, placa: str, consentimiento_id: str, fuente: str
+    ) -> dict:
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            "/vehiculos/consultar",
+            {
+                "vehiculo_id": vehiculo_id,
+                "placa": placa,
+                "consentimiento_id": consentimiento_id,
+                "fuente": fuente,
+            },
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
     async def invalidar_cache_cliente(self, cliente_id: str) -> None:
         respuesta = await _pedir(
             self._cliente,
@@ -1022,6 +1070,26 @@ class ClienteRiskHttp:
         respuesta = await _pedir(self._cliente, "POST", "/perfiles/consentimiento-revocado", cuerpo)
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
+
+    async def registrar_perfil_vehiculo(
+        self,
+        vehiculo_id: str,
+        titular_id: str,
+        consentimiento_id: str,
+        fuentes: list[dict],
+        consentimiento_vence_en: str | None = None,
+    ) -> dict:
+        cuerpo = {
+            "vehiculo_id": vehiculo_id,
+            "titular_id": titular_id,
+            "consentimiento_id": consentimiento_id,
+            "consentimiento_vence_en": consentimiento_vence_en,
+            "fuentes": fuentes,
+        }
+        respuesta = await _pedir(self._cliente, "POST", "/vehiculos/perfiles", cuerpo)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
 
     async def registrar_consulta(self, consulta: dict) -> str:
         respuesta = await _pedir(self._cliente, "POST", "/consultas", consulta)
@@ -1102,6 +1170,21 @@ class ClienteRatingHttp:
     async def obtener_oferta(self, oferta_id: str) -> dict | None:
         """La oferta guardada para aceptarla; `None` si venció o no existe."""
         return _json_o_none(await _pedir(self._cliente, "GET", f"/ofertas/{oferta_id}"))
+
+    async def generar_oferta_auto(self, solicitud: dict) -> dict:
+        """KAN-290. 422 con `detail.motivo`: el vehículo no se oferta (`VehiculoRechazado`);
+        422 `datos_insuficientes`: RUNT no respondió."""
+        respuesta = await _pedir(self._cliente, "POST", "/ofertas/auto", solicitud)
+        detalle = _detalle(respuesta) if respuesta.status_code == 422 else None
+        if isinstance(detalle, dict) and detalle.get("motivo"):
+            raise VehiculoRechazado(detalle["motivo"], detalle.get("mensaje") or "")
+        if detalle == DETALLE_DATOS_INSUFICIENTES:
+            raise DatosInsuficientes()
+        if respuesta.status_code in (400, 422):
+            raise SolicitudInvalida(str(_detalle(respuesta)))
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
 
 
 class ClientePolicyHttp:
@@ -1630,8 +1713,14 @@ class ClienteClaimsHttp:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
 
-    async def aprobar(self, siniestro_id: str, actor_usuario_id: str) -> dict:
-        return await self._resolver(siniestro_id, "aprobar", {"actor_usuario_id": actor_usuario_id})
+    async def aprobar(
+        self, siniestro_id: str, actor_usuario_id: str, valor_dano: str | None = None
+    ) -> dict:
+        return await self._resolver(
+            siniestro_id,
+            "aprobar",
+            {"actor_usuario_id": actor_usuario_id, "valor_dano": valor_dano},
+        )
 
     async def rechazar(
         self, siniestro_id: str, motivo: str, comentario: str | None, actor_usuario_id: str

@@ -143,3 +143,33 @@ def test_las_conversiones_del_sandbox_usan_tasas_fijas(p) -> None:
     respuesta = p.post("/v1/conversiones", cuerpo)
     assert respuesta.status_code == 200, respuesta.text
     assert respuesta.json() == {"montos": [{"valor": "10.00", "moneda": "USD"}]}
+
+
+def _cotizar_auto(p, placa: str = "ABC123", documento: str = "1000000001"):
+    consentimiento = p.post(
+        "/v1/consentimientos",
+        {"documentoIdentidad": documento, "finalidad": "cotizacion", "versionTexto": "v1"},
+    ).json()
+    return p.post(
+        "/v1/cotizaciones-auto",
+        {
+            "consentimientoId": consentimiento["id"],
+            "documentoIdentidad": documento,
+            "placa": placa,
+            "kilometrajeAnual": 12000,
+            "ciudadCirculacion": "Bogotá",
+        },
+    )
+
+
+def test_cotizacion_de_auto_en_modo_prueba(p) -> None:
+    """KAN-290: datos simulados de auto, sin tocar RUNT ni Fasecolda; NOX000 no existe."""
+    r = _cotizar_auto(p)
+    assert r.status_code == 200, r.text
+    oferta = r.json()["oferta"]
+    assert oferta["producto"] == "AUTO" and oferta["tipo"] == "COMPLETA"
+    assert oferta["vehiculo"]["placaEnmascarada"] == "ABC•••"
+    assert len(oferta["coberturas"]) == 6
+    no_existe = _cotizar_auto(p, placa="NOX000")
+    assert no_existe.status_code == 422
+    assert no_existe.json()["codigo"] == "VEHICULO_NO_ENCONTRADO"

@@ -1,0 +1,1693 @@
+{
+  "info": {
+    "name": "Solventa - HU-W08 (póliza de auto todo riesgo, de punta a punta por el gateway)",
+    "description": "KAN-290, docs/plan-poliza-auto.md. Cotización con la tarifa y su degradación, suscripción con UNDER, API de socios, y el siniestro de auto desde la app hasta la indemnización con deducible. Necesita el stack del compose, stub-vehiculos y la semilla de pólizas (póliza de auto del cliente demo).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Preparación",
+      "item": [
+        {
+          "name": "0.1 iniciarSesion como BACKOFFICE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) { iniciarSesion(entrada: $e) { __typename ... on Sesion { token } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{usuario_backoffice}}\",\n      \"clave\": \"{{clave_backoffice}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('id_reporte', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.collectionVariables.set('token_backoffice', cuerpo.data.iniciarSesion.token);",
+                  "pm.test('Sesión de BACKOFFICE', () => pm.expect(cuerpo.data.iniciarSesion.__typename).to.eql('Sesion'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.2 iniciarSesion del CLIENTE demo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) { iniciarSesion(entrada: $e) { __typename ... on Sesion { token } } }\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{usuario_cliente_demo}}\",\n      \"clave\": \"{{clave_cliente_demo}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.collectionVariables.set('token_cliente', cuerpo.data.iniciarSesion.token);",
+                  "pm.test('Sesión del CLIENTE demo', () => pm.expect(cuerpo.data.iniciarSesion.__typename).to.eql('Sesion'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.3 el CLIENTE consiente la cotización del auto",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: ConsentimientoInput!) { registrarConsentimiento(entrada: $e) { id vigente } }\",\n  \"variables\": {\n    \"e\": {\n      \"finalidad\": \"cotizacion-auto\",\n      \"versionTexto\": \"v2\",\n      \"tipoDato\": \"VEHICULO\",\n      \"fuenteDatos\": \"RUNT_FASECOLDA_SINIESTRALIDAD\",\n      \"canal\": \"WEB\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.collectionVariables.set('consentimiento_auto', cuerpo.data.registrarConsentimiento.id);",
+                  "pm.test('Consentimiento vigente (regla 7: antes de consultar)', () => pm.expect(cuerpo.data.registrarConsentimiento.vigente).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Cotización (tarifa y degradación)",
+      "item": [
+        {
+          "name": "1.1 ABC123 nuevo y sin siniestros: COMPLETA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudOfertaAutoInput!) { solicitarOfertaAuto(entrada: $e) { __typename\\n  ... on Oferta { id producto tipo prima { valor moneda } rangoPrima { minima { valor } maxima { valor } }\\n    cobertura { valor moneda } desgloseScore { nombre } fuentes { nombre estado }\\n    vehiculo { placaEnmascarada marca linea modelo clase uso valorComercial { valor } ciudadCirculacion\\n      kilometrajeAnual deducible }\\n    coberturas { tipo valorAsegurado { valor } deducible } factoresTarifa { nombre factor detalle } }\\n  ... on ErrorOferta { mensaje puedeReintentar motivo } } }\",\n  \"variables\": {\n    \"e\": {\n      \"consentimientoId\": \"{{consentimiento_auto}}\",\n      \"placa\": \"abc 123\",\n      \"kilometrajeAnual\": 12000,\n      \"ciudadCirculacion\": \"Bogotá\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const o = cuerpo.data.solicitarOfertaAuto;",
+                  "pm.collectionVariables.set('oferta_abc', o.id);",
+                  "pm.collectionVariables.set('prima_abc', o.prima.valor);",
+                  "pm.test('Oferta de AUTO completa', () => { pm.expect(o.producto).to.eql('AUTO'); pm.expect(o.tipo).to.eql('COMPLETA'); });",
+                  "pm.test('Prima de la tarifa (contracts/tarifas-auto.json)', () => pm.expect(o.prima.valor).to.eql('332198.00'));",
+                  "pm.test('Cobertura = valor comercial de Fasecolda', () => pm.expect(o.cobertura.valor).to.eql('118500000.00'));",
+                  "pm.test('6 coberturas todo riesgo y 7 factores', () => { pm.expect(o.coberturas).to.have.length(6); pm.expect(o.factoresTarifa).to.have.length(7); });",
+                  "pm.test('Sin score financiero en auto', () => pm.expect(o.desgloseScore).to.eql([]));",
+                  "pm.test('Las 3 fuentes del vehículo en OK', () => pm.expect(o.fuentes.map(f => f.estado)).to.eql(['OK', 'OK', 'OK']));",
+                  "pm.test('Placa enmascarada; la completa nunca sale (regla 6)', () => { pm.expect(o.vehiculo.placaEnmascarada).to.eql('ABC•••'); pm.expect(pm.response.text()).to.not.include('ABC123'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 GHI789 con hurto muy alto: prima mayor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudOfertaAutoInput!) { solicitarOfertaAuto(entrada: $e) { __typename\\n  ... on Oferta { id producto tipo prima { valor moneda } rangoPrima { minima { valor } maxima { valor } }\\n    cobertura { valor moneda } desgloseScore { nombre } fuentes { nombre estado }\\n    vehiculo { placaEnmascarada marca linea modelo clase uso valorComercial { valor } ciudadCirculacion\\n      kilometrajeAnual deducible }\\n    coberturas { tipo valorAsegurado { valor } deducible } factoresTarifa { nombre factor detalle } }\\n  ... on ErrorOferta { mensaje puedeReintentar motivo } } }\",\n  \"variables\": {\n    \"e\": {\n      \"consentimientoId\": \"{{consentimiento_auto}}\",\n      \"placa\": \"GHI789\",\n      \"kilometrajeAnual\": 12000,\n      \"ciudadCirculacion\": \"Bogotá\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const o = cuerpo.data.solicitarOfertaAuto;",
+                  "pm.test('COMPLETA', () => pm.expect(o.tipo).to.eql('COMPLETA'));",
+                  "pm.test('Factor de hurto 1,40', () => pm.expect(o.factoresTarifa.find(f => f.nombre === 'INDICE_HURTO').factor).to.eql(1.4));",
+                  "pm.test('Más cara que ABC123', () => pm.expect(Number(o.prima.valor)).to.be.above(Number(pm.collectionVariables.get('prima_abc'))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 YZA456 con Fasecolda caída: PRELIMINAR con rango",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudOfertaAutoInput!) { solicitarOfertaAuto(entrada: $e) { __typename\\n  ... on Oferta { id producto tipo prima { valor moneda } rangoPrima { minima { valor } maxima { valor } }\\n    cobertura { valor moneda } desgloseScore { nombre } fuentes { nombre estado }\\n    vehiculo { placaEnmascarada marca linea modelo clase uso valorComercial { valor } ciudadCirculacion\\n      kilometrajeAnual deducible }\\n    coberturas { tipo valorAsegurado { valor } deducible } factoresTarifa { nombre factor detalle } }\\n  ... on ErrorOferta { mensaje puedeReintentar motivo } } }\",\n  \"variables\": {\n    \"e\": {\n      \"consentimientoId\": \"{{consentimiento_auto}}\",\n      \"placa\": \"YZA456\",\n      \"kilometrajeAnual\": 12000,\n      \"ciudadCirculacion\": \"Bogotá\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const o = cuerpo.data.solicitarOfertaAuto;",
+                  "pm.test('PRELIMINAR sin prima puntual (regla 4)', () => { pm.expect(o.tipo).to.eql('PRELIMINAR'); pm.expect(o.prima).to.eql(null); pm.expect(o.rangoPrima.minima.valor).to.be.a('string'); });",
+                  "pm.test('Fasecolda en FALLO', () => pm.expect(o.fuentes.find(f => f.nombre === 'fasecolda-valor').estado).to.eql('FALLO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 NOX000 no existe en RUNT",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudOfertaAutoInput!) { solicitarOfertaAuto(entrada: $e) { __typename\\n  ... on Oferta { id producto tipo prima { valor moneda } rangoPrima { minima { valor } maxima { valor } }\\n    cobertura { valor moneda } desgloseScore { nombre } fuentes { nombre estado }\\n    vehiculo { placaEnmascarada marca linea modelo clase uso valorComercial { valor } ciudadCirculacion\\n      kilometrajeAnual deducible }\\n    coberturas { tipo valorAsegurado { valor } deducible } factoresTarifa { nombre factor detalle } }\\n  ... on ErrorOferta { mensaje puedeReintentar motivo } } }\",\n  \"variables\": {\n    \"e\": {\n      \"consentimientoId\": \"{{consentimiento_auto}}\",\n      \"placa\": \"NOX000\",\n      \"kilometrajeAnual\": 12000,\n      \"ciudadCirculacion\": \"Bogotá\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const e = cuerpo.data.solicitarOfertaAuto;",
+                  "pm.test('ErrorOferta VEHICULO_NO_ENCONTRADO sin reintento', () => { pm.expect(e.motivo).to.eql('VEHICULO_NO_ENCONTRADO'); pm.expect(e.puedeReintentar).to.eql(false); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5 STU901 hurtado: no asegurable",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudOfertaAutoInput!) { solicitarOfertaAuto(entrada: $e) { __typename\\n  ... on Oferta { id producto tipo prima { valor moneda } rangoPrima { minima { valor } maxima { valor } }\\n    cobertura { valor moneda } desgloseScore { nombre } fuentes { nombre estado }\\n    vehiculo { placaEnmascarada marca linea modelo clase uso valorComercial { valor } ciudadCirculacion\\n      kilometrajeAnual deducible }\\n    coberturas { tipo valorAsegurado { valor } deducible } factoresTarifa { nombre factor detalle } }\\n  ... on ErrorOferta { mensaje puedeReintentar motivo } } }\",\n  \"variables\": {\n    \"e\": {\n      \"consentimientoId\": \"{{consentimiento_auto}}\",\n      \"placa\": \"STU901\",\n      \"kilometrajeAnual\": 12000,\n      \"ciudadCirculacion\": \"Bogotá\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const e = cuerpo.data.solicitarOfertaAuto;",
+                  "pm.test('ErrorOferta VEHICULO_NO_ASEGURABLE con su razón', () => { pm.expect(e.motivo).to.eql('VEHICULO_NO_ASEGURABLE'); pm.expect(e.mensaje).to.include('hurto'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.6 PQR678 con más de 15 años: no asegurable",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudOfertaAutoInput!) { solicitarOfertaAuto(entrada: $e) { __typename\\n  ... on Oferta { id producto tipo prima { valor moneda } rangoPrima { minima { valor } maxima { valor } }\\n    cobertura { valor moneda } desgloseScore { nombre } fuentes { nombre estado }\\n    vehiculo { placaEnmascarada marca linea modelo clase uso valorComercial { valor } ciudadCirculacion\\n      kilometrajeAnual deducible }\\n    coberturas { tipo valorAsegurado { valor } deducible } factoresTarifa { nombre factor detalle } }\\n  ... on ErrorOferta { mensaje puedeReintentar motivo } } }\",\n  \"variables\": {\n    \"e\": {\n      \"consentimientoId\": \"{{consentimiento_auto}}\",\n      \"placa\": \"PQR678\",\n      \"kilometrajeAnual\": 12000,\n      \"ciudadCirculacion\": \"Bogotá\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const e = cuerpo.data.solicitarOfertaAuto;",
+                  "pm.test('ErrorOferta por antigüedad', () => { pm.expect(e.motivo).to.eql('VEHICULO_NO_ASEGURABLE'); pm.expect(e.mensaje).to.include('15 años'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.7 placa con forma inválida",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudOfertaAutoInput!) { solicitarOfertaAuto(entrada: $e) { __typename\\n  ... on Oferta { id producto tipo prima { valor moneda } rangoPrima { minima { valor } maxima { valor } }\\n    cobertura { valor moneda } desgloseScore { nombre } fuentes { nombre estado }\\n    vehiculo { placaEnmascarada marca linea modelo clase uso valorComercial { valor } ciudadCirculacion\\n      kilometrajeAnual deducible }\\n    coberturas { tipo valorAsegurado { valor } deducible } factoresTarifa { nombre factor detalle } }\\n  ... on ErrorOferta { mensaje puedeReintentar motivo } } }\",\n  \"variables\": {\n    \"e\": {\n      \"consentimientoId\": \"{{consentimiento_auto}}\",\n      \"placa\": \"12ABC\",\n      \"kilometrajeAnual\": 12000,\n      \"ciudadCirculacion\": \"Bogotá\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const e = cuerpo.data.solicitarOfertaAuto;",
+                  "pm.test('ErrorOferta sin consultar fuentes', () => { pm.expect(e.__typename).to.eql('ErrorOferta'); pm.expect(e.mensaje).to.include('placa'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.8 kilometraje fuera de rango",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudOfertaAutoInput!) { solicitarOfertaAuto(entrada: $e) { __typename\\n  ... on Oferta { id producto tipo prima { valor moneda } rangoPrima { minima { valor } maxima { valor } }\\n    cobertura { valor moneda } desgloseScore { nombre } fuentes { nombre estado }\\n    vehiculo { placaEnmascarada marca linea modelo clase uso valorComercial { valor } ciudadCirculacion\\n      kilometrajeAnual deducible }\\n    coberturas { tipo valorAsegurado { valor } deducible } factoresTarifa { nombre factor detalle } }\\n  ... on ErrorOferta { mensaje puedeReintentar motivo } } }\",\n  \"variables\": {\n    \"e\": {\n      \"consentimientoId\": \"{{consentimiento_auto}}\",\n      \"placa\": \"ABC123\",\n      \"kilometrajeAnual\": 250000,\n      \"ciudadCirculacion\": \"Bogotá\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const e = cuerpo.data.solicitarOfertaAuto;",
+                  "pm.test('ErrorOferta por kilometraje', () => pm.expect(e.mensaje).to.include('kilometraje'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Suscripción (POLICY y UNDER)",
+      "item": [
+        {
+          "name": "2.1 aceptarOferta de ABC123",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($o: ID!) { aceptarOferta(ofertaId: $o) { __typename\\n  ... on Propuesta { id estado producto vehiculo { marca placaEnmascarada } }\\n  ... on ErrorAceptacion { mensaje motivo } } }\",\n  \"variables\": {\n    \"o\": \"{{oferta_abc}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const p = cuerpo.data.aceptarOferta;",
+                  "pm.collectionVariables.set('propuesta_abc', p.id);",
+                  "pm.test('Propuesta de AUTO con su vehículo', () => { pm.expect(p.producto).to.eql('AUTO'); pm.expect(p.vehiculo.marca).to.eql('MAZDA'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 emitirPropuesta (UNDER aprueba: a firma)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID!) { emitirPropuesta(propuestaId: $p) { __typename\\n  ... on Propuesta { id estado producto motivoEstado } ... on ErrorEmision { mensaje } } }\",\n  \"variables\": {\n    \"p\": \"{{propuesta_abc}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const p = cuerpo.data.emitirPropuesta;",
+                  "pm.test('EN_FIRMA', () => pm.expect(p.estado).to.eql('EN_FIRMA'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 JKL012 con 3 siniestros: oferta",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudOfertaAutoInput!) { solicitarOfertaAuto(entrada: $e) { __typename\\n  ... on Oferta { id producto tipo prima { valor moneda } rangoPrima { minima { valor } maxima { valor } }\\n    cobertura { valor moneda } desgloseScore { nombre } fuentes { nombre estado }\\n    vehiculo { placaEnmascarada marca linea modelo clase uso valorComercial { valor } ciudadCirculacion\\n      kilometrajeAnual deducible }\\n    coberturas { tipo valorAsegurado { valor } deducible } factoresTarifa { nombre factor detalle } }\\n  ... on ErrorOferta { mensaje puedeReintentar motivo } } }\",\n  \"variables\": {\n    \"e\": {\n      \"consentimientoId\": \"{{consentimiento_auto}}\",\n      \"placa\": \"JKL012\",\n      \"kilometrajeAnual\": 12000,\n      \"ciudadCirculacion\": \"Bogotá\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const o = cuerpo.data.solicitarOfertaAuto;",
+                  "pm.collectionVariables.set('oferta_jkl', o.id);",
+                  "pm.test('COMPLETA con factor de siniestralidad 1,30', () => { pm.expect(o.tipo).to.eql('COMPLETA'); pm.expect(o.factoresTarifa.find(f => f.nombre === 'SINIESTRALIDAD').factor).to.eql(1.3); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 aceptarOferta de JKL012",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($o: ID!) { aceptarOferta(ofertaId: $o) { __typename\\n  ... on Propuesta { id estado producto vehiculo { marca placaEnmascarada } }\\n  ... on ErrorAceptacion { mensaje motivo } } }\",\n  \"variables\": {\n    \"o\": \"{{oferta_jkl}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.collectionVariables.set('propuesta_jkl', cuerpo.data.aceptarOferta.id);",
+                  "pm.test('Propuesta creada', () => pm.expect(cuerpo.data.aceptarOferta.__typename).to.eql('Propuesta'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.5 emitirPropuesta de JKL012 (UNDER: revisión)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID!) { emitirPropuesta(propuestaId: $p) { __typename\\n  ... on Propuesta { id estado producto motivoEstado } ... on ErrorEmision { mensaje } } }\",\n  \"variables\": {\n    \"p\": \"{{propuesta_jkl}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const p = cuerpo.data.emitirPropuesta;",
+                  "pm.test('EN_REVISION por siniestralidad alta, nunca aprobada a ciegas', () => pm.expect(p.estado).to.eql('EN_REVISION'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. API de socios",
+      "item": [
+        {
+          "name": "3.1 token del socio de producción",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/token",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientId\": \"{{socio1_client_id}}\",\n  \"clave\": \"{{socio1_clave}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_socio', pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 consentimiento del titular",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/consentimientos",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "consentimientos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_socio}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documentoIdentidad\": \"1020304066\",\n  \"finalidad\": \"cotizacion-auto\",\n  \"versionTexto\": \"v1\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('consentimiento_socio', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 cotizaciones-auto GHI789",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/cotizaciones-auto",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "cotizaciones-auto"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_socio}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consentimientoId\": \"{{consentimiento_socio}}\",\n  \"documentoIdentidad\": \"1020304066\",\n  \"placa\": \"GHI789\",\n  \"kilometrajeAnual\": 15000,\n  \"ciudadCirculacion\": \"Medellín\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('presupuesto_socio', r.presupuestoRestante);",
+                  "pm.test('Oferta AUTO con vehículo y coberturas', () => { pm.expect(r.oferta.producto).to.eql('AUTO'); pm.expect(r.oferta.vehiculo.placaEnmascarada).to.eql('GHI•••'); pm.expect(r.oferta.coberturas).to.have.length(6); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 cotizaciones-auto PQR678 (no asegurable, devuelve presupuesto)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/cotizaciones-auto",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "cotizaciones-auto"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_socio}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consentimientoId\": \"{{consentimiento_socio}}\",\n  \"documentoIdentidad\": \"1020304066\",\n  \"placa\": \"PQR678\",\n  \"kilometrajeAnual\": 15000,\n  \"ciudadCirculacion\": \"Medellín\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 con el motivo del vehículo', () => { pm.response.to.have.status(422); pm.expect(pm.response.json().codigo).to.eql('VEHICULO_NO_ASEGURABLE'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.5 la cotización rechazada no gastó presupuesto",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/consumo",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "consumo"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_socio}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('El restante es el mismo de 3.3', () => pm.expect(JSON.stringify(pm.response.json())).to.include(String(pm.collectionVariables.get('presupuesto_socio'))));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Siniestro de auto (de la app a la indemnización)",
+      "item": [
+        {
+          "name": "4.1 la póliza de auto del cliente demo (semilla)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"{ propuestas(pagina: 1, tamano: 50) { propuestas { producto poliza { id ramo producto } } } }\",\n  \"variables\": {}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('ocurrido_en', new Date(Date.now() - 2 * 3600 * 1000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const auto = cuerpo.data.propuestas.propuestas.find(p => p.producto === 'AUTO' && p.poliza);",
+                  "pm.test('Tiene una póliza de auto emitida', () => pm.expect(auto).to.not.eql(undefined));",
+                  "pm.collectionVariables.set('poliza_auto', auto.poliza.id);",
+                  "pm.test('Ramo por producto', () => pm.expect(auto.poliza.ramo).to.eql('Automóviles todo riesgo'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2a solicitarSubidaEvidenciaSiniestro",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($i: ID!, $t: String!, $n: Int!) { solicitarSubidaEvidenciaSiniestro(idReporte: $i, tipoContenido: $t, tamanoBytes: $n) {\\n  __typename ... on SubidaArchivo { url metodo encabezados { nombre valor } archivo { id } } ... on ErrorArchivo { codigo } } }\",\n  \"variables\": {\n    \"i\": \"{{id_reporte}}\",\n    \"t\": \"image/png\",\n    \"n\": 385\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const s = cuerpo.data.solicitarSubidaEvidenciaSiniestro;",
+                  "pm.collectionVariables.set('archivo_1', s.archivo.id);",
+                  "pm.collectionVariables.set('archivo_1_url', s.url);",
+                  "pm.collectionVariables.set('archivo_1_cab', JSON.stringify(s.encabezados));",
+                  "pm.test('URL firmada', () => pm.expect(s.__typename).to.eql('SubidaArchivo'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2b PUT de la foto a la URL firmada",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{archivo_1_url}}",
+              "host": [
+                "{{archivo_1_url}}"
+              ],
+              "path": []
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": "tests/newman/archivos/firma-valida.png"
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "JSON.parse(pm.collectionVariables.get('archivo_1_cab')).forEach(c =>",
+                  "  pm.request.headers.upsert({ key: c.nombre, value: c.valor }));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('la foto quedó en el bucket', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2c confirmarSubidaArchivo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($i: ID!) { confirmarSubidaArchivo(id: $i) { __typename ... on Archivo { estado } ... on ErrorArchivo { codigo } } }\",\n  \"variables\": {\n    \"i\": \"{{archivo_1}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('DISPONIBLE', () => pm.expect(cuerpo.data.confirmarSubidaArchivo.estado).to.eql('DISPONIBLE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 reportar sin tipo de siniestro: se rechaza",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado tipoSiniestroAuto } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte}}\",\n      \"polizaId\": \"{{poliza_auto}}\",\n      \"ocurridoEn\": \"{{ocurrido_en}}\",\n      \"descripcion\": \"Choque leve en la calle 80 con 30: el otro carro me golpeó el costado derecho.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Calle 80 con 30\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.68,\n        \"longitud\": -74.07\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"{{ocurrido_en}}\"\n        }\n      ]\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.reportarSiniestro;",
+                  "pm.test('ErrorSiniestro que pide el tipo', () => { pm.expect(r.__typename).to.eql('ErrorSiniestro'); pm.expect(r.mensaje).to.include('vehículo'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.4 reportar un choque parcial",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado tipoSiniestroAuto } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte}}\",\n      \"polizaId\": \"{{poliza_auto}}\",\n      \"ocurridoEn\": \"{{ocurrido_en}}\",\n      \"descripcion\": \"Choque leve en la calle 80 con 30: el otro carro me golpeó el costado derecho.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Calle 80 con 30\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.68,\n        \"longitud\": -74.07\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"{{ocurrido_en}}\"\n        }\n      ],\n      \"tipoSiniestroAuto\": \"CHOQUE_PARCIAL\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.reportarSiniestro;",
+                  "pm.collectionVariables.set('siniestro_auto', r.id);",
+                  "pm.test('PENDIENTE con su tipo', () => { pm.expect(r.estado).to.eql('PENDIENTE'); pm.expect(r.tipoSiniestroAuto).to.eql('CHOQUE_PARCIAL'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.5 aprobar sin valor del daño: se pide",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($i: ID!, $v: String) { aprobarSiniestro(id: $i, valorDano: $v) { __typename\\n  ... on Siniestro { estado coberturaAplicada tipoSiniestroAuto poliza { ramo producto }\\n    resolucion { automatica indemnizacion { valor moneda } } } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"i\": \"{{siniestro_auto}}\",\n    \"v\": null\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.aprobarSiniestro;",
+                  "pm.test('ErrorSiniestro que pide el valor', () => { pm.expect(r.__typename).to.eql('ErrorSiniestro'); pm.expect(r.mensaje).to.include('valor del daño'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.6 aprobar con un daño menor que el deducible: no hay pago",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($i: ID!, $v: String) { aprobarSiniestro(id: $i, valorDano: $v) { __typename\\n  ... on Siniestro { estado coberturaAplicada tipoSiniestroAuto poliza { ramo producto }\\n    resolucion { automatica indemnizacion { valor moneda } } } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"i\": \"{{siniestro_auto}}\",\n    \"v\": \"900000\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.aprobarSiniestro;",
+                  "pm.test('ErrorSiniestro: no supera el deducible', () => pm.expect(r.mensaje).to.include('deducible'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.7 aprobar con 8.000.000: indemnización menos el deducible",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($i: ID!, $v: String) { aprobarSiniestro(id: $i, valorDano: $v) { __typename\\n  ... on Siniestro { estado coberturaAplicada tipoSiniestroAuto poliza { ramo producto }\\n    resolucion { automatica indemnizacion { valor moneda } } } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"i\": \"{{siniestro_auto}}\",\n    \"v\": \"8000000\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.aprobarSiniestro;",
+                  "pm.test('APROBADO', () => pm.expect(r.estado).to.eql('APROBADO'));",
+                  "pm.test('Cobertura según el tipo', () => pm.expect(r.coberturaAplicada).to.eql('Pérdida parcial por daños'));",
+                  "pm.test('8.000.000 − 1 SMMLV = 6.576.500', () => pm.expect(r.resolucion.indemnizacion.valor).to.eql('6576500.00'));",
+                  "pm.test('Póliza de auto en el caso', () => pm.expect(r.poliza.producto).to.eql('AUTO'));",
+                  "pm.test('Aprobación manual, no automática', () => pm.expect(r.resolucion.automatica).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Autorización",
+      "item": [
+        {
+          "name": "5.1 el BACKOFFICE no cotiza",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudOfertaAutoInput!) { solicitarOfertaAuto(entrada: $e) { __typename\\n  ... on Oferta { id producto tipo prima { valor moneda } rangoPrima { minima { valor } maxima { valor } }\\n    cobertura { valor moneda } desgloseScore { nombre } fuentes { nombre estado }\\n    vehiculo { placaEnmascarada marca linea modelo clase uso valorComercial { valor } ciudadCirculacion\\n      kilometrajeAnual deducible }\\n    coberturas { tipo valorAsegurado { valor } deducible } factoresTarifa { nombre factor detalle } }\\n  ... on ErrorOferta { mensaje puedeReintentar motivo } } }\",\n  \"variables\": {\n    \"e\": {\n      \"consentimientoId\": \"{{consentimiento_auto}}\",\n      \"placa\": \"ABC123\",\n      \"kilometrajeAnual\": 12000,\n      \"ciudadCirculacion\": \"Bogotá\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Sin oferta para el BACKOFFICE', () => pm.expect(cuerpo.data && cuerpo.data.solicitarOfertaAuto && cuerpo.data.solicitarOfertaAuto.id).to.not.be.ok);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.2 sin token no se cotiza",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudOfertaAutoInput!) { solicitarOfertaAuto(entrada: $e) { __typename\\n  ... on Oferta { id producto tipo prima { valor moneda } rangoPrima { minima { valor } maxima { valor } }\\n    cobertura { valor moneda } desgloseScore { nombre } fuentes { nombre estado }\\n    vehiculo { placaEnmascarada marca linea modelo clase uso valorComercial { valor } ciudadCirculacion\\n      kilometrajeAnual deducible }\\n    coberturas { tipo valorAsegurado { valor } deducible } factoresTarifa { nombre factor detalle } }\\n  ... on ErrorOferta { mensaje puedeReintentar motivo } } }\",\n  \"variables\": {\n    \"e\": {\n      \"consentimientoId\": \"{{consentimiento_auto}}\",\n      \"placa\": \"ABC123\",\n      \"kilometrajeAnual\": 12000,\n      \"ciudadCirculacion\": \"Bogotá\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Sin oferta sin sesión', () => pm.expect(cuerpo.data && cuerpo.data.solicitarOfertaAuto && cuerpo.data.solicitarOfertaAuto.id).to.not.be.ok);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.3 el CLIENTE no aprueba siniestros",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($i: ID!, $v: String) { aprobarSiniestro(id: $i, valorDano: $v) { __typename\\n  ... on Siniestro { estado coberturaAplicada tipoSiniestroAuto poliza { ramo producto }\\n    resolucion { automatica indemnizacion { valor moneda } } } ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"i\": \"{{siniestro_auto}}\",\n    \"v\": \"1\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Rechazado por rol', () => pm.expect(cuerpo.data && cuerpo.data.aprobarSiniestro && cuerpo.data.aprobarSiniestro.estado).to.not.be.ok);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "usuario_cliente_demo",
+      "value": "cliente.siniestros"
+    },
+    {
+      "key": "clave_cliente_demo",
+      "value": "Cliente-local-1"
+    }
+  ]
+}

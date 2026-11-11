@@ -175,6 +175,15 @@ class ServicioSiniestros:
 
     # ---------- Reporte del cliente (HU-M05, KAN-274) ----------
 
+    def _tipo_auto(self, poliza: dict, reporte: dict) -> str | None:
+        """KAN-290: en una póliza de AUTO el cliente dice qué pasó; en vida no aplica."""
+        if poliza.get("producto") != "AUTO":
+            return None
+        tipo = reporte.get("tipo_siniestro_auto")
+        if tipo not in COBERTURA_POR_TIPO_AUTO:
+            raise ErrorNegocio(MENSAJE_REPORTE_TIPO_AUTO)
+        return tipo
+
     def reportar(self, reporte: dict) -> dict:
         """Crea el caso PENDIENTE que llega a la mesa de siniestros (W04-01).
 
@@ -208,6 +217,7 @@ class ServicioSiniestros:
         if not desde <= ocurrido <= hasta:
             raise ErrorNegocio(MENSAJE_REPORTE_VIGENCIA)
         self._validar_fotos(sid, fotos)
+        tipo_auto = self._tipo_auto(poliza, reporte)
 
         siniestro = {
             "id": sid,
@@ -215,7 +225,9 @@ class ServicioSiniestros:
             "poliza_id": poliza["id"],
             "estado": "PENDIENTE",
             "asegurado": reporte["asegurado"],
-            "cobertura_aplicada": reporte["cobertura_aplicada"],
+            "cobertura_aplicada": COBERTURA_POR_TIPO_AUTO[tipo_auto]
+            if tipo_auto
+            else reporte["cobertura_aplicada"],
             "entidad_acreedora": ENTIDAD_POR_CONFIRMAR,
             "ocurrido_en": ocurrido,
             "notificado_en": ahora,
@@ -229,6 +241,7 @@ class ServicioSiniestros:
             },
             "vence_dictamen_en": sumar_dias_habiles(ahora, SLA_DICTAMEN_DIAS_HABILES),
             "reportado_por": cliente,
+            "tipo_siniestro_auto": tipo_auto,
         }
         evidencias = [self._evidencia_reportada(sid, i, f, ahora) for i, f in enumerate(fotos, 1)]
         if not self._repo.crear_reporte(siniestro, evidencias, ahora):
@@ -407,6 +420,8 @@ class ServicioSiniestros:
                 self.aprobar(siniestro_id, ACTOR_SISTEMA, automatica=True)
                 aprobados += 1
             except (DependenciaNoDisponible, ErrorNegocio) as error:
+                # KAN-290: un siniestro de auto parcial necesita el valor del daño del operador:
+                # el sistema no lo inventa y el caso sigue en la bandeja, contado aquí.
                 pendientes += 1
                 logger.warning(
                     "siniestro=%s sin aprobar por vencimiento: %s", id_opaco(siniestro_id), error
@@ -421,12 +436,18 @@ class ServicioSiniestros:
             raise ErrorNegocio("Solo se puede mover el plazo de un caso pendiente.")
         return {"id": siniestro_id, "venceDictamenEn": vence_en.isoformat()}
 
-    def aprobar(self, siniestro_id: str, actor: str | None, automatica: bool = False) -> dict:
+    def aprobar(
+        self,
+        siniestro_id: str,
+        actor: str | None,
+        automatica: bool = False,
+        valor_dano: str | None = None,
+    ) -> dict:
         """W04-6: primero la orden de pago en PAYMENTS (idempotente por siniestro) y después la
         aprobación. Si PAYMENTS o POLICY no responden, el caso sigue abierto y nada queda a medias:
         reintentar devuelve la misma orden."""
         siniestro = self._abierto(siniestro_id)
-        indemnizacion = self._indemnizacion(siniestro)
+        indemnizacion = self._indemnizacion(siniestro, valor_dano)
         try:
             orden = self._payments.ordenar_indemnizacion(
                 siniestro_id,
@@ -465,12 +486,15 @@ class ServicioSiniestros:
         if self._bus is not None:
             self._bus.publicar(evento)
 
-    def _indemnizacion(self, siniestro: dict) -> dict:
-        """W04-8: la suma reclamada, acotada a la cobertura de la póliza (en la misma moneda)."""
+    def _indemnizacion(self, siniestro: dict, valor_dano: str | None = None) -> dict:
+        """W04-8: la suma reclamada, acotada a la cobertura de la póliza (en la misma moneda).
+        KAN-290: en AUTO depende del tipo (ver `indemnizacion_auto`)."""
         try:
             poliza = self._policy.obtener_poliza(siniestro["poliza_id"])
         except (ServicioNoDisponible, SolicitudRechazada) as error:
             raise DependenciaNoDisponible(MENSAJE_POLIZA) from error
+        if siniestro.get("tipo_siniestro_auto"):
+            return indemnizacion_auto(siniestro["tipo_siniestro_auto"], poliza, valor_dano)
         reclamada = siniestro["suma_reclamada"]
         cobertura = poliza["cobertura"]
         if cobertura["moneda"] == reclamada["moneda"] and Decimal(cobertura["valor"]) < Decimal(
@@ -556,3 +580,63 @@ class ServicioSiniestros:
                 "vencimiento_informe": asignacion["vence_informe_en"],
             }
         return None
+
+
+# ---------- KAN-290: siniestros de la póliza de auto ----------
+
+COBERTURA_POR_TIPO_AUTO = {
+    "CHOQUE_PARCIAL": "Pérdida parcial por daños",
+    "PERDIDA_TOTAL_DANOS": "Pérdida total por daños",
+    "HURTO_TOTAL": "Pérdida total por hurto",
+    "HURTO_PARCIAL": "Pérdida parcial por hurto",
+    "RESPONSABILIDAD_CIVIL": "Responsabilidad civil extracontractual",
+}
+# El tipo de cobertura de la póliza (contrato v0.42) que respalda cada tipo de siniestro.
+TIPO_COBERTURA = {
+    "CHOQUE_PARCIAL": "PERDIDA_PARCIAL_DANOS",
+    "PERDIDA_TOTAL_DANOS": "PERDIDA_TOTAL_DANOS",
+    "HURTO_TOTAL": "PERDIDA_TOTAL_HURTO",
+    "HURTO_PARCIAL": "PERDIDA_PARCIAL_HURTO",
+    "RESPONSABILIDAD_CIVIL": "RESPONSABILIDAD_CIVIL",
+}
+TOTALES = ("PERDIDA_TOTAL_DANOS", "HURTO_TOTAL")
+DEDUCIBLE_PORCENTAJE = Decimal("0.10")
+# Mismo valor que `smmlv` de contracts/tarifas-auto.json (2026).
+SMMLV = Decimal("1423500")
+MENSAJE_REPORTE_TIPO_AUTO = "Indica qué le pasó al vehículo."
+MENSAJE_VALOR_DANO = "Digita el valor del daño para aprobar este siniestro."
+MENSAJE_SIN_INDEMNIZACION = (
+    "El valor del daño no supera el deducible: no hay indemnización. Rechaza el caso."
+)
+
+
+def indemnizacion_auto(tipo: str, poliza: dict, valor_dano: str | None) -> dict:
+    """Plan A-3: pérdida total = valor asegurado − deducible; parcial y RC = valor del daño que
+    digita el operador (con tope del valor asegurado de esa cobertura) − deducible. El deducible
+    es el 10 % de la pérdida con mínimo 1 SMMLV, si la póliza lo tiene y la cobertura lo aplica."""
+    tipo_cobertura = TIPO_COBERTURA[tipo]
+    cobertura = next(
+        (c for c in poliza.get("coberturas") or [] if c.get("tipo") == tipo_cobertura), None
+    )
+    asegurado = (cobertura or {}).get("valorAsegurado") or poliza["cobertura"]
+    tope = Decimal(asegurado["valor"])
+    moneda = asegurado["moneda"]
+    if tipo in TOTALES:
+        perdida = tope
+    else:
+        if not valor_dano:
+            raise ErrorNegocio(MENSAJE_VALOR_DANO)
+        try:
+            perdida = min(Decimal(valor_dano), tope)
+        except ArithmeticError as error:
+            raise ErrorNegocio(MENSAJE_VALOR_DANO) from error
+        if perdida <= 0:
+            raise ErrorNegocio(MENSAJE_VALOR_DANO)
+    tiene_deducible = (poliza.get("vehiculo") or {}).get("deducible") != "SIN_DEDUCIBLE" and bool(
+        (cobertura or {}).get("deducible")
+    )
+    deducible = max(perdida * DEDUCIBLE_PORCENTAJE, SMMLV) if tiene_deducible else Decimal(0)
+    valor = (perdida - deducible).quantize(Decimal("0.01"))
+    if valor <= 0:
+        raise ErrorNegocio(MENSAJE_SIN_INDEMNIZACION)
+    return {"valor": str(valor), "moneda": moneda}

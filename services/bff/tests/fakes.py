@@ -40,6 +40,44 @@ CONSENTIMIENTO_VIGENTE = {
 
 # Misma forma que devuelve `POST /ofertas` de RATING
 # (services/rating/app/application/servicio_oferta.py).
+# KAN-290: lo que devuelve RATING en `POST /ofertas/auto`.
+OFERTA_AUTO = {
+    "id": "o-auto-1",
+    "producto": "AUTO",
+    "tipo": "COMPLETA",
+    "prima": {"valor": "332198.00", "moneda": "COP"},
+    "rangoPrima": None,
+    "cobertura": {"valor": "118500000.00", "moneda": "COP"},
+    "desgloseScore": [],
+    "fuentes": [
+        {"id": n, "nombre": n, "origen": "OPEN_DATA", "estado": "OK", "capturadoEn": None}
+        for n in ("runt-vehiculo", "fasecolda-valor", "siniestralidad-placa")
+    ],
+    "perfilRiesgo": None,
+    "vehiculo": {
+        "placaEnmascarada": "ABC•••",
+        "marca": "MAZDA",
+        "linea": "3 GRAND TOURING",
+        "modelo": 2024,
+        "clase": "AUTOMOVIL",
+        "uso": "PARTICULAR",
+        "valorComercial": {"valor": "118500000.00", "moneda": "COP"},
+        "ciudadCirculacion": "Bogotá",
+        "kilometrajeAnual": 12000,
+        "deducible": "DIEZ_POR_CIENTO",
+    },
+    "coberturas": [
+        {
+            "tipo": "RESPONSABILIDAD_CIVIL",
+            "valorAsegurado": {"valor": "1000000000.00", "moneda": "COP"},
+            "deducible": None,
+        },
+        {"tipo": "ASISTENCIA", "valorAsegurado": None, "deducible": None},
+    ],
+    "factoresTarifa": [{"nombre": "CIUDAD", "factor": 1.1, "detalle": "Bogotá"}],
+    "requiereRevision": False,
+}
+
 OFERTA_COMPLETA = {
     "id": "o-1",
     "tipo": "COMPLETA",
@@ -561,6 +599,21 @@ class AclFalso:
     async def invalidar_cache_cliente(self, cliente_id: str) -> None:
         self.invalidaciones.append(cliente_id)
 
+    async def consultar_vehiculo(
+        self, vehiculo_id: str, placa: str, consentimiento_id: str, fuente: str
+    ) -> dict:
+        """KAN-290. Guarda la placa solo para poder comprobar que no llega a RISK ni RATING."""
+        self.vehiculos = [*getattr(self, "vehiculos", []), (vehiculo_id, placa, fuente)]
+        if fuente in self.fallan:
+            raise ErrorServicio("timeout")
+        return {
+            "fuente": fuente,
+            "datos": {"encontrada": True},
+            "capturado_en": "2026-11-10T12:00:00+00:00",
+            "de_cache": False,
+            "degradado": False,
+        }
+
     async def autocompletar_direccion(self, texto: str, pais: str | None) -> list[dict]:
         if "lugares" in self.fallan:
             raise ErrorServicio("timeout")
@@ -624,6 +677,19 @@ class RiskFalso:
         if self.falla:
             raise ErrorServicio("HTTP 503")
         self.revocados.append((titular_id, consentimiento_id))
+
+    async def registrar_perfil_vehiculo(
+        self,
+        vehiculo_id: str,
+        titular_id: str,
+        consentimiento_id: str,
+        fuentes: list[dict],
+        consentimiento_vence_en: str | None = None,
+    ) -> dict:
+        self.vehiculos = [*getattr(self, "vehiculos", []), (vehiculo_id, titular_id, fuentes)]
+        if self.falla:
+            raise ErrorServicio("HTTP 503")
+        return {"vehiculo_id": vehiculo_id, "perfil_version": 1, "operation_time": "1700000000.2"}
 
     # QA 2026-11-10 (Q-08): el historial de fuentes consultadas, en memoria y filtrado por actor
     # como lo hace RISK.
@@ -710,6 +776,12 @@ class RatingFalso:
         if self.error is not None:
             raise self.error
         return self.oferta
+
+    async def generar_oferta_auto(self, solicitud: dict) -> dict:
+        self.solicitudes_auto = [*getattr(self, "solicitudes_auto", []), solicitud]
+        if self.error is not None:
+            raise self.error
+        return OFERTA_AUTO
 
     async def obtener_oferta(self, oferta_id: str) -> dict | None:
         if self.error_lectura is not None:
@@ -1351,7 +1423,10 @@ class ClaimsFalso:
         self._revisar("peritos", siniestro_id)
         return [{**PERITO_DE_PRUEBA, "vencimiento_informe": "2026-11-03T17:00:00-05:00"}]
 
-    async def aprobar(self, siniestro_id: str, actor_usuario_id: str) -> dict:
+    async def aprobar(
+        self, siniestro_id: str, actor_usuario_id: str, valor_dano: str | None = None
+    ) -> dict:
+        self.valores_dano = [*getattr(self, "valores_dano", []), valor_dano]  # KAN-290
         self._revisar("aprobar", siniestro_id, actor_usuario_id)
         s = self.siniestros[siniestro_id]
         s["estado"] = "APROBADO"
