@@ -70,7 +70,14 @@ recargar.
 4. La tabla pasa a tarjetas por debajo de 640 px. Textos en ES y EN.
 5. Cypress con mocks: cero, una y varias pólizas, para cada rol; paginación de 10.
 
-**T5 · Historial de fuentes consultadas** · Q-07, Q-08 · Alta · L · backend, contrato v0.42 y web · KAN-24 · Depende de D-2
+**T5 · Historial de fuentes consultadas** · Q-07, Q-08 · Alta · L · backend, contrato v0.45 y web · KAN-24 · Depende de D-2
+
+> **Backend hecho (2026-11-10):** contrato **v0.45** (la v0.42 ya era de la póliza de auto y la v0.43 y v0.44 de KAN-26),
+> RISK `0006`, BFF y Newman `historial-fuentes-w01`. Dos ajustes frente a lo escrito abajo: **(a)** el BFF registra la
+> consulta **tras** la oferta (necesita el tipo y el estado de cada fuente que entregó RATING, para no duplicar su lógica en
+> RISK) y, si RISK falla, la oferta sigue; **(b)** el **nombre del titular no se guarda**: el asesor solo escribe el
+> documento al cotizar, así que la fila muestra el documento enmascarado. Falta la web (punto 4).
+
 1. **Contrato v0.42 (aditivo):** `consultasFuentes(pagina, tamano): PaginaConsultas!` y `consultaFuentes(id)`, solo
    ASESOR y solo las suyas (el filtro sale del token). Cada consulta: id, fecha, nombre del titular, documento
    enmascarado, tipo de oferta y fuentes (`id`, `nombre`, `origen`, `estado`, `capturadoEn`).

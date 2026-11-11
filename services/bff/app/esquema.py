@@ -1080,6 +1080,53 @@ def _perfil_riesgo(datos: dict | None) -> PerfilRiesgo | None:
     )
 
 
+MENSAJE_CONSULTAS_NO_DISPONIBLE = "No pudimos cargar tus consultas. Intenta nuevamente."
+TAMANO_MAXIMO_CONSULTAS = 50
+
+
+@strawberry.type
+class ConsultaFuentes:
+    """v0.45 (Q-08): una cotización del asesor y el estado de cada fuente que consultó."""
+
+    id: strawberry.ID
+    creada_en: datetime
+    documento_enmascarado: str
+    tipo_oferta: TipoOferta
+    producto: Producto
+    oferta_id: strawberry.ID | None
+    fuentes: list[FuenteConsultada]
+
+
+@strawberry.type
+class PaginaConsultasFuentes:
+    consultas: list[ConsultaFuentes]
+    total: int
+    pagina: int
+    tamano: int
+
+
+def _consulta_fuentes(datos: dict) -> ConsultaFuentes:
+    """`datos` es la respuesta de RISK (`GET /consultas`), en snake_case."""
+    return ConsultaFuentes(
+        id=strawberry.ID(datos["id"]),
+        creada_en=datetime.fromisoformat(datos["creada_en"]),
+        documento_enmascarado=datos["documento_enmascarado"],
+        tipo_oferta=TipoOferta(datos["tipo_oferta"]),
+        producto=Producto(datos["producto"]),
+        oferta_id=strawberry.ID(datos["oferta_id"]) if datos.get("oferta_id") else None,
+        fuentes=[
+            FuenteConsultada(
+                id=strawberry.ID(f["id"]),
+                nombre=f["nombre"],
+                origen=OrigenFuente(f["origen"]),
+                estado=EstadoFuente(f["estado"]),
+                capturado_en=_fecha(f.get("capturado_en")),
+            )
+            for f in datos["fuentes"]
+        ],
+    )
+
+
 def _oferta(datos: dict) -> Oferta:
     """`datos` es la respuesta de RATING, ya en el camelCase del contrato."""
     rango = datos.get("rangoPrima")
@@ -2239,6 +2286,42 @@ class Query:
         return _oferta(datos) if datos else None
 
     @strawberry.field
+    async def consultas_fuentes(
+        self, info: Info, pagina: int | None = 1, tamano: int | None = 10
+    ) -> PaginaConsultasFuentes:
+        """v0.45 (Q-08): el historial de fuentes del ASESOR, de la más reciente a la más antigua. El
+        filtro es el asesor del token: nunca ve lo de otro, y los demás roles no entran."""
+        usuario = exigir_rol(info, "ASESOR", siempre=True)
+        if usuario is None:  # `siempre=True` ya lo impide; por si cambia
+            raise ErrorPublico(MENSAJE_SIN_SESION, "SIN_SESION")
+        try:
+            datos = await info.context["clientes"].risk.listar_consultas(
+                usuario.id,
+                max(1, pagina or 1),
+                min(max(1, tamano or 10), TAMANO_MAXIMO_CONSULTAS),
+            )
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_CONSULTAS_NO_DISPONIBLE) from error
+        return PaginaConsultasFuentes(
+            consultas=[_consulta_fuentes(c) for c in datos["consultas"]],
+            total=datos["total"],
+            pagina=datos["pagina"],
+            tamano=datos["tamano"],
+        )
+
+    @strawberry.field
+    async def consulta_fuentes(self, info: Info, id: strawberry.ID) -> ConsultaFuentes | None:
+        """v0.45 (Q-08): una consulta del asesor del token; una ajena o inexistente, `null`."""
+        usuario = exigir_rol(info, "ASESOR", siempre=True)
+        if usuario is None:
+            raise ErrorPublico(MENSAJE_SIN_SESION, "SIN_SESION")
+        try:
+            datos = await info.context["clientes"].risk.obtener_consulta(str(id), usuario.id)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_CONSULTAS_NO_DISPONIBLE) from error
+        return _consulta_fuentes(datos) if datos else None
+
+    @strawberry.field
     async def propuesta(self, info: Info, id: strawberry.ID) -> Propuesta | None:
         usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
         try:
@@ -2726,6 +2809,17 @@ class Mutation:
                 mensaje=resultado.mensaje,
                 puede_reintentar=resultado.puede_reintentar,
                 motivo=MotivoErrorOferta(resultado.motivo) if resultado.motivo else None,
+            )
+        if usuario is not None:
+            # Q-08: el historial de fuentes de quien cotizó (solo el ASESOR lo consulta).
+            await info.context["servicio_oferta"].registrar_consulta(
+                usuario.id,
+                usuario.rol,
+                titular.documento,
+                str(entrada.consentimiento_id),
+                resultado,
+                tipo_documento=titular.tipo_documento,
+                pais=titular.pais,
             )
         return _oferta(resultado)
 

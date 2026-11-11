@@ -104,6 +104,27 @@ enum OrigenFuente {
   OPEN_DATA
 }
 
+# ---------- Historial de fuentes consultadas (v0.45, QA 2026-11-10, Q-08) ----------
+# Cada cotización deja un renglón en RISK (colección `consultas`): quién la hizo, cuándo, a qué documento (enmascarado),
+# qué tipo de oferta salió y el ESTADO de cada fuente, nunca sus datos. Se conserva aunque el consentimiento se revoque
+# o venza (el perfil sí se borra). Solo lo ve el ASESOR que cotizó: el filtro sale de su token.
+type ConsultaFuentes {
+  id: ID!
+  creadaEn: DateTime!
+  documentoEnmascarado: String! # «10••••3040»; el nombre del titular no se conoce al cotizar
+  tipoOferta: TipoOferta!
+  producto: Producto!
+  ofertaId: ID
+  fuentes: [FuenteConsultada!]!
+}
+
+type PaginaConsultasFuentes {
+  consultas: [ConsultaFuentes!]! # de la más reciente a la más antigua
+  total: Int!
+  pagina: Int!
+  tamano: Int!
+}
+
 type Oferta {
   id: ID!
   tipo: TipoOferta!
@@ -1252,6 +1273,10 @@ type Query {
   # El archivo si existe y quien pregunta puede leerlo; si no, null.
   archivo(id: ID!): Archivo
   oferta(id: ID!): Oferta
+  # v0.45 (Q-08). Solo ASESOR y solo las suyas; los demás roles reciben el error de sin permiso. `consultaFuentes` de
+  # una ajena o inexistente devuelve null.
+  consultasFuentes(pagina: Int = 1, tamano: Int = 10): PaginaConsultasFuentes!
+  consultaFuentes(id: ID!): ConsultaFuentes
   cobros(polizaId: ID, estado: EstadoCobro, pagina: Int = 1, tamano: Int = 10): [Cobro!]!
   # v0.43 (KAN-26): ¿sirve el enlace de la cabecera `X-Enlace-Clave`? Público; solo dice sí o no.
   enlaceRestablecimientoVigente: Boolean!

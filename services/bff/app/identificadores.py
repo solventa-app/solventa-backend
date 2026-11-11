@@ -15,6 +15,18 @@ def id_opaco(valor: str) -> str:
     return hashlib.sha256(valor.encode("utf-8")).hexdigest()[:12]
 
 
+def enmascarar_documento(documento: str) -> str:
+    """Conserva la longitud: 2 iniciales y 4 finales visibles, el resto `•` (`10••••3040`). Con
+    menos de 7 caracteres solo se ven los últimos 4. Mismo formato que AUTH
+    (`usuarios.enmascarar_documento`, duplicado a propósito: sin código compartido entre
+    servicios). Se enmascara el documento limpio, sin puntos, espacios ni guiones."""
+    limpio = _SEPARADORES.sub("", documento).upper()
+    n = len(limpio)
+    if n < 7:
+        return "•" * (n - 4) + limpio[-4:] if n > 4 else limpio
+    return limpio[:2] + "•" * (n - 6) + limpio[-4:]
+
+
 def cliente_id_desde_documento(
     documento_identidad: str, clave: str, pais: str | None = None, tipo: str | None = None
 ) -> str:

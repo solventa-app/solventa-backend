@@ -54,7 +54,7 @@ Todo esto está en código y verificado **en local**; nada tiene medición de st
 | HU-M06 / KAN-263, KAN-264, KAN-265, KAN-266 | Dirección a mano sin ubicación (`solicitarAsistenciaConDireccion`, v0.41). Catálogo maestro de prestadores en `claims` (`catalogoPrestadores`, v0.36); solicitar y cancelar asistencia (`solicitarAsistencia`, `cancelarAsistencia`, v0.40, desenlace simulado) | [`services/claims/README.md`](services/claims/README.md) |
 | KAN-250 | Almacenamiento de archivos | [ADR-10](docs/adr/ADR-10-almacenamiento-de-archivos.md) |
 
-Contrato en **v0.42** (póliza de auto, KAN-290, [`plan-poliza-auto`](docs/plan-poliza-auto.md)); la siguiente libre es **v0.43**. Últimas migraciones: AUTH `0012`, POLICY `0009`, PAYMENTS `0010`, RISK `0005`, CLAIMS `0006`.
+Contrato en **v0.45** (la v0.42 es la póliza de auto, KAN-290, [`plan-poliza-auto`](docs/plan-poliza-auto.md); la v0.45, el historial de fuentes del asesor, [`plan-revision-qa-2026-11-10`](docs/plan-revision-qa-2026-11-10.md) T5); la siguiente libre es **v0.46**. Últimas migraciones: AUTH `0013`, POLICY `0009`, PAYMENTS `0010`, RISK `0006`, CLAIMS `0006`.
 
 ## Estado actual
 

@@ -604,6 +604,8 @@ class RiskFalso:
         self.llamadas: list[tuple[str, list[dict]]] = []
         self.consentimientos: list[tuple[str | None, str | None]] = []
         self.revocados: list[tuple[str, str]] = []
+        self.consultas: list[dict] = []
+        self.falla_consultas = False
 
     async def registrar_perfil(
         self,
@@ -622,6 +624,58 @@ class RiskFalso:
         if self.falla:
             raise ErrorServicio("HTTP 503")
         self.revocados.append((titular_id, consentimiento_id))
+
+    # QA 2026-11-10 (Q-08): el historial de fuentes consultadas, en memoria y filtrado por actor
+    # como lo hace RISK.
+    async def registrar_consulta(self, consulta: dict) -> str:
+        if self.falla_consultas or self.falla:
+            raise ErrorServicio("HTTP 503")
+        consulta_id = f"c-{len(self.consultas) + 1}"
+        self.consultas.append(
+            {
+                **consulta,
+                "id": consulta_id,
+                "creada_en": f"2026-11-10T15:{len(self.consultas):02d}:00+00:00",
+            }
+        )
+        return consulta_id
+
+    @staticmethod
+    def _salida_consulta(c: dict) -> dict:
+        campos = (
+            "id",
+            "creada_en",
+            "documento_enmascarado",
+            "tipo_oferta",
+            "producto",
+            "oferta_id",
+            "fuentes",
+        )
+        return {k: c.get(k) for k in campos}
+
+    async def listar_consultas(self, actor_id: str, pagina: int, tamano: int) -> dict:
+        if self.falla_consultas or self.falla:
+            raise ErrorServicio("HTTP 503")
+        suyas = [c for c in reversed(self.consultas) if c["actor_id"] == actor_id]
+        inicio = (pagina - 1) * tamano
+        return {
+            "consultas": [self._salida_consulta(c) for c in suyas[inicio : inicio + tamano]],
+            "total": len(suyas),
+            "pagina": pagina,
+            "tamano": tamano,
+        }
+
+    async def obtener_consulta(self, consulta_id: str, actor_id: str) -> dict | None:
+        if self.falla_consultas or self.falla:
+            raise ErrorServicio("HTTP 503")
+        return next(
+            (
+                self._salida_consulta(c)
+                for c in self.consultas
+                if c["id"] == consulta_id and c["actor_id"] == actor_id
+            ),
+            None,
+        )
 
 
 class RatingFalso:
