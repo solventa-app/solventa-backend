@@ -105,7 +105,12 @@ class PuertoAuth(Protocol):
     async def revocar_consentimiento(self, consentimiento_id: str) -> dict | None: ...
 
     async def iniciar_sesion(
-        self, usuario: str, clave: str, canal: str | None = None, rol: str | None = None
+        self,
+        usuario: str,
+        clave: str,
+        canal: str | None = None,
+        rol: str | None = None,
+        dispositivo: dict | None = None,
     ) -> dict | None: ...
 
     async def renovar_sesion(self, usuario_id: str, expira_en: str) -> dict | None: ...
@@ -114,9 +119,36 @@ class PuertoAuth(Protocol):
 
     async def cerrar_sesion(self, refresh_token: str) -> None: ...
 
+    # ---------- Dispositivos de push (KAN-259) ----------
+
+    async def registrar_token_push(
+        self, usuario_id: str, instalacion_id: str, token: str
+    ) -> None: ...
+
+    async def actualizar_preferencia_push(
+        self, usuario_id: str, habilitado: bool
+    ) -> dict | None: ...
+
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict: ...
 
     async def correo_registrado(self, correo: str) -> bool: ...
+
+    async def buscar_para_restablecer(self, correo: str) -> str | None: ...
+
+    async def registrar_dispositivo(self, usuario_id: str, clave_publica: str) -> str | None: ...
+
+    async def reto_dispositivo(self, dispositivo_id: str) -> dict: ...
+
+    async def sesion_con_dispositivo(
+        self,
+        dispositivo_id: str,
+        reto: str,
+        firma: str,
+        canal: str | None,
+        dispositivo: dict | None = None,
+    ) -> dict | None: ...
+
+    async def restablecer_clave(self, usuario_id: str, clave: str) -> str | None: ...
 
     async def obtener_usuario(self, usuario_id: str) -> dict | None: ...
 
@@ -204,6 +236,13 @@ class PuertoRisk(Protocol):
         fuentes: list[dict],
         consentimiento_vence_en: str | None = None,
     ) -> dict: ...
+
+    # QA 2026-11-10 (Q-08): el historial de fuentes consultadas de un asesor.
+    async def registrar_consulta(self, consulta: dict) -> str: ...
+
+    async def listar_consultas(self, actor_id: str, pagina: int, tamano: int) -> dict: ...
+
+    async def obtener_consulta(self, consulta_id: str, actor_id: str) -> dict | None: ...
 
 
 class PuertoRating(Protocol):
@@ -636,15 +675,27 @@ class ClienteAuthHttp:
     # loguea la URL, nunca el cuerpo.
 
     async def iniciar_sesion(
-        self, usuario: str, clave: str, canal: str | None = None, rol: str | None = None
+        self,
+        usuario: str,
+        clave: str,
+        canal: str | None = None,
+        rol: str | None = None,
+        dispositivo: dict | None = None,
     ) -> dict | None:
         """`None` si AUTH rechaza las credenciales (401); `VerificacionPendiente` con el 403 de
-        una cuenta del onboarding fuera de la app (HU-M01)."""
+        una cuenta del onboarding fuera de la app (HU-M01). KAN-259: `dispositivo` solo aplica con
+        `canal = "app"`; AUTH devuelve `sids_revocados` cuando revoca otras sesiones del cliente."""
         respuesta = await _pedir(
             self._cliente,
             "POST",
             "/sesiones",
-            {"usuario": usuario, "clave": clave, "canal": canal, "rol": rol},
+            {
+                "usuario": usuario,
+                "clave": clave,
+                "canal": canal,
+                "rol": rol,
+                "dispositivo": dispositivo,
+            },
         )
         if respuesta.status_code == 401:
             return None
@@ -693,6 +744,91 @@ class ClienteAuthHttp:
         if respuesta.status_code in (400, 422):
             raise ErrorOnboardingServicio("DATO_INVALIDO")
         return bool(_json_o_error(respuesta)["registrado"])
+
+    async def buscar_para_restablecer(self, correo: str) -> str | None:
+        """Id de la cuenta ACTIVA con ese correo, o `None`. El correo va solo en el cuerpo."""
+        respuesta = await _pedir(
+            self._cliente, "POST", "/usuarios/restablecimiento/buscar", {"correo": correo}
+        )
+        if respuesta.status_code in (400, 422):
+            return None
+        return _json_o_error(respuesta).get("usuario_id")
+
+    async def registrar_dispositivo(self, usuario_id: str, clave_publica: str) -> str | None:
+        """Guarda la llave pública del teléfono (revoca la anterior). `None` si AUTH la rechaza
+        (no es una llave P-256 válida). Solo viaja en el cuerpo."""
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            "/dispositivos",
+            {"usuario_id": usuario_id, "clave_publica": clave_publica},
+        )
+        if respuesta.status_code in (400, 422):
+            return None
+        return _json_o_error(respuesta)["dispositivo_id"]
+
+    async def reto_dispositivo(self, dispositivo_id: str) -> dict:
+        respuesta = await _pedir(self._cliente, "POST", f"/dispositivos/{dispositivo_id}/reto")
+        return _json_o_error(respuesta)
+
+    async def sesion_con_dispositivo(
+        self,
+        dispositivo_id: str,
+        reto: str,
+        firma: str,
+        canal: str | None,
+        dispositivo: dict | None = None,
+    ) -> dict | None:
+        """Sesión con la firma del reto. `None` ante cualquier rechazo de AUTH (401). KAN-259:
+        `dispositivo` (el push, no el de la llave de login) para la misma sesión única por app."""
+        respuesta = await _pedir(
+            self._cliente,
+            "POST",
+            f"/dispositivos/{dispositivo_id}/sesion",
+            {"reto": reto, "firma": firma, "canal": canal, "dispositivo": dispositivo},
+        )
+        if respuesta.status_code == 401:
+            return None
+        return _json_o_error(respuesta)
+
+    # ---------- Dispositivos de push (KAN-259) ----------
+
+    async def registrar_token_push(self, usuario_id: str, instalacion_id: str, token: str) -> None:
+        """204 si quedó registrado; `SolicitudInvalida` (400) si el dispositivo no es el activo
+        de la sesión actual (AUTH ya cambió de dispositivo mientras tanto)."""
+        respuesta = await _pedir(
+            self._cliente,
+            "PUT",
+            "/dispositivos-push/token",
+            {"usuario_id": usuario_id, "instalacion_id": instalacion_id, "token": token},
+        )
+        if respuesta.status_code == 400:
+            raise SolicitudInvalida(respuesta.json().get("detail", "Solicitud inválida."))
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+
+    async def actualizar_preferencia_push(self, usuario_id: str, habilitado: bool) -> dict | None:
+        respuesta = await _pedir(
+            self._cliente,
+            "PUT",
+            f"/usuarios/{usuario_id}/preferencias/push",
+            {"habilitado": habilitado},
+        )
+        if respuesta.status_code == 404:
+            return None
+        return _json_o_error(respuesta)
+
+    async def restablecer_clave(self, usuario_id: str, clave: str) -> str | None:
+        """Cambia la clave y cierra todas las sesiones; devuelve el correo para avisarle.
+        `SolicitudInvalida` si la clave no cumple las reglas, `None` si la cuenta ya no sirve."""
+        respuesta = await _pedir(
+            self._cliente, "POST", f"/usuarios/{usuario_id}/clave", {"clave": clave}
+        )
+        if respuesta.status_code == 404:
+            return None
+        if respuesta.status_code in (400, 422):
+            raise SolicitudInvalida(str(respuesta.json().get("detail", "clave inválida")))
+        return _json_o_error(respuesta).get("correo")
 
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
         """CLIENTE en PENDIENTE_VERIFICACION (HU-M01). Correo y clave van solo en el cuerpo."""
@@ -951,6 +1087,33 @@ class ClienteRiskHttp:
             "fuentes": fuentes,
         }
         respuesta = await _pedir(self._cliente, "POST", "/vehiculos/perfiles", cuerpo)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def registrar_consulta(self, consulta: dict) -> str:
+        respuesta = await _pedir(self._cliente, "POST", "/consultas", consulta)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()["id"]
+
+    async def listar_consultas(self, actor_id: str, pagina: int, tamano: int) -> dict:
+        respuesta = await _pedir(
+            self._cliente,
+            "GET",
+            "/consultas",
+            params={"actor_id": actor_id, "pagina": pagina, "tamano": tamano},
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def obtener_consulta(self, consulta_id: str, actor_id: str) -> dict | None:
+        respuesta = await _pedir(
+            self._cliente, "GET", f"/consultas/{consulta_id}", params={"actor_id": actor_id}
+        )
+        if respuesta.status_code == 404:
+            return None
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()

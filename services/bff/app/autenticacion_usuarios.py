@@ -39,6 +39,8 @@ class UsuarioActual:
     scopes: tuple[str, ...]
     # `exp` del token (segundos Unix): `actualizarSesion` conserva la misma expiración (HU-M01).
     expira: int | None = None
+    # Cadena de refresh del token (claim `sid`): con ella se revoca el acceso al cerrar sesión.
+    sid: str | None = None
 
     @property
     def verificacion_pendiente(self) -> bool:
@@ -83,4 +85,5 @@ def leer_usuario(autorizacion: str | None, secreto: str) -> UsuarioActual | None
         rol=claims["rol"],
         scopes=tuple(claims.get("scopes", [])),
         expira=int(claims["exp"]),
+        sid=claims.get("sid"),
     )

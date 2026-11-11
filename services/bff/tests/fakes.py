@@ -25,6 +25,7 @@ from app.clientes import (
 )
 from app.configuracion import CLAVE_CLIENTE_ID_LOCAL, JWT_SECRETO_LOCAL
 from app.identificadores import cliente_id_desde_documento
+from app.reglas_clave import motivo_clave_invalida
 
 CONSENTIMIENTO_VIGENTE = {
     "id": "c-1",
@@ -126,6 +127,7 @@ def token_de_prueba(
     secreto: str = JWT_SECRETO_LOCAL,
     segundos: int = 3600,
     scopes: list[str] | None = None,
+    sid: str | None = None,
 ) -> str:
     """JWT firmado como lo firma AUTH (`services/auth/app/sesiones.py`)."""
     ahora = int(time.time())
@@ -136,6 +138,7 @@ def token_de_prueba(
             "scopes": scopes or [],
             "iat": ahora,
             "exp": ahora + segundos,
+            **({"sid": sid} if sid else {}),
         },
         secreto,
         algorithm="HS256",
@@ -152,6 +155,7 @@ def _usuario_publico(usuario_id: str, alias: str, rol: str, estado: str = "ACTIV
         "idioma": "ES",
         "moneda": "COP",
         "tiene_contacto": False,
+        "notificaciones_push": True,
     }
 
 
@@ -184,17 +188,82 @@ class AuthFalso:
             "u-bo": _usuario_publico("u-bo", "admin.solventa", "BACKOFFICE"),
         }
         self.claves = {"asesor.uno": "Clave-segura-1", "admin.solventa": "Clave-segura-1"}
+        # KAN-26: correo -> id de las cuentas activas que pueden restablecer su clave.
+        self.correos: dict[str, str] = {"asesor@solventa.test": "u-1"}
+        self.claves_restablecidas: list[str] = []
+        # KAN-26: dispositivo_id -> (usuario_id, llave pública) de los teléfonos registrados.
+        self.dispositivos: dict[str, tuple[str, str]] = {}
         self.canales: list[str | None] = []
         self.renovaciones: list[tuple[str, str]] = []
         # T22: refresh vigentes -> (usuario_id, canal); rotan en cada uso, como en AUTH.
         self.refrescos: dict[str, tuple[str, str]] = {}
         self.refrescos_cerrados: list[str] = []
         self._contador_refresh = 0
+        # KAN-259: como AUTH, un solo `sid` (familia) app vivo por cliente y un solo dispositivo
+        # de push; registrar_token_push solo lo acepta sobre ese dispositivo.
+        self._sids_app: dict[str, str] = {}
+        self.dispositivos_push: dict[str, dict] = {}
+        self.preferencias_push: dict[str, bool] = {}
 
     async def correo_registrado(self, correo: str) -> bool:
         if self.falla:
             raise ErrorServicio("caido")
         return correo in self.claves
+
+    async def registrar_dispositivo(self, usuario_id: str, clave_publica: str) -> str | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        if not clave_publica.startswith("llave-"):
+            return None
+        for d in [k for k, (u, _) in self.dispositivos.items() if u == usuario_id]:
+            del self.dispositivos[d]
+        dispositivo_id = f"disp-{len(self.dispositivos) + 1}-{usuario_id}"
+        self.dispositivos[dispositivo_id] = (usuario_id, clave_publica)
+        return dispositivo_id
+
+    async def reto_dispositivo(self, dispositivo_id: str) -> dict:
+        if self.falla:
+            raise ErrorServicio("caido")
+        return {"reto": f"{dispositivo_id}.nonce", "expira_en": "2099-01-01T00:00:00+00:00"}
+
+    async def sesion_con_dispositivo(
+        self,
+        dispositivo_id: str,
+        reto: str,
+        firma: str,
+        canal: str | None,
+        dispositivo: dict | None = None,
+    ) -> dict | None:
+        """Como AUTH: la «firma» válida es `firma:<reto>:<llave>`."""
+        if self.falla:
+            raise ErrorServicio("caido")
+        registro = self.dispositivos.get(dispositivo_id)
+        if registro is None or firma != f"firma:{reto}:{registro[1]}":
+            return None
+        datos = self.usuarios.get(registro[0])
+        if datos is None or datos["estado"] == "SUSPENDIDO" or canal != "app":
+            return None
+        sesion = self._con_refresh(self._sesion(datos), datos["id"], canal)
+        return self._aplicar_sesion_unica_app(sesion, datos, canal, dispositivo)
+
+    async def buscar_para_restablecer(self, correo: str) -> str | None:
+        """Como AUTH: solo las cuentas ACTIVAS con ese correo (el doble usa `correos`)."""
+        if self.falla:
+            raise ErrorServicio("caido")
+        return self.correos.get(correo)
+
+    async def restablecer_clave(self, usuario_id: str, clave: str) -> str | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        if motivo_clave_invalida(clave):
+            raise SolicitudInvalida(motivo_clave_invalida(clave))
+        correo = next((c for c, u in self.correos.items() if u == usuario_id), None)
+        if correo is None:
+            return None
+        alias = self.usuarios[usuario_id]["usuario"]
+        self.claves[alias] = clave
+        self.claves_restablecidas.append(usuario_id)
+        return correo
 
     async def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
         """Como AUTH (HU-M01): el doble usa el correo como alias para poder iniciar sesión."""
@@ -267,7 +336,12 @@ class AuthFalso:
         return revocado
 
     async def iniciar_sesion(
-        self, usuario: str, clave: str, canal: str | None = None, rol: str | None = None
+        self,
+        usuario: str,
+        clave: str,
+        canal: str | None = None,
+        rol: str | None = None,
+        dispositivo: dict | None = None,
     ) -> dict | None:
         if self.falla:
             raise ErrorServicio("caido")
@@ -282,7 +356,33 @@ class AuthFalso:
                 raise VerificacionPendiente()
         elif datos["estado"] != "ACTIVO":
             return None
-        return self._con_refresh(self._sesion(datos), datos["id"], canal)
+        sesion = self._con_refresh(self._sesion(datos), datos["id"], canal)
+        return self._aplicar_sesion_unica_app(sesion, datos, canal, dispositivo)
+
+    def _aplicar_sesion_unica_app(
+        self, sesion: dict, datos: dict, canal: str | None, dispositivo: dict | None
+    ) -> dict:
+        """KAN-259 (D3), como AUTH: solo entre sesiones `app` de un CLIENTE. Revoca el `sid`
+        anterior (si había) y, con `dispositivo`, deja activo solo ese dispositivo de push. El
+        token nuevo lleva el `sid` de esta sesión, como lo hace AUTH de verdad."""
+        if canal != "app" or datos["rol"] != "CLIENTE":
+            return sesion
+        usuario_id = datos["id"]
+        anterior = self._sids_app.get(usuario_id)
+        nuevo_sid = f"sid-{uuid.uuid4()}"
+        self._sids_app[usuario_id] = nuevo_sid
+        if dispositivo is not None:
+            self.dispositivos_push[usuario_id] = {**dispositivo, "token": None}
+        # Conserva el scope del token original (p. ej. `verificacion-pendiente`, HU-M01): esto
+        # solo le suma el `sid` de la nueva sesión, como lo hace AUTH de verdad.
+        pendiente = datos["estado"] != "ACTIVO"
+        token = token_de_prueba(
+            datos["rol"],
+            usuario_id,
+            scopes=["verificacion-pendiente"] if pendiente else ["sesion"],
+            sid=nuevo_sid,
+        )
+        return {**sesion, "token": token, "sids_revocados": [anterior] if anterior else []}
 
     def _con_refresh(self, sesion: dict, usuario_id: str, canal: str | None) -> dict:
         self._contador_refresh += 1
@@ -312,6 +412,25 @@ class AuthFalso:
             raise ErrorServicio("caido")
         self.refrescos_cerrados.append(refresh_token)
         self.refrescos.pop(refresh_token, None)
+
+    # ---------- Dispositivos de push (KAN-259) ----------
+
+    async def registrar_token_push(self, usuario_id: str, instalacion_id: str, token: str) -> None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        activo = self.dispositivos_push.get(usuario_id)
+        if activo is None or activo["instalacion_id"] != instalacion_id:
+            raise SolicitudInvalida("Ese dispositivo ya no es el de la sesión activa.")
+        self.dispositivos_push[usuario_id] = {**activo, "token": token}
+
+    async def actualizar_preferencia_push(self, usuario_id: str, habilitado: bool) -> dict | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        if usuario_id not in self.usuarios:
+            return None
+        self.preferencias_push[usuario_id] = habilitado
+        self.usuarios[usuario_id] = {**self.usuarios[usuario_id], "notificaciones_push": habilitado}
+        return self.usuarios[usuario_id]
 
     def _sesion(self, datos: dict) -> dict:
         pendiente = datos["estado"] != "ACTIVO"
@@ -538,6 +657,8 @@ class RiskFalso:
         self.llamadas: list[tuple[str, list[dict]]] = []
         self.consentimientos: list[tuple[str | None, str | None]] = []
         self.revocados: list[tuple[str, str]] = []
+        self.consultas: list[dict] = []
+        self.falla_consultas = False
 
     async def registrar_perfil(
         self,
@@ -569,6 +690,58 @@ class RiskFalso:
         if self.falla:
             raise ErrorServicio("HTTP 503")
         return {"vehiculo_id": vehiculo_id, "perfil_version": 1, "operation_time": "1700000000.2"}
+
+    # QA 2026-11-10 (Q-08): el historial de fuentes consultadas, en memoria y filtrado por actor
+    # como lo hace RISK.
+    async def registrar_consulta(self, consulta: dict) -> str:
+        if self.falla_consultas or self.falla:
+            raise ErrorServicio("HTTP 503")
+        consulta_id = f"c-{len(self.consultas) + 1}"
+        self.consultas.append(
+            {
+                **consulta,
+                "id": consulta_id,
+                "creada_en": f"2026-11-10T15:{len(self.consultas):02d}:00+00:00",
+            }
+        )
+        return consulta_id
+
+    @staticmethod
+    def _salida_consulta(c: dict) -> dict:
+        campos = (
+            "id",
+            "creada_en",
+            "documento_enmascarado",
+            "tipo_oferta",
+            "producto",
+            "oferta_id",
+            "fuentes",
+        )
+        return {k: c.get(k) for k in campos}
+
+    async def listar_consultas(self, actor_id: str, pagina: int, tamano: int) -> dict:
+        if self.falla_consultas or self.falla:
+            raise ErrorServicio("HTTP 503")
+        suyas = [c for c in reversed(self.consultas) if c["actor_id"] == actor_id]
+        inicio = (pagina - 1) * tamano
+        return {
+            "consultas": [self._salida_consulta(c) for c in suyas[inicio : inicio + tamano]],
+            "total": len(suyas),
+            "pagina": pagina,
+            "tamano": tamano,
+        }
+
+    async def obtener_consulta(self, consulta_id: str, actor_id: str) -> dict | None:
+        if self.falla_consultas or self.falla:
+            raise ErrorServicio("HTTP 503")
+        return next(
+            (
+                self._salida_consulta(c)
+                for c in self.consultas
+                if c["id"] == consulta_id and c["actor_id"] == actor_id
+            ),
+            None,
+        )
 
 
 class RatingFalso:

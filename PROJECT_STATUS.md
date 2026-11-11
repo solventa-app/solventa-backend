@@ -54,7 +54,7 @@ Todo esto está en código y verificado **en local**; nada tiene medición de st
 | HU-M06 / KAN-263, KAN-264, KAN-265, KAN-266 | Dirección a mano sin ubicación (`solicitarAsistenciaConDireccion`, v0.41). Catálogo maestro de prestadores en `claims` (`catalogoPrestadores`, v0.36); solicitar y cancelar asistencia (`solicitarAsistencia`, `cancelarAsistencia`, v0.40, desenlace simulado) | [`services/claims/README.md`](services/claims/README.md) |
 | KAN-250 | Almacenamiento de archivos | [ADR-10](docs/adr/ADR-10-almacenamiento-de-archivos.md) |
 
-Contrato en **v0.42** (póliza de auto, KAN-290, [`plan-poliza-auto`](docs/plan-poliza-auto.md)); la siguiente libre es **v0.43**. Últimas migraciones: AUTH `0012`, POLICY `0009`, PAYMENTS `0010`, RISK `0005`, CLAIMS `0006`.
+Contrato en **v0.45** (la v0.42 es la póliza de auto, KAN-290, [`plan-poliza-auto`](docs/plan-poliza-auto.md); la v0.45, el historial de fuentes del asesor, [`plan-revision-qa-2026-11-10`](docs/plan-revision-qa-2026-11-10.md) T5); la siguiente libre es **v0.46**. Últimas migraciones: AUTH `0013`, POLICY `0009`, PAYMENTS `0010`, RISK `0006`, CLAIMS `0006`.
 
 ## Estado actual
 
@@ -70,6 +70,11 @@ Contrato en **v0.42** (póliza de auto, KAN-290, [`plan-poliza-auto`](docs/plan-
 - **PR abiertos:** solo los de Dependabot, que suben las imágenes a Python 3.15 (#402 en adelante). No tocarlos.
 
 ## Pendiente
+
+**Fuera de alcance por decisión (2026-11-10)** ([`alcance-faltante`](docs/alcance-faltante.md)): backend del siniestro
+paramétrico (M04), ciclo de vida de la póliza (renovar, modificar, cancelar, reportes al regulador y ACORD), notificaciones
+push, billetera offline (M03) y escaneo de documentos. **No se revisan ni se desarrollan**; el foco es garantizar lo
+construido (póliza de auto KAN-290 y revisión QA).
 
 **Staging** (validación con infraestructura aplazada a una fase posterior; por ahora solo código)
 - Medir EC003/EC004/EC005/EC007/EC008-EC012/EC017 y FC-10 (los guiones k6 de FC-10 están sin correr).

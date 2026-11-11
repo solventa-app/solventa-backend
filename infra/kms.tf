@@ -1,15 +1,18 @@
 # Cifrado en reposo con Cloud KMS (HA-SEG-002, D-04 cerrada en bloque 3):
 #   1. Cifrado de sobre (envelope encryption) en aplicación para campos personales: AUTH y RISK cifran
-#      con AES-256-GCM y RATING descifra al leer de la réplica. Solo las cuentas de runtime de `auth`,
-#      `risk` y `rating` reciben `roles/cloudkms.cryptoKeyEncrypterDecrypter` sobre `campos-personales`.
+#      con AES-256-GCM y RATING descifra al leer de la réplica. POLICY (KAN-26, T6) envuelve con esta llave
+#      la llave de datos de cada documento firmado (contrato y póliza) que guarda cifrado en el bucket. Solo
+#      las cuentas de runtime de `auth`, `risk`, `rating` y `policy` reciben
+#      `roles/cloudkms.cryptoKeyEncrypterDecrypter` sobre `campos-personales`.
 #   2. CMEK opcional en Cloud SQL (`usar_cmek_sql`) y Memorystore Redis (`usar_cmek_redis`) con la
 #      misma llave. MongoDB Atlas se queda en M0 sin CMEK (cubierto por el cifrado de campo).
 #
 # OJO: un key ring de Cloud KMS NO se puede borrar nunca.
 
 locals {
-  # Mínimo privilegio (bloque 3): solo AUTH (escribe/lee), RISK (escribe) y RATING (lee) tocan la llave.
-  servicios_con_kms = (var.crear_kms && var.crear_servicios) ? toset(["auth", "risk", "rating"]) : toset([])
+  # Mínimo privilegio (bloque 3): solo AUTH (escribe/lee), RISK (escribe), RATING (lee) y POLICY (envuelve y
+  # desenvuelve las llaves de los documentos firmados, T6) tocan la llave.
+  servicios_con_kms = (var.crear_kms && var.crear_servicios) ? toset(["auth", "risk", "rating", "policy"]) : toset([])
 }
 
 resource "google_project_service" "kms" {

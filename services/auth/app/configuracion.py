@@ -49,6 +49,7 @@ class Configuracion:
     cliente_id_clave: str = CLIENTE_ID_CLAVE_LOCAL
     socios_clave_firma: str = SOCIOS_CLAVE_FIRMA_LOCAL
     refresh_vigencia_dias: int = 8
+    refresh_web_horas: int = 8
     refresh_gracia_segundos: int = 30
 
     @classmethod
@@ -92,6 +93,9 @@ class Configuracion:
             socios_clave_firma=socios_clave_firma,
             refresh_vigencia_dias=int(
                 os.getenv("REFRESH_VIGENCIA_DIAS") or _duraciones_sesion()["refresh_dias"]
+            ),
+            refresh_web_horas=int(
+                os.getenv("REFRESH_WEB_HORAS") or _duraciones_sesion().get("refresh_web_horas", 8)
             ),
             refresh_gracia_segundos=int(
                 os.getenv("REFRESH_GRACIA_SEGUNDOS")

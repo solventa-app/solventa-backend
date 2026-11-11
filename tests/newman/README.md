@@ -241,3 +241,16 @@ npx --yes newman@6.2.2 run tests/newman/hu-w08.postman_collection.json \
 - Se puede repetir sin reiniciar el stack: cada corrida crea su reporte, sus ofertas y sus propuestas.
 - **Estado:** dos corridas seguidas contra el stack local el 2026-11-10 sin fallos (33 peticiones y 76 aserciones); evidencia en
   `docs/evidencias/hu-w08-poliza-auto-2026-11-10.md`.
+
+## Colección del historial de fuentes (`historial-fuentes-w01.postman_collection.json`)
+
+Q-08, contrato v0.45 (KAN-24), por el gateway: 20 peticiones y 45 aserciones en 4 carpetas. El asesor A cotiza dos veces y ve
+su historial (más reciente primero, documento enmascarado, las 5 fuentes con su estado y sin datos, paginación de 1 en 1 y
+el detalle); el asesor B no ve nada de A (la consulta ajena responde `null`); el CLIENTE, el BACKOFFICE y quien no tiene
+sesión no pasan. Crea sus propios usuarios (alias y documentos únicos por corrida) con el BACKOFFICE local; **solo local**
+por eso. Se corre con el mismo entorno que las demás:
+
+```bash
+npx --yes newman@6.2.2 run tests/newman/historial-fuentes-w01.postman_collection.json \
+  -e tests/newman/solventa-local.postman_environment.json
+```

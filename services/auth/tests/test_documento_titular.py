@@ -238,7 +238,13 @@ def test_http_identidad_solo_de_un_cliente_verificado() -> None:
     with _http() as client:
         creado = _crear(client, documento_identidad=DOCUMENTO).json()
         asesor = client.post(
-            "/usuarios", json={"usuario": "asesor.uno", "clave": CLAVE, "rol": "ASESOR"}
+            "/usuarios",
+            json={
+                "usuario": "asesor.uno",
+                "clave": CLAVE,
+                "rol": "ASESOR",
+                "correo": "asesor@ejemplo.co",
+            },
         ).json()
         identidad = client.get(f"/usuarios/{creado['id']}/identidad")
         de_asesor = client.get(f"/usuarios/{asesor['id']}/identidad")

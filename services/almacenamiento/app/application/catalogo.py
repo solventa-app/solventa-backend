@@ -16,7 +16,15 @@ RUTA_POR_DEFECTO = Path(__file__).resolve().parent.parent / "tipos-archivo.json"
 ROLES = ("CLIENTE", "ASESOR", "BACKOFFICE")
 PROPIETARIOS = ("usuario", "onboarding", "poliza", "siniestro")
 # Firmas conocidas: el tipo de contenido declarado se comprueba con los primeros bytes del objeto.
-TIPOS_CONTENIDO = ("image/jpeg", "image/png", "video/mp4", "application/pdf")
+# `application/octet-stream` es el contenedor cifrado de Solventa (KAN-26, T6): lo guarda POLICY y
+# el bucket nunca ve el documento en claro; empieza siempre con `MAGIA_CONTENEDOR_CIFRADO`.
+TIPOS_CONTENIDO = (
+    "image/jpeg",
+    "image/png",
+    "video/mp4",
+    "application/pdf",
+    "application/octet-stream",
+)
 
 
 class CatalogoInvalido(ValueError):

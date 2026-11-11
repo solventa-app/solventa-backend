@@ -36,6 +36,7 @@ from app.application.planificador import (
     PuertoPlanificador,
 )
 from app.application.repositorio_propuestas import RepositorioPropuestasPostgres, construir_pool
+from app.application.servicio_documentos import DocumentoAlterado, ServicioDocumentos
 from app.application.servicio_emision import (
     PropuestaNoEncontradaParaEmitir,
     ServicioEmision,
@@ -62,6 +63,7 @@ from app.application.servicio_propuestas import (
     TasaInvalida,
 )
 from app.application.servicio_purga import ServicioPurga
+from app.application.sobre_documentos import envolvedor_desde_entorno
 from app.observabilidad import configurar_trazas
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -455,8 +457,13 @@ def create_app(
             )
             avisos = AvisosRedis(config.redis_url) if config.redis_url else AvisosNulos()
             planificador = _planificador(config)
+            # T6: el contrato firmado y la póliza se guardan cifrados (la llave de datos envuelta
+            # por Cloud KMS en la nube, por la llave de desarrollo en local).
+            servicio_documentos = ServicioDocumentos(
+                repositorio, cliente_almacen, envolvedor_desde_entorno()
+            )
             servicio_de_polizas = ServicioPolizas(
-                repositorio, config.documento_ambiente_pruebas, cliente_almacen
+                repositorio, config.documento_ambiente_pruebas, cliente_almacen, servicio_documentos
             )
             emision = ServicioEmision(
                 repositorio,
@@ -496,9 +503,15 @@ def create_app(
                     enlace_vigencia=timedelta(minutes=config.enlace_vigencia_minutos),
                 ),
                 avisos,
+                guardar_contrato_firmado=servicio_de_polizas.guardar_contrato_firmado,
             )
             app.state.servicio_purga = ServicioPurga(
-                repositorio, cliente_auth, cliente_almacen, avisos, config.purga_lote_max
+                repositorio,
+                cliente_auth,
+                cliente_almacen,
+                avisos,
+                config.purga_lote_max,
+                documentos=servicio_documentos,
             )
         try:
             yield
@@ -693,7 +706,7 @@ def create_app(
         asegurado viaje en el cuerpo y no en la URL. Quién puede pedirlo lo decide el BFF."""
         try:
             pdf = app.state.servicio_polizas.documento(poliza_id, body.asegurado)
-        except DocumentoNoDisponible as error:
+        except (DocumentoNoDisponible, DocumentoAlterado) as error:
             raise HTTPException(status_code=503, detail="DOCUMENTO_NO_DISPONIBLE") from error
         if pdf is None:
             raise HTTPException(status_code=404, detail="póliza no encontrada")
@@ -854,10 +867,15 @@ def create_app(
         x_enlace_firma: str | None = Header(default=None),
         x_titular_id: str | None = Header(default=None),
     ) -> Response:
-        """El contrato a firmar en PDF (W03-31). No lleva datos personales."""
+        """El contrato en PDF (W03-31): el borrador a firmar (sin datos personales) y, ya firmado
+        (T6), el contrato firmado guardado, cifrado en reposo."""
         propuesta = _flujo().autorizar(propuesta_id, _auth(x_enlace_firma, x_titular_id))
+        try:
+            contenido = app.state.servicio_polizas.contrato(propuesta)
+        except (DocumentoNoDisponible, DocumentoAlterado) as error:
+            raise HTTPException(status_code=503, detail="DOCUMENTO_NO_DISPONIBLE") from error
         return Response(
-            content=app.state.servicio_polizas.borrador(propuesta),
+            content=contenido,
             media_type="application/pdf",
             headers={"Cache-Control": "no-store"},
         )

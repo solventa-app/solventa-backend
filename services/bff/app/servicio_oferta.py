@@ -23,6 +23,7 @@ from app.clientes import (
 )
 from app.identificadores import (
     cliente_id_desde_documento,
+    enmascarar_documento,
     enmascarar_placa,
     id_opaco,
     normalizar_placa,
@@ -379,6 +380,51 @@ class ServicioOferta:
                 "de_cache": False,
                 "degradado": True,
             }
+
+    async def registrar_consulta(
+        self,
+        actor_id: str,
+        actor_rol: str,
+        documento_identidad: str,
+        consentimiento_id: str,
+        oferta: dict,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
+    ) -> None:
+        """QA 2026-11-10 (Q-08): deja en RISK el renglón del historial de fuentes de quien cotizó:
+        el estado de cada fuente de la oferta entregada, nunca sus datos. Es un registro de apoyo:
+        si RISK no responde, la oferta sigue (regla 4) y solo se anota en el log. El documento
+        viaja enmascarado y el titular como su HMAC (regla 6)."""
+        titular_id = cliente_id_desde_documento(
+            documento_identidad, self._clave, pais, tipo_documento
+        )
+        try:
+            await self._clientes.risk.registrar_consulta(
+                {
+                    "actor_id": actor_id,
+                    "actor_rol": actor_rol,
+                    "titular_id": titular_id,
+                    "documento_enmascarado": enmascarar_documento(documento_identidad),
+                    "consentimiento_id": consentimiento_id,
+                    "tipo_oferta": oferta["tipo"],
+                    "producto": oferta.get("producto") or "VIDA_DEUDOR",
+                    "oferta_id": oferta.get("id"),
+                    "fuentes": [
+                        {
+                            "id": f["id"],
+                            "nombre": f["nombre"],
+                            "origen": f["origen"],
+                            "estado": f["estado"],
+                            "capturado_en": f.get("capturadoEn"),
+                        }
+                        for f in oferta.get("fuentes", [])
+                    ],
+                }
+            )
+        except ErrorServicio as error:
+            logger.warning(
+                "RISK no registró la consulta cliente=%s error=%s", id_opaco(titular_id), error
+            )
 
     async def _direccion(self, place_id: str | None, escrita: str) -> str | ErrorOfertaDatos:
         """La dirección con la que se cotiza: la normalizada por Places si el lugar se verificó,

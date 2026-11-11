@@ -40,6 +40,10 @@ Tabla `usuarios` en la base `auth`: `id`, `usuario` (alias único), `hash_clave`
 (`ACTIVO` / `SUSPENDIDO`), `intentos_fallidos`, `bloqueado_hasta`, `creado_en` y `actualizado_en`. La baja es lógica
 (`estado`): nunca se borran filas. El primer BACKOFFICE lo crea la tarea `crear-backoffice` (sección 6, paso 1).
 
+Todos los roles entran con **correo y clave** (el alias sigue valiendo). Al crear un asesor u operador el correo es
+obligatorio, no se verifica (lo da quien lo crea) y se guarda cifrado con su HMAC (`correo_hmac`), igual que el de un
+cliente; el teléfono es solo de los CLIENTE.
+
 ## 4. Matriz de permisos
 
 | Operación | CLIENTE | ASESOR | BACKOFFICE | Sin token (modo `opcional`) |
@@ -325,3 +329,34 @@ En el **Sprint 1** ya existe el API Gateway delante del BFF (`infra/gateway.tf`,
   gracia, reuso, cierre, canal y suspensión); evidencia en `docs/evidencias/hu-m02-sesion-refresh-2026-11-06.md`.
 - Pendiente: cambiar la clave (hoy no existe el endpoint; al crearlo debe llamar `revocar_de_usuario`) y la verificación
   detrás de GCP API Gateway en staging.
+
+
+## Duración de la sesión (KAN-26)
+
+El token de acceso dura **15 minutos** y lleva `sid` (la cadena de refresh). En la web el refresh vence 8 horas después
+de iniciar sesión, se renueve o no; en la app, 8 días con rotación. Al cerrar sesión el BFF anota el `sid` en Redis hasta
+que el token venza, así ese acceso tampoco sirve (`app/sesiones_revocadas.py`); si Redis no responde, el token vence
+solo en minutos. Valores en `contracts/sesion.json`.
+
+## Olvidé mi contraseña (KAN-26, contrato v0.43)
+
+- El visitante da **solo su correo** (`solicitarRestablecimientoClave`). La respuesta es siempre `true`: no revela si la
+  cuenta existe, está suspendida o se topó el límite (3 por correo y 10 por IP por hora).
+- Si hay una cuenta ACTIVA con ese correo, el BFF genera un token de 256 bits, guarda **solo su huella** (Redis) y envía
+  por el ACL Worker `<URL_FRONT>/restablecer-clave#t=<token>`. Vence a los 30 minutos, sirve una vez y un enlace nuevo
+  anula el anterior. El token viaja en la cabecera `X-Enlace-Clave`, nunca en la URL de la API ni en el cuerpo.
+- `restablecerClave(clave)` valida las mismas reglas del alta (8–128, mayúscula, minúscula y especial; una clave débil no
+  gasta el enlace), la cambia en AUTH (`POST /usuarios/{id}/clave`), levanta el bloqueo por intentos, **cierra todas las
+  sesiones** de la cuenta y envía el aviso `clave-cambiada`. Enlace inexistente, vencido o usado: `ENLACE_INVALIDO`.
+- Pendiente: plantillas de correo solo en español (el ACL no recibe el idioma).
+
+## Acceso con huella o rostro tras cerrar sesión (KAN-26, contrato v0.44)
+
+- El teléfono genera un par EC P-256 en su Keystore/Keychain (la privada exige biometría y no sale de ahí) y, con sesión de
+  la app, registra la **pública** (`registrarDispositivo`, AUTH `dispositivos`, migración `0013`). Un dispositivo activo por
+  cuenta: registrar otro revoca el anterior; cambiar la clave los revoca todos.
+- Para entrar sin escribir la clave: `desafioDispositivo` entrega un reto de 60 s (`id.nonce.exp.mac`, MAC con la clave de
+  AUTH; lo entrega aunque el dispositivo no exista) y `iniciarSesionConDispositivo` verifica MAC, vencimiento y la firma
+  ECDSA SHA-256. Solo canal app y rol CLIENTE. Cualquier fallo es `DISPOSITIVO_NO_VALIDO`: la app pide correo y clave.
+- Pendiente: el reto no es de un solo uso dentro de sus 60 s (un reto firmado y capturado serviría ese minuto); si se exige,
+  guardar el nonce usado en Redis.

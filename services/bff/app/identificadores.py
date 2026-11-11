@@ -7,10 +7,24 @@ import hashlib
 import hmac
 import re
 
+_SEPARADORES = re.compile(r"[\s.\-]")
+
 
 def id_opaco(valor: str) -> str:
     """Hash corto y determinista, solo para correlacionar logs — no reversible."""
     return hashlib.sha256(valor.encode("utf-8")).hexdigest()[:12]
+
+
+def enmascarar_documento(documento: str) -> str:
+    """Conserva la longitud: 2 iniciales y 4 finales visibles, el resto `•` (`10••••3040`). Con
+    menos de 7 caracteres solo se ven los últimos 4. Mismo formato que AUTH
+    (`usuarios.enmascarar_documento`, duplicado a propósito: sin código compartido entre
+    servicios). Se enmascara el documento limpio, sin puntos, espacios ni guiones."""
+    limpio = _SEPARADORES.sub("", documento).upper()
+    n = len(limpio)
+    if n < 7:
+        return "•" * (n - 4) + limpio[-4:] if n > 4 else limpio
+    return limpio[:2] + "•" * (n - 6) + limpio[-4:]
 
 
 def cliente_id_desde_documento(
@@ -36,7 +50,10 @@ def valor_titular(numero: str, pais: str | None = None, tipo: str | None = None)
     tipo, como antes de T20): solo el número, para que los titulares, consentimientos y pólizas
     que ya existen sigan ligados. Cualquier otro par: `PAIS:TIPO:NUMERO`, así dos documentos con
     el mismo número en tipos o países distintos no son la misma persona."""
-    limpio = numero.strip().upper()
+    # Sin puntos, espacios ni guiones: la cédula que lee la verificación de identidad
+    # («1.090.000.001») y la que digita el asesor («1090000001») son el mismo titular, y su
+    # póliza queda en la misma cuenta (QA 2026-11-10).
+    limpio = _SEPARADORES.sub("", numero).upper()
     pais_n = (pais or "CO").strip().upper()
     tipo_n = (tipo or "CC").strip().upper()
     if (pais_n, tipo_n) == ("CO", "CC"):
