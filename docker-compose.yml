@@ -544,6 +544,10 @@ services:
       OPEN_FINANCE_URL: http://stub-open-finance:8101
       OPEN_DATA_URL: http://stub-open-data:8102
       VEHICULOS_URL: http://stub-vehiculos:8107
+      # KAN-259 Fase 3 (HU-M04): mismo host, rutas distintas (igual que los proveedores reales).
+      CLIMA_URL: http://stub-eventos-parametricos:8108
+      VUELOS_URL: http://stub-eventos-parametricos:8108
+      AVIATIONSTACK_API_KEY: ${AVIATIONSTACK_API_KEY:-}
       PASARELA_URL: http://stub-pasarela:8103
       FIRMA_URL: http://stub-firma:8104
       KYC_URL: http://stub-kyc:8105   # también la verificación de identidad de M01 (rutas de Didit)
@@ -610,6 +614,13 @@ services:
     <<: *servicio
     build: ./stubs/vehiculos
     ports: ["8107:8107"]
+
+  # KAN-259 Fase 3 (HU-M04): simula Open-Meteo (`GET /v1/forecast`) y AviationStack
+  # (`GET /v1/flights`) en un solo servicio, en las rutas exactas de sus APIs reales.
+  stub-eventos-parametricos:
+    <<: *servicio
+    build: ./stubs/eventos-parametricos
+    ports: ["8108:8108"]
 
   stub-pasarela:
     <<: *servicio

@@ -22,6 +22,7 @@ updates:
   - { package-ecosystem: pip, directory: /stubs/firma, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
   - { package-ecosystem: pip, directory: /stubs/kyc, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
   - { package-ecosystem: pip, directory: /stubs/notificaciones, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
+  - { package-ecosystem: pip, directory: /stubs/eventos-parametricos, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }
   - { package-ecosystem: pip, directory: /, target-branch: develop, schedule: { interval: weekly }, open-pull-requests-limit: 3, groups: { python: { update-types: [minor, patch] } } }  # requirements-dev.in / .txt
 
   # --- Imágenes base de Docker ---
@@ -48,6 +49,7 @@ updates:
   - { package-ecosystem: docker, directory: /stubs/firma, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
   - { package-ecosystem: docker, directory: /stubs/kyc, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
   - { package-ecosystem: docker, directory: /stubs/notificaciones, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
+  - { package-ecosystem: docker, directory: /stubs/eventos-parametricos, target-branch: develop, schedule: { interval: monthly }, ignore: [{ dependency-name: python, update-types: ["version-update:semver-major", "version-update:semver-minor"] }], groups: { imagenes: { patterns: ["*"] } } }
 
   # --- Infraestructura y automatización ---
   - { package-ecosystem: terraform, directory: /infra, target-branch: develop, schedule: { interval: monthly } }

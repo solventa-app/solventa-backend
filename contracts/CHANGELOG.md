@@ -596,3 +596,19 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `silenciosa`. API REST nueva `openapi/push-v1.json` (`POST /v1/push`, D10: solo cuentas de servicio internas) para
   quien prefiere no publicar en Pub/Sub directamente. No toca el esquema GraphQL.
 - Afecta al frontend: no (contrato entre servicios; el móvil ya recibe el push sin saber de este contrato).
+
+## v0.47 — 2026-11-11
+
+- KAN-259 (notificaciones push, HU-M04, Fase 3): evento nuevo `evento.parametrico.recibido` (v1,
+  `contracts/events/`), la ingesta que precede al push de indemnización liquidada. El ACL Worker lo publica al
+  consultar Open-Meteo (clima, sin llave) o AviationStack (vuelos, con llave `AVIATIONSTACK_API_KEY`) a través de
+  dos adaptadores nuevos (`app/adapters/clima.py`, `app/adapters/vuelos.py`), cada uno con su propio Circuit Breaker,
+  timeout duro de 700 ms y degradación sin publicar nada si el proveedor falla (regla #4; no hay un 5xx que
+  propagar, porque nadie del camino del usuario espera esta respuesta). `datos` lleva `tipo` (`VUELO`|`CLIMA`),
+  `clave` (vuelo+fecha o celda geográfica, nunca un cliente ni una póliza), `valor`, `medidoEn` y `fuente`, más
+  `cancelado` (solo VUELO) o `variable` (solo CLIMA). Endpoint nuevo `POST /eventos-parametricos/_consultar` en el
+  ACL Worker (lo llamará un Cloud Scheduler en una fase de infra posterior, fuera de esta tarea) y servicio nuevo
+  `stub-eventos-parametricos` que imita las dos APIs reales en local/CI. Nadie consume este evento todavía (CLAIMS lo
+  hará en la Fase 4 del plan de push, fuera de este contrato): es solo el productor, igual que la Fase 2 dejó
+  `notificacion.push-solicitada` publicado sin que nada lo disparara aún en producto.
+- Afecta al frontend: no (contrato entre servicios; sin consumidor todavía).
