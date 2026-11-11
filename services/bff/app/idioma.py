@@ -267,6 +267,9 @@ EN: dict[str, str] = {
     "No hay un consentimiento vigente para consultar tus datos.": (
         "There is no valid consent to look up your data."
     ),
+    "No pudimos cargar tus consultas. Intenta nuevamente.": (
+        "We could not load your queries. Please try again."
+    ),
     "No pudimos calcular tu oferta en este momento. Intenta de nuevo o habla con un asesor.": (
         "We couldn't calculate your offer right now. Please try again or talk to an advisor."
     ),
