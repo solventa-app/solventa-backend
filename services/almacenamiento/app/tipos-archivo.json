@@ -51,15 +51,27 @@
     },
     {
       "tipo": "poliza-pdf",
-      "descripcion": "Ejemplo, desactivado: la póliza en PDF se genera al pedirla y no se guarda (decisión W03-9).",
-      "activo": false,
-      "tipos_contenido": ["application/pdf"],
-      "tamano_max_bytes": 2097152,
+      "descripcion": "La póliza emitida en PDF, cifrada por POLICY antes de subirla (AES-256-GCM con una llave de datos propia por documento, envuelta por Cloud KMS). El bucket guarda el contenedor cifrado, nunca el PDF en claro, y solo POLICY lo lee: él lo descifra y lo sirve con la autorización de siempre (KAN-26, T6).",
+      "activo": true,
+      "tipos_contenido": ["application/octet-stream"],
+      "tamano_max_bytes": 5242880,
       "quien_sube": ["servicio:policy"],
-      "quien_lee": ["BACKOFFICE", "servicio:policy"],
+      "quien_lee": ["servicio:policy"],
       "propietario": "poliza",
       "requiere_consentimiento": false,
       "retencion_dias": null
+    },
+    {
+      "tipo": "contrato-firmado",
+      "descripcion": "El contrato firmado por el titular, con la evidencia de la firma, cifrado por POLICY como la póliza. Sigue a la póliza; si la propuesta se cancela porque el consentimiento vence o se revoca antes de emitir, POLICY pide su retención (1 día) y se borra (KAN-26, T6).",
+      "activo": true,
+      "tipos_contenido": ["application/octet-stream"],
+      "tamano_max_bytes": 5242880,
+      "quien_sube": ["servicio:policy"],
+      "quien_lee": ["servicio:policy"],
+      "propietario": "poliza",
+      "requiere_consentimiento": false,
+      "retencion_dias": 1
     },
     {
       "tipo": "siniestro-foto",

@@ -177,6 +177,10 @@ class ServicioFirmaYPago:
         reglas: Reglas,
         avisos: PuertoAvisos | None = None,
         reloj: Callable[[], datetime] = lambda: datetime.now(UTC),
+        guardar_contrato_firmado: Callable[
+            [dict[str, Any], dict[str, Any], bytes | None, str | None], None
+        ]
+        | None = None,
     ) -> None:
         self._repo = repositorio
         self._under = under
@@ -188,6 +192,8 @@ class ServicioFirmaYPago:
         self._reglas = reglas
         self._avisos = avisos or AvisosNulos()
         self._reloj = reloj
+        # T6: genera el contrato firmado y lo guarda cifrado; nunca lanza (ver `ServicioPolizas`).
+        self._guardar_contrato = guardar_contrato_firmado
 
     # ------------------------------------------------------------------ autorización
 
@@ -467,6 +473,7 @@ class ServicioFirmaYPago:
         if modo not in MODOS_FIRMA:
             raise ErrorFlujo(DATOS_INVALIDOS, campo="modo")
         texto = None
+        imagen: bytes | None = None
         if modo == "NOMBRE":
             texto = " ".join((nombre_firma or "").split())
             if not 2 <= len(texto) <= 100:
@@ -474,7 +481,7 @@ class ServicioFirmaYPago:
         else:
             if not imagen_archivo_id:
                 raise ErrorFlujo(DATOS_INVALIDOS, campo="imagenArchivoId")
-            self._validar_imagen(propuesta_id, imagen_archivo_id)
+            imagen = self._validar_imagen(propuesta_id, imagen_archivo_id)
         try:
             documento = serializar(construir_documento(propuesta))
         except DocumentoNoGenerable as error:
@@ -510,10 +517,12 @@ class ServicioFirmaYPago:
         actualizada = self._propuesta(propuesta_id)
         if creada:
             logger.info("firma registrada propuesta=%s modo=%s", id_opaco(propuesta_id), modo)
+            if self._guardar_contrato is not None:
+                self._guardar_contrato(actualizada, evidencia, imagen, texto)
             self._avisos.publicar(actualizada, actualizada["estado"])
         return evidencia, actualizada["estado"]
 
-    def _validar_imagen(self, propuesta_id: str, archivo_id: str) -> None:
+    def _validar_imagen(self, propuesta_id: str, archivo_id: str) -> bytes:
         """Confirma el archivo en ALMACENAMIENTO (tipo real y tamaño), lo baja y valida dimensiones
         y fondo (plan principal 1.5). Una imagen que POLICY rechaza se marca para borrar."""
         try:
@@ -538,6 +547,7 @@ class ServicioFirmaYPago:
             except (ArchivoRechazado, AlmacenamientoNoDisponible):
                 logger.warning("no se pudo marcar para borrar una imagen rechazada")
             raise ErrorFlujo(IMAGEN_INVALIDA, codigo=error.motivo) from error
+        return contenido
 
     # ------------------------------------------------------------------ pago (W03-28 a W03-30)
 

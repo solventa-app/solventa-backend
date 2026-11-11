@@ -16,3 +16,4 @@ cryptography==50.0.2
 fpdf2==2.9.0
 pillow==13.0.0
 redis==8.1.0
+google-cloud-kms==3.18.0

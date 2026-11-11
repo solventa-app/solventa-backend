@@ -2,8 +2,10 @@
 
 Un documento formal con el membrete, el asegurado, el crédito, la cobertura, la prima, la vigencia
 y el sello de la firma electrónica (la referencia de la evidencia, cuándo se firmó y la huella del
-documento que se firmó). Se genera al pedirlo, a partir de los datos guardados: no se almacena, así
-que el PDF nunca queda desactualizado ni es un archivo más que proteger.
+documento que se firmó). Se genera a partir de los datos guardados. Desde KAN-26 (T6, D-1) el primer
+PDF que se genera de una póliza, y el contrato firmado, se **guardan cifrados** en ALMACENAMIENTO
+(`servicio_documentos.py`) para que el documento que se entregó no cambie; este módulo solo los
+genera.
 
 Regla #6: el nombre del asegurado llega solo en el cuerpo de la petición y no se guarda ni se
 loguea. Sin él, el documento identifica al asegurado por la referencia opaca de su cliente.
@@ -70,15 +72,17 @@ def _fecha(valor: datetime) -> str:
 
 
 class _Documento(FPDF):
-    def __init__(self, numero: str) -> None:
+    def __init__(self, numero: str, titulo: str = "Poliza") -> None:
         super().__init__(format="A4")
         self.set_compression(False)  # texto legible en el flujo y salida estable
-        self.set_title(_latin1(f"Poliza {numero}"))
+        self.set_title(_latin1(f"{titulo} {numero}"))
         self.set_author("Solventa")
         self.set_auto_page_break(auto=True, margin=15)
         self.add_page()
 
-    def membrete(self, numero: str, producto: str = "VIDA_DEUDOR") -> None:
+    def membrete(
+        self, numero: str, producto: str = "VIDA_DEUDOR", titulo: str | None = None
+    ) -> None:
         self.set_fill_color(18, 52, 86)
         self.rect(0, 0, 210, 32, style="F")
         self.set_text_color(255, 255, 255)
@@ -91,7 +95,7 @@ class _Documento(FPDF):
         self.set_text_color(0, 0, 0)
         self.set_y(40)
         self.set_font("Helvetica", "B", 16)
-        self.cell(0, 9, _latin1(f"Póliza No. {numero}"), new_x="LMARGIN", new_y="NEXT")
+        self.cell(0, 9, _latin1(titulo or f"Póliza No. {numero}"), new_x="LMARGIN", new_y="NEXT")
         self.ln(2)
 
     def firma(self, imagen: bytes | None, texto: str | None) -> None:
@@ -248,6 +252,64 @@ def generar_borrador(propuesta: dict[str, Any], ambiente_pruebas: bool = True) -
         new_x="LMARGIN",
         new_y="NEXT",
     )
+    if ambiente_pruebas:
+        pdf.ln(3)
+        pdf.set_text_color(160, 0, 0)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.multi_cell(0, 5, _latin1(AVISO_AMBIENTE_PRUEBAS), new_x="LMARGIN", new_y="NEXT")
+    return bytes(pdf.output())
+
+
+def generar_contrato_firmado(
+    propuesta: dict[str, Any],
+    evidencia: dict[str, Any],
+    asegurado: str | None = None,
+    ambiente_pruebas: bool = True,
+    firma_imagen: bytes | None = None,
+    firma_texto: str | None = None,
+) -> bytes:
+    """El contrato que el titular firmó (T6): lo mismo que leyó (`generar_borrador`) más la
+    evidencia de la firma (referencia del proveedor, cuándo, huella del documento) y la firma
+    estampada. Se guarda cifrado al firmar. Sin nombre, identifica al titular por su referencia
+    opaca."""
+    prima = propuesta["prima"]
+    producto = propuesta.get("producto") or "VIDA_DEUDOR"
+    nombre = (asegurado or "").strip()
+    pdf = _Documento("firmado", titulo="Contrato")
+    pdf.membrete("firmado", producto, titulo="Contrato firmado")
+    pdf.seccion(
+        "Titular",
+        [("Nombre", nombre)]
+        if nombre
+        else [("Referencia del titular", str(propuesta["cliente_id"])[:12])],
+    )
+    _secciones_del_producto(pdf, propuesta)
+    pdf.seccion(
+        "Prima y autorización de cobro",
+        [
+            ("Prima mensual", formatear_monto(prima["valor"], prima["moneda"])),
+            ("Cobro", "Recurrente, con la tarjeta que registres al pagar"),
+        ],
+    )
+    pdf.set_font("Helvetica", "", 10)
+    pdf.multi_cell(
+        0,
+        5,
+        _latin1(CONDICIONES.get(producto, CONDICIONES["VIDA_DEUDOR"])),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.ln(3)
+    pdf.seccion(
+        "Firma electrónica",
+        [
+            ("Referencia de la firma", evidencia["referencia_proveedor"]),
+            ("Firmada el", evidencia["firmada_en"].strftime("%d/%m/%Y %H:%M UTC")),
+            ("Versión del documento", evidencia["version_documento"]),
+            ("Huella del documento", evidencia["documento_hash"]),
+        ],
+    )
+    pdf.firma(firma_imagen, firma_texto)
     if ambiente_pruebas:
         pdf.ln(3)
         pdf.set_text_color(160, 0, 0)
