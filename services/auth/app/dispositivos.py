@@ -75,7 +75,7 @@ class RepositorioDispositivosPostgres:
                 "WHERE id = %(i)s AND revocado_en IS NULL",
                 {"i": dispositivo_id},
             ).fetchone()
-        return {"id": fila[0], "usuario_id": fila[1], "clave_publica": fila[2]} if fila else None
+        return dict(fila) if fila else None
 
     def marcar_uso(self, dispositivo_id: str, ahora: datetime) -> None:
         with self._pool.connection() as conexion:
