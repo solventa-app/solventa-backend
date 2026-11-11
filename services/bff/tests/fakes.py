@@ -117,6 +117,7 @@ def _usuario_publico(usuario_id: str, alias: str, rol: str, estado: str = "ACTIV
         "idioma": "ES",
         "moneda": "COP",
         "tiene_contacto": False,
+        "notificaciones_push": True,
     }
 
 
@@ -160,6 +161,11 @@ class AuthFalso:
         self.refrescos: dict[str, tuple[str, str]] = {}
         self.refrescos_cerrados: list[str] = []
         self._contador_refresh = 0
+        # KAN-259: como AUTH, un solo `sid` (familia) app vivo por cliente y un solo dispositivo
+        # de push; registrar_token_push solo lo acepta sobre ese dispositivo.
+        self._sids_app: dict[str, str] = {}
+        self.dispositivos_push: dict[str, dict] = {}
+        self.preferencias_push: dict[str, bool] = {}
 
     async def correo_registrado(self, correo: str) -> bool:
         if self.falla:
@@ -183,7 +189,12 @@ class AuthFalso:
         return {"reto": f"{dispositivo_id}.nonce", "expira_en": "2099-01-01T00:00:00+00:00"}
 
     async def sesion_con_dispositivo(
-        self, dispositivo_id: str, reto: str, firma: str, canal: str | None
+        self,
+        dispositivo_id: str,
+        reto: str,
+        firma: str,
+        canal: str | None,
+        dispositivo: dict | None = None,
     ) -> dict | None:
         """Como AUTH: la «firma» válida es `firma:<reto>:<llave>`."""
         if self.falla:
@@ -194,7 +205,8 @@ class AuthFalso:
         datos = self.usuarios.get(registro[0])
         if datos is None or datos["estado"] == "SUSPENDIDO" or canal != "app":
             return None
-        return self._con_refresh(self._sesion(datos), datos["id"], canal)
+        sesion = self._con_refresh(self._sesion(datos), datos["id"], canal)
+        return self._aplicar_sesion_unica_app(sesion, datos, canal, dispositivo)
 
     async def buscar_para_restablecer(self, correo: str) -> str | None:
         """Como AUTH: solo las cuentas ACTIVAS con ese correo (el doble usa `correos`)."""
@@ -286,7 +298,12 @@ class AuthFalso:
         return revocado
 
     async def iniciar_sesion(
-        self, usuario: str, clave: str, canal: str | None = None, rol: str | None = None
+        self,
+        usuario: str,
+        clave: str,
+        canal: str | None = None,
+        rol: str | None = None,
+        dispositivo: dict | None = None,
     ) -> dict | None:
         if self.falla:
             raise ErrorServicio("caido")
@@ -301,7 +318,33 @@ class AuthFalso:
                 raise VerificacionPendiente()
         elif datos["estado"] != "ACTIVO":
             return None
-        return self._con_refresh(self._sesion(datos), datos["id"], canal)
+        sesion = self._con_refresh(self._sesion(datos), datos["id"], canal)
+        return self._aplicar_sesion_unica_app(sesion, datos, canal, dispositivo)
+
+    def _aplicar_sesion_unica_app(
+        self, sesion: dict, datos: dict, canal: str | None, dispositivo: dict | None
+    ) -> dict:
+        """KAN-259 (D3), como AUTH: solo entre sesiones `app` de un CLIENTE. Revoca el `sid`
+        anterior (si había) y, con `dispositivo`, deja activo solo ese dispositivo de push. El
+        token nuevo lleva el `sid` de esta sesión, como lo hace AUTH de verdad."""
+        if canal != "app" or datos["rol"] != "CLIENTE":
+            return sesion
+        usuario_id = datos["id"]
+        anterior = self._sids_app.get(usuario_id)
+        nuevo_sid = f"sid-{uuid.uuid4()}"
+        self._sids_app[usuario_id] = nuevo_sid
+        if dispositivo is not None:
+            self.dispositivos_push[usuario_id] = {**dispositivo, "token": None}
+        # Conserva el scope del token original (p. ej. `verificacion-pendiente`, HU-M01): esto
+        # solo le suma el `sid` de la nueva sesión, como lo hace AUTH de verdad.
+        pendiente = datos["estado"] != "ACTIVO"
+        token = token_de_prueba(
+            datos["rol"],
+            usuario_id,
+            scopes=["verificacion-pendiente"] if pendiente else ["sesion"],
+            sid=nuevo_sid,
+        )
+        return {**sesion, "token": token, "sids_revocados": [anterior] if anterior else []}
 
     def _con_refresh(self, sesion: dict, usuario_id: str, canal: str | None) -> dict:
         self._contador_refresh += 1
@@ -331,6 +374,25 @@ class AuthFalso:
             raise ErrorServicio("caido")
         self.refrescos_cerrados.append(refresh_token)
         self.refrescos.pop(refresh_token, None)
+
+    # ---------- Dispositivos de push (KAN-259) ----------
+
+    async def registrar_token_push(self, usuario_id: str, instalacion_id: str, token: str) -> None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        activo = self.dispositivos_push.get(usuario_id)
+        if activo is None or activo["instalacion_id"] != instalacion_id:
+            raise SolicitudInvalida("Ese dispositivo ya no es el de la sesión activa.")
+        self.dispositivos_push[usuario_id] = {**activo, "token": token}
+
+    async def actualizar_preferencia_push(self, usuario_id: str, habilitado: bool) -> dict | None:
+        if self.falla:
+            raise ErrorServicio("caido")
+        if usuario_id not in self.usuarios:
+            return None
+        self.preferencias_push[usuario_id] = habilitado
+        self.usuarios[usuario_id] = {**self.usuarios[usuario_id], "notificaciones_push": habilitado}
+        return self.usuarios[usuario_id]
 
     def _sesion(self, datos: dict) -> dict:
         pendiente = datos["estado"] != "ACTIVO"

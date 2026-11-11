@@ -626,6 +626,8 @@ type Usuario {
   # v0.38 (T20): país de la cuenta (uno de los siete); el CLIENTE lo trae de su documento y cualquiera lo cambia en
   # `actualizarPreferencias`. Null si nunca se fijó.
   pais: String
+  # v0.45 (KAN-259): preferencia del propio cliente para el push (siempre viene; enciende por defecto).
+  notificacionesPush: Boolean!
 }
 
 type Sesion {
@@ -673,12 +675,27 @@ type ErrorUsuario {
 
 union ResultadoUsuario = Usuario | ErrorUsuario
 
+# v0.45 (KAN-259): la instalación de la app que inicia sesión, para la sesión única por cliente (D3) y el push.
+# Independiente del dispositivo de la llave de login sin clave (KAN-26).
+enum PlataformaMovil {
+  ANDROID
+  IOS
+}
+
+input DispositivoPushInput {
+  instalacionId: String!
+  plataforma: PlataformaMovil!
+}
+
 input CredencialesInput {
   usuario: String!
   clave: String!
   # v0.29 (T17): rol del chip elegido en la web. Si no es el de la cuenta, la respuesta es la de una clave errada
   # («Usuario o clave incorrectos.»): no se revela qué rol tiene. Opcional: los clientes viejos no lo mandan.
   rol: RolUsuario = null
+  # v0.45 (KAN-259): solo con sesión en la app; la app lo manda siempre que entra con usuario y clave. Al iniciar
+  # sesión en un dispositivo nuevo se revocan las demás sesiones `app` del cliente y su dispositivo de push.
+  dispositivo: DispositivoPushInput = null
 }
 
 input CrearUsuarioInput {
@@ -1352,7 +1369,13 @@ type Mutation {
   desafioDispositivo(dispositivoId: ID!): DesafioDispositivo!
   # v0.44: pública, solo canal app. Entra con la firma del reto (ECDSA SHA-256, DER en base64). Cualquier fallo responde
   # ErrorAutenticacion con codigo DISPOSITIVO_NO_VALIDO; la app pide entonces correo y contraseña.
-  iniciarSesionConDispositivo(dispositivoId: ID!, reto: String!, firma: String!): ResultadoSesion!
+  # v0.45 (KAN-259): `dispositivo` aplica la misma sesión única por cliente (D3) que con usuario y clave.
+  iniciarSesionConDispositivo(
+    dispositivoId: ID!
+    reto: String!
+    firma: String!
+    dispositivo: DispositivoPushInput = null
+  ): ResultadoSesion!
   # v0.43 (KAN-26): «olvidé mi contraseña». Responde `true` siempre, exista o no la cuenta (o se tope el límite de 3 por
   # correo y 10 por IP por hora): nunca revela quién está registrado. Si hay cuenta activa envía un enlace que vence a los
   # 30 minutos, sirve una vez y reemplaza al anterior.
@@ -1384,6 +1407,12 @@ type Mutation {
   renovarSesion(refreshToken: String = null): ResultadoSesion!
   # Revoca la cadena del refresh (y borra la cookie en la web, con la misma cabecera anti-CSRF). Idempotente.
   cerrarSesion(refreshToken: String = null): Boolean!
+  # ---------- v0.45 (KAN-259): dispositivos de push ----------
+  # Solo CLIENTE, en la app. Al obtener el token de FCM y en `onTokenRefresh`; solo lo acepta sobre el dispositivo
+  # que la sesión actual (`iniciarSesion`/`iniciarSesionConDispositivo` con `dispositivo`) dejó activo.
+  registrarTokenPush(instalacionId: String!, tokenFcm: String!): Boolean!
+  # Solo CLIENTE. Enciende o apaga el push del propio cliente (el id sale del token).
+  actualizarPreferenciaPush(habilitado: Boolean!): Boolean!
   # ---------- v0.21 (HU-W04): mesa de siniestros, solo BACKOFFICE ----------
   # Aprobar registra la orden de pago de la indemnización en PAYMENTS (sin
   # dispersión); si no se puede registrar, responde ErrorSiniestro y el caso sigue abierto.

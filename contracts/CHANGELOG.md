@@ -571,3 +571,17 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Fallo siempre `DISPOSITIVO_NO_VALIDO` (sin decir el motivo). AUTH suma la tabla `dispositivos` (migración `0013`).
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
+
+## v0.45 — 2026-11-11
+
+- KAN-259 (notificaciones push, HU-M04): base de dispositivos de push y sesión única por cliente en la app (D3).
+  `CredencialesInput` e `iniciarSesionConDispositivo` ganan `dispositivo: DispositivoPushInput` (instalación y
+  plataforma, `enum PlataformaMovil { ANDROID IOS }`); al entrar en un teléfono nuevo, AUTH revoca las demás sesiones
+  `app` del cliente y su dispositivo de push anterior, y el BFF anota esos `sid` al instante en `sesiones_revocadas`
+  (D4, mismo mecanismo que `cerrarSesion`). Mutaciones `registrarTokenPush(instalacionId, tokenFcm)` (solo sobre el
+  dispositivo activo) y `actualizarPreferenciaPush(habilitado)`, ambas solo CLIENTE. `Usuario` gana
+  `notificacionesPush: Boolean!` (siempre viene; enciende por defecto). AUTH suma `usuarios.notificaciones_push` y la
+  tabla `dispositivos_push` (migración `0014`), independiente de `dispositivos` (KAN-26). Solo cambios aditivos.
+- Afecta al frontend: el móvil (manda `dispositivo` al iniciar sesión, llama `registrarTokenPush` al obtener o rotar
+  el token de FCM y `actualizarPreferenciaPush` desde el interruptor del perfil). Pendiente: la función `enviar-push`
+  que de verdad manda el mensaje (fuera de este contrato, no toca GraphQL).
