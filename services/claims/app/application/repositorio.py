@@ -285,6 +285,30 @@ class RepositorioSiniestrosMongo:
             "actualizado_en": ahora,
         }
 
+    # ---------- Siniestros paramétricos (KAN-259, HU-M04, Fase 4) ----------
+    # No pasan por `reportar()`: se crean ya `APROBADO` con su resolución, en la misma
+    # transacción. El `siniestro_id` es determinista (`uuid5` del `eventoId` + `polizaId`, lo
+    # calcula `ServicioParametricos`), así que un reintento con el mismo evento golpea la misma
+    # llave primaria: `DuplicateKeyError` es la idempotencia, sin una colección aparte.
+
+    def crear_parametrico(self, siniestro: dict, resolucion: dict, ahora: datetime) -> bool:
+        """`True` si se creó; `False` si ya existía (mismo `eventoId` + `polizaId`): el llamador
+        debe leer el caso existente con `obtener(siniestro['id'], primaria=True)`."""
+        doc_siniestro = {
+            **self._doc_siniestro(siniestro, ahora),
+            "origen": "PARAMETRICO",
+            "evento_parametrico_id": siniestro["evento_parametrico_id"],
+        }
+        doc_resolucion = self._doc_resolucion(resolucion)
+        with self._cliente.start_session() as sesion:
+            try:
+                with sesion.start_transaction():
+                    self._db[SINIESTROS].insert_one(doc_siniestro, session=sesion)
+                    self._db[RESOLUCIONES].insert_one(doc_resolucion, session=sesion)
+            except DuplicateKeyError:
+                return False
+        return True
+
     def evidencia(self, evidencia_id: str) -> dict | None:
         doc = self._db[EVIDENCIAS].find_one({"_id": evidencia_id})
         return self._sin_id(doc) if doc else None

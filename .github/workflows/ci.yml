@@ -58,6 +58,7 @@ jobs:
               - 'services/*/app/fuentes.json'
               - 'services/*/app/tipos-archivo.json'
               - 'scripts/sincronizar_eventos_siniestros.py'
+              - 'scripts/sincronizar_evento_parametrico_claims.py'
               - 'services/claims/app/eventos/**'
               - 'scripts/sincronizar_contrato_push.py'
               - 'services/enviar-push/app/contrato/**'
@@ -327,6 +328,8 @@ jobs:
         run: python scripts/sincronizar_tipos_archivo.py --verificar
       - name: Las copias de los esquemas siniestro.* de claims siguen iguales al contrato
         run: python scripts/sincronizar_eventos_siniestros.py --verificar
+      - name: Las copias de los esquemas paramétricos (evento recibido y push) de claims siguen iguales
+        run: python scripts/sincronizar_evento_parametrico_claims.py --verificar
       - name: Las copias de los contratos de socios (OpenAPI y salud.json) del BFF siguen iguales
         run: python scripts/sincronizar_socios.py --verificar
       - name: La copia del esquema de eventos paramétricos del ACL Worker sigue igual al contrato

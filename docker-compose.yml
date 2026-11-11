@@ -336,6 +336,20 @@ services:
     depends_on:
       migrar-policy: { condition: service_completed_successfully }
 
+  # KAN-259 (HU-M04, Fase 4, D8), solo local: 2 pólizas de vuelo y 1 de clima con cobertura
+  # paramétrica, para que CLAIMS tenga algo que cruzar contra `evento.parametrico.recibido`.
+  # Idempotente.
+  sembrar-polizas-parametricas:
+    <<: *tarea
+    profiles: ["semilla"]
+    image: solventa/policy:local
+    build: ./services/policy
+    command: ["python", "-m", "app.sembrar_polizas_parametricas"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/policy
+    depends_on:
+      migrar-policy: { condition: service_completed_successfully }
+
   # HU-M05, solo local: el CLIENTE verificado que reporta siniestros desde el móvil. Entra con
   # cliente.siniestros@demo.solventa.co y la clave de abajo (SOLO LOCAL). Su póliza la crea
   # `sembrar-polizas-demo`. Idempotente.

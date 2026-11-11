@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/notificacion.push-solicitada/v1",
+  "title": "notificacion.push-solicitada",
+  "description": "KAN-259, T-M04-5: un servicio pide un push a un cliente. Lo consume `enviar-push` (API y Pub/Sub); el título y el cuerpo los decide la plantilla, nunca el productor. Sin datos personales: el destinatario va por id, nunca por nombre, correo ni documento.",
+  "type": "object",
+  "required": [
+    "eventId",
+    "tipo",
+    "version",
+    "ocurridoEn",
+    "datos"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tipo": {
+      "const": "notificacion.push-solicitada"
+    },
+    "version": {
+      "const": 1
+    },
+    "ocurridoEn": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "datos": {
+      "type": "object",
+      "required": [
+        "idempotencia",
+        "usuarioId",
+        "plantilla"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "idempotencia": {
+          "type": "string",
+          "description": "Tag/collapse-id del teléfono: una reentrega de Pub/Sub reemplaza la notificación en vez de duplicarla.",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "usuarioId": {
+          "type": "string",
+          "description": "El id de AUTH del destinatario. Fase 2 solo resuelve por usuarioId (ver plan); resolver por titularId queda para cuando AUTH lo expese."
+        },
+        "plantilla": {
+          "type": "string",
+          "description": "Clave del catálogo `contracts/plantillas-push.json`. El productor no escribe texto, solo elige la plantilla.",
+          "minLength": 1
+        },
+        "variables": {
+          "type": "object",
+          "description": "Variables para render de la plantilla (p. ej. {\"monto\": \"150.00\", \"moneda\": \"COP\"}). Nunca nombre, documento ni correo.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "ruta": {
+          "type": "string",
+          "description": "Ruta de la app a abrir al tocar la notificación (p. ej. /m04-02/{id}). La pantalla revisa la sesión antes de navegar (ajuste v4 del plan).",
+          "maxLength": 200
+        },
+        "ttlSegundos": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 604800,
+          "description": "Cuánto vale la pena reintentar la entrega si el teléfono está apagado. Por defecto, el de la plantilla."
+        },
+        "silenciosa": {
+          "type": "boolean",
+          "description": "true = sin banner visible (p. ej. `sesion-cerrada`, D4); el móvil solo la procesa en segundo plano."
+        }
+      }
+    }
+  }
+}

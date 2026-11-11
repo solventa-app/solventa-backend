@@ -159,6 +159,15 @@ class RepositorioFalso:
         if resolucion is not None:
             self.resoluciones_por[siniestro_id] = copy.deepcopy(resolucion)
 
+    # ---------- Siniestros paramétricos (KAN-259, HU-M04, Fase 4) ----------
+
+    def crear_parametrico(self, siniestro, resolucion, ahora):
+        if siniestro["id"] in self.siniestros:
+            return False
+        self.siniestros[siniestro["id"]] = copy.deepcopy(siniestro)
+        self.resoluciones_por[siniestro["id"]] = copy.deepcopy(resolucion)
+        return True
+
 
 class AlmacenamientoFalso:
     def __init__(self):
@@ -286,6 +295,36 @@ class PolicyPolizas:
         if self.falla:
             raise self.falla
         return {"id": poliza_id, "cobertura": {"valor": self.cobertura, "moneda": "COP"}}
+
+
+class PolicyParametricoFalso:
+    """KAN-259 (HU-M04, Fase 4): doble de `ClientePolicy` con sus 3 métodos (póliza y las dos
+    consultas de coberturas paramétricas)."""
+
+    def __init__(self, coberturas_vuelo=None, coberturas_celda=None, polizas=None, falla=None):
+        self.coberturas_vuelo = coberturas_vuelo or {}  # {(numero, fecha): [cobertura, ...]}
+        self.coberturas_celda = coberturas_celda or {}  # {(lat, lon, variable): [cobertura, ...]}
+        self.polizas = polizas or {}
+        self.falla = falla
+        self.llamadas: list[tuple] = []
+
+    def obtener_poliza(self, poliza_id):
+        if self.falla:
+            raise self.falla
+        return self.polizas.get(poliza_id, {"id": poliza_id, "firmante_id": "usuario-1"})
+
+    def coberturas_de_vuelo(self, numero_vuelo, fecha):
+        if self.falla:
+            raise self.falla
+        self.llamadas.append(("VUELO", numero_vuelo, fecha))
+        return copy.deepcopy(self.coberturas_vuelo.get((numero_vuelo, fecha), []))
+
+    def coberturas_de_celda(self, latitud, longitud, variable):
+        if self.falla:
+            raise self.falla
+        clave = (round(latitud, 2), round(longitud, 2), variable)
+        self.llamadas.append(("CLIMA", *clave))
+        return copy.deepcopy(self.coberturas_celda.get(clave, []))
 
 
 class PaymentsFalso:

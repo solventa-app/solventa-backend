@@ -4,13 +4,16 @@ Servicio privado: solo lo llama el BFF (IAM de Cloud Run). La autorización por 
 la hace el BFF antes de llamar (W04-11).
 """
 
+import base64
+import binascii
+import json
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -25,7 +28,7 @@ from app.application.asistencias import (
     ServicioAsistencias,
 )
 from app.application.autenticacion_servicios import autenticacion_para
-from app.application.bus_eventos import BusEventosLog
+from app.application.bus_eventos import BusEventosLog, validar_entrante
 from app.application.catalogo_prestadores import (
     CatalogoNoDisponible,
     LectorCatalogoPrestadores,
@@ -40,6 +43,7 @@ from app.application.clientes import (
 )
 from app.application.configuracion import Configuracion
 from app.application.repositorio import RepositorioSiniestrosMongo
+from app.application.servicio_parametricos import ServicioParametricos
 from app.application.servicio_siniestros import (
     DependenciaNoDisponible,
     ErrorNegocio,
@@ -152,15 +156,30 @@ class DerivarRequest(BaseModel):
     actor_usuario_id: str | None = None
 
 
+def _decodificar_sobre_pubsub(cuerpo: dict[str, Any]) -> dict[str, Any]:
+    """KAN-259 (HU-M04, Fase 4): acepta el evento directo o el sobre push de Pub/Sub
+    (`{"message": {"data": "<base64>"}}`), mismo patrón que `enviar-push/app/main.py`."""
+    if not isinstance(cuerpo.get("message"), dict):
+        return cuerpo
+    data_b64 = cuerpo["message"].get("data")
+    if not isinstance(data_b64, str) or not data_b64.strip():
+        raise ValueError("mensaje Pub/Sub sin data en base64")
+    try:
+        return json.loads(base64.b64decode(data_b64).decode("utf-8"))
+    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"data de Pub/Sub invalida: {error}") from error
+
+
 def create_app(
     config: Configuracion | None = None,
     servicio: ServicioSiniestros | None = None,
     reiniciar: Callable[[], int] | None = None,
     catalogo=None,
     asistencias: ServicioAsistencias | None = None,
+    parametricos: ServicioParametricos | None = None,
 ) -> FastAPI:
-    """`servicio`, `reiniciar`, `catalogo` y `asistencias` permiten inyectar dobles de prueba sin
-    levantar MongoDB (ver `tests/fakes.py`)."""
+    """`servicio`, `reiniciar`, `catalogo`, `asistencias` y `parametricos` permiten inyectar dobles
+    de prueba sin levantar MongoDB (ver `tests/fakes.py`)."""
     config = config or Configuracion.desde_entorno()
 
     @asynccontextmanager
@@ -172,6 +191,7 @@ def create_app(
         app.state.reiniciar = reiniciar
         app.state.catalogo = catalogo
         app.state.asistencias = asistencias
+        app.state.parametricos = parametricos
         if servicio is not None:
             app.state.servicio = servicio
         else:
@@ -210,13 +230,17 @@ def create_app(
                 autenticacion_para(modo, "almacenamiento"),
                 reglas_de_reescritura(config.almacen_reescritura_origenes),
             )
+            bus = BusEventosLog()
             app.state.servicio = ServicioSiniestros(
                 repositorio,
                 policy=policy,
                 payments=payments,
-                bus=BusEventosLog(),
+                bus=bus,
                 almacenamiento=almacenamiento,
             )
+            if app.state.parametricos is None:
+                # KAN-259 (HU-M04, Fase 4): mismo POLICY y PAYMENTS que la mesa de siniestros.
+                app.state.parametricos = ServicioParametricos(repositorio, policy, payments, bus)
             if app.state.reiniciar is None:
                 datos = Path(config.semilla_dir)
                 app.state.reiniciar = lambda: reiniciar_semilla(repositorio, datos)
@@ -309,6 +333,27 @@ def create_app(
     def aprobar_vencidos() -> dict[str, int]:
         """Una pasada del plazo del dictamen. La dispara Cloud Scheduler; es idempotente."""
         return app.state.servicio.aprobar_vencidos()
+
+    @app.post("/eventos/parametricos", tags=["operacion"])
+    def eventos_parametricos(body: dict[str, Any]) -> dict[str, int]:
+        """KAN-259 (HU-M04, Fase 4): consume `evento.parametrico.recibido` (lo publica el ACL
+        Worker) y, si el umbral se cumple, liquida la indemnización de una vez (idempotente por
+        `eventoId` + `polizaId`, W04-9). Privado (IAM de Cloud Run / suscripción push de Pub/Sub).
+
+        400 = el evento no decodifica o no cumple su esquema: Pub/Sub no debe reintentarlo.
+        200 = se procesó, sea que creó un siniestro o que no había nada que hacer (regla #4: un
+        evento sin pólizas que califiquen, o bajo el umbral, no es un error).
+        500 = un fallo interno inesperado (p. ej. POLIZA/PAYMENTS no responden): Pub/Sub reintenta
+        con su backoff, correcto aquí porque este es un consumidor asíncrono, no el camino
+        síncrono de un usuario."""
+        try:
+            evento = _decodificar_sobre_pubsub(body)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        errores = validar_entrante(evento)
+        if errores:
+            raise HTTPException(status_code=400, detail="; ".join(errores))
+        return app.state.parametricos.procesar(evento)
 
     @app.post("/siniestros/{siniestro_id}/aprobar", tags=["resolucion"])
     def aprobar(siniestro_id: str, body: AprobarRequest) -> dict:
