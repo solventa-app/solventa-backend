@@ -2380,14 +2380,34 @@ class Query:
 
     @strawberry.field
     async def propuesta(self, info: Info, id: strawberry.ID) -> Propuesta | None:
+        """Una propuesta con lo mismo que trae la lista (`propuestas`): la póliza si ya se emitió y,
+        solo para el ASESOR, el nombre del titular. Son datos de apoyo: si POLICY no los entrega la
+        propuesta sale igual, sin ellos (regla 4)."""
         usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
+        servicio = ServicioSuscripcion(info.context["clientes"])
         try:
-            datos = await ServicioSuscripcion(info.context["clientes"]).obtener_propuesta(
-                str(id), usuario
-            )
+            datos = await servicio.obtener_propuesta(str(id), usuario)
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_SUSCRIPCION_NO_DISPONIBLE) from error
-        return _propuesta(datos) if datos else None
+        if not datos:
+            return None
+        poliza: Poliza | None = None
+        if datos.get("poliza_id") and datos["estado"] == "EMITIDA":
+            try:
+                completa = await servicio.obtener_poliza(datos["poliza_id"], usuario)
+                poliza = _poliza(completa) if completa else None
+            except ErrorServicio as error:
+                logger.warning(
+                    "póliza de la propuesta no disponible error=%s", type(error).__name__
+                )
+        titular: str | None = None
+        if usuario is not None and usuario.rol != "CLIENTE":
+            try:
+                nombres = await info.context["clientes"].policy.nombres_titulares([datos["id"]])
+                titular = nombres.get(datos["id"])
+            except ErrorServicio as error:
+                logger.warning("nombre del titular no disponible error=%s", type(error).__name__)
+        return _propuesta(datos, poliza=poliza, nombre_titular=titular)
 
     @strawberry.field
     async def documento_firma(
