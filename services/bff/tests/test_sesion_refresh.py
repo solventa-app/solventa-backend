@@ -1,6 +1,6 @@
 """Sesión con refresh (T22): cookie httpOnly en la web, cuerpo en la app, CSRF y rotación."""
 
-from fakes import AuthFalso, clientes_falsos
+from fakes import AuthFalso, clientes_falsos, token_de_prueba
 from fastapi.testclient import TestClient
 
 from app.configuracion import Configuracion
@@ -162,3 +162,29 @@ def test_un_fallo_de_auth_no_es_un_5xx_ni_borra_la_cookie() -> None:
     cuerpo = r.json()
     assert cuerpo["errors"][0]["message"] == "No pudimos renovar tu sesión. Intenta de nuevo."
     assert "set-cookie" not in r.headers
+
+
+def test_tras_cerrar_sesion_el_token_de_acceso_deja_de_servir() -> None:
+    client, _ = _cliente()
+    token = token_de_prueba("BACKOFFICE", sid="cadena-1")
+    auth = {"Authorization": f"Bearer {token}"}
+    with client:
+        antes = _post(client, "web", "query { yo { ... on Usuario { rol } } }", headers=auth)
+        _post(client, "web", CERRAR, headers={**CSRF, **auth}, cookies={"solventa_refresh": "r"})
+        despues = _post(client, "web", "query { yo { ... on Usuario { rol } } }", headers=auth)
+
+    assert "errors" not in antes.json()
+    assert (
+        despues.json()["errors"][0]["message"]
+        == "Tu sesión no es válida o venció. Inicia sesión de nuevo."
+    )
+
+
+def test_un_token_sin_sid_sigue_valiendo_hasta_que_vence() -> None:
+    client, _ = _cliente()
+    auth = {"Authorization": f"Bearer {token_de_prueba('BACKOFFICE')}"}
+    with client:
+        _post(client, "web", CERRAR, headers={**CSRF, **auth}, cookies={"solventa_refresh": "r"})
+        r = _post(client, "web", "query { yo { ... on Usuario { rol } } }", headers=auth)
+
+    assert "errors" not in r.json()

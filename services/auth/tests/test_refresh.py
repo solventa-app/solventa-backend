@@ -5,6 +5,7 @@ import json
 import logging
 from datetime import timedelta
 
+import jwt
 import pytest
 from fakes import (
     CIFRADOR_PRUEBAS,
@@ -45,7 +46,7 @@ def test_el_login_entrega_refresh_opaco_guardado_solo_como_hash() -> None:
 
     sesion = sesiones.iniciar_sesion("u.022", CLAVE, "web")
 
-    assert sesion["refresh_expira_en"] == reloj.ahora + timedelta(days=8)
+    assert sesion["refresh_expira_en"] == reloj.ahora + timedelta(hours=8)
     (fila,) = refrescos.filas.values()
     assert fila["hash_token"] == hashlib.sha256(sesion["refresh_token"].encode()).hexdigest()
     assert sesion["refresh_token"] not in json.dumps(fila, default=str)
@@ -61,7 +62,8 @@ def test_renovar_rota_el_refresh_y_el_anterior_queda_invalido() -> None:
 
     assert nueva["refresh_token"] != r1
     assert nueva["expira_en"] == reloj.ahora + timedelta(minutes=60)
-    assert nueva["refresh_expira_en"] == reloj.ahora + timedelta(days=8)
+    # En la web renovar no alarga: el refresh sigue venciendo 8 h después de iniciar sesión.
+    assert nueva["refresh_expira_en"] == reloj.ahora - timedelta(minutes=30) + timedelta(hours=8)
     assert len({f["familia_id"] for f in refrescos.filas.values()}) == 1
     with pytest.raises(RefreshInvalido):
         sesiones.renovar_con_refresh(r1, "web")
@@ -194,7 +196,15 @@ def test_endpoints_http_refresh_y_cerrar() -> None:
         config=config,
     )
     with TestClient(app) as client:
-        client.post("/usuarios", json={"usuario": "asesor.1", "clave": CLAVE, "rol": "ASESOR"})
+        client.post(
+            "/usuarios",
+            json={
+                "usuario": "asesor.1",
+                "clave": CLAVE,
+                "rol": "ASESOR",
+                "correo": "asesor.1@ejemplo.co",
+            },
+        )
         login = client.post(
             "/sesiones", json={"usuario": "asesor.1", "clave": CLAVE, "canal": "web"}
         ).json()
@@ -213,3 +223,38 @@ def test_endpoints_http_refresh_y_cerrar() -> None:
     assert reuso.status_code == 401 and reuso.json()["detail"] == MENSAJE_REFRESH
     assert cierre.status_code == 204
     assert tras_cierre.status_code == 401
+
+
+def test_en_la_web_el_acceso_nunca_pasa_del_tope_de_8_horas() -> None:
+    sesiones, _, _, reloj, _ = _preparar()
+    inicio = reloj.ahora
+    refresh = sesiones.iniciar_sesion("u.022", CLAVE, "web")["refresh_token"]
+    reloj.ahora = inicio + timedelta(hours=7, minutes=55)
+
+    nueva = sesiones.renovar_con_refresh(refresh, "web")
+
+    assert nueva["expira_en"] == inicio + timedelta(hours=8)
+    reloj.ahora = inicio + timedelta(hours=8, seconds=1)
+    with pytest.raises(RefreshInvalido):
+        sesiones.renovar_con_refresh(nueva["refresh_token"], "web")
+
+
+def test_en_la_app_el_refresh_si_se_alarga_al_renovar() -> None:
+    sesiones, _, _, reloj, _ = _preparar("CLIENTE")
+    refresh = sesiones.iniciar_sesion("u.022", CLAVE, "app")["refresh_token"]
+    reloj.ahora += timedelta(days=3)
+
+    nueva = sesiones.renovar_con_refresh(refresh, "app")
+
+    assert nueva["refresh_expira_en"] == reloj.ahora + timedelta(days=8)
+
+
+def test_el_token_lleva_la_cadena_de_refresh_como_sid() -> None:
+    sesiones, _, refrescos, _, _ = _preparar()
+
+    sesion = sesiones.iniciar_sesion("u.022", CLAVE, "web")
+    renovada = sesiones.renovar_con_refresh(sesion["refresh_token"], "web")
+
+    (familia,) = {f["familia_id"] for f in refrescos.filas.values()}
+    for s in (sesion, renovada):
+        assert jwt.decode(s["token"], SECRETO, algorithms=["HS256"])["sid"] == familia

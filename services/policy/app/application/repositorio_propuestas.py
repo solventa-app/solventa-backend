@@ -53,6 +53,9 @@ _COLUMNAS_EVIDENCIA = (
     "id, propuesta_id, documento_hash, version_documento, firmante_id, "
     "referencia_proveedor, firmada_en, creado_en, modo_firma, imagen_firma_archivo_id"
 )
+_COLUMNAS_DOCUMENTO = (
+    "id, propuesta_id, tipo, archivo_id, clave_envuelta, sha256, tamano_bytes, creado_en"
+)
 # Estados en los que una propuesta todavía puede cancelarse (W03-26): todo lo que no es final.
 ESTADOS_ABIERTOS = (
     "ACEPTADA",
@@ -413,6 +416,58 @@ class RepositorioPropuestasPostgres:
                     {"propuesta_id": propuesta_id},
                 ).fetchone()
         return fila, creada
+
+    # ------------------------------------------------------------------ documentos firmados (T6)
+
+    def obtener_documento(self, propuesta_id: str, tipo: str) -> dict[str, Any] | None:
+        with self._pool.connection() as conexion:
+            return conexion.execute(
+                f"SELECT {_COLUMNAS_DOCUMENTO} FROM documentos_firmados "
+                "WHERE propuesta_id = %(propuesta_id)s AND tipo = %(tipo)s",
+                {"propuesta_id": propuesta_id, "tipo": tipo},
+            ).fetchone()
+
+    def guardar_documento(
+        self,
+        propuesta_id: str,
+        tipo: str,
+        archivo_id: str,
+        clave_envuelta: str,
+        sha256: str,
+        tamano_bytes: int,
+    ) -> bool:
+        """Registra el documento cifrado (una sola vez por propuesta y tipo; inmutable). Devuelve
+        False si otra petición ya lo había guardado."""
+        with self._pool.connection() as conexion:
+            fila = conexion.execute(
+                """
+                INSERT INTO documentos_firmados
+                    (id, propuesta_id, tipo, archivo_id, clave_envuelta, sha256, tamano_bytes)
+                VALUES
+                    (%(id)s, %(propuesta_id)s, %(tipo)s, %(archivo_id)s, %(clave_envuelta)s,
+                     %(sha256)s, %(tamano_bytes)s)
+                ON CONFLICT (propuesta_id, tipo) DO NOTHING
+                RETURNING id
+                """,
+                {
+                    "id": str(uuid.uuid4()),
+                    "propuesta_id": propuesta_id,
+                    "tipo": tipo,
+                    "archivo_id": archivo_id,
+                    "clave_envuelta": clave_envuelta,
+                    "sha256": sha256,
+                    "tamano_bytes": tamano_bytes,
+                },
+            ).fetchone()
+        return fila is not None
+
+    def documentos_de(self, propuesta_id: str) -> list[dict[str, Any]]:
+        with self._pool.connection() as conexion:
+            return conexion.execute(
+                f"SELECT {_COLUMNAS_DOCUMENTO} FROM documentos_firmados "
+                "WHERE propuesta_id = %(propuesta_id)s ORDER BY creado_en",
+                {"propuesta_id": propuesta_id},
+            ).fetchall()
 
     # ------------------------------------------------------------------ bloque 9 (W03-19 a W03-37)
 

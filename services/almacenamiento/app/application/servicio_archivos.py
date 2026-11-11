@@ -39,6 +39,9 @@ DIAS_SUBIDA_ABANDONADA = 90
 
 # Primeros bytes de cada tipo de contenido admitido (MP4: `ftyp` en el byte 4).
 _BYTES_FIRMA = 16
+# El contenedor cifrado de los documentos firmados (POLICY, `sobre_documentos.py`) empieza con esta
+# marca. Así un PDF en claro no entra como `application/octet-stream`: solo lo cifrado.
+MAGIA_CONTENEDOR_CIFRADO = b"SOLVENC1"
 
 
 def _firma_coincide(tipo_contenido: str, inicio: bytes) -> bool:
@@ -50,6 +53,8 @@ def _firma_coincide(tipo_contenido: str, inicio: bytes) -> bool:
         return inicio.startswith(b"%PDF-")
     if tipo_contenido == "video/mp4":
         return inicio[4:8] == b"ftyp"
+    if tipo_contenido == "application/octet-stream":
+        return inicio.startswith(MAGIA_CONTENEDOR_CIFRADO)
     return False
 
 

@@ -373,9 +373,9 @@ cryptography==50.0.2 \
     # via
     #   -r requirements.in
     #   google-auth
-fastapi==0.162.0 \
-    --hash=sha256:3785963de305dd09912426cb81f2d230fce98ab3521cdfe97265c8d14983128c \
-    --hash=sha256:6a22c1e2e6e32e0633ee7e170f00009a29b8228b16feb219ee42f32fd8d88a8f
+fastapi==0.162.2 \
+    --hash=sha256:9ebd2a69b579141315b2447d8e3f518e6fd909abd6c01cac5cc6b06d5c8841f4 \
+    --hash=sha256:d0584f9662317e01140df94c64f4bed1d8b059fe35496e30c9c92f70e6e5ff15
     # via
     #   -r requirements.in
     #   strawberry-graphql
@@ -884,9 +884,9 @@ starlette==1.8.0 \
     # via
     #   fastapi
     #   prometheus-fastapi-instrumentator
-strawberry-graphql==0.339.1 \
-    --hash=sha256:16e8ac770dcbd6946b5725845e9b8b8c68aa3f811766627bda3902b00c928e23 \
-    --hash=sha256:574b28acf609cc8ee150c47e290a7bf5aaf1274aa7c52242fca00aec2e1a8146
+strawberry-graphql==0.341.2 \
+    --hash=sha256:73e9c4cf5e2fddd522d2741491a6fbba70f940d945ab0a40152b2fadf26d9a89 \
+    --hash=sha256:8073fae26510fb25394a6ea9dd0f4e23da6bc303312fff684f6a884d59eedb72
     # via -r requirements.in
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \

@@ -260,7 +260,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}\",\n      \"correo\": \"{{alias_asesor}}@ejemplo.co\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\"\n    }\n  }\n}"
             },
             "description": "El BACKOFFICE crea un ASESOR.",
             "auth": {
@@ -371,7 +371,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn nombre }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}x\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\",\n      \"nombre\": \"Asesora Newman Prueba\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn nombre }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}x\",\n      \"correo\": \"{{alias_asesor}}x@ejemplo.co\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\",\n      \"nombre\": \"Asesora Newman Prueba\"\n    }\n  }\n}"
             },
             "description": "El nombre se admite en cualquier rol. `crearUsuario` no lo devuelve (va en null).",
             "auth": {
@@ -472,7 +472,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_asesor}}\",\n      \"correo\": \"{{alias_asesor}}@ejemplo.co\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\"\n    }\n  }\n}"
             },
             "description": "El alias es único: repetirlo devuelve ErrorUsuario (no un 5xx).",
             "auth": {
@@ -1929,7 +1929,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"intruso.asesor\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"BACKOFFICE\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id usuario rol estado creadoEn }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"intruso.asesor\",\n      \"correo\": \"intruso.asesor@ejemplo.co\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"BACKOFFICE\"\n    }\n  }\n}"
             },
             "description": "Crear usuarios es solo del BACKOFFICE.",
             "auth": {

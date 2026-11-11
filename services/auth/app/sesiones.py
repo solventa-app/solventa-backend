@@ -23,6 +23,7 @@ import logging
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from typing import Protocol
 
 import jwt
 from argon2 import PasswordHasher
@@ -79,6 +80,24 @@ def canal_de_sesion(canal: str | None) -> str:
     return CANAL_APP if canal == CANAL_APP else CANAL_WEB
 
 
+class ServicioDispositivosPushSesion(Protocol):
+    """Lo que `ServicioSesiones` necesita de `app/dispositivos_push.py` (KAN-259): aquí solo la
+    firma, para no acoplar este módulo al cifrado ni a la base de dispositivos de push."""
+
+    def registrar_sesion(
+        self,
+        usuario_id: str,
+        instalacion_id: str,
+        plataforma: str,
+        familia_id: str,
+        ahora: datetime,
+    ) -> None: ...
+
+    def cerrar_sesion(self, usuario_id: str, familia_id: str, ahora: datetime) -> None: ...
+
+    def revocar_de_usuario(self, usuario_id: str, ahora: datetime) -> None: ...
+
+
 class ServicioSesiones:
     def __init__(
         self,
@@ -91,9 +110,14 @@ class ServicioSesiones:
         refrescos: RepositorioRefrescos | None = None,
         refresh_dias: int = 8,
         refresh_gracia_segundos: int = 0,
+        refresh_web_horas: int = 8,
+        dispositivos_push: ServicioDispositivosPushSesion | None = None,
     ) -> None:
         self._refrescos = refrescos
+        self._dispositivos_push = dispositivos_push
         self._refresh_vigencia = timedelta(days=refresh_dias)
+        # La web tiene un tope absoluto desde que se inicia sesión: renovar no lo alarga.
+        self._refresh_web = timedelta(hours=refresh_web_horas)
         self._refresh_gracia = timedelta(seconds=refresh_gracia_segundos)
         self._clave_correo = clave_correo
         self._repositorio = repositorio
@@ -116,10 +140,20 @@ class ServicioSesiones:
         return self._repositorio.obtener_por_correo_hmac(correo_hmac(limpio, self._clave_correo))
 
     def iniciar_sesion(
-        self, alias: str, clave: str, canal: str | None = None, rol: str | None = None
+        self,
+        alias: str,
+        clave: str,
+        canal: str | None = None,
+        rol: str | None = None,
+        dispositivo: dict | None = None,
     ) -> dict:
         """Devuelve `{token, expira_en, usuario}` o lanza `CredencialesInvalidas` o
-        `VerificacionPendiente`. `alias` puede ser el alias o el correo (cuentas de M01)."""
+        `VerificacionPendiente`. `alias` puede ser el alias o el correo (cuentas de M01).
+
+        `dispositivo` (KAN-259): `{instalacion_id, plataforma}` de la app. En el canal `app` para
+        un CLIENTE se aplica D3 (una sola sesión activa por cliente, solo entre sesiones `app`):
+        se revocan las demás cadenas de refresh `app` de este usuario, y si llegó `dispositivo` se
+        deja ese como el único con push activo."""
         fila = self._buscar(alias)
         if fila is None:
             self._verificar(self._hash_ficticio, clave)
@@ -152,12 +186,68 @@ class ServicioSesiones:
             raise CredencialesInvalidas(MENSAJE_CREDENCIALES)
 
         self._repositorio.registrar_exito(fila["id"])
-        sesion = self._emitir(fila, ahora, ahora + self._vigencia)
-        self._agregar_refresh(sesion, fila["id"], str(uuid.uuid4()), canal_de_sesion(canal), ahora)
+        familia = str(uuid.uuid4())
+        sesion = self._emitir(fila, ahora, ahora + self._vigencia, familia)
+        self._agregar_refresh(sesion, fila["id"], familia, canal_de_sesion(canal), ahora)
+        self._aplicar_sesion_unica_app(sesion, fila, canal, dispositivo, familia, ahora)
         logger.info("sesión iniciada usuario=%s rol=%s", id_opaco(fila["id"]), fila["rol"])
         return sesion
 
-    def renovar_permisos(self, usuario_id: str, expira_en: datetime) -> dict:
+    def _aplicar_sesion_unica_app(
+        self,
+        sesion: dict,
+        fila: dict,
+        canal: str | None,
+        dispositivo: dict | None,
+        familia_id: str,
+        ahora: datetime,
+    ) -> None:
+        """D3: una sola sesión activa por cliente, solo entre sesiones `app`. Revoca las demás
+        cadenas `app` de este usuario (sus `sid` quedan en `sesion["sids_revocados"]`, para que el
+        BFF las anote en `sesiones_revocadas` al instante, igual que al cerrar sesión) y, si llegó
+        `dispositivo`, deja ese como el único con push activo (KAN-259)."""
+        if canal_de_sesion(canal) != CANAL_APP or fila["rol"] != "CLIENTE":
+            return
+        revocadas: list[str] = []
+        if self._refrescos is not None:
+            revocadas = self._refrescos.revocar_otras_familias_canal(
+                fila["id"], familia_id, CANAL_APP, ahora
+            )
+        sesion["sids_revocados"] = revocadas
+        if dispositivo is not None and self._dispositivos_push is not None:
+            self._dispositivos_push.registrar_sesion(
+                fila["id"],
+                dispositivo["instalacion_id"],
+                dispositivo["plataforma"],
+                familia_id,
+                ahora,
+            )
+
+    def iniciar_sesion_de_confianza(
+        self, usuario_id: str, canal: str | None, dispositivo: dict | None = None
+    ) -> dict:
+        """Sesión de la app para quien ya probó quién es sin clave (llave del dispositivo,
+        verificada por `ServicioDispositivos`). Mismas reglas de estado y canal que el login, y
+        aplica igual D3 (`dispositivo` de KAN-259, ver `iniciar_sesion`)."""
+        fila = self._repositorio.obtener(usuario_id)
+        ahora = self._reloj()
+        if (
+            fila is None
+            or canal != CANAL_APP
+            or fila["rol"] != "CLIENTE"
+            or fila["estado"] not in ("ACTIVO", *ESTADOS_SIN_VERIFICAR)
+        ):
+            raise CredencialesInvalidas(MENSAJE_CREDENCIALES)
+        familia = str(uuid.uuid4())
+        sesion = self._emitir(fila, ahora, ahora + self._vigencia, familia)
+        self._agregar_refresh(sesion, fila["id"], familia, canal_de_sesion(canal), ahora)
+        self._aplicar_sesion_unica_app(sesion, fila, canal, dispositivo, familia, ahora)
+        logger.info("sesión iniciada con dispositivo usuario=%s", id_opaco(fila["id"]))
+        return sesion
+
+    def renovar_permisos(
+        self, usuario_id: str, expira_en: datetime, sid: str | None = None
+    ) -> dict:
         """`actualizarSesion` (M01): relee el estado y emite un token con los scopes de ahora y
         **la misma expiración**: no alarga la sesión. El BFF ya validó el token vigente."""
         fila = self._repositorio.obtener(usuario_id)
@@ -172,16 +262,26 @@ class ServicioSesiones:
             )
         ):
             raise CredencialesInvalidas(MENSAJE_CREDENCIALES)
-        return self._emitir(fila, ahora, expira_en)
+        return self._emitir(fila, ahora, expira_en, sid)
 
     def _agregar_refresh(
-        self, sesion: dict, usuario_id: str, familia_id: str, canal: str, ahora: datetime
+        self,
+        sesion: dict,
+        usuario_id: str,
+        familia_id: str,
+        canal: str,
+        ahora: datetime,
+        tope: datetime | None = None,
     ) -> None:
         """Guarda el hash de un refresh nuevo (cadena `familia_id`) y lo agrega a la sesión."""
         if self._refrescos is None:
             return
         refresh = nuevo_refresh()
-        expira = ahora + self._refresh_vigencia
+        if canal == CANAL_WEB:
+            # En la web el refresh vence 8 h después de iniciar sesión, se renueve o no.
+            expira = tope or ahora + self._refresh_web
+        else:
+            expira = ahora + self._refresh_vigencia
         self._refrescos.crear(
             str(uuid.uuid4()), familia_id, usuario_id, hash_refresh(refresh), canal, expira
         )
@@ -228,8 +328,13 @@ class ServicioSesiones:
         if not permitido:
             self._refrescos.revocar_familia(familia, ahora)
             raise RefreshInvalido(MENSAJE_REFRESH)
-        sesion = self._emitir(usuario, ahora, ahora + self._vigencia)
-        self._agregar_refresh(sesion, usuario["id"], familia, fila["canal"], ahora)
+        acceso_hasta = ahora + self._vigencia
+        if fila["canal"] == CANAL_WEB:
+            acceso_hasta = min(acceso_hasta, fila["expira_en"])
+        sesion = self._emitir(usuario, ahora, acceso_hasta, familia)
+        self._agregar_refresh(
+            sesion, usuario["id"], familia, fila["canal"], ahora, tope=fila["expira_en"]
+        )
         logger.info("sesión renovada con refresh usuario=%s", id_opaco(usuario["id"]))
         return sesion
 
@@ -253,14 +358,22 @@ class ServicioSesiones:
             return
         fila = self._refrescos.obtener_por_hash(hash_refresh(refresh))
         if fila is not None:
-            self._refrescos.revocar_familia(fila["familia_id"], self._reloj())
+            ahora = self._reloj()
+            self._refrescos.revocar_familia(fila["familia_id"], ahora)
+            if self._dispositivos_push is not None:
+                self._dispositivos_push.cerrar_sesion(fila["usuario_id"], fila["familia_id"], ahora)
 
     def revocar_de_usuario(self, usuario_id: str) -> None:
         """Al suspender la cuenta o cambiar la clave: ningún refresh del usuario vuelve a servir."""
+        ahora = self._reloj()
         if self._refrescos is not None:
-            self._refrescos.revocar_de_usuario(usuario_id, self._reloj())
+            self._refrescos.revocar_de_usuario(usuario_id, ahora)
+        if self._dispositivos_push is not None:
+            self._dispositivos_push.revocar_de_usuario(usuario_id, ahora)
 
-    def _emitir(self, fila: dict, ahora: datetime, expira_en: datetime) -> dict:
+    def _emitir(
+        self, fila: dict, ahora: datetime, expira_en: datetime, sid: str | None = None
+    ) -> dict:
         scopes = (
             SCOPES_VERIFICACION_PENDIENTE
             if fila["estado"] in ESTADOS_SIN_VERIFICAR
@@ -275,6 +388,8 @@ class ServicioSesiones:
                 "iat": int(ahora.timestamp()),
                 "exp": int(expira_en.timestamp()),
                 "jti": str(uuid.uuid4()),
+                # La cadena de refresh a la que pertenece: al cerrar sesión se revoca por aquí.
+                **({"sid": sid} if sid else {}),
             },
             self._secreto,
             algorithm=ALGORITMO_JWT,

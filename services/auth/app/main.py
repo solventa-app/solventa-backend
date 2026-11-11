@@ -13,7 +13,7 @@ Estos endpoints son **internos**: solo los llama el BFF, que valida el JWT y el 
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Literal
 
 from argon2 import PasswordHasher
@@ -25,6 +25,21 @@ from pydantic import BaseModel
 from app.cifrado import construir_cifrador
 from app.configuracion import Configuracion
 from app.consentimientos import AlmacenConsentimientos, AlmacenConsentimientosPostgres
+from app.dispositivos import (
+    MENSAJE_DISPOSITIVO,
+    DispositivoInvalido,
+    RepositorioDispositivosPostgres,
+    ServicioDispositivos,
+)
+from app.dispositivos_push import (
+    DatoInvalido as DatoInvalidoPush,
+)
+from app.dispositivos_push import (
+    PushDeshabilitado,
+    RepositorioDispositivosPushPostgres,
+    ServicioDispositivosPush,
+    SinDispositivoActivo,
+)
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.observabilidad import configurar_trazas
 from app.refrescos import RepositorioRefrescosPostgres
@@ -43,6 +58,7 @@ from app.socios import (
 )
 from app.tokens_socio import FirmadorTokensSocio
 from app.usuarios import (
+    CuentaNoActiva,
     DatoInvalido,
     RepositorioUsuariosPostgres,
     ServicioUsuarios,
@@ -96,6 +112,14 @@ class ConsentimientoResponse(BaseModel):
     canal: str | None = None
 
 
+class SolicitudDispositivoPush(BaseModel):
+    """KAN-259: el dispositivo (instalación de la app) que inicia sesión. Independiente de
+    `SolicitudDispositivo` (la llave de login de confianza, KAN-26)."""
+
+    instalacion_id: str
+    plataforma: str
+
+
 class Credenciales(BaseModel):
     # El alias, o el correo de una cuenta del onboarding (HU-M01).
     usuario: str
@@ -104,6 +128,25 @@ class Credenciales(BaseModel):
     canal: str | None = None
     # T17: rol con el que se intenta entrar; si no es el de la cuenta, falla como una clave errada.
     rol: str | None = None
+    # KAN-259: solo con `canal = "app"`, para la sesión única por cliente y el push.
+    dispositivo: SolicitudDispositivoPush | None = None
+
+
+class SolicitudClave(BaseModel):
+    clave: str
+
+
+class SolicitudDispositivo(BaseModel):
+    usuario_id: str
+    clave_publica: str
+
+
+class SolicitudSesionDispositivo(BaseModel):
+    reto: str
+    firma: str
+    canal: str | None = None
+    # KAN-259: igual que en `Credenciales`, para la sesión única por cliente y el push.
+    dispositivo: SolicitudDispositivoPush | None = None
 
 
 class SolicitudCorreo(BaseModel):
@@ -129,6 +172,7 @@ class SolicitudCierreVerificacion(BaseModel):
 class SolicitudRenovacion(BaseModel):
     usuario_id: str
     expira_en: datetime
+    sid: str | None = None
 
 
 class SolicitudUsuario(BaseModel):
@@ -202,6 +246,8 @@ class UsuarioResponse(BaseModel):
     # T20: tipo del documento del CLIENTE (no es el número) y país de la cuenta.
     tipo_documento: str | None = None
     pais: str | None = None
+    # KAN-259: preferencia del cliente para el push (siempre se devuelve; default encendida).
+    notificaciones_push: bool = True
 
 
 class SolicitudPreferencias(BaseModel):
@@ -217,6 +263,10 @@ class SesionResponse(BaseModel):
     # T22: el refresh opaco y su vencimiento. Null si AUTH no tiene refrescos configurados.
     refresh_token: str | None = None
     refresh_expira_en: datetime | None = None
+    # KAN-259 (D3): los `sid` (familia) de otras sesiones `app` de este cliente que quedaron
+    # revocadas al entrar aquí. El BFF las anota en `sesiones_revocadas` al instante. Solo viene
+    # en el canal `app` para un CLIENTE; en los demás casos no aparece.
+    sids_revocados: list[str] | None = None
 
 
 class SolicitudRefresh(BaseModel):
@@ -226,6 +276,28 @@ class SolicitudRefresh(BaseModel):
 
 class SolicitudCierre(BaseModel):
     refresh_token: str
+
+
+# ---------- Dispositivos de push (KAN-259) ----------
+
+
+class SolicitudTokenPush(BaseModel):
+    usuario_id: str
+    instalacion_id: str
+    token: str
+
+
+class SolicitudPreferenciaPush(BaseModel):
+    habilitado: bool
+
+
+class DestinoPushResponse(BaseModel):
+    """Dato personal en claro (el token): solo lo pide la función `enviar-push`, con su propia
+    cuenta de servicio, y nunca se loguea."""
+
+    dispositivo_id: str
+    token: str
+    plataforma: str
 
 
 # ---------- Socios (HU-W07) ----------
@@ -305,6 +377,8 @@ def create_app(
     servicio_sesiones: ServicioSesiones | None = None,
     config: Configuracion | None = None,
     servicio_socios: ServicioSocios | None = None,
+    servicio_dispositivos: ServicioDispositivos | None = None,
+    servicio_dispositivos_push: ServicioDispositivosPush | None = None,
 ) -> FastAPI:
     """Los parámetros permiten inyectar dobles de prueba (ver `tests/fakes.py`) sin
     levantar PostgreSQL. Si se omiten, el lifespan arma todo desde `Configuracion`
@@ -337,7 +411,26 @@ def create_app(
                 clave_correo=config.cliente_id_clave,
                 refrescos=RepositorioRefrescosPostgres(pool),
                 refresh_dias=config.refresh_vigencia_dias,
+                refresh_web_horas=config.refresh_web_horas,
                 refresh_gracia_segundos=config.refresh_gracia_segundos,
+            )
+        if servicio_dispositivos is not None:
+            app.state.dispositivos = servicio_dispositivos
+        elif pool is not None:
+            app.state.dispositivos = ServicioDispositivos(
+                RepositorioDispositivosPostgres(pool), config.jwt_secreto
+            )
+        if servicio_dispositivos_push is not None:
+            app.state.dispositivos_push = servicio_dispositivos_push
+        elif pool is not None:
+            # Lectura liviana de `usuarios.notificaciones_push`, sin pasar por `ServicioUsuarios`.
+            _usuarios_para_push = RepositorioUsuariosPostgres(pool)
+            app.state.dispositivos_push = ServicioDispositivosPush(
+                RepositorioDispositivosPushPostgres(pool),
+                construir_cifrador(config),
+                habilitado_push=lambda uid: bool(
+                    (_usuarios_para_push.obtener(uid) or {}).get("notificaciones_push", True)
+                ),
             )
         # Con todo lo demás inyectado (pruebas) no hay pool: las de socios inyectan el suyo.
         if servicio_socios is None and pool is not None:
@@ -415,7 +508,11 @@ def create_app(
     def iniciar_sesion(body: Credenciales) -> SesionResponse:
         try:
             sesion = app.state.sesiones.iniciar_sesion(
-                body.usuario, body.clave, body.canal, body.rol
+                body.usuario,
+                body.clave,
+                body.canal,
+                body.rol,
+                dispositivo=body.dispositivo.model_dump() if body.dispositivo else None,
             )
         except CredencialesInvalidas as error:
             raise HTTPException(status_code=401, detail=str(error)) from error
@@ -429,12 +526,57 @@ def create_app(
         sesion["usuario"]["correo"] = app.state.usuarios.correo_de(usuario_id)
         return SesionResponse(**sesion)
 
+    # ---------- Dispositivos de confianza (huella o rostro tras cerrar sesión) ----------
+
+    @app.post("/dispositivos", tags=["dispositivos"])
+    def registrar_dispositivo(body: SolicitudDispositivo) -> dict[str, str]:
+        """Guarda la llave pública del teléfono (revoca la anterior). Solo lo llama el BFF, con el
+        usuario de un token de la app ya validado."""
+        try:
+            return {
+                "dispositivo_id": app.state.dispositivos.registrar(
+                    body.usuario_id, body.clave_publica
+                )
+            }
+        except DispositivoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/dispositivos/{dispositivo_id}/reto", tags=["dispositivos"])
+    def reto_dispositivo(dispositivo_id: str) -> dict:
+        reto, vence = app.state.dispositivos.reto(dispositivo_id)
+        return {"reto": reto, "expira_en": vence}
+
+    @app.post(
+        "/dispositivos/{dispositivo_id}/sesion",
+        tags=["dispositivos"],
+        response_model=SesionResponse,
+    )
+    def sesion_con_dispositivo(
+        dispositivo_id: str, body: SolicitudSesionDispositivo
+    ) -> SesionResponse:
+        """Entra con la firma del reto: mismo 401 genérico en cualquier fallo."""
+        try:
+            usuario_id = app.state.dispositivos.verificar(dispositivo_id, body.reto, body.firma)
+            sesion = app.state.sesiones.iniciar_sesion_de_confianza(
+                usuario_id,
+                body.canal,
+                dispositivo=body.dispositivo.model_dump() if body.dispositivo else None,
+            )
+        except (DispositivoInvalido, CredencialesInvalidas) as error:
+            raise HTTPException(status_code=401, detail=MENSAJE_DISPOSITIVO) from error
+        sesion["usuario"]["nombre"] = app.state.usuarios.nombre_de(usuario_id)
+        sesion["usuario"]["documento_enmascarado"] = app.state.usuarios.documento_enmascarado_de(
+            usuario_id
+        )
+        sesion["usuario"]["correo"] = app.state.usuarios.correo_de(usuario_id)
+        return SesionResponse(**sesion)
+
     @app.post("/sesiones/renovar", tags=["sesiones"], response_model=SesionResponse)
     def renovar_permisos(body: SolicitudRenovacion) -> SesionResponse:
         """`actualizarSesion` (HU-M01): un token nuevo con los scopes del estado actual y la misma
         expiración. Solo lo llama el BFF con el id y la expiración de un token que ya validó."""
         try:
-            sesion = app.state.sesiones.renovar_permisos(body.usuario_id, body.expira_en)
+            sesion = app.state.sesiones.renovar_permisos(body.usuario_id, body.expira_en, body.sid)
         except CredencialesInvalidas as error:
             raise HTTPException(status_code=401, detail=str(error)) from error
         sesion["usuario"]["nombre"] = app.state.usuarios.nombre_de(body.usuario_id)
@@ -463,10 +605,66 @@ def create_app(
         """T22: revoca la cadena del refresh. Idempotente: no dice si el refresh existía."""
         app.state.sesiones.cerrar_sesion(body.refresh_token)
 
+    # ---------- Dispositivos de push (KAN-259) ----------
+
+    @app.put("/dispositivos-push/token", tags=["dispositivos-push"], status_code=204)
+    def registrar_token_push(body: SolicitudTokenPush) -> None:
+        """La app lo llama al obtener el token de FCM y en `onTokenRefresh`. Solo lo acepta sobre
+        el dispositivo que la sesión actual dejó activo (`iniciarSesion` con `dispositivo`)."""
+        try:
+            app.state.dispositivos_push.registrar_token(
+                body.usuario_id, body.instalacion_id, body.token, datetime.now(UTC)
+            )
+        except DatoInvalidoPush as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.put(
+        "/usuarios/{usuario_id}/preferencias/push",
+        tags=["dispositivos-push"],
+        response_model=UsuarioResponse,
+    )
+    def actualizar_preferencia_push(
+        usuario_id: str, body: SolicitudPreferenciaPush
+    ) -> UsuarioResponse:
+        """`actualizarPreferenciaPush` del BFF: enciende o apaga el push del cliente."""
+        usuario = app.state.usuarios.actualizar_preferencia_push(usuario_id, body.habilitado)
+        if usuario is None:
+            raise HTTPException(status_code=404, detail="usuario no encontrado")
+        return UsuarioResponse(**usuario)
+
+    @app.get(
+        "/interno/destino-push/{usuario_id}",
+        tags=["dispositivos-push"],
+        response_model=DestinoPushResponse,
+    )
+    def destino_push(usuario_id: str) -> DestinoPushResponse:
+        """Solo la función `enviar-push` (OIDC, su propia cuenta de servicio). Da 404 sin
+        dispositivo activo y 409 `PUSH_DESHABILITADO` si el cliente lo apagó: en ambos casos la
+        función confirma el mensaje sin reintentar (el estado se consulta al abrir la app)."""
+        try:
+            destino = app.state.dispositivos_push.destino_push(usuario_id)
+        except PushDeshabilitado as error:
+            raise HTTPException(status_code=409, detail="PUSH_DESHABILITADO") from error
+        except SinDispositivoActivo as error:
+            raise HTTPException(status_code=404, detail="sin dispositivo activo") from error
+        return DestinoPushResponse(**destino)
+
+    @app.post(
+        "/interno/dispositivos-push/{dispositivo_id}/token-invalido",
+        tags=["dispositivos-push"],
+        status_code=204,
+    )
+    def token_push_invalido(dispositivo_id: str) -> None:
+        """Solo la función `enviar-push`, cuando FCM respondió `UNREGISTERED`/`INVALID_ARGUMENT`."""
+        app.state.dispositivos_push.token_invalido(dispositivo_id, datetime.now(UTC))
+
     # ---------- Usuarios ----------
 
     @app.post("/usuarios", tags=["usuarios"], response_model=UsuarioResponse)
     def crear_usuario(body: SolicitudUsuario) -> UsuarioResponse:
+        # Todos entran con correo y clave; un asesor u operador no lo valida (lo da quien lo crea).
+        if body.correo is None:
+            raise HTTPException(status_code=400, detail="Indica el correo para iniciar sesión.")
         try:
             usuario = app.state.usuarios.crear(
                 body.usuario,
@@ -494,6 +692,30 @@ def create_app(
             return {"registrado": app.state.usuarios.correo_registrado(body.correo)}
         except DatoInvalido as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/usuarios/restablecimiento/buscar", tags=["usuarios"])
+    def buscar_para_restablecer(body: SolicitudCorreo) -> dict[str, str | None]:
+        """«Olvidé mi contraseña»: el id de la cuenta activa con ese correo (o `null`). Solo lo
+        llama el BFF, que nunca se lo dice al visitante. El correo llega solo en el cuerpo."""
+        try:
+            return {"usuario_id": app.state.usuarios.id_para_restablecer(body.correo)}
+        except DatoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/usuarios/{usuario_id}/clave", tags=["usuarios"])
+    def restablecer_clave(usuario_id: str, body: SolicitudClave) -> dict[str, str | None]:
+        """Cambia la clave tras un enlace válido (lo comprobó el BFF), cierra todas las sesiones de
+        la cuenta y devuelve su correo para avisarle. Mismo 404 si no hay cuenta activa."""
+        try:
+            correo = app.state.usuarios.restablecer_clave(usuario_id, body.clave)
+        except DatoInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except CuentaNoActiva as error:
+            raise HTTPException(status_code=404, detail="usuario no encontrado") from error
+        app.state.sesiones.revocar_de_usuario(usuario_id)
+        app.state.dispositivos.revocar_de_usuario(usuario_id)
+        logger_usuarios.info("clave restablecida id=%s", id_opaco(usuario_id))
+        return {"correo": correo}
 
     @app.post("/usuarios/onboarding", tags=["usuarios"], response_model=UsuarioResponse)
     def crear_cuenta_onboarding(body: SolicitudCuentaOnboarding) -> UsuarioResponse:

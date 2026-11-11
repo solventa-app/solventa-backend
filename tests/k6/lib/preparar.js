@@ -89,7 +89,7 @@ export function prepararSesion(graphqlUrl, documento) {
   const alta = graphql(
     graphqlUrl,
     CREAR_USUARIO,
-    { e: { usuario: alias, clave, rol: "ASESOR" } },
+    { e: { usuario: alias, correo: `${alias}@ejemplo.co`, clave, rol: "ASESOR" } },
     tokenBackoffice
   );
   exigir(

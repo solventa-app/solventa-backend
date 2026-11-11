@@ -1,5 +1,6 @@
 {
-  "acceso_minutos": 60,
+  "acceso_minutos": 15,
   "refresh_dias": 8,
+  "refresh_web_horas": 8,
   "refresh_gracia_segundos": 30
 }

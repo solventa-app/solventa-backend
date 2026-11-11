@@ -1,11 +1,11 @@
 """Configuración (secreto en la nube) y tarea de arranque del primer BACKOFFICE."""
 
 import pytest
-from fakes import RepositorioUsuariosMemoria
+from fakes import CIFRADOR_PRUEBAS, HASHER_RAPIDO, RepositorioUsuariosMemoria
 
 from app.configuracion import JWT_SECRETO_LOCAL, VALOR_MARCADOR, Configuracion
 from app.crear_usuario import crear_si_no_existe
-from app.usuarios import construir_pool
+from app.usuarios import ServicioUsuarios, construir_pool
 
 
 def test_en_local_usa_el_secreto_local(monkeypatch) -> None:
@@ -86,9 +86,36 @@ def test_sin_database_url_no_hay_valor_por_defecto_y_el_pool_falla_claro(monkeyp
 
 def test_crear_usuario_es_idempotente() -> None:
     repositorio = RepositorioUsuariosMemoria()
+    servicio = ServicioUsuarios(repositorio, HASHER_RAPIDO, CIFRADOR_PRUEBAS, "clave-hmac")
 
-    primera = crear_si_no_existe(repositorio, "admin.solventa", "Clave-segura-1", "BACKOFFICE")
-    segunda = crear_si_no_existe(repositorio, "admin.solventa", "Clave-segura-1", "BACKOFFICE")
+    def crear() -> bool:
+        return crear_si_no_existe(
+            repositorio,
+            "admin.solventa",
+            "Clave-segura-1",
+            "BACKOFFICE",
+            "admin@solventa.local",
+            servicio,
+        )
+
+    primera, segunda = crear(), crear()
 
     assert (primera, segunda) == (True, False)
     assert len(repositorio.filas) == 1
+
+
+def test_el_operador_creado_por_la_cli_puede_entrar_con_su_correo() -> None:
+    repositorio = RepositorioUsuariosMemoria()
+    servicio = ServicioUsuarios(repositorio, HASHER_RAPIDO, CIFRADOR_PRUEBAS, "clave-hmac")
+    crear_si_no_existe(
+        repositorio,
+        "admin.solventa",
+        "Clave-segura-1",
+        "BACKOFFICE",
+        "Admin@Solventa.local",
+        servicio,
+    )
+
+    (fila,) = repositorio.filas.values()
+    assert fila["correo_hmac"] is not None
+    assert servicio.correo_registrado("admin@solventa.local") is True

@@ -35,7 +35,13 @@ def _cliente() -> TestClient:
 def test_crear_iniciar_sesion_y_consultar() -> None:
     with _cliente() as client:
         creado = client.post(
-            "/usuarios", json={"usuario": "asesor.017", "clave": CLAVE, "rol": "ASESOR"}
+            "/usuarios",
+            json={
+                "usuario": "asesor.017",
+                "clave": CLAVE,
+                "rol": "ASESOR",
+                "correo": "asesor.017@ejemplo.co",
+            },
         )
         sesion = client.post("/sesiones", json={"usuario": "asesor.017", "clave": CLAVE})
         leido = client.get(f"/usuarios/{creado.json()['id']}")

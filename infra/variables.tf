@@ -290,9 +290,9 @@ variable "purgar_contactos_cron" {
 }
 
 variable "aprobar_siniestros_cron" {
-  description = "Cada cuánto el trabajo de Cloud Scheduler `aprobar-siniestros-vencidos` llama a `POST /siniestros/_aprobar-vencidos` de CLAIMS: aprueba los casos pendientes con el plazo del dictamen vencido. Formato cron, zona America/Bogota. Solo aplica con `crear_tareas = true`."
+  description = "Cada cuánto el trabajo de Cloud Scheduler `aprobar-siniestros-vencidos` llama a `POST /siniestros/_aprobar-vencidos` de CLAIMS: aprueba los casos pendientes con el plazo del dictamen vencido. Formato cron, zona America/Bogota. Solo aplica con `crear_tareas = true`. Cada minuto (QA 2026-11-10): al llegar a cero el caso cambia casi enseguida; Scheduler cobra por trabajo, no por ejecución."
   type        = string
-  default     = "*/15 * * * *"
+  default     = "* * * * *"
 }
 
 variable "crear_almacenamiento" {
