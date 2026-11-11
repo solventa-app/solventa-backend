@@ -50,6 +50,15 @@ class RepositorioRefrescos(Protocol):
 
     def revocar_de_usuario(self, usuario_id: str, ahora: datetime) -> None: ...
 
+    def revocar_otras_familias_canal(
+        self, usuario_id: str, familia_excluida: str, canal: str, ahora: datetime
+    ) -> list[str]:
+        """KAN-259: al entrar en un dispositivo nuevo de la app, revoca las demás cadenas de este
+        usuario en ese canal (una sola sesión activa por cliente, solo entre sesiones `app`).
+        Devuelve las `familia_id` revocadas (= `sid` del JWT), para que el BFF las anote en
+        `sesiones_revocadas` al instante y para apagar sus dispositivos de push."""
+        ...
+
 
 class RepositorioRefrescosPostgres:
     def __init__(self, pool: ConnectionPool) -> None:
@@ -133,6 +142,18 @@ class RepositorioRefrescosPostgres:
                 "WHERE usuario_id = %(u)s AND revocado_en IS NULL",
                 {"u": usuario_id, "a": ahora},
             )
+
+    def revocar_otras_familias_canal(
+        self, usuario_id: str, familia_excluida: str, canal: str, ahora: datetime
+    ) -> list[str]:
+        with self._pool.connection() as conexion:
+            filas = conexion.execute(
+                "UPDATE refresh_tokens SET revocado_en = %(a)s "
+                "WHERE usuario_id = %(u)s AND canal = %(c)s AND familia_id != %(f)s "
+                "AND revocado_en IS NULL RETURNING familia_id",
+                {"u": usuario_id, "c": canal, "f": familia_excluida, "a": ahora},
+            ).fetchall()
+            return sorted({fila["familia_id"] for fila in filas})
 
 
 __all__ = [

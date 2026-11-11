@@ -69,7 +69,9 @@ IDIOMAS: tuple[str, ...] = ("ES", "EN")
 MONEDAS: tuple[str, ...] = ("COP", "MXN", "BRL", "CLP", "PEN", "USD", "EUR")
 
 # Columnas que pueden salir del servicio: nunca el hash ni el estado del bloqueo.
-_PUBLICAS = "id, usuario, rol, estado, creado_en, idioma, moneda, tipo_documento, pais"
+_PUBLICAS = (
+    "id, usuario, rol, estado, creado_en, idioma, moneda, tipo_documento, pais, notificaciones_push"
+)
 _TODAS = (
     f"{_PUBLICAS}, hash_clave, intentos_fallidos, bloqueado_hasta, nombre_cifrado, "
     "correo_cifrado, telefono_cifrado, titular_id, documento_cifrado, correo_hmac"
@@ -254,6 +256,8 @@ def normalizar_documento_tipado(
 def publico(fila: dict[str, Any]) -> dict[str, Any]:
     """Lo único que se devuelve hacia afuera de un usuario (sin hash ni intentos)."""
     campos = ("id", "usuario", "rol", "estado", "creado_en", "idioma", "moneda")
+    # KAN-259: preferencia del cliente para el push; las cuentas de antes de la `0014` la
+    # traen encendida por defecto.
     datos = {campo: fila[campo] for campo in campos}
     # T20: un titular de antes de la `0012` solo pudo registrarse con cédula colombiana.
     con_titular = bool(fila.get("titular_id"))
@@ -261,6 +265,7 @@ def publico(fila: dict[str, Any]) -> dict[str, Any]:
     datos["pais"] = fila.get("pais") or ("CO" if con_titular else None)
     # Solo dice si hay contacto (para que la web sepa cuándo pedirlo), nunca cuál es.
     datos["tiene_contacto"] = bool(fila.get("correo_cifrado") or fila.get("telefono_cifrado"))
+    datos["notificaciones_push"] = fila.get("notificaciones_push", True)
     return datos
 
 
@@ -300,6 +305,8 @@ class RepositorioUsuarios(Protocol):
     def actualizar_preferencias(
         self, usuario_id: str, idioma: str, moneda: str, pais: str | None = None
     ) -> dict | None: ...
+
+    def actualizar_preferencia_push(self, usuario_id: str, habilitado: bool) -> dict | None: ...
 
     def actualizar_contacto(
         self,
@@ -472,6 +479,16 @@ class RepositorioUsuariosPostgres:
             WHERE id = %(id)s RETURNING {_TODAS}
             """,
             {"id": usuario_id, "idioma": idioma, "moneda": moneda, "pais": pais},
+        )
+
+    def actualizar_preferencia_push(self, usuario_id: str, habilitado: bool) -> dict | None:
+        """KAN-259: encender o apagar el push desde la app."""
+        return self._una(
+            f"""
+            UPDATE usuarios SET notificaciones_push = %(h)s, actualizado_en = now()
+            WHERE id = %(id)s RETURNING {_TODAS}
+            """,
+            {"id": usuario_id, "h": habilitado},
         )
 
     def actualizar_contacto(
@@ -997,4 +1014,9 @@ class ServicioUsuarios:
         validar_preferencias(idioma, moneda, pais)
         pais_n = validar_pais(pais) if pais is not None else None
         fila = self._repositorio.actualizar_preferencias(usuario_id, idioma, moneda, pais_n)
+        return publico(fila) if fila else None
+
+    def actualizar_preferencia_push(self, usuario_id: str, habilitado: bool) -> dict | None:
+        """KAN-259: `actualizarPreferenciaPush` del BFF."""
+        fila = self._repositorio.actualizar_preferencia_push(usuario_id, habilitado)
         return publico(fila) if fila else None

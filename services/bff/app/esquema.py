@@ -838,6 +838,8 @@ class Usuario:
     # v0.38 (T20): tipo del documento del CLIENTE (nunca el número) y país de la cuenta.
     tipo_documento: str | None = None
     pais: str | None = None
+    # KAN-259: preferencia del cliente para el push (siempre viene; default encendida).
+    notificaciones_push: bool = True
 
 
 @strawberry.type
@@ -899,6 +901,21 @@ class ErrorUsuario:
 ResultadoUsuario = Annotated[Usuario | ErrorUsuario, strawberry.union("ResultadoUsuario")]
 
 
+@strawberry.enum
+class PlataformaMovil(Enum):
+    ANDROID = "android"
+    IOS = "ios"
+
+
+@strawberry.input
+class DispositivoPushInput:
+    """KAN-259: la instalación de la app que inicia sesión, para la sesión única por cliente y el
+    push. Independiente del dispositivo de la llave de login (KAN-26)."""
+
+    instalacion_id: str
+    plataforma: PlataformaMovil
+
+
 @strawberry.input
 class CredencialesInput:
     usuario: str
@@ -906,6 +923,8 @@ class CredencialesInput:
     # T17: rol del chip elegido en la web. Si no es el de la cuenta, la respuesta es la misma que
     # con una clave errada (no se revela qué rol tiene el usuario).
     rol: RolUsuario | None = None
+    # KAN-259: solo con sesión en la app; la app lo manda siempre que entra con usuario y clave.
+    dispositivo: DispositivoPushInput | None = None
 
 
 @strawberry.input
@@ -1186,6 +1205,7 @@ def _usuario(datos: dict) -> Usuario:
         correo=datos.get("correo"),
         tipo_documento=datos.get("tipo_documento"),
         pais=datos.get("pais"),
+        notificaciones_push=bool(datos.get("notificaciones_push", True)),
     )
 
 
@@ -1468,6 +1488,19 @@ def _sesion_vencida(contexto: dict) -> "ErrorAutenticacion":
     return ErrorAutenticacion(
         mensaje="Tu sesión ya no es válida. Inicia sesión de nuevo.", codigo="SESION_VENCIDA"
     )
+
+
+# KAN-259 (D3/D4): tope del token de acceso (`contracts/sesion.json`, `acceso_minutos`). AUTH no
+# dice cuánto le queda al token del dispositivo que echó fuera, así que se anota por el máximo
+# posible: peor caso, ese acceso sigue vetado un poco más de lo necesario, nunca menos.
+TTL_ACCESO_SEGUNDOS_MAX = 15 * 60
+
+
+async def _anotar_sids_revocados(datos: dict, contexto: dict) -> None:
+    """KAN-259 (D3): reusa el mecanismo de `cerrarSesion` para que el teléfono viejo deje de
+    servir al instante, sin esperar a que intente renovar o a que llegue el push."""
+    for sid in datos.get("sids_revocados") or []:
+        await contexto["sesiones_revocadas"].revocar(sid, TTL_ACCESO_SEGUNDOS_MAX)
 
 
 def _sesion(datos: dict, contexto: dict | None = None) -> Sesion:
@@ -2902,6 +2935,14 @@ class Mutation:
                 entrada.clave,
                 info.context.get("canal"),
                 entrada.rol.value if entrada.rol else None,
+                (
+                    {
+                        "instalacion_id": entrada.dispositivo.instalacion_id,
+                        "plataforma": entrada.dispositivo.plataforma.value,
+                    }
+                    if entrada.dispositivo
+                    else None
+                ),
             )
         except VerificacionPendiente:
             return ErrorAutenticacion(
@@ -2912,6 +2953,7 @@ class Mutation:
             raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
         if sesion is None:
             return ErrorAutenticacion(mensaje="Usuario o clave incorrectos.")
+        await _anotar_sids_revocados(sesion, info.context)
         return _sesion(sesion, info.context)
 
     @strawberry.mutation
@@ -2947,21 +2989,39 @@ class Mutation:
 
     @strawberry.mutation
     async def iniciar_sesion_con_dispositivo(
-        self, info: Info, dispositivo_id: strawberry.ID, reto: str, firma: str
+        self,
+        info: Info,
+        dispositivo_id: strawberry.ID,
+        reto: str,
+        firma: str,
+        dispositivo: DispositivoPushInput | None = None,
     ) -> ResultadoSesion:
         """v0.44 (KAN-26): pública, solo en la app. Entra con la firma del reto hecha con la llave
         del teléfono (tras la biometría), sin clave. Cualquier fallo responde lo mismo con el
-        código `DISPOSITIVO_NO_VALIDO`: la app pide entonces correo y contraseña."""
+        código `DISPOSITIVO_NO_VALIDO`: la app pide entonces correo y contraseña.
+        KAN-259: `dispositivo` (push) aplica la misma sesión única por cliente que con clave."""
         if info.context.get("canal") != CANAL_APP:
             return _dispositivo_no_valido()
         try:
             sesion = await _auth(info).sesion_con_dispositivo(
-                str(dispositivo_id), reto, firma, CANAL_APP
+                str(dispositivo_id),
+                reto,
+                firma,
+                CANAL_APP,
+                (
+                    {
+                        "instalacion_id": dispositivo.instalacion_id,
+                        "plataforma": dispositivo.plataforma.value,
+                    }
+                    if dispositivo
+                    else None
+                ),
             )
         except ErrorServicio as error:
             raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
         if sesion is None:
             return _dispositivo_no_valido()
+        await _anotar_sids_revocados(sesion, info.context)
         return _sesion(sesion, info.context)
 
     @strawberry.mutation
@@ -3061,6 +3121,35 @@ class Mutation:
         if datos is None:
             return ErrorUsuario(mensaje=MENSAJE_USUARIO_NO_ENCONTRADO)
         return _usuario(datos)
+
+    # ---------- Dispositivos de push (KAN-259) ----------
+
+    @strawberry.mutation
+    async def registrar_token_push(self, info: Info, instalacion_id: str, token_fcm: str) -> bool:
+        """Solo CLIENTE, en la app: al obtener el token de FCM y en `onTokenRefresh`. Solo lo
+        acepta sobre el dispositivo que la sesión actual dejó activo."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        if info.context.get("canal") != CANAL_APP:
+            raise ErrorPublico(MENSAJE_SIN_PERMISO)
+        try:
+            await _auth(info).registrar_token_push(usuario.id, instalacion_id, token_fcm)
+        except SolicitudInvalida as error:
+            raise ErrorPublico(str(error)) from error
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_AUTH_NO_DISPONIBLE) from error
+        return True
+
+    @strawberry.mutation
+    async def actualizar_preferencia_push(self, info: Info, habilitado: bool) -> bool:
+        """Enciende o apaga el push del propio cliente (el id sale del token)."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        try:
+            datos = await _auth(info).actualizar_preferencia_push(usuario.id, habilitado)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_AUTH_NO_DISPONIBLE) from error
+        if datos is None:
+            raise ErrorPublico(MENSAJE_USUARIO_NO_ENCONTRADO)
+        return True
 
     @strawberry.mutation
     async def actualizar_contacto(self, info: Info, entrada: ContactoInput) -> ResultadoUsuario:

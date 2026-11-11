@@ -77,6 +77,7 @@ class RepositorioUsuariosMemoria:
             "moneda": "COP",
             "tipo_documento": tipo_documento,
             "pais": pais,
+            "notificaciones_push": True,
         }
         self.filas[usuario_id] = fila
         return dict(fila)
@@ -136,6 +137,12 @@ class RepositorioUsuariosMemoria:
         self.filas[usuario_id] |= {"idioma": idioma, "moneda": moneda}
         if pais is not None:
             self.filas[usuario_id]["pais"] = pais
+        return dict(self.filas[usuario_id])
+
+    def actualizar_preferencia_push(self, usuario_id: str, habilitado: bool) -> dict | None:
+        if usuario_id not in self.filas:
+            return None
+        self.filas[usuario_id]["notificaciones_push"] = habilitado
         return dict(self.filas[usuario_id])
 
     def actualizar_contacto(
@@ -459,6 +466,21 @@ class RepositorioRefrescosMemoria:
             if fila["usuario_id"] == usuario_id and fila["revocado_en"] is None:
                 fila["revocado_en"] = ahora
 
+    def revocar_otras_familias_canal(
+        self, usuario_id: str, familia_excluida: str, canal: str, ahora: datetime
+    ) -> list[str]:
+        revocadas: set[str] = set()
+        for fila in self.filas.values():
+            if (
+                fila["usuario_id"] == usuario_id
+                and fila["canal"] == canal
+                and fila["familia_id"] != familia_excluida
+                and fila["revocado_en"] is None
+            ):
+                fila["revocado_en"] = ahora
+                revocadas.add(fila["familia_id"])
+        return sorted(revocadas)
+
 
 class RepositorioDispositivosMemoria:
     """Cumple el `Protocol` `RepositorioDispositivos` de `app/dispositivos.py`."""
@@ -488,3 +510,123 @@ class RepositorioDispositivosMemoria:
         for fila in self.filas.values():
             if fila["usuario_id"] == usuario_id:
                 fila["revocado"] = True
+
+
+class RepositorioDispositivosPushMemoria:
+    """Cumple el `Protocol` `RepositorioDispositivosPush` de `app/dispositivos_push.py`.
+
+    Independiente de `RepositorioDispositivosMemoria` (login de confianza, KAN-26)."""
+
+    def __init__(self) -> None:
+        self.filas: dict[str, dict] = {}
+
+    def _activo_de(self, usuario_id: str) -> dict | None:
+        return next(
+            (f for f in self.filas.values() if f["usuario_id"] == usuario_id and f["activo"]),
+            None,
+        )
+
+    def desactivar_activos(self, usuario_id: str, motivo: str, ahora: datetime) -> None:
+        for fila in self.filas.values():
+            if fila["usuario_id"] == usuario_id and fila["activo"]:
+                fila["activo"] = False
+                fila["desactivado_en"] = ahora
+                fila["motivo_desactivacion"] = motivo
+
+    def desactivar_por_familia(
+        self, usuario_id: str, familia_id: str, motivo: str, ahora: datetime
+    ) -> None:
+        for fila in self.filas.values():
+            if (
+                fila["usuario_id"] == usuario_id
+                and fila["familia_id"] == familia_id
+                and fila["activo"]
+            ):
+                fila["activo"] = False
+                fila["desactivado_en"] = ahora
+                fila["motivo_desactivacion"] = motivo
+
+    def crear_o_reactivar(
+        self, dispositivo_id, usuario_id, instalacion_id, plataforma, familia_id, ahora
+    ) -> dict:
+        existente = next(
+            (
+                f
+                for f in self.filas.values()
+                if f["usuario_id"] == usuario_id and f["instalacion_id"] == instalacion_id
+            ),
+            None,
+        )
+        if existente is not None:
+            existente.update(
+                plataforma=plataforma,
+                familia_id=familia_id,
+                activo=True,
+                desactivado_en=None,
+                motivo_desactivacion=None,
+            )
+            return dict(existente)
+        fila = {
+            "id": dispositivo_id,
+            "usuario_id": usuario_id,
+            "instalacion_id": instalacion_id,
+            "plataforma": plataforma,
+            "familia_id": familia_id,
+            "token_fcm_cifrado": None,
+            "token_fcm_hash": None,
+            "activo": True,
+            "version_app": None,
+            "modelo": None,
+            "creado_en": ahora,
+            "token_actualizado_en": None,
+            "desactivado_en": None,
+            "motivo_desactivacion": None,
+        }
+        self.filas[dispositivo_id] = fila
+        return dict(fila)
+
+    def actualizar_token(
+        self, usuario_id, instalacion_id, token_cifrado, token_hash, ahora
+    ) -> dict | None:
+        fila = next(
+            (
+                f
+                for f in self.filas.values()
+                if f["usuario_id"] == usuario_id
+                and f["instalacion_id"] == instalacion_id
+                and f["activo"]
+            ),
+            None,
+        )
+        if fila is None:
+            return None
+        fila["token_fcm_cifrado"] = token_cifrado
+        fila["token_fcm_hash"] = token_hash
+        fila["token_actualizado_en"] = ahora
+        return dict(fila)
+
+    def desactivar_otro_usuario_con_token(
+        self, usuario_id_actual: str, token_hash: str, motivo: str, ahora: datetime
+    ) -> None:
+        for fila in self.filas.values():
+            if (
+                fila["usuario_id"] != usuario_id_actual
+                and fila["token_fcm_hash"] == token_hash
+                and fila["activo"]
+            ):
+                fila["activo"] = False
+                fila["desactivado_en"] = ahora
+                fila["motivo_desactivacion"] = motivo
+                fila["token_fcm_cifrado"] = None
+                fila["token_fcm_hash"] = None
+
+    def activo_de(self, usuario_id: str) -> dict | None:
+        fila = self._activo_de(usuario_id)
+        return dict(fila) if fila else None
+
+    def marcar_token_invalido(self, dispositivo_id: str, ahora: datetime) -> None:
+        fila = self.filas[dispositivo_id]
+        fila["token_fcm_cifrado"] = None
+        fila["token_fcm_hash"] = None
+        fila["token_actualizado_en"] = ahora
+        fila["motivo_desactivacion"] = "TOKEN_INVALIDO"
