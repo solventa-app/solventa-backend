@@ -91,6 +91,13 @@ que nunca se construyó.
   los que no lo tienen a los 30 días de `creado_en` (W01-A4). El batch aplica el mismo criterio y los omite (W01-A5).
 - `POST /perfiles` `{cliente_id, fuentes: [{fuente, datos, capturado_en, de_cache, degradado}, ...], consentimiento_id?, consentimiento_vence_en?}`
   → `{cliente_id, perfil_version, operation_time, score_total, nivel_riesgo, fecha_vigencia, version_reglas}`.
+- **Historial de fuentes consultadas** (QA 2026-11-10, Q-08, contrato v0.45; `app/application/consultas.py`):
+  `POST /consultas` `{actor_id, actor_rol, titular_id, documento_enmascarado, consentimiento_id, tipo_oferta, producto,
+  oferta_id?, fuentes: [{id, nombre, origen, estado, capturado_en?}]}` → `{id}` (lo llama el BFF tras cotizar);
+  `GET /consultas?actor_id&pagina&tamano` (10 por página, máximo 50, de la más reciente a la más antigua) y
+  `GET /consultas/{id}?actor_id` (404 si no existe **o es de otro actor**). Colección `consultas`: el estado de cada
+  fuente, **nunca sus datos**, y el documento ya enmascarado. Al revocar o vencer el consentimiento el perfil se borra,
+  pero la consulta se conserva como rastro. Sin servicio de consultas (sin Mongo), 503.
 - Batch nocturno: `python -m app.batch_reproceso` (variables opcionales `BATCH_LIMITE`, `BATCH_TAMANO_LOTE`, `BATCH_PAUSA_MS`).
 - Variables de entorno: `MONGO_URI`, `MONGO_DB` (`risk`), `REDIS_URL`, `OFERTA_CACHE_TTL_SEGUNDOS`
   (`300`), `RISK_KEK_BASE64` (32 bytes en base64 para cifrado AES-256-GCM), `RISK_KMS_KEY_ID`
@@ -107,6 +114,7 @@ MongoDB `risk` (este servicio es su único escritor; RATING solo lee y **no** mi
 
 - Aplicar: `python -m migrations` (necesita `MONGO_URI`; `MONGO_DB` por defecto `risk`). En `docker compose` lo hace `migrar-risk`; en staging, el Cloud Run Job `migrar-risk`.
 - **Idempotentes** (crear un índice que ya existe no falla) y compatibles hacia atrás: se aplican mientras la revisión anterior aún atiende (ADR-07).
+- `0006_consultas_fuentes`: índice `(actor_id, creada_en desc)` de la colección `consultas` (Q-08).
 - Verificar: `bash ../../scripts/verificar-migraciones.sh risk` (aplica dos veces y revisa el registro).
 - El índice compuesto que necesita RATING para `find_one({"cliente_id": ...}, sort=[("perfil_version", -1)])`
   (T-W01-7) va en la migración `migrations/versiones/0002_perfiles.py` (`cliente_id` ascendente,

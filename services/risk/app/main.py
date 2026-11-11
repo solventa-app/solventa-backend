@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from decimal import Decimal
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, HTTPException, Query, Response
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 from pymongo import MongoClient
@@ -15,6 +15,11 @@ from app.application.bus_eventos import construir_bus_eventos
 from app.application.cache_score import CacheScore
 from app.application.cifrado import CifradorAesGcm
 from app.application.configuracion import Configuracion
+from app.application.consultas import (
+    TAMANO_MAXIMO,
+    RepositorioConsultasMongo,
+    ServicioConsultas,
+)
 from app.application.motor_decision import ResultadoDecision
 from app.application.perfiles_vehiculo import (
     RepositorioPerfilesVehiculoMongo,
@@ -74,6 +79,52 @@ class CrearPerfilVehiculoResponse(BaseModel):
     encontrado: bool
 
 
+class FuenteConsultadaEntrada(BaseModel):
+    """Una fila de `Oferta.fuentes` (contrato `FuenteConsultada`): su estado, nunca sus datos."""
+
+    id: str
+    nombre: str
+    origen: str
+    estado: str
+    capturado_en: str | None = None
+
+
+class RegistrarConsultaRequest(BaseModel):
+    """QA 2026-11-10 (Q-08): lo que el BFF registra tras cotizar. `actor_id` es el asesor (sale de
+    su token); el documento llega enmascarado y el titular como su HMAC."""
+
+    actor_id: str
+    actor_rol: str
+    titular_id: str
+    documento_enmascarado: str
+    consentimiento_id: str
+    tipo_oferta: str
+    producto: str
+    oferta_id: str | None = None
+    fuentes: list[FuenteConsultadaEntrada]
+
+
+class RegistrarConsultaResponse(BaseModel):
+    id: str
+
+
+class ConsultaResponse(BaseModel):
+    id: str
+    creada_en: str
+    documento_enmascarado: str
+    tipo_oferta: str
+    producto: str
+    oferta_id: str | None = None
+    fuentes: list[FuenteConsultadaEntrada]
+
+
+class PaginaConsultasResponse(BaseModel):
+    consultas: list[ConsultaResponse]
+    total: int
+    pagina: int
+    tamano: int
+
+
 class ConsentimientoRevocadoRequest(BaseModel):
     """Mismo cuerpo que `POST /propuestas/consentimiento-revocado` de POLICY."""
 
@@ -106,6 +157,7 @@ def create_app(
     config: Configuracion | None = None,
     servicio_perfiles: ServicioPerfiles | None = None,
     servicio_vehiculos: ServicioPerfilesVehiculo | None = None,
+    servicio_consultas: ServicioConsultas | None = None,
 ) -> FastAPI:
     """`servicio_perfiles` permite inyectar un `ServicioPerfiles` ya
     construido (p. ej. con dobles de prueba) sin levantar MongoDB — así las
@@ -120,6 +172,7 @@ def create_app(
         cliente_mongo: MongoClient | None = None
         cliente_redis = None
         app.state.servicio_vehiculos = servicio_vehiculos
+        app.state.servicio_consultas = servicio_consultas
         if servicio_perfiles is not None:
             app.state.servicio_perfiles = servicio_perfiles
         else:
@@ -144,6 +197,10 @@ def create_app(
             if app.state.servicio_vehiculos is None:
                 app.state.servicio_vehiculos = ServicioPerfilesVehiculo(
                     RepositorioPerfilesVehiculoMongo(cliente_mongo, cifrador)
+                )
+            if app.state.servicio_consultas is None:
+                app.state.servicio_consultas = ServicioConsultas(
+                    RepositorioConsultasMongo(cliente_mongo)
                 )
         try:
             yield
@@ -202,6 +259,44 @@ def create_app(
             consentimiento_vence_en=body.consentimiento_vence_en,
         )
         return CrearPerfilVehiculoResponse(**resultado)
+
+    def _consultas() -> ServicioConsultas:
+        if app.state.servicio_consultas is None:
+            raise HTTPException(status_code=503, detail="consultas_no_disponibles")
+        return app.state.servicio_consultas
+
+    @app.post("/consultas", tags=["consultas"], response_model=RegistrarConsultaResponse)
+    def registrar_consulta(body: RegistrarConsultaRequest) -> RegistrarConsultaResponse:
+        """QA 2026-11-10 (Q-08): deja el renglón del historial de fuentes de un asesor."""
+        consulta_id = _consultas().registrar(
+            body.actor_id,
+            body.actor_rol,
+            body.titular_id,
+            body.documento_enmascarado,
+            body.consentimiento_id,
+            body.tipo_oferta,
+            body.producto,
+            [f.model_dump() for f in body.fuentes],
+            oferta_id=body.oferta_id,
+        )
+        return RegistrarConsultaResponse(id=consulta_id)
+
+    @app.get("/consultas", tags=["consultas"], response_model=PaginaConsultasResponse)
+    def listar_consultas(
+        actor_id: str,
+        pagina: int = Query(1, ge=1),
+        tamano: int = Query(10, ge=1, le=TAMANO_MAXIMO),
+    ) -> dict:
+        """Las consultas del actor, de la más reciente a la más antigua."""
+        return _consultas().listar(actor_id, pagina, tamano)
+
+    @app.get("/consultas/{consulta_id}", tags=["consultas"], response_model=ConsultaResponse)
+    def obtener_consulta(consulta_id: str, actor_id: str) -> dict:
+        """Una consulta del actor; una ajena responde igual que una inexistente."""
+        consulta = _consultas().obtener(consulta_id, actor_id)
+        if consulta is None:
+            raise HTTPException(status_code=404, detail="consulta_no_encontrada")
+        return consulta
 
     @app.post(
         "/preaprobaciones/evaluar", tags=["preaprobaciones"], response_model=ResultadoDecision
