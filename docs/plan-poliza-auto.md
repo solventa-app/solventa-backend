@@ -1,6 +1,8 @@
 # Plan · Póliza de auto (todo riesgo)
 
-> **Estado: aprobado por Frans (2026-11-10). Historia KAN-290 (HU-W08).** Tarea 1 (contrato v0.42) en curso.
+> **Estado: las 11 tareas hechas en código y verificadas en local (2026-11-10). Historia KAN-290 (HU-W08).** PR del
+> backend #541 (en `develop`), #543 (en `develop`), #544, #545, #546, #549, #553, #575 y #579; web #170; app #73. Evidencia en
+> [`evidencias/hu-w08-poliza-auto-2026-11-10.md`](evidencias/hu-w08-poliza-auto-2026-11-10.md). Falta staging.
 > Cubre backend, web y API de socios; el móvil solo reporta y pide asistencia sobre la póliza.
 > Sin Figma: las pantallas nuevas se arman con el sistema de diseño, como G-06 y M05.
 
