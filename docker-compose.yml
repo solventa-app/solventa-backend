@@ -581,6 +581,19 @@ services:
       acl-worker: { condition: service_started }
       auth: { condition: service_healthy }
 
+  # KAN-259: push genérico (HU-M04). SNS_MODO=stub en local/CI: sin AWS real, solo registra en
+  # memoria lo "enviado". Sin PUBSUB_TEMA_NOTIFICACIONES_PUSH: POST /v1/push deja el evento en el
+  # log en vez de publicarlo (igual que RISK/CLAIMS sin su tema configurado).
+  enviar-push:
+    <<: *servicio
+    build: ./services/enviar-push
+    ports: ["8013:8013"]
+    environment:
+      AUTH_URL: http://auth:8001
+      SNS_MODO: stub
+    depends_on:
+      auth: { condition: service_healthy }
+
   stub-open-finance:
     <<: *servicio
     build: ./stubs/open-finance

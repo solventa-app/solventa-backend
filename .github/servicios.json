@@ -150,6 +150,16 @@
     }
   },
   {
+    "nombre": "enviar-push",
+    "ruta": "services/enviar-push",
+    "puerto": 8013,
+    "url_env": "ENVIAR_PUSH_URL",
+    "llama": ["auth"],
+    "disparador_externo": true,
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "SNS_MODO": "stub" },
+    "secretos": { "SNS_PLATFORM_APPLICATION_ARN": "sns-platform-application-arn-push" }
+  },
+  {
     "nombre": "acl-worker",
     "ruta": "services/acl-worker",
     "instancia_fija": true,

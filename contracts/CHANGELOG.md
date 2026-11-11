@@ -585,3 +585,14 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
 - Afecta al frontend: el móvil (manda `dispositivo` al iniciar sesión, llama `registrarTokenPush` al obtener o rotar
   el token de FCM y `actualizarPreferenciaPush` desde el interruptor del perfil). Pendiente: la función `enviar-push`
   que de verdad manda el mensaje (fuera de este contrato, no toca GraphQL).
+
+## v0.46 — 2026-11-11
+
+- KAN-259 (notificaciones push, HU-M04, Fase 2): evento nuevo `notificacion.push-solicitada` (v1,
+  `contracts/events/`) que dispara el envío real por SNS/FCM — lo publica quien resuelve que hay que avisar a un
+  cliente (hoy nadie en producto; pensado para RISK/CLAIMS en fases siguientes) y lo consume el servicio nuevo
+  `enviar-push`. `datos` lleva `idempotencia`, `usuarioId`, `plantilla` (clave del catálogo nuevo
+  `contracts/plantillas-push.json`, nunca texto libre) y, opcionales, `variables`, `ruta`, `ttlSegundos` y
+  `silenciosa`. API REST nueva `openapi/push-v1.json` (`POST /v1/push`, D10: solo cuentas de servicio internas) para
+  quien prefiere no publicar en Pub/Sub directamente. No toca el esquema GraphQL.
+- Afecta al frontend: no (contrato entre servicios; el móvil ya recibe el push sin saber de este contrato).

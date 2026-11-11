@@ -1,0 +1,12 @@
+fastapi==0.162.2
+uvicorn[standard]==0.54.0
+httpx==0.28.1
+prometheus-fastapi-instrumentator==8.1.0
+jsonschema==4.26.0
+opentelemetry-sdk==1.45.1
+opentelemetry-exporter-otlp-proto-http==1.45.1
+opentelemetry-instrumentation-httpx==0.66b1
+google-auth==2.62.1
+requests==2.34.2
+google-cloud-pubsub==2.31.1
+boto3==1.42.0
