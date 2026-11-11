@@ -1250,7 +1250,10 @@ class ClaimsFalso:
         self._revisar("peritos", siniestro_id)
         return [{**PERITO_DE_PRUEBA, "vencimiento_informe": "2026-11-03T17:00:00-05:00"}]
 
-    async def aprobar(self, siniestro_id: str, actor_usuario_id: str) -> dict:
+    async def aprobar(
+        self, siniestro_id: str, actor_usuario_id: str, valor_dano: str | None = None
+    ) -> dict:
+        self.valores_dano = [*getattr(self, "valores_dano", []), valor_dano]  # KAN-290
         self._revisar("aprobar", siniestro_id, actor_usuario_id)
         s = self.siniestros[siniestro_id]
         s["estado"] = "APROBADO"

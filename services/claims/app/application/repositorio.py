@@ -91,6 +91,7 @@ class RepositorioSiniestrosMongo:
             "vence_dictamen_en": doc["vence_dictamen_en"],
             # HU-M05: el CLIENTE que lo reportó desde la app (id opaco de AUTH); None en la semilla.
             "reportado_por": doc.get("reportado_por"),
+            "tipo_siniestro_auto": doc.get("tipo_siniestro_auto"),
         }
 
     @staticmethod
@@ -278,6 +279,8 @@ class RepositorioSiniestrosMongo:
             "descripcion_cifrada": self._cifrar(siniestro["descripcion"], "descripcion", sid),
             "suma_reclamada": siniestro["suma_reclamada"],
             "vence_dictamen_en": siniestro["vence_dictamen_en"],
+            # KAN-290: solo en pólizas de auto (un código, no un dato personal).
+            "tipo_siniestro_auto": siniestro.get("tipo_siniestro_auto"),
             "creado_en": ahora,
             "actualizado_en": ahora,
         }
