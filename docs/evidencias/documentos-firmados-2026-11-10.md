@@ -8,7 +8,7 @@ de cada documento se envuelve con la llave de desarrollo (`CIFRADO_CLAVE`); con 
 |---|---|
 | Migración `0010_documentos_firmados` | Aplicada por `migrar-policy`; tabla con `UNIQUE (propuesta_id, tipo)` y `CHECK` de tipo |
 | Subir y bajar, en una base temporal | `upgrade head` → `downgrade base` → `upgrade head`: `0010 (head)` |
-| pytest POLICY | 302 pruebas en verde (28 nuevas: `test_sobre_documentos`, `test_documentos_firmados`) |
+| pytest POLICY | 302 pruebas en verde (29 nuevas: `test_sobre_documentos`, `test_documentos_firmados`) |
 | pytest ALMACENAMIENTO | 65 en verde (catálogo con los dos tipos nuevos y la regla del contenedor cifrado) |
 | Newman `hu-w03` (201 peticiones, 380 aserciones) | Firma con imagen, pago y emisión en verde; 2 fallas en la carpeta 5 (`crearUsuario` sin correo y el campo `yo`), que son de AUTH y no tocan POLICY ni los PDF |
 

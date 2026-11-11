@@ -203,10 +203,15 @@ def test_si_el_almacenamiento_no_responde_al_leer_se_regenera_y_no_se_toca_lo_gu
     e.polizas.documento(poliza["id"], "Camila Rojas")
     guardado = e.repo.documentos[(propuesta["id"], TIPO_POLIZA)]
 
-    def caido(archivo_id, tamano_max=None):
-        raise AlmacenamientoNoDisponible("HTTP 503")
+    original = e.almacen.bajar
 
-    e.almacen.bajar = caido  # type: ignore[method-assign]
+    def sin_el_documento(archivo_id, tamano_max=None):
+        # Falla solo la descarga del documento guardado; la imagen de la firma sigue disponible.
+        if e.almacen.archivos[archivo_id]["tipo"] == TIPO_POLIZA:
+            raise AlmacenamientoNoDisponible("HTTP 503")
+        return original(archivo_id, tamano_max)
+
+    e.almacen.bajar = sin_el_documento  # type: ignore[method-assign]
     pdf = e.polizas.documento(poliza["id"], "Camila Rojas")
 
     assert pdf.startswith(b"%PDF")  # el usuario recibe su documento (regla 4)

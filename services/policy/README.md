@@ -134,7 +134,8 @@ El contrato firmado y la póliza **ya no se regeneran en cada consulta**: se gua
   descifran en memoria y entregan, con la misma autorización de siempre. Un documento que no pasa la integridad no se
   entrega: `503 DOCUMENTO_NO_DISPONIBLE` y un error en el log.
 - **Nunca tumba el flujo (regla 4):** si ALMACENAMIENTO, el bucket o KMS fallan al guardar, la firma y la emisión siguen y el
-  PDF se genera como antes; la próxima vez que se pida se vuelve a intentar. Si fallan al leer, se regenera.
+  PDF se genera como antes; la próxima vez que se pida se vuelve a intentar. Si falla la lectura del documento guardado, se
+  regenera (si el almacenamiento está caído del todo tampoco se baja la imagen de la firma: `503`, como antes).
 - **Purga:** el contrato firmado de una propuesta cancelada porque el consentimiento venció o se revocó antes de emitir se
   retiene (1 día) y se borra, como la imagen de la firma. Con la póliza emitida, ambos documentos se conservan.
 - **Pendiente:** la retención legal de la póliza (hoy no vence) y reintentar guardar con un barrido en vez de al próximo pedido.
