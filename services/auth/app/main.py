@@ -13,7 +13,7 @@ Estos endpoints son **internos**: solo los llama el BFF, que valida el JWT y el 
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Literal
 
 from argon2 import PasswordHasher
@@ -30,6 +30,15 @@ from app.dispositivos import (
     DispositivoInvalido,
     RepositorioDispositivosPostgres,
     ServicioDispositivos,
+)
+from app.dispositivos_push import (
+    DatoInvalido as DatoInvalidoPush,
+)
+from app.dispositivos_push import (
+    PushDeshabilitado,
+    RepositorioDispositivosPushPostgres,
+    ServicioDispositivosPush,
+    SinDispositivoActivo,
 )
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.observabilidad import configurar_trazas
@@ -103,6 +112,14 @@ class ConsentimientoResponse(BaseModel):
     canal: str | None = None
 
 
+class SolicitudDispositivoPush(BaseModel):
+    """KAN-259: el dispositivo (instalación de la app) que inicia sesión. Independiente de
+    `SolicitudDispositivo` (la llave de login de confianza, KAN-26)."""
+
+    instalacion_id: str
+    plataforma: str
+
+
 class Credenciales(BaseModel):
     # El alias, o el correo de una cuenta del onboarding (HU-M01).
     usuario: str
@@ -111,6 +128,8 @@ class Credenciales(BaseModel):
     canal: str | None = None
     # T17: rol con el que se intenta entrar; si no es el de la cuenta, falla como una clave errada.
     rol: str | None = None
+    # KAN-259: solo con `canal = "app"`, para la sesión única por cliente y el push.
+    dispositivo: SolicitudDispositivoPush | None = None
 
 
 class SolicitudClave(BaseModel):
@@ -126,6 +145,8 @@ class SolicitudSesionDispositivo(BaseModel):
     reto: str
     firma: str
     canal: str | None = None
+    # KAN-259: igual que en `Credenciales`, para la sesión única por cliente y el push.
+    dispositivo: SolicitudDispositivoPush | None = None
 
 
 class SolicitudCorreo(BaseModel):
@@ -225,6 +246,8 @@ class UsuarioResponse(BaseModel):
     # T20: tipo del documento del CLIENTE (no es el número) y país de la cuenta.
     tipo_documento: str | None = None
     pais: str | None = None
+    # KAN-259: preferencia del cliente para el push (siempre se devuelve; default encendida).
+    notificaciones_push: bool = True
 
 
 class SolicitudPreferencias(BaseModel):
@@ -240,6 +263,10 @@ class SesionResponse(BaseModel):
     # T22: el refresh opaco y su vencimiento. Null si AUTH no tiene refrescos configurados.
     refresh_token: str | None = None
     refresh_expira_en: datetime | None = None
+    # KAN-259 (D3): los `sid` (familia) de otras sesiones `app` de este cliente que quedaron
+    # revocadas al entrar aquí. El BFF las anota en `sesiones_revocadas` al instante. Solo viene
+    # en el canal `app` para un CLIENTE; en los demás casos no aparece.
+    sids_revocados: list[str] | None = None
 
 
 class SolicitudRefresh(BaseModel):
@@ -249,6 +276,28 @@ class SolicitudRefresh(BaseModel):
 
 class SolicitudCierre(BaseModel):
     refresh_token: str
+
+
+# ---------- Dispositivos de push (KAN-259) ----------
+
+
+class SolicitudTokenPush(BaseModel):
+    usuario_id: str
+    instalacion_id: str
+    token: str
+
+
+class SolicitudPreferenciaPush(BaseModel):
+    habilitado: bool
+
+
+class DestinoPushResponse(BaseModel):
+    """Dato personal en claro (el token): solo lo pide la función `enviar-push`, con su propia
+    cuenta de servicio, y nunca se loguea."""
+
+    dispositivo_id: str
+    token: str
+    plataforma: str
 
 
 # ---------- Socios (HU-W07) ----------
@@ -329,6 +378,7 @@ def create_app(
     config: Configuracion | None = None,
     servicio_socios: ServicioSocios | None = None,
     servicio_dispositivos: ServicioDispositivos | None = None,
+    servicio_dispositivos_push: ServicioDispositivosPush | None = None,
 ) -> FastAPI:
     """Los parámetros permiten inyectar dobles de prueba (ver `tests/fakes.py`) sin
     levantar PostgreSQL. Si se omiten, el lifespan arma todo desde `Configuracion`
@@ -369,6 +419,18 @@ def create_app(
         elif pool is not None:
             app.state.dispositivos = ServicioDispositivos(
                 RepositorioDispositivosPostgres(pool), config.jwt_secreto
+            )
+        if servicio_dispositivos_push is not None:
+            app.state.dispositivos_push = servicio_dispositivos_push
+        elif pool is not None:
+            # Lectura liviana de `usuarios.notificaciones_push`, sin pasar por `ServicioUsuarios`.
+            _usuarios_para_push = RepositorioUsuariosPostgres(pool)
+            app.state.dispositivos_push = ServicioDispositivosPush(
+                RepositorioDispositivosPushPostgres(pool),
+                construir_cifrador(config),
+                habilitado_push=lambda uid: bool(
+                    (_usuarios_para_push.obtener(uid) or {}).get("notificaciones_push", True)
+                ),
             )
         # Con todo lo demás inyectado (pruebas) no hay pool: las de socios inyectan el suyo.
         if servicio_socios is None and pool is not None:
@@ -446,7 +508,11 @@ def create_app(
     def iniciar_sesion(body: Credenciales) -> SesionResponse:
         try:
             sesion = app.state.sesiones.iniciar_sesion(
-                body.usuario, body.clave, body.canal, body.rol
+                body.usuario,
+                body.clave,
+                body.canal,
+                body.rol,
+                dispositivo=body.dispositivo.model_dump() if body.dispositivo else None,
             )
         except CredencialesInvalidas as error:
             raise HTTPException(status_code=401, detail=str(error)) from error
@@ -491,7 +557,11 @@ def create_app(
         """Entra con la firma del reto: mismo 401 genérico en cualquier fallo."""
         try:
             usuario_id = app.state.dispositivos.verificar(dispositivo_id, body.reto, body.firma)
-            sesion = app.state.sesiones.iniciar_sesion_de_confianza(usuario_id, body.canal)
+            sesion = app.state.sesiones.iniciar_sesion_de_confianza(
+                usuario_id,
+                body.canal,
+                dispositivo=body.dispositivo.model_dump() if body.dispositivo else None,
+            )
         except (DispositivoInvalido, CredencialesInvalidas) as error:
             raise HTTPException(status_code=401, detail=MENSAJE_DISPOSITIVO) from error
         sesion["usuario"]["nombre"] = app.state.usuarios.nombre_de(usuario_id)
@@ -534,6 +604,59 @@ def create_app(
     def cerrar_sesion(body: SolicitudCierre) -> None:
         """T22: revoca la cadena del refresh. Idempotente: no dice si el refresh existía."""
         app.state.sesiones.cerrar_sesion(body.refresh_token)
+
+    # ---------- Dispositivos de push (KAN-259) ----------
+
+    @app.put("/dispositivos-push/token", tags=["dispositivos-push"], status_code=204)
+    def registrar_token_push(body: SolicitudTokenPush) -> None:
+        """La app lo llama al obtener el token de FCM y en `onTokenRefresh`. Solo lo acepta sobre
+        el dispositivo que la sesión actual dejó activo (`iniciarSesion` con `dispositivo`)."""
+        try:
+            app.state.dispositivos_push.registrar_token(
+                body.usuario_id, body.instalacion_id, body.token, datetime.now(UTC)
+            )
+        except DatoInvalidoPush as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.put(
+        "/usuarios/{usuario_id}/preferencias/push",
+        tags=["dispositivos-push"],
+        response_model=UsuarioResponse,
+    )
+    def actualizar_preferencia_push(
+        usuario_id: str, body: SolicitudPreferenciaPush
+    ) -> UsuarioResponse:
+        """`actualizarPreferenciaPush` del BFF: enciende o apaga el push del cliente."""
+        usuario = app.state.usuarios.actualizar_preferencia_push(usuario_id, body.habilitado)
+        if usuario is None:
+            raise HTTPException(status_code=404, detail="usuario no encontrado")
+        return UsuarioResponse(**usuario)
+
+    @app.get(
+        "/interno/destino-push/{usuario_id}",
+        tags=["dispositivos-push"],
+        response_model=DestinoPushResponse,
+    )
+    def destino_push(usuario_id: str) -> DestinoPushResponse:
+        """Solo la función `enviar-push` (OIDC, su propia cuenta de servicio). Da 404 sin
+        dispositivo activo y 409 `PUSH_DESHABILITADO` si el cliente lo apagó: en ambos casos la
+        función confirma el mensaje sin reintentar (el estado se consulta al abrir la app)."""
+        try:
+            destino = app.state.dispositivos_push.destino_push(usuario_id)
+        except PushDeshabilitado as error:
+            raise HTTPException(status_code=409, detail="PUSH_DESHABILITADO") from error
+        except SinDispositivoActivo as error:
+            raise HTTPException(status_code=404, detail="sin dispositivo activo") from error
+        return DestinoPushResponse(**destino)
+
+    @app.post(
+        "/interno/dispositivos-push/{dispositivo_id}/token-invalido",
+        tags=["dispositivos-push"],
+        status_code=204,
+    )
+    def token_push_invalido(dispositivo_id: str) -> None:
+        """Solo la función `enviar-push`, cuando FCM respondió `UNREGISTERED`/`INVALID_ARGUMENT`."""
+        app.state.dispositivos_push.token_invalido(dispositivo_id, datetime.now(UTC))
 
     # ---------- Usuarios ----------
 
