@@ -571,3 +571,14 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Fallo siempre `DISPOSITIVO_NO_VALIDO` (sin decir el motivo). AUTH suma la tabla `dispositivos` (migración `0013`).
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
+
+## v0.45 — 2026-11-10
+
+- QA 2026-11-10 (Q-08, KAN-24): historial de fuentes consultadas del asesor. Consultas `consultasFuentes(pagina, tamano)`
+  y `consultaFuentes(id)`; tipos `ConsultaFuentes` (id, `creadaEn`, `documentoEnmascarado`, `tipoOferta`, `producto`,
+  `ofertaId`, `fuentes`) y `PaginaConsultasFuentes`. Solo ASESOR y solo las suyas (el filtro sale del token); un CLIENTE
+  recibe el error de sin permiso, y una consulta ajena o inexistente responde `null`. RISK guarda un renglón por
+  cotización en su colección `consultas` (migración `0006`): el estado de cada fuente, nunca sus datos, y se conserva
+  aunque el consentimiento se revoque o venza. Solo cambios aditivos.
+- Afecta al frontend: la web (W01-04, «Fuentes consultadas», pasa a ser un historial con detalle).
+

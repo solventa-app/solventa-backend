@@ -215,3 +215,16 @@ npx --yes newman@6.2.2 run tests/newman/hu-w03.postman_collection.json \
   sondeos); resultados y hallazgos en `docs/evidencias/HU-W03-newman-EC009-EC010-2026-10-24.md`, `CA-W03-05-firma-2026-10-24.md` y `CA-W03-06-reapertura-2026-10-24.md`.
   Si el `:8080` o el `:5432` están ocupados, ver «Cómo correrlas».
 - **Carpeta 7 (2026-11-07):** agregada sin correr aún contra el stack (no había Docker donde se escribió); sirve contra local y staging.
+
+## Colección del historial de fuentes (`historial-fuentes-w01.postman_collection.json`)
+
+Q-08, contrato v0.45 (KAN-24), por el gateway: 20 peticiones y 45 aserciones en 4 carpetas. El asesor A cotiza dos veces y ve
+su historial (más reciente primero, documento enmascarado, las 5 fuentes con su estado y sin datos, paginación de 1 en 1 y
+el detalle); el asesor B no ve nada de A (la consulta ajena responde `null`); el CLIENTE, el BACKOFFICE y quien no tiene
+sesión no pasan. Crea sus propios usuarios (alias y documentos únicos por corrida) con el BACKOFFICE local; **solo local**
+por eso. Se corre con el mismo entorno que las demás:
+
+```bash
+npx --yes newman@6.2.2 run tests/newman/historial-fuentes-w01.postman_collection.json \
+  -e tests/newman/solventa-local.postman_environment.json
+```

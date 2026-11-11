@@ -192,6 +192,13 @@ class PuertoRisk(Protocol):
 
     async def consentimiento_revocado(self, titular_id: str, consentimiento_id: str) -> None: ...
 
+    # QA 2026-11-10 (Q-08): el historial de fuentes consultadas de un asesor.
+    async def registrar_consulta(self, consulta: dict) -> str: ...
+
+    async def listar_consultas(self, actor_id: str, pagina: int, tamano: int) -> dict: ...
+
+    async def obtener_consulta(self, consulta_id: str, actor_id: str) -> dict | None: ...
+
 
 class PuertoRating(Protocol):
     async def generar_oferta(
@@ -950,6 +957,33 @@ class ClienteRiskHttp:
         respuesta = await _pedir(self._cliente, "POST", "/perfiles/consentimiento-revocado", cuerpo)
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
+
+    async def registrar_consulta(self, consulta: dict) -> str:
+        respuesta = await _pedir(self._cliente, "POST", "/consultas", consulta)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()["id"]
+
+    async def listar_consultas(self, actor_id: str, pagina: int, tamano: int) -> dict:
+        respuesta = await _pedir(
+            self._cliente,
+            "GET",
+            "/consultas",
+            params={"actor_id": actor_id, "pagina": pagina, "tamano": tamano},
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def obtener_consulta(self, consulta_id: str, actor_id: str) -> dict | None:
+        respuesta = await _pedir(
+            self._cliente, "GET", f"/consultas/{consulta_id}", params={"actor_id": actor_id}
+        )
+        if respuesta.status_code == 404:
+            return None
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
 
 
 # Mismo valor que `DETALLE_DATOS_INSUFICIENTES` de services/rating/app/main.py.
