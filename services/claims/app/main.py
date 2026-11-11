@@ -15,7 +15,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
@@ -263,6 +263,21 @@ def create_app(
     def listar(estado: EstadoSiniestro | None = None) -> list[dict]:
         """Bandeja: del más reciente al más antiguo. Se lee de la réplica (HA-LAT-003)."""
         return app.state.servicio.listar(estado.value if estado else None)
+
+    @app.get("/siniestros/parametricos", tags=["operacion"])
+    def siniestros_parametricos(request: Request) -> list[dict]:
+        """KAN-259 (HU-M04, Fase 5): los siniestros paramétricos ya liquidados de las pólizas
+        indicadas (`?poliza_id=a&poliza_id=b`), del más reciente al más antiguo. El BFF ya
+        resolvió cuáles pólizas son del CLIENTE del token; aquí no se verifica de nuevo.
+
+        `request.query_params.getlist` en vez de `Query(default_factory=list)`: FastAPI no
+        repite un `list[str]` con un único valor por defecto sin romper el lint de mutabilidad
+        de `Query` (ruff B008).
+
+        Declarada antes de `/siniestros/{siniestro_id}` (misma ruta base): si no, FastAPI
+        intentaría resolverla como un `siniestro_id` llamado "parametricos" y respondería 404."""
+        poliza_ids = request.query_params.getlist("poliza_id")
+        return app.state.servicio.parametricos_de_polizas(poliza_ids)
 
     @app.get("/siniestros/{siniestro_id}", tags=["siniestros"])
     def obtener(siniestro_id: str) -> dict:

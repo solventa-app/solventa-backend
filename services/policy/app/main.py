@@ -1014,18 +1014,24 @@ def create_app(
         responses={422: {"model": ErrorResponse}},
     )
     def coberturas_parametricas(
-        tipo: str,
+        tipo: str | None = None,
         vuelo: str | None = None,
         fecha: date | None = None,
         celda: str | None = None,
         lat: float | None = None,
         lon: float | None = None,
         variable: str | None = None,
+        poliza_id: str | None = None,
     ) -> list[CoberturaParametricaResponse]:
         """KAN-259 (HU-M04, Fase 4, D8): solo lo llama CLAIMS para cruzar un evento paramétrico
         contra las coberturas vigentes. POLICY es el único escritor (regla #1); este endpoint es de
-        solo lectura."""
+        solo lectura.
+
+        Fase 5: con `poliza_id` (sin `tipo`), el BFF consulta la cobertura paramétrica vigente de
+        una póliza puntual (para armar `ResumenCobertura`), sin cruzar ningún evento."""
         repo = app.state.repositorio_coberturas
+        if poliza_id is not None and tipo is None:
+            return [CoberturaParametricaResponse(**f) for f in repo.de_poliza(poliza_id)]
         if tipo == "VUELO":
             if not vuelo or fecha is None:
                 raise HTTPException(status_code=422, detail="VUELO necesita vuelo y fecha")

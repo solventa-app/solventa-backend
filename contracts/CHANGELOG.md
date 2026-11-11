@@ -612,3 +612,21 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   hará en la Fase 4 del plan de push, fuera de este contrato): es solo el productor, igual que la Fase 2 dejó
   `notificacion.push-solicitada` publicado sin que nada lo disparara aún en producto.
 - Afecta al frontend: no (contrato entre servicios; sin consumidor todavía).
+
+## v0.48 — 2026-11-11
+
+- KAN-259 (notificaciones push, HU-M04, Fase 5): el BFF expone por GraphQL lo que la app móvil va a necesitar en su
+  Fase 6 para las pantallas M04-03 (detalle) y M04-04 (cobertura) al tocar el push `indemnizacion-liquidada`. Tipos
+  nuevos `Indemnizacion` y `ResumenCobertura`, enums `TipoEventoParametrico` (`VUELO_RETRASO`, `VUELO_CANCELADO`,
+  `CLIMA`; las 3 variables climáticas colapsan en un solo tipo) y `EstadoIndemnizacion` (`EN_PROCESO`, `PAGADA`: hoy
+  PAYMENTS no dispersa de verdad, así que solo se produce `EN_PROCESO`). Queries nuevas, ambas solo CLIENTE:
+  `indemnizacion(id: ID!): Indemnizacion` (null si no existe, no es paramétrica o la póliza no es del cliente del
+  token) y `miCoberturaParametrica: ResumenCobertura` (sin argumento, resuelve de la póliza paramétrica vigente del
+  cliente; null si no tiene ninguna). Simplificaciones documentadas en `CLAUDE.md` (sub-entrada "Fase 5" de KAN-259):
+  `metodoTransferencia` en vez de un número de cuenta (regla #6, nunca existió ese dato), sin "saldo de prima" (no
+  existe ningún ajuste en el backend) y `referenciaEvento` de clima como `"lat,lon"` (sin reverse-geocoding). CLAIMS
+  guarda ahora `evento_valor`, `evento_umbral`, `evento_variable` y `vigencia_hasta_cobertura` en el siniestro
+  paramétrico (cambio aditivo al documento Mongo, sin migración nueva) y suma `GET /siniestros/parametricos`; POLICY
+  suma el filtro `poliza_id` a `GET /interno/coberturas-parametricas`. Solo cambios aditivos.
+- Afecta al frontend: en teoría sí (son las queries que la Fase 6, fuera de este contrato, va a consumir), pero la
+  app móvil no las llama todavía.

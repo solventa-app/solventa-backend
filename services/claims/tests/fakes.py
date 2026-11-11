@@ -105,6 +105,13 @@ class RepositorioFalso:
     def listar_de_cliente(self, cliente_id):
         return [s for s in self.listar() if s.get("reportado_por") == cliente_id]
 
+    def listar_parametricos_de_polizas(self, poliza_ids):
+        return [
+            s
+            for s in self.listar()
+            if s.get("origen") == "PARAMETRICO" and s["poliza_id"] in poliza_ids
+        ]
+
     # ---------- Escritura de la semilla ----------
 
     def guardar_perito(self, perito):

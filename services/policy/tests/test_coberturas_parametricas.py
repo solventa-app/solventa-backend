@@ -127,6 +127,39 @@ def test_clima_sin_parametros_responde_422():
     assert respuesta.status_code == 422
 
 
+def test_poliza_id_devuelve_su_cobertura_vigente():
+    """Fase 5 (KAN-259): el BFF consulta por `poliza_id` para `ResumenCobertura`, sin `tipo`."""
+    coberturas = RepositorioCoberturasParametricasFalso()
+    coberturas.crear_vuelo(
+        "poliza-9",
+        "500000",
+        "COP",
+        VIGENCIA_DESDE,
+        VIGENCIA_HASTA,
+        numero_vuelo="AV9340",
+        fecha_salida=datetime(2026, 11, 11).date(),
+        aeropuerto_origen="BOG",
+        umbral_retraso_min=120,
+    )
+    with _cliente(coberturas) as cliente:
+        respuesta = cliente.get(
+            "/interno/coberturas-parametricas", params={"poliza_id": "poliza-9"}
+        )
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert len(cuerpo) == 1
+    assert cuerpo[0]["poliza_id"] == "poliza-9"
+
+
+def test_poliza_id_sin_coberturas_devuelve_vacio():
+    with _cliente(RepositorioCoberturasParametricasFalso()) as cliente:
+        respuesta = cliente.get(
+            "/interno/coberturas-parametricas", params={"poliza_id": "poliza-sin-cobertura"}
+        )
+    assert respuesta.status_code == 200
+    assert respuesta.json() == []
+
+
 def test_tipo_invalido_responde_422():
     with _cliente(RepositorioCoberturasParametricasFalso()) as cliente:
         respuesta = cliente.get(

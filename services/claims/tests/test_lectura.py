@@ -46,6 +46,43 @@ def test_inexistente_es_none():
     assert _servicio().obtener("sin-99") is None
 
 
+def test_parametricos_de_polizas_solo_trae_origen_parametrico():
+    """KAN-259 Fase 5: `sin-01`/`sin-02`/`sin-03` (de la semilla) no son paramétricos, así que no
+    salen aunque su póliza esté en la lista."""
+    repo = repositorio_con_datos()
+    repo.siniestros["sin-par-1"] = {
+        "id": "sin-par-1",
+        "radicado": "SIN-2026-1001",
+        "poliza_id": "pol-01",
+        "estado": "APROBADO",
+        "asegurado": {"nombre": "Cobertura paramétrica", "documento": "N/A"},
+        "cobertura_aplicada": "Cobertura paramétrica de vuelo",
+        "entidad_acreedora": "Por confirmar con el asegurado",
+        "ocurrido_en": AHORA,
+        "notificado_en": AHORA,
+        "ubicacion": {"tipo": "VUELO", "clave": "AV9340:2026-11-11"},
+        "descripcion": "Siniestro paramétrico automático.",
+        "suma_reclamada": {"valor": "500000", "moneda": "COP"},
+        "vence_dictamen_en": AHORA,
+        "origen": "PARAMETRICO",
+        "evento_parametrico_id": "evt-1",
+        "evento_valor": 145.0,
+        "evento_umbral": 120,
+        "evento_variable": None,
+        "evento_cancelado": False,
+        "vigencia_hasta_cobertura": AHORA,
+    }
+    servicio = ServicioSiniestros(repo, reloj=lambda: AHORA)
+    movimientos = servicio.parametricos_de_polizas(["pol-01"])
+    assert [m["id"] for m in movimientos] == ["sin-par-1"]
+    assert movimientos[0]["origen"] == "PARAMETRICO"
+    assert movimientos[0]["evento_valor"] == 145.0
+
+
+def test_parametricos_de_polizas_vacio_sin_ids():
+    assert _servicio().parametricos_de_polizas([]) == []
+
+
 def test_peritos_solo_activos_con_vencimiento_en_dias_habiles():
     peritos = _servicio().peritos_para("sin-01")
     assert [p["id"] for p in peritos] == ["per-01"]

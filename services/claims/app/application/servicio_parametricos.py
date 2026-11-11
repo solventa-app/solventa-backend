@@ -110,7 +110,7 @@ class ServicioParametricos:
             hasta = _a_fecha(cobertura["vigencia_hasta"])
             if not (desde <= medido_en <= hasta):
                 continue
-            if self._crear_siniestro(evento, cobertura, medido_en):
+            if self._crear_siniestro(evento, cobertura, medido_en, hasta):
                 creados += 1
         return {"creados": creados, "revisadas": len(coberturas)}
 
@@ -155,7 +155,11 @@ class ServicioParametricos:
             return []
 
     def _crear_siniestro(
-        self, evento: dict[str, Any], cobertura: dict[str, Any], medido_en: datetime
+        self,
+        evento: dict[str, Any],
+        cobertura: dict[str, Any],
+        medido_en: datetime,
+        vigencia_hasta: datetime,
     ) -> bool:
         poliza_id = cobertura["poliza_id"]
         sid = siniestro_id_determinista(evento["eventId"], poliza_id)
@@ -181,6 +185,7 @@ class ServicioParametricos:
             raise
         ahora = self._reloj()
         tipo = cobertura["tipo"]
+        datos = evento["datos"]
         siniestro = {
             "id": sid,
             "radicado": self._repo.siguiente_radicado(ahora.year),
@@ -191,12 +196,24 @@ class ServicioParametricos:
             "entidad_acreedora": ENTIDAD_POR_CONFIRMAR,
             "ocurrido_en": medido_en,
             "notificado_en": ahora,
-            "ubicacion": {"tipo": tipo, "clave": evento["datos"]["clave"]},
+            "ubicacion": {"tipo": tipo, "clave": datos["clave"]},
             "descripcion": DESCRIPCION_POR_TIPO[tipo],
             "suma_reclamada": cobertura["monto_fijo"],
             "vence_dictamen_en": ahora,
             "tipo_siniestro_auto": None,
             "evento_parametrico_id": evento["eventId"],
+            "origen": "PARAMETRICO",
+            # KAN-259 Fase 5 (BFF `detalleEvento`): el valor crudo del evento y el umbral de la
+            # cobertura que se cruzó, para que el BFF componga "+3h40" o "62 mm" sin tener que
+            # volver a consultar POLICY ni al ACL. No son datos personales (regla #6): se guardan
+            # en claro, sin cifrar.
+            "evento_valor": datos.get("valor"),
+            "evento_umbral": cobertura.get("umbral_retraso_min") or cobertura.get("umbral"),
+            "evento_variable": datos.get("variable"),
+            "evento_cancelado": bool(datos.get("cancelado")) if tipo == "VUELO" else None,
+            # KAN-259 Fase 5 (BFF `polizaAnterior`): la vigencia de la cobertura al momento del
+            # evento, ya normalizada a `datetime` (igual que `desde`/`hasta` en `procesar`).
+            "vigencia_hasta_cobertura": vigencia_hasta,
         }
         resolucion = {
             "id": str(uuid.uuid4()),
