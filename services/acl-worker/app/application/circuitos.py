@@ -29,6 +29,7 @@ NOMBRE_CIRCUITO_NOTIFICACIONES = "notificaciones"
 NOMBRE_CIRCUITO_IDENTIDAD = "identidad"
 NOMBRE_CIRCUITO_VEHICULOS = "vehiculos"  # KAN-290: RUNT, Fasecolda y siniestralidad
 NOMBRE_CIRCUITO_PRESTADORES = "prestadores"  # HU-M06 (v0.49): red de prestadores de asistencia
+NOMBRE_CIRCUITO_LUGARES = "lugares"  # HU-M06 (v0.50): ubicar la dirección escrita (Places)
 NOMBRE_CIRCUITO_CLIMA = "clima"  # KAN-259 Fase 3: Open-Meteo
 NOMBRE_CIRCUITO_VUELO = "vuelo"  # KAN-259 Fase 3: AviationStack
 

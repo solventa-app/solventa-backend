@@ -1148,6 +1148,330 @@
           ]
         }
       ]
+    },
+    {
+      "name": "4. Dirección escrita y ubicada (v0.50, B4 y B9)",
+      "item": [
+        {
+          "name": "4.1 ubicar la dirección escrita (stub del ACL, en inglés)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "en"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: String, $t: String) { ubicarDireccion(placeId: $p, texto: $t) { encontrada latitud longitud direccion codigo } }\",\n  \"variables\": {\n    \"t\": \"Cra 45 # 22-18\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const u = cuerpo.data.ubicarDireccion;",
+                  "pm.test('Encontrada', () => pm.expect(u.encontrada).to.eql(true));",
+                  "pm.test('Cerca de Bogotá', () => { pm.expect(u.latitud).to.be.within(4.6, 4.75); pm.expect(u.longitud).to.be.within(-74.12, -73.98); });",
+                  "pm.test('Sin código', () => pm.expect(u.codigo).to.eql(null));",
+                  "pm.collectionVariables.set('lat_dir', u.latitud);",
+                  "pm.collectionVariables.set('lon_dir', u.longitud);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 una dirección que no existe: código, no texto",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: String, $t: String) { ubicarDireccion(placeId: $p, texto: $t) { encontrada latitud longitud direccion codigo } }\",\n  \"variables\": {\n    \"t\": \"calle noexiste 1\"\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const u = cuerpo.data.ubicarDireccion;",
+                  "pm.test('No encontrada', () => pm.expect(u.encontrada).to.eql(false));",
+                  "pm.test('DIRECCION_NO_ENCONTRADA', () => pm.expect(u.codigo).to.eql('DIRECCION_NO_ENCONTRADA'));",
+                  "pm.test('Sin coordenadas', () => pm.expect(u.latitud).to.eql(null));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 solicitar con la dirección ubicada (origen DIRECCION)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudAsistenciaInput!) { solicitarAsistencia(entrada: $e) { __typename ... on Asistencia { id estado motivo minutosEstimados } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idSolicitud\": \"{{id_dir}}\",\n      \"prestadorId\": \"prs-bog-001\",\n      \"tipoAsistencia\": \"MEDICO\",\n      \"direccion\": \"Cra 45 # 22-18\",\n      \"latitud\": {{lat_dir}},\n      \"longitud\": {{lon_dir}},\n      \"origenUbicacion\": \"DIRECCION\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('id_dir', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const a = cuerpo.data.solicitarAsistencia;",
+                  "pm.test('Es una asistencia', () => pm.expect(a.__typename).to.eql('Asistencia'));",
+                  "pm.test('NO_CONFIRMADA (primer intento)', () => pm.expect(a.estado).to.eql('NO_CONFIRMADA'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.4 reenviar: con coordenadas sí hay tiempo de llegada",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudAsistenciaInput!) { solicitarAsistencia(entrada: $e) { __typename ... on Asistencia { id estado motivo minutosEstimados } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idSolicitud\": \"{{id_dir}}\",\n      \"prestadorId\": \"prs-bog-001\",\n      \"tipoAsistencia\": \"MEDICO\",\n      \"direccion\": \"Cra 45 # 22-18\",\n      \"latitud\": {{lat_dir}},\n      \"longitud\": {{lon_dir}},\n      \"origenUbicacion\": \"DIRECCION\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const a = cuerpo.data.solicitarAsistencia;",
+                  "pm.test('CONFIRMADA', () => pm.expect(a.estado).to.eql('CONFIRMADA'));",
+                  "pm.test('Con minutos estimados', () => pm.expect(a.minutosEstimados).to.be.a('number'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.5 origen DIRECCION sin dirección: DATOS_INVALIDOS",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudAsistenciaInput!) { solicitarAsistencia(entrada: $e) { __typename ... on Asistencia { id estado motivo minutosEstimados } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idSolicitud\": \"{{$guid}}\",\n      \"prestadorId\": \"prs-bog-001\",\n      \"tipoAsistencia\": \"MEDICO\",\n      \"direccion\": \" \",\n      \"latitud\": 4.67,\n      \"longitud\": -74.05,\n      \"origenUbicacion\": \"DIRECCION\"\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const a = cuerpo.data.solicitarAsistencia;",
+                  "pm.test('DATOS_INVALIDOS', () => pm.expect(a.codigo).to.eql('DATOS_INVALIDOS'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.6 sin sesión: SIN_SESION",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: String, $t: String) { ubicarDireccion(placeId: $p, texto: $t) { encontrada latitud longitud direccion codigo } }\",\n  \"variables\": {\n    \"t\": \"Cra 45\"\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('SIN_SESION', () => pm.expect(cuerpo.errors[0].extensions.code).to.eql('SIN_SESION'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [

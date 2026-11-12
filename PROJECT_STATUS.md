@@ -54,7 +54,7 @@ Todo esto está en código y verificado **en local**; nada tiene medición de st
 | HU-M06 / KAN-263, KAN-264, KAN-265, KAN-266 | Dirección a mano sin ubicación (`solicitarAsistenciaConDireccion`, v0.41). Catálogo maestro de prestadores en `claims` (`catalogoPrestadores`, v0.36); solicitar y cancelar asistencia (`solicitarAsistencia`, `cancelarAsistencia`, v0.40). v0.49: detalle del prestador, tipo `GRUA` y desenlace por la red de prestadores detrás del ACL (`stubs/prestadores`, puerto 8109). Resto del plan: [`docs/plan-hu-m06-pendientes.md`](docs/plan-hu-m06-pendientes.md) | [`services/claims/README.md`](services/claims/README.md) |
 | KAN-250 | Almacenamiento de archivos | [ADR-10](docs/adr/ADR-10-almacenamiento-de-archivos.md) |
 
-Contrato en **v0.45** (la v0.42 es la póliza de auto, KAN-290, [`plan-poliza-auto`](docs/plan-poliza-auto.md); la v0.45, el historial de fuentes del asesor, [`plan-revision-qa-2026-11-10`](docs/plan-revision-qa-2026-11-10.md) T5; la v0.49, el catálogo de prestadores con detalle y grúa, HU-M06 fase 1); la siguiente libre es **v0.50** (la v0.46 a v0.48 las reserva el PR #589, KAN-259). Últimas migraciones: AUTH `0014`, POLICY `0010`, PAYMENTS `0010`, RISK `0006`, CLAIMS `0007`.
+Contrato en **v0.45** (la v0.42 es la póliza de auto, KAN-290, [`plan-poliza-auto`](docs/plan-poliza-auto.md); la v0.45, el historial de fuentes del asesor, [`plan-revision-qa-2026-11-10`](docs/plan-revision-qa-2026-11-10.md) T5; la v0.49, el catálogo de prestadores con detalle y grúa, HU-M06 fase 1); la v0.50, la dirección escrita y ubicada de M06; la siguiente libre es **v0.51** (la v0.46 a v0.48 las reserva el PR #589, KAN-259). Últimas migraciones: AUTH `0014`, POLICY `0010`, PAYMENTS `0010`, RISK `0006`, CLAIMS `0007`.
 
 ## Estado actual
 

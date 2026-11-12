@@ -141,6 +141,7 @@ def test_con_la_direccion_a_mano_se_confirma_sin_tiempo_estimado():
     assert reintento["minutos_estimados"] is None
     assert repo.asistencias[ID]["ubicacion"] == {
         "latitud": None, "longitud": None, "direccion": "Cra 45 # 22-18",
+        "origen": "DIRECCION",
     }  # fmt: skip
 
 
@@ -254,7 +255,7 @@ def test_el_repositorio_guarda_la_ubicacion_y_la_descripcion_cifradas():
 
     leido = repo.obtener(ID)
     assert leido["ubicacion"] == {
-        "latitud": 4.676, "longitud": -74.048, "direccion": "Cra 45 # 22-18"
+        "latitud": 4.676, "longitud": -74.048, "direccion": "Cra 45 # 22-18", "origen": "GPS",
     }  # fmt: skip
     assert leido["descripcion"] == "Dolor en el pecho"
     assert leido["prestador"]["nombre"] == "Clínica Norte"
@@ -299,3 +300,24 @@ def test_http_errores_de_negocio_con_codigo():
         assert r.json()["codigo"] == "TIPO_NO_ATENDIDO"
         r = http.post("/asistencias", json=_solicitud(tipo_asistencia="BOMBEROS"))
         assert r.status_code == 422
+
+
+def test_v050_con_la_direccion_ubicada_hay_coordenadas_y_origen_direccion():
+    repo = RepoAsistenciasFalso()
+    red = RedFalsa("confirma")
+    r = _servicio(repo, red=red).solicitar(_solicitud(origen_ubicacion="DIRECCION"))
+    assert r["minutos_estimados"] == 6  # con coordenadas, hay tiempo de llegada
+    assert repo.asistencias[ID]["ubicacion"]["origen"] == "DIRECCION"
+    assert red.pedidos[0]["latitud"] == 4.6760
+
+
+def test_v050_con_origen_direccion_la_direccion_es_obligatoria():
+    with pytest.raises(ErrorAsistencia) as error:
+        _servicio().solicitar(_solicitud(origen_ubicacion="DIRECCION", direccion=""))
+    assert error.value.codigo == "DATOS_INVALIDOS"
+
+
+def test_con_gps_el_origen_es_gps_por_defecto():
+    repo = RepoAsistenciasFalso()
+    _servicio(repo).solicitar(_solicitud())
+    assert repo.asistencias[ID]["ubicacion"]["origen"] == "GPS"

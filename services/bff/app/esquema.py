@@ -2067,6 +2067,31 @@ class CodigoErrorAsistencia(Enum):
     NO_ENCONTRADA = "NO_ENCONTRADA"
 
 
+@strawberry.enum
+class OrigenUbicacion(Enum):
+    """v0.50 (HU-M06, B4): GPS del teléfono o dirección escrita y ubicada (`ubicarDireccion`)."""
+
+    GPS = "GPS"
+    DIRECCION = "DIRECCION"
+
+
+@strawberry.enum
+class CodigoUbicacion(Enum):
+    DIRECCION_NO_ENCONTRADA = "DIRECCION_NO_ENCONTRADA"
+    SERVICIO_NO_DISPONIBLE = "SERVICIO_NO_DISPONIBLE"
+
+
+@strawberry.type
+class UbicacionDireccion:
+    """v0.50 (HU-M06, B9). Sin textos para el usuario: la app traduce el `codigo`."""
+
+    encontrada: bool
+    latitud: float | None
+    longitud: float | None
+    direccion: str | None
+    codigo: CodigoUbicacion | None
+
+
 @strawberry.input
 class SolicitudAsistenciaInput:
     # UUID generado por la app: es el id de la asistencia y su clave de idempotencia.
@@ -2077,6 +2102,7 @@ class SolicitudAsistenciaInput:
     longitud: float
     descripcion: str | None = None
     direccion: str | None = None
+    origen_ubicacion: OrigenUbicacion = OrigenUbicacion.GPS
 
 
 @strawberry.input
@@ -2113,6 +2139,7 @@ ResultadoAsistencia = Annotated[
 
 MENSAJE_ASISTENCIA_NO_DISPONIBLE = "No pudimos registrar la asistencia. Intenta de nuevo."
 MENSAJE_ID_SOLICITUD = "El identificador de la solicitud no es válido."
+MENSAJE_DIRECCION_REQUERIDA = "Escribe la dirección a la que debe llegar el prestador."
 CODIGOS_ASISTENCIA = {c.value for c in CodigoErrorAsistencia}
 
 
@@ -2930,12 +2957,41 @@ class Query:
         lista vacía: nunca un error técnico."""
         exigir_rol(info, "CLIENTE", "ASESOR", "BACKOFFICE", "SOCIO")
         try:
-            lista = await info.context["clientes"].acl.autocompletar_direccion(texto[:200], pais)
+            lista = await info.context["clientes"].acl.autocompletar_direccion(
+                texto[:200], pais, info.context.get("idioma", "es")
+            )
         except ErrorServicio:
             return []
         return [
             SugerenciaDireccion(place_id=x["place_id"], descripcion=x["descripcion"]) for x in lista
         ]
+
+    @strawberry.field
+    async def ubicar_direccion(
+        self, info: Info, place_id: str | None = None, texto: str | None = None
+    ) -> UbicacionDireccion:
+        """v0.50 (HU-M06, B9): coordenadas de la dirección que escribió el CLIENTE sin GPS, por el
+        ACL, en el idioma de la app. Si el ACL no responde, `SERVICIO_NO_DISPONIBLE`: nunca un
+        error técnico. La dirección no se registra."""
+        exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        try:
+            r = await info.context["clientes"].acl.ubicar_direccion(
+                (place_id or "")[:300] or None,
+                (texto or "")[:200] or None,
+                info.context.get("idioma", "es"),
+            )
+        except ErrorServicio:
+            r = {"encontrada": False, "codigo": "SERVICIO_NO_DISPONIBLE"}
+        codigo = r.get("codigo")
+        return UbicacionDireccion(
+            encontrada=bool(r.get("encontrada")),
+            latitud=r.get("latitud"),
+            longitud=r.get("longitud"),
+            direccion=r.get("direccion"),
+            codigo=CodigoUbicacion(codigo)
+            if codigo in CodigoUbicacion._value2member_map_
+            else (None if r.get("encontrada") else CodigoUbicacion.SERVICIO_NO_DISPONIBLE),
+        )
 
     @strawberry.field
     async def validar_direccion(self, info: Info, place_id: str) -> DireccionValidada:
@@ -4154,10 +4210,23 @@ class Mutation:
             "direccion": entrada.direccion,
             "latitud": entrada.latitud,
             "longitud": entrada.longitud,
+            "origen_ubicacion": entrada.origen_ubicacion.value,
         }
+        if (
+            entrada.origen_ubicacion == OrigenUbicacion.DIRECCION
+            and not (entrada.direccion or "").strip()
+        ):
+            return ErrorAsistencia(
+                codigo=CodigoErrorAsistencia.DATOS_INVALIDOS, mensaje=MENSAJE_DIRECCION_REQUERIDA
+            )
         return await _accion_asistencia(lambda: _claims(info).solicitar_asistencia(solicitud))
 
-    @strawberry.mutation
+    @strawberry.mutation(
+        deprecation_reason=(
+            "v0.50: usar solicitarAsistencia con las coordenadas de ubicarDireccion y "
+            "origenUbicacion DIRECCION"
+        )
+    )
     async def solicitar_asistencia_con_direccion(
         self, info: Info, entrada: SolicitudAsistenciaDireccionInput
     ) -> ResultadoAsistencia:

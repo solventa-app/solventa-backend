@@ -196,7 +196,10 @@ class ServicioAsistencias:
         if direccion and len(direccion) > MAX_DIRECCION:
             raise ErrorAsistencia("DATOS_INVALIDOS", MENSAJE_DIRECCION_LARGA)
         latitud, longitud = solicitud.get("latitud"), solicitud.get("longitud")
-        if (latitud is None or longitud is None) and not direccion:
+        sin_coordenadas = latitud is None or longitud is None
+        # v0.50 (B4): de dónde salió la ubicación; se guarda con la asistencia (y en la auditoría).
+        origen = solicitud.get("origen_ubicacion") or ("DIRECCION" if sin_coordenadas else "GPS")
+        if (sin_coordenadas or origen == "DIRECCION") and not direccion:
             raise ErrorAsistencia("DATOS_INVALIDOS", MENSAJE_DIRECCION_REQUERIDA)
         prestador = self._repo.prestador(solicitud["prestador_id"])
         if prestador is None or not prestador["activo"]:
@@ -215,6 +218,7 @@ class ServicioAsistencias:
                 "latitud": latitud,
                 "longitud": longitud,
                 "direccion": direccion,
+                "origen": origen,
             },
             "intentos": 1,
             "solicitada_en": ahora,

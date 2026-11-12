@@ -199,7 +199,14 @@ class PuertoAcl(Protocol):
     async def tasas_cambio(self) -> dict[str, str]: ...
 
     # T19: Places detrás del ACL. Si falla, el BFF degrada a «sin verificar».
-    async def autocompletar_direccion(self, texto: str, pais: str | None) -> list[dict]: ...
+    async def autocompletar_direccion(
+        self, texto: str, pais: str | None, idioma: str = "es"
+    ) -> list[dict]: ...
+
+    # HU-M06 (v0.50, B9)
+    async def ubicar_direccion(
+        self, place_id: str | None, texto: str | None, idioma: str
+    ) -> dict: ...
 
     async def validar_direccion(self, place_id: str) -> dict: ...
 
@@ -970,12 +977,21 @@ class ClienteAclHttp:
         self._tasas_vencen = ahora + TTL_TASAS_SEGUNDOS
         return self._tasas
 
-    async def autocompletar_direccion(self, texto: str, pais: str | None) -> list[dict]:
-        params = {"texto": texto, **({"pais": pais} if pais else {})}
+    async def autocompletar_direccion(
+        self, texto: str, pais: str | None, idioma: str = "es"
+    ) -> list[dict]:
+        params = {"texto": texto, "idioma": idioma, **({"pais": pais} if pais else {})}
         respuesta = await _pedir(self._cliente, "GET", "/lugares/autocompletar", params=params)
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return list(respuesta.json()["sugerencias"])
+
+    async def ubicar_direccion(self, place_id: str | None, texto: str | None, idioma: str) -> dict:
+        cuerpo = {"idioma": idioma, "place_id": place_id, "texto": texto}
+        respuesta = await _pedir(self._cliente, "POST", "/lugares/ubicar", cuerpo)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return dict(respuesta.json())
 
     async def validar_direccion(self, place_id: str) -> dict:
         respuesta = await _pedir(

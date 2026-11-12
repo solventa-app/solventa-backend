@@ -152,6 +152,7 @@ Catálogo maestro de prestadores y asistencia en sitio por el gateway (KAN-263 a
 | Carpeta | Qué verifica |
 |---|---|
 | 0. Preparación | Sesión de BACKOFFICE, alta de un CLIENTE (alias al azar) y su sesión en el canal `app` |
+| 4. Dirección escrita y ubicada (v0.50) | `ubicarDireccion` encontrada (en inglés) y no encontrada con su código; solicitar con `origenUbicacion: DIRECCION`, reintento con tiempo de llegada; sin dirección, `DATOS_INVALIDOS`; sin sesión |
 | 1. Catálogo versionado | Sin versión: los 17 de la semilla (v0.49: con grúas, aliados y el detalle), tipos y coordenadas; con la vigente: `vigente` y lista vacía; con una vieja: completa; `/v1/graphql/app` igual |
 | 2. Autorización | Sin sesión: `SIN_SESION`; un BACKOFFICE no lo usa |
 | 3. Asistencia en sitio | Solicitar, reenviar y cancelar (idempotentes), tipo no atendido, prestador inexistente y la dirección a mano sin ubicación (v0.41) |
