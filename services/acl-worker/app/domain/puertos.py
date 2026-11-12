@@ -344,3 +344,58 @@ class DesenlaceAsistencia:
 
 class PuertoPrestadores(Protocol):
     def solicitar(self, pedido: PedidoAsistencia) -> DesenlaceAsistencia: ...
+
+
+# ----------------------------------------------------- eventos paramétricos (HU-M04, KAN-259 F3)
+
+VariableClima = Literal["PRECIPITACION_MM", "VIENTO_KMH", "TEMP_MAX_C"]
+
+
+@dataclass(frozen=True)
+class ConsultaClima:
+    """Una celda geográfica de ~10 km (D8 del plan de push: la cobertura paramétrica vive en
+    POLICY, que agrupa pólizas por celda). `clave` es lo único que ven la caché y los logs; la
+    latitud/longitud solo viajan al proveedor."""
+
+    clave: str
+    latitud: float
+    longitud: float
+    variable: VariableClima
+
+
+@dataclass(frozen=True)
+class MedicionClima:
+    valor: float
+    medido_en: str
+    fuente: str = "open-meteo"
+
+
+class PuertoClima(Protocol):
+    def consultar(
+        self, consulta: ConsultaClima, timeout_s: float | None = None
+    ) -> MedicionClima: ...
+
+
+@dataclass(frozen=True)
+class ConsultaVuelo:
+    numero_vuelo: str  # IATA, p. ej. AV9340
+    fecha: str  # AAAA-MM-DD
+
+
+@dataclass(frozen=True)
+class MedicionVuelo:
+    """`encontrado = False` (AviationStack sin datos para ese vuelo+fecha) es una respuesta
+    válida, no una falla: no abre el circuito, igual que una placa que RUNT no tiene
+    (`AdaptadorVehiculos`)."""
+
+    encontrado: bool
+    retraso_minutos: int = 0
+    cancelado: bool = False
+    medido_en: str | None = None
+    fuente: str = "aviationstack"
+
+
+class PuertoVuelo(Protocol):
+    def consultar(
+        self, consulta: ConsultaVuelo, timeout_s: float | None = None
+    ) -> MedicionVuelo: ...

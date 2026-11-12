@@ -1054,6 +1054,46 @@ type SiniestroReportado {
 # identidad verificada o servicio caído con reintento).
 union ResultadoReporteSiniestro = SiniestroReportado | ErrorSiniestro
 
+# ---------- Indemnización y cobertura paramétrica (v0.48, KAN-259, HU-M04 Fase 5) ----------
+# Lo que la app móvil mostrará en la Fase 6 (fuera de este contrato) al tocar el push de una indemnización
+# paramétrica (vuelo o clima) ya liquidada automáticamente por CLAIMS (ver evento `evento.parametrico.recibido`).
+
+enum TipoEventoParametrico {
+  VUELO_RETRASO
+  VUELO_CANCELADO
+  # Las 3 variables de clima (precipitación, viento, temperatura) colapsan en un solo tipo por ahora.
+  CLIMA
+}
+
+enum EstadoIndemnizacion {
+  EN_PROCESO
+  # PAYMENTS todavía no dispersa de verdad (toda orden queda PENDIENTE_DISPERSION): este valor no se produce hoy.
+  PAGADA
+}
+
+type Indemnizacion {
+  id: ID!
+  tipo: TipoEventoParametrico!
+  referenciaEvento: String! # el vuelo (AV9340) o la celda ("lat,lon": sin reverse-geocoding)
+  detalleEvento: String! # cuánto superó el umbral: "+180min", "62 mm", "Cancelado"
+  fechaEvento: DateTime!
+  pagadoEn: DateTime!
+  monto: Monto!
+  estado: EstadoIndemnizacion!
+  # Nunca un número de cuenta real (regla #6): PAYMENTS solo guarda un método genérico de transferencia.
+  metodoTransferencia: String
+  polizaAnterior: Boolean! # la cobertura ya no estaba vigente al momento del evento
+}
+
+type ResumenCobertura {
+  producto: String!
+  numeroPoliza: String!
+  vigente: Boolean!
+  vigenteHasta: DateTime!
+  tope: Monto! # el monto fijo de la cobertura paramétrica: no hay un tope acumulado distinto hoy
+  movimientos: [Indemnizacion!]!
+}
+
 input UbicacionReporteInput {
   descripcion: String!
   ciudad: String!
@@ -1353,6 +1393,13 @@ type Query {
   # ---------- v0.36 (HU-M06) ----------
   # Sesión de CLIENTE (SIN_SESION si no hay). versionLocal null o distinta de la vigente: la lista completa.
   catalogoPrestadores(versionLocal: String = null): CatalogoPrestadores!
+  # ---------- v0.48 (KAN-259, HU-M04 Fase 5) ----------
+  # Sesión de CLIENTE: el detalle de una indemnización paramétrica. null si no existe, no es paramétrica o la
+  # póliza no es del cliente del token (nunca filtra el expediente de otro cliente).
+  indemnizacion(id: ID!): Indemnizacion
+  # Sesión de CLIENTE: su cobertura paramétrica vigente, con las indemnizaciones ya liquidadas. null si no tiene
+  # ninguna póliza paramétrica.
+  miCoberturaParametrica: ResumenCobertura
   # v0.50 (HU-M06, B9): coordenadas de la dirección escrita, por el ACL (Place Details con `placeId` de
   # `autocompletarDireccion`, o Geocoding con `texto`; solo Colombia). Solo CLIENTE. La dirección no se registra.
   ubicarDireccion(placeId: String = null, texto: String = null): UbicacionDireccion!

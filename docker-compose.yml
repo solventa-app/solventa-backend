@@ -338,6 +338,20 @@ services:
     depends_on:
       migrar-policy: { condition: service_completed_successfully }
 
+  # KAN-259 (HU-M04, Fase 4, D8), solo local: 2 pólizas de vuelo y 1 de clima con cobertura
+  # paramétrica, para que CLAIMS tenga algo que cruzar contra `evento.parametrico.recibido`.
+  # Idempotente.
+  sembrar-polizas-parametricas:
+    <<: *tarea
+    profiles: ["semilla"]
+    image: solventa/policy:local
+    build: ./services/policy
+    command: ["python", "-m", "app.sembrar_polizas_parametricas"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/policy
+    depends_on:
+      migrar-policy: { condition: service_completed_successfully }
+
   # HU-M05, solo local: el CLIENTE verificado que reporta siniestros desde el móvil. Entra con
   # cliente.siniestros@demo.solventa.co y la clave de abajo (SOLO LOCAL). Su póliza la crea
   # `sembrar-polizas-demo`. Idempotente.
@@ -551,6 +565,10 @@ services:
       # MAPBOX_TOKEN en el .env (ignorado por git).
       MAPAS_PROVEEDOR: ${MAPAS_PROVEEDOR:-simulado}
       MAPBOX_TOKEN: ${MAPBOX_TOKEN:-}
+      # KAN-259 Fase 3 (HU-M04): mismo host, rutas distintas (igual que los proveedores reales).
+      CLIMA_URL: http://stub-eventos-parametricos:8108
+      VUELOS_URL: http://stub-eventos-parametricos:8108
+      AVIATIONSTACK_API_KEY: ${AVIATIONSTACK_API_KEY:-}
       PASARELA_URL: http://stub-pasarela:8103
       FIRMA_URL: http://stub-firma:8104
       KYC_URL: http://stub-kyc:8105   # también la verificación de identidad de M01 (rutas de Didit)
@@ -588,6 +606,19 @@ services:
       acl-worker: { condition: service_started }
       auth: { condition: service_healthy }
 
+  # KAN-259: push genérico (HU-M04). SNS_MODO=stub en local/CI: sin AWS real, solo registra en
+  # memoria lo "enviado". Sin PUBSUB_TEMA_NOTIFICACIONES_PUSH: POST /v1/push deja el evento en el
+  # log en vez de publicarlo (igual que RISK/CLAIMS sin su tema configurado).
+  enviar-push:
+    <<: *servicio
+    build: ./services/enviar-push
+    ports: ["8013:8013"]
+    environment:
+      AUTH_URL: http://auth:8001
+      SNS_MODO: stub
+    depends_on:
+      auth: { condition: service_healthy }
+
   stub-open-finance:
     <<: *servicio
     build: ./stubs/open-finance
@@ -615,6 +646,12 @@ services:
       PRESTADORES_SIMULACION: ${PRESTADORES_SIMULACION:-primero_falla}
       # Vacío: minutos por distancia. Con 1, toda asistencia confirmada llega en 1 minuto («Mis asistencias»).
       PRESTADORES_MINUTOS_FIJOS: ${PRESTADORES_MINUTOS_FIJOS:-}
+  # KAN-259 Fase 3 (HU-M04): simula Open-Meteo (`GET /v1/forecast`) y AviationStack
+  # (`GET /v1/flights`) en un solo servicio, en las rutas exactas de sus APIs reales.
+  stub-eventos-parametricos:
+    <<: *servicio
+    build: ./stubs/eventos-parametricos
+    ports: ["8108:8108"]
 
   stub-pasarela:
     <<: *servicio

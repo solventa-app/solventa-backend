@@ -1,0 +1,131 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Solventa · Push (enviar-push)",
+    "version": "1.0.0",
+    "description": "Puerta HTTP del servicio de push genérico (KAN-259, D1/D10): cualquier servicio interno de Solventa pide un push sin saber de SNS, FCM ni dispositivos. Solo cuentas de servicio internas (D10); valida y publica en el tema de Pub/Sub `notificaciones-push`, que `enviar-push` consume por su puerta de eventos (`POST /eventos`, fuera de este contrato porque la llama Pub/Sub, no un cliente HTTP). Quien prefiere evitar el salto HTTP puede publicar directo en el tema."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Cloud Run de enviar-push, solo IAM (roles/run.invoker)"
+    }
+  ],
+  "security": [
+    {
+      "oidc": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Push"
+    }
+  ],
+  "paths": {
+    "/v1/push": {
+      "post": {
+        "operationId": "solicitarPush",
+        "summary": "Pide un push a un cliente por su plantilla",
+        "tags": [
+          "Push"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SolicitudPush"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Encolada en `notificaciones-push`. No significa que ya llegó al teléfono (eso lo decide `enviar-push` al consumir el evento: puede terminar en 404 sin dispositivo activo, 409 con el push apagado, o enviada).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SolicitudPushAceptada"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "El cuerpo no cumple `notificacion.push-solicitada` o la plantilla no existe en `contracts/plantillas-push.json`."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "oidc": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "OIDC",
+        "description": "Token de identidad de Cloud Run (roles/run.invoker) de una cuenta de servicio interna permitida (D10)."
+      }
+    },
+    "schemas": {
+      "SolicitudPush": {
+        "type": "object",
+        "required": [
+          "idempotencia",
+          "usuarioId",
+          "plantilla"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "idempotencia": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Tag/collapse-id del teléfono: una solicitud repetida con la misma clave no duplica la notificación."
+          },
+          "usuarioId": {
+            "type": "string",
+            "description": "El id de AUTH del destinatario."
+          },
+          "plantilla": {
+            "type": "string",
+            "description": "Clave de `contracts/plantillas-push.json`."
+          },
+          "variables": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Variables para la plantilla. Nunca nombre, documento ni correo."
+          },
+          "ruta": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Ruta de la app a abrir al tocar la notificación."
+          },
+          "ttlSegundos": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 604800
+          },
+          "silenciosa": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SolicitudPushAceptada": {
+        "type": "object",
+        "required": [
+          "solicitudId"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "solicitudId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "El `eventId` del `notificacion.push-solicitada` publicado."
+          }
+        }
+      }
+    }
+  }
+}

@@ -31,6 +31,7 @@ agrega nada hasta que alguien las enciende.
 | Métricas basadas en logs (ofertas por tipo, circuito abierto y cobros por estado) | `crear_metricas_logs` | ~$0 (volumen mínimo, capa gratuita de Cloud Monitoring) | `metricas-logs.tf`; las leen los paneles de `hu-w01.json` y `hu-w05.json`. Los filtros asumen el log como `textPayload`: verificar en Logs Explorer tras aplicar |
 | API Gateway delante del BFF (`solventa-gateway`, deadline duro de 700 ms) + cuenta `gateway-bff` | `crear_gateway` | $0 hasta 2 M llamadas/mes | `gateway.tf` + `gateway/openapi.yaml`; el BFF deja de ser público y la salida `gateway_url` es la única puerta pública |
 | Presupuesto + Pub/Sub + función `frenar-gasto` | `crear_presupuesto` | ~$0 (capa gratuita de Cloud Functions; solo paga las pocas invocaciones que dispara el presupuesto) | requiere `billing_account_id`; debe estar activo **antes** de cualquier despliegue real (regla 2 de `CLAUDE.md`) |
+| Temas `notificaciones-push` y `eventos-parametricos` (con DLQ) + sus suscripciones push + 2 Cloud Scheduler de demostración (KAN-259, HU-M04) | `crear_push` | $0 (capa gratuita de Pub/Sub y Cloud Scheduler; ver nota de los 3 trabajos gratis por cuenta) | `push.tf`; **apagada a propósito**, faltan pasos manuales (ver sección dedicada abajo) |
 
 Cloud Run y Cloud Run Jobs escalan a cero. Secret Manager cobra ~USD 0,06/mes por versión activa (una marcadora por secreto).
 
@@ -447,6 +448,36 @@ local, Envoy replica este gateway en el mismo `:8080` (filtro `jwt_authn` con el
 - **`crear_batch = true` (`batch.tf`, HA-ESC-004 / EC017):** crea el Cloud Run Job `risk-reproceso` (`python -m app.batch_reproceso`,
   con la imagen y cuenta de `risk`) y la tarea de Cloud Scheduler `risk-reproceso-nocturno` programada a las `30 23 * * *`
   (`America/Bogota`), para que termine antes del apagado automático de costos de las 2:00 a.m. `batch_tareas` (default `1`) fija `task_count`: cada tarea procesa una partición de los perfiles, así que para 10 M de perfiles en < 2 h se escala subiendo `batch_tareas` (la cifra sale de la medición de `docs/evidencias/EC017-2026-10-18.md`). **Ojo con Atlas M0:** según su documentación admite como máximo 100 operaciones por segundo para todo el clúster, así que el batch no llegaría a EC017 y competiría con el tráfico en línea de RISK y RATING; para medir EC017 en staging hace falta un nivel de pago (sin medir; ver la sección 5 del informe).
+
+### Notificaciones push e ingesta paramétrica (`crear_push`, KAN-259, HU-M04)
+
+Terraform de la Fase 7 del plan (`plan-notificaciones-push-fcm.md`, sección D). El código de `enviar-push`, el
+adaptador del ACL Worker y el consumidor de CLAIMS ya existen; `crear_push = true` (`push.tf`) crea solo el cableado de
+Pub/Sub y Cloud Scheduler:
+
+- **Tema `notificaciones-push`** (D2) + suscripción push `enviar-push-notificaciones` hacia `POST /eventos` de
+  `enviar-push`. Publican CLAIMS (al liquidar la indemnización paramétrica) y el propio `enviar-push`
+  (`POST /v1/push`); consume únicamente `enviar-push`.
+- **Tema `eventos-parametricos`** (Fase 3) **con Dead Letter Queue** (`eventos-parametricos-dlq`, a diferencia de
+  `perfil-actualizado` en `pubsub.tf`, que no la tiene): suscripción push `claims-eventos-parametricos` hacia
+  `POST /eventos/parametricos` de CLAIMS, `max_delivery_attempts = 5` y `retry_policy` (10 s a 600 s). Publica
+  únicamente el ACL Worker (escritor único del evento); consume únicamente CLAIMS. El agente de servicio de Pub/Sub
+  recibe `roles/pubsub.publisher` en el tema DLQ y `roles/pubsub.subscriber` en la suscripción original, como pide la
+  [documentación oficial de `dead_letter_policy`](https://cloud.google.com/pubsub/docs/handling-failures#dead_letter_topic).
+- **Dos `google_cloud_scheduler_job` de demostración** (`consulta-demo-vuelo-parametrico` y
+  `consulta-demo-clima-parametrico`, cada 15 min) que llaman a `POST /eventos-parametricos/_consultar` del ACL Worker
+  con los dos datos fijos de la semilla `sembrar_polizas_parametricas` de POLICY (vuelo `AV9340`, celda de clima de
+  Bogotá `4.62,-74.09`). **No son una enumeración real de pólizas vigentes**: ese endpoint no existe todavía en ningún
+  servicio y construirlo es trabajo de código (otro día), no de infraestructura. Suman un cuarto y quinto trabajo de
+  Scheduler junto con `sonda-acl`, `risk-reproceso-nocturno` y `reconciliacion-cobros-policy`: con `crear_tareas`,
+  `crear_batch` y `crear_push` los tres encendidos, el equipo pasa el tope gratuito de 3 trabajos por cuenta de
+  facturación y paga centavos al mes por los extra.
+- **Sigue apagada (`crear_push = false`) a propósito.** Falta, todos pasos manuales del usuario, no de este agente:
+  1. Firebase/FCM: agregar el proyecto GCP a Firebase y registrar las apps Android (ver la sección 11.1 del plan).
+  2. La llave real de AviationStack en el secreto `aviationstack-llave` (Secret Manager) — sin ella, el adaptador de
+     vuelos del ACL Worker no tiene datos reales que publicar (Open-Meteo, el de clima, no necesita llave).
+  3. El rol de federación de identidad GCP → AWS de `enviar-push` (`AssumeRoleWithWebIdentity`, D7 del plan) y el ARN
+     de la Platform Application de SNS — sin esto, `enviar-push` sigue en `SNS_MODO=stub` y no manda push reales.
 
 ### Secretos de SonarCloud en GitHub Actions (Bloque 6)
 
