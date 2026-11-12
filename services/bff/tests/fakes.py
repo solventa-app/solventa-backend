@@ -1504,6 +1504,31 @@ class ClaimsFalso:
         self._revisar("de_cliente", cliente_id)
         return [s for s in self.siniestros.values() if s.get("reportado_por") == cliente_id]
 
+    async def mis_asistencias(self, cliente_id: str) -> list[dict]:
+        """HU-M06 (v0.52): las que se pidieron en este fake, con la llegada y lo que se pidió."""
+        self._revisar("mis_asistencias", cliente_id)
+        return [self._con_detalle(a) for a in reversed(self.asistencias.values())]
+
+    async def asistencia(self, asistencia_id: str, cliente_id: str) -> dict:
+        self._revisar("asistencia", asistencia_id, cliente_id)
+        a = self.asistencias.get(asistencia_id)
+        if a is None or cliente_id != "cli-1":
+            raise AsistenciaRechazada("NO_ENCONTRADA", "No encontramos esa asistencia.")
+        return self._con_detalle(a)
+
+    @staticmethod
+    def _con_detalle(a: dict) -> dict:
+        confirmada = a["estado"] == "CONFIRMADA"
+        return {
+            **a,
+            "confirmada_en": "2026-11-07T15:00:00+00:00" if confirmada else None,
+            "llegada_estimada": "2026-11-07T15:06:00+00:00" if confirmada else None,
+            "descripcion": "Dolor en el pecho",
+            "ubicacion": {
+                "latitud": 4.676, "longitud": -74.048, "direccion": None, "origen": "GPS",
+            },
+        }  # fmt: skip
+
     async def rutas(
         self, cliente_id: str, latitud: float, longitud: float, prestador_ids: list[str]
     ) -> list[dict]:

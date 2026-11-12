@@ -324,6 +324,16 @@ def create_app(
             )
         }
 
+    @app.get("/clientes/{cliente_id}/asistencias", tags=["asistencia"])
+    def mis_asistencias(cliente_id: str) -> list[dict]:
+        """HU-M06 (v0.52, B6): las del cliente de los últimos 30 días."""
+        return app.state.asistencias.mis(cliente_id)
+
+    @app.get("/asistencias/{asistencia_id}", tags=["asistencia"])
+    def detalle_asistencia(asistencia_id: str, cliente_id: str) -> dict:
+        """HU-M06 (v0.52, B6): una asistencia del cliente; ajena o inexistente, 404."""
+        return _asistencia(lambda: app.state.asistencias.detalle(asistencia_id, cliente_id))
+
     @app.post("/asistencias/{asistencia_id}/cancelar", tags=["asistencia"])
     def cancelar_asistencia(asistencia_id: str, body: CancelarAsistenciaRequest) -> dict:
         """HU-M06 (KAN-266): idempotente; solo el cliente que la pidió."""

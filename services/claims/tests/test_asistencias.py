@@ -44,6 +44,17 @@ class RepoAsistenciasFalso:
     def actualizar(self, asistencia_id, cambios):
         self.asistencias[asistencia_id].update(cambios)
 
+    def de_cliente(self, cliente_id, desde):
+        return sorted(
+            (
+                dict(a)
+                for a in self.asistencias.values()
+                if a["cliente_id"] == cliente_id and a["solicitada_en"] >= desde
+            ),
+            key=lambda a: a["solicitada_en"],
+            reverse=True,
+        )
+
 
 def _solicitud(**cambios) -> dict:
     return {
@@ -165,7 +176,7 @@ def test_la_respuesta_no_devuelve_la_ubicacion_ni_el_cliente():
     respuesta = _servicio().solicitar(_solicitud())
     assert set(respuesta) == {
         "id", "estado", "tipo_asistencia", "prestador", "minutos_estimados", "motivo",
-        "solicitada_en", "cancelada_en",
+        "solicitada_en", "cancelada_en", "confirmada_en", "llegada_estimada",
     }  # fmt: skip
     assert respuesta["prestador"]["nombre"] == "Clínica Norte"
 
@@ -321,3 +332,63 @@ def test_con_gps_el_origen_es_gps_por_defecto():
     repo = RepoAsistenciasFalso()
     _servicio(repo).solicitar(_solicitud())
     assert repo.asistencias[ID]["ubicacion"]["origen"] == "GPS"
+
+
+# ---------- v0.52 (B5 y B6): «Mis asistencias» ----------
+
+
+def _con_reloj(repo, red, momentos):
+    it = iter(momentos)
+    return ServicioAsistencias(repo, red, reloj=lambda: next(it))
+
+
+def test_v052_al_confirmar_queda_la_llegada_y_al_pasar_se_lee_como_llego():
+    from datetime import timedelta
+
+    repo = RepoAsistenciasFalso()
+    momentos = [AHORA, AHORA, AHORA + timedelta(minutes=3), AHORA + timedelta(minutes=7)]
+    s = _con_reloj(repo, RedFalsa("confirma"), momentos)
+    r = s.solicitar(_solicitud())
+    assert r["estado"] == "CONFIRMADA"
+    assert r["confirmada_en"] == AHORA
+    assert r["llegada_estimada"] == AHORA + timedelta(minutes=6)
+    # A los 3 minutos sigue en camino; a los 7 ya llegó (derivado al leer, no guardado).
+    assert s.detalle(ID, "cli-1")["estado"] == "CONFIRMADA"
+    assert s.detalle(ID, "cli-1")["estado"] == "LLEGO"
+    assert repo.asistencias[ID]["estado"] == "CONFIRMADA"
+
+
+def test_v052_mis_asistencias_del_cliente_con_lo_que_pidio_y_adonde():
+    from datetime import timedelta
+
+    repo = RepoAsistenciasFalso()
+    _servicio(repo, simulacion="confirma").solicitar(_solicitud())
+    vieja = {**repo.asistencias[ID], "id": "vieja", "solicitada_en": AHORA - timedelta(days=31)}
+    repo.asistencias["vieja"] = vieja
+    otra = {**repo.asistencias[ID], "id": "otra", "cliente_id": "cli-2"}
+    repo.asistencias["otra"] = otra
+    (a,) = _servicio(repo).mis("cli-1")  # ni la de hace 31 días ni la de otro cliente
+    assert a["id"] == ID
+    assert a["descripcion"] == "Dolor en el pecho"
+    assert a["ubicacion"] == {
+        "latitud": 4.6760, "longitud": -74.0480, "direccion": "Cra 45 # 22-18", "origen": "GPS",
+    }  # fmt: skip
+
+
+def test_v052_el_detalle_de_otro_cliente_no_existe():
+    repo = RepoAsistenciasFalso()
+    _servicio(repo).solicitar(_solicitud())
+    with pytest.raises(ErrorAsistencia) as error:
+        _servicio(repo).detalle(ID, "cli-2")
+    assert error.value.codigo == "NO_ENCONTRADA"
+
+
+def test_v052_http_mis_y_detalle():
+    with _cliente("confirma") as http:
+        http.post("/asistencias", json=_solicitud())
+        r = http.get("/clientes/cli-1/asistencias")
+        assert r.status_code == 200 and r.json()[0]["id"] == ID
+        assert r.json()[0]["llegada_estimada"]
+        assert http.get(f"/asistencias/{ID}", params={"cliente_id": "cli-1"}).status_code == 200
+        r = http.get(f"/asistencias/{ID}", params={"cliente_id": "otro"})
+        assert r.status_code == 404 and r.json()["codigo"] == "NO_ENCONTRADA"

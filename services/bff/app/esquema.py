@@ -1924,6 +1924,7 @@ class EstadoAsistencia(Enum):
     CONFIRMADA = "CONFIRMADA"
     NO_CONFIRMADA = "NO_CONFIRMADA"
     CANCELADA = "CANCELADA"
+    LLEGO = "LLEGO"  # v0.52
 
 
 @strawberry.enum
@@ -1997,6 +1998,21 @@ class Asistencia:
     motivo: MotivoNoConfirmada | None
     solicitada_en: datetime
     cancelada_en: datetime | None
+    # v0.52 (B5 y B6)
+    confirmada_en: datetime | None = None
+    llegada_estimada: datetime | None = None
+    descripcion: str | None = None
+    ubicacion: "UbicacionAsistencia | None" = None
+
+
+@strawberry.type
+class UbicacionAsistencia:
+    """v0.52 (B6): adónde pidió el cliente la asistencia (solo para él)."""
+
+    latitud: float | None
+    longitud: float | None
+    direccion: str | None
+    origen: OrigenUbicacion
 
 
 @strawberry.type
@@ -2026,6 +2042,19 @@ def _asistencia(datos: dict) -> Asistencia:
         motivo=MotivoNoConfirmada(datos["motivo"]) if datos.get("motivo") else None,
         solicitada_en=datetime.fromisoformat(datos["solicitada_en"]),
         cancelada_en=_fecha(datos.get("cancelada_en")),
+        confirmada_en=_fecha(datos.get("confirmada_en")),
+        llegada_estimada=_fecha(datos.get("llegada_estimada")),
+        descripcion=datos.get("descripcion"),
+        ubicacion=(
+            UbicacionAsistencia(
+                latitud=u.get("latitud"),
+                longitud=u.get("longitud"),
+                direccion=u.get("direccion"),
+                origen=OrigenUbicacion(u.get("origen") or "GPS"),
+            )
+            if (u := datos.get("ubicacion"))
+            else None
+        ),
     )
 
 
@@ -2803,6 +2832,25 @@ class Query:
             )
             for r in rutas
         ]
+
+    @strawberry.field
+    async def mis_asistencias(self, info: Info) -> list[Asistencia]:
+        """v0.52 (HU-M06, B6): las del CLIENTE del token, de los últimos 30 días. Si CLAIMS no
+        responde, el error genérico de servicio (la app reintenta al volver a la pestaña)."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        try:
+            datos = await _claims(info).mis_asistencias(usuario.id)
+        except ErrorServicio as error:
+            raise GraphQLError(MENSAJE_ASISTENCIA_NO_DISPONIBLE) from error
+        return [_asistencia(a) for a in datos]
+
+    @strawberry.field
+    async def asistencia(self, info: Info, id: strawberry.ID) -> ResultadoAsistencia:
+        """v0.52 (B6): una asistencia del CLIENTE (al tocar la notificación de llegada)."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        return await _accion_asistencia(
+            lambda: _claims(info).asistencia(str(id).lower(), usuario.id)
+        )
 
     @strawberry.field
     async def ubicar_direccion(

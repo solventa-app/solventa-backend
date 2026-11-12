@@ -37,6 +37,7 @@ Revisión del 2026-11-12 contra `develop` (mobile `8dac02f`, backend `fb3b4c6`).
 | A25 | En `auditoria_rutas` la **dirección aproximada también va cifrada**, no solo la ubicación | También es un dato personal (regla 6) |
 | A26 | Aún no hay una consulta de `auditoria_rutas` para roles de auditoría: la colección existe con su TTL de 90 días y se lee en Mongo. Una consulta sin prestadores conocidos no se audita (no llama a Mapbox) | No hay rol de auditoría en la app hoy |
 | A27 | **Hallazgo:** los endpoints del ACL que llevan dirección o coordenadas en la query string las dejan en el log de acceso de uvicorn. `/lugares/ubicar` (v0.50) y `/lugares/inversa` (v0.51) pasaron a `POST` con cuerpo. **Preexistente, fuera de este trabajo:** `GET /lugares/autocompletar?texto=` y `GET /lugares/validar?place_id=` (T19) tienen el mismo problema | Regla 6 |
+| A29 | B6: `misAsistencias` y `asistencia(id)` devuelven además, solo al dueño, la **descripción** y la **ubicación** de la solicitud (para el detalle 4.4 y el aviso «Te alejaste» 4.4b), y tope de 50 | Sin la ubicación la app no puede comparar; guardarla en el teléfono sería otro dato personal en disco |
 | A12 | Los minutos de llegada simulados se calculan en `stubs/prestadores` (Haversine, 20 km/h + 2 min) y `PRESTADORES_MINUTOS_FIJOS` vive allí | CLAIMS ya no simula (B7) |
 
 ### Avance por fase
@@ -46,8 +47,8 @@ Revisión del 2026-11-12 contra `develop` (mobile `8dac02f`, backend `fb3b4c6`).
 | 1 · Catálogo con detalle, grúa y prestadores detrás del ACL (B1, B2, B3, B7) | PR #590 (v0.49, CLAIMS `0007`) | PR #83 (mobile) |
 | 2 · Mapbox, pines, detalle, hoja arrastrable (M0–M14) | — | PR #84 (mobile) |
 | 3 · Dirección ubicada (B4, B9, 2.0, S1) | PR #591 (v0.50, apilado sobre #590) | PR #85 (mobile) |
-| 4 · Rutas y auditoría (B8, M15) | `feat/KAN-36-rutas-prestadores` (v0.51, CLAIMS `0008`, apilada sobre #591) | pendiente |
-| 5 · «Mis asistencias» y notificación (B5, B6, 4.x) | pendiente | pendiente |
+| 4 · Rutas y auditoría (B8, M15) | PR #614 (v0.51, CLAIMS `0008`, apilado sobre #591) | PR #86 (mobile) |
+| 5 · «Mis asistencias» y notificación (B5, B6, 4.x) | `feat/KAN-36-mis-asistencias` (v0.52, CLAIMS `0009`, apilada sobre #614) | pendiente |
 
 ### Pendiente de verificar fuera de esta máquina (A9)
 

@@ -294,3 +294,36 @@ def test_rutas_si_claims_falla_lista_vacia_y_solo_el_cliente():
     assert r["data"]["rutasPrestadores"] == []
     r = _pedir(ClaimsFalso(), RUTAS, {"la": 4.67, "lo": -74.04, "ids": ["p1"]}, rol="ASESOR")
     assert r["errors"][0]["message"] == MENSAJE_SIN_PERMISO
+
+
+# ---------- v0.52 (HU-M06, B5 y B6): «Mis asistencias» ----------
+
+MIS = """{ misAsistencias { id estado llegadaEstimada confirmadaEn descripcion
+  ubicacion { latitud longitud direccion origen } prestador { id } } }"""
+UNA = f"""query($id: ID!) {{ asistencia(id: $id) {{ {CAMPOS} }} }}"""
+
+
+def test_mis_asistencias_del_cliente_con_la_llegada_y_lo_que_pidio():
+    claims = ClaimsFalso()
+    _pedir(claims, SOLICITAR, {"e": _entrada()})
+    _pedir(claims, SOLICITAR, {"e": _entrada()})  # el reintento la confirma
+    (a,) = _pedir(claims, MIS, {})["data"]["misAsistencias"]
+    assert a["estado"] == "CONFIRMADA"
+    assert a["llegadaEstimada"].startswith("2026-11-07T15:06")
+    assert a["descripcion"] == "Dolor en el pecho"
+    assert a["ubicacion"]["origen"] == "GPS"
+    assert ("mis_asistencias", "cli-1") in claims.llamadas
+
+
+def test_una_asistencia_y_la_ajena_es_no_encontrada():
+    claims = ClaimsFalso()
+    _pedir(claims, SOLICITAR, {"e": _entrada()})
+    r = _pedir(claims, UNA, {"id": ID.upper()})["data"]["asistencia"]
+    assert r["id"] == ID
+    r = _pedir(claims, UNA, {"id": "no-existe"})["data"]["asistencia"]
+    assert r["codigo"] == "NO_ENCONTRADA"
+
+
+def test_mis_asistencias_solo_el_cliente():
+    r = _pedir(ClaimsFalso(), MIS, {}, rol="ASESOR")
+    assert r["errors"][0]["message"] == MENSAJE_SIN_PERMISO
