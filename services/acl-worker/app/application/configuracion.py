@@ -72,6 +72,8 @@ class Configuracion:
     proveedor_firma: str = "estandar"
     # KYC (HU-W03): dónde está el proveedor de verificación de identidad.
     kyc_url: str = "http://localhost:8105"
+    # HU-M06 (v0.46): la red de prestadores de asistencia en sitio (`stub-prestadores`).
+    prestadores_url: str = "http://localhost:8108"
     # Verificación de identidad del onboarding móvil (HU-M01): Didit en staging, `stubs/kyc` (que
     # imita las rutas de Didit) en local y CI. Corre en segundo plano, así que su corte es largo y
     # no lo acota `timeout_s` (700 ms es para el camino del usuario).
@@ -214,6 +216,7 @@ class Configuracion:
             pasarela_url=os.getenv("PASARELA_URL", "http://localhost:8103"),
             firma_url=os.getenv("FIRMA_URL", "http://localhost:8104"),
             kyc_url=os.getenv("KYC_URL", "http://localhost:8105"),
+            prestadores_url=os.getenv("PRESTADORES_URL", "http://localhost:8108"),
             notificaciones_url=os.getenv("NOTIFICACIONES_URL", "http://localhost:8106"),
             adjunto_maximo_bytes=int(os.getenv("ADJUNTO_MAXIMO_BYTES", "5000000")),
             timeout_s=int(timeout_ms_default) / 1000,

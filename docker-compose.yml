@@ -287,6 +287,8 @@ services:
       ALMACEN_REESCRITURA_ORIGENES: http://localhost:4443/=http://fake-gcs:4443/
       POLICY_URL: http://policy:8007
       PAYMENTS_URL: http://payments:8004
+      # HU-M06 (v0.46, B7): el desenlace de la asistencia lo decide la red de prestadores por el ACL.
+      ACL_URL: http://acl-worker:8005
       # Solo local (W04-15): POST /_demo/reiniciar vuelve a la semilla para las E2E de la web.
       DEMO_REINICIAR: "true"
       SEMILLA_DIR: /semilla
@@ -544,6 +546,7 @@ services:
       OPEN_FINANCE_URL: http://stub-open-finance:8101
       OPEN_DATA_URL: http://stub-open-data:8102
       VEHICULOS_URL: http://stub-vehiculos:8107
+      PRESTADORES_URL: http://stub-prestadores:8108   # HU-M06 (v0.46): red de prestadores de asistencia
       PASARELA_URL: http://stub-pasarela:8103
       FIRMA_URL: http://stub-firma:8104
       KYC_URL: http://stub-kyc:8105   # también la verificación de identidad de M01 (rutas de Didit)
@@ -597,6 +600,17 @@ services:
     <<: *servicio
     build: ./stubs/vehiculos
     ports: ["8107:8107"]
+
+  # HU-M06 (v0.46, B7): red de prestadores de asistencia en sitio simulada, detrás del ACL.
+  stub-prestadores:
+    <<: *servicio
+    build: ./stubs/prestadores
+    ports: ["8108:8108"]
+    environment:
+      # primero_falla: el primer intento queda NO_CONFIRMADA y el reintento se confirma (M06-04b y M06-04a).
+      PRESTADORES_SIMULACION: ${PRESTADORES_SIMULACION:-primero_falla}
+      # Vacío: minutos por distancia. Con 1, toda asistencia confirmada llega en 1 minuto («Mis asistencias»).
+      PRESTADORES_MINUTOS_FIJOS: ${PRESTADORES_MINUTOS_FIJOS:-}
 
   stub-pasarela:
     <<: *servicio

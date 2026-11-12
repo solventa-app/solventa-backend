@@ -26,9 +26,8 @@ class Configuracion:
     # Solo local (W04-15): `POST /_demo/reiniciar` vuelve a la semilla de `SEMILLA_DIR`.
     demo_reiniciar: bool = False
     semilla_dir: str = "/semilla"
-    # HU-M06: desenlace simulado de la asistencia mientras no haya prestadores reales
-    # (`primero_falla` o `confirma`, ver `app/application/asistencias.py`).
-    asistencia_simulacion: str = "primero_falla"
+    # HU-M06 (v0.46, B7): la red de prestadores está detrás del ACL Worker.
+    acl_url: str = "http://localhost:8005"
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -49,5 +48,5 @@ class Configuracion:
             almacen_reescritura_origenes=os.getenv("ALMACEN_REESCRITURA_ORIGENES", ""),
             demo_reiniciar=os.getenv("DEMO_REINICIAR", "false").strip().lower() == "true",
             semilla_dir=os.getenv("SEMILLA_DIR", "/semilla"),
-            asistencia_simulacion=os.getenv("ASISTENCIA_SIMULACION", "primero_falla").strip(),
+            acl_url=os.getenv("ACL_URL", "http://localhost:8005"),
         )

@@ -103,6 +103,7 @@ jobs:
             stubs/open-finance: ['stubs/open-finance/**']
             stubs/open-data: ['stubs/open-data/**']
             stubs/vehiculos: ['stubs/vehiculos/**']
+            stubs/prestadores: ['stubs/prestadores/**']
             stubs/pasarela: ['stubs/pasarela/**']
             stubs/firma: ['stubs/firma/**']
             stubs/kyc: ['stubs/kyc/**']

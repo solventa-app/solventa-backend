@@ -13,6 +13,7 @@ from app.application.catalogo_prestadores import CatalogoNoDisponible, consultar
 from app.main import create_app
 
 migracion = importlib.import_module("migrations.versiones.0005_prestadores")
+migracion_detalle = importlib.import_module("migrations.versiones.0007_prestadores_detalle")
 AHORA = datetime(2026, 11, 4, 12, tzinfo=UTC)
 
 
@@ -39,9 +40,13 @@ class Db:
 def _archivo(tmp_path, version="2026-11-04.1", **cambios):
     prestadores = [
         {"id": "prs-bog-001", "nombre": "Clínica Norte", "tipo": "MEDICO", "ciudad": "Bogotá",
-         "latitud": 4.6859, "longitud": -74.0524, "activo": True},
+         "latitud": 4.6859, "longitud": -74.0524, "activo": True, "aliado": True,
+         "especialidad": "Urgencias", "direccion": "Cl. 93 # 14-20", "horario": "Abierto 24 h",
+         "foto_url": None},
         {"id": "prs-bog-002", "nombre": "Taller AutoAyuda", "tipo": "MECANICO", "ciudad": "Bogotá",
-         "latitud": 4.6835, "longitud": -74.0322, "activo": True},
+         "latitud": 4.6835, "longitud": -74.0322, "activo": True, "aliado": False,
+         "especialidad": "Mecánica general", "direccion": "Cra. 11 # 94-35", "horario": None,
+         "foto_url": None},
     ]  # fmt: skip
     prestadores[0].update(cambios)
     ruta = tmp_path / "prestadores.json"
@@ -54,22 +59,33 @@ def _archivo(tmp_path, version="2026-11-04.1", **cambios):
 
 def test_el_catalogo_del_repo_es_valido():
     version, prestadores = leer()
-    assert version == "2026-11-04.1"
-    assert len(prestadores) == 12
-    assert {p["tipo"] for p in prestadores} == {"MEDICO", "MECANICO"}
+    assert version == "2026-11-12.1"
+    assert len(prestadores) == 17
+    assert {p["tipo"] for p in prestadores} == {"MEDICO", "MECANICO", "GRUA"}
+    # v0.46: hay aliados y no aliados para probar los dos colores en la app.
+    assert {p["aliado"] for p in prestadores} == {True, False}
 
 
 @pytest.mark.parametrize(
     ("cambio", "mensaje"),
     [
         ({"version": "4-nov"}, "versión inválida"),
-        ({"tipo": "GRUA"}, "tipo desconocido"),
+        ({"tipo": "BOMBEROS"}, "tipo desconocido"),
     ],
 )
 def test_rechaza_un_archivo_invalido(tmp_path, cambio, mensaje):
     version = cambio.pop("version", "2026-11-04.1")
     with pytest.raises(ErrorCatalogo, match=mensaje):
         leer(_archivo(tmp_path, version, **cambio))
+
+
+def test_rechaza_un_prestador_sin_el_detalle_de_la_v046(tmp_path):
+    ruta = tmp_path / "prestadores.json"
+    viejo = {"id": "prs-x", "nombre": "X", "tipo": "MEDICO", "ciudad": "Bogotá",
+             "latitud": 4.6, "longitud": -74.0, "activo": True}  # fmt: skip
+    ruta.write_text(json.dumps({"version": "2026-11-12.1", "prestadores": [viejo]}))
+    with pytest.raises(ErrorCatalogo, match="aliado"):
+        leer(ruta)
 
 
 def test_rechaza_ids_repetidos(tmp_path):
@@ -134,8 +150,31 @@ def test_la_migracion_crea_las_dos_colecciones_con_validacion():
     db = DbMigracion()
     migracion.aplicar(db)
     assert set(db.creadas) == {"prestadores", "catalogos"}
-    tipo = db.creadas["prestadores"]["$jsonSchema"]["properties"]["tipo"]["enum"]
-    assert set(tipo) == catalogos.TIPOS
+    assert set(db.creadas["prestadores"]["$jsonSchema"]["properties"]["tipo"]["enum"]) == {
+        "MEDICO",
+        "MECANICO",
+    }
+
+
+def test_la_0007_agrega_grua_y_el_detalle_sin_volverlos_obligatorios():
+    class DbMigracion:
+        def __init__(self):
+            self.comandos = []
+
+        def list_collection_names(self):
+            return ["prestadores"]
+
+        def command(self, *args, **kwargs):
+            self.comandos.append((args, kwargs))
+
+    db = DbMigracion()
+    migracion_detalle.aplicar(db)
+    ((args, kwargs),) = db.comandos
+    assert args == ("collMod", "prestadores")
+    esquema = kwargs["validator"]["$jsonSchema"]
+    assert set(esquema["properties"]["tipo"]["enum"]) == catalogos.TIPOS
+    assert set(catalogos.CAMPOS_DETALLE) <= set(esquema["properties"])
+    assert not set(catalogos.CAMPOS_DETALLE) & set(esquema["required"])
 
 
 # ---------- Consulta versionada ----------

@@ -1,17 +1,22 @@
 {
-  "version": "2026-11-04.1",
+  "version": "2026-11-12.1",
   "prestadores": [
-    { "id": "prs-bog-001", "nombre": "Clínica Norte", "tipo": "MEDICO", "ciudad": "Bogotá", "latitud": 4.6859, "longitud": -74.0524, "activo": true },
-    { "id": "prs-bog-002", "nombre": "Taller AutoAyuda", "tipo": "MECANICO", "ciudad": "Bogotá", "latitud": 4.6835, "longitud": -74.0322, "activo": true },
-    { "id": "prs-bog-003", "nombre": "Centro Médico Sur", "tipo": "MEDICO", "ciudad": "Bogotá", "latitud": 4.6536, "longitud": -74.0555, "activo": true },
-    { "id": "prs-bog-004", "nombre": "Taller Express 80", "tipo": "MECANICO", "ciudad": "Bogotá", "latitud": 4.6950, "longitud": -74.0870, "activo": true },
-    { "id": "prs-bog-005", "nombre": "Clínica del Parque", "tipo": "MEDICO", "ciudad": "Bogotá", "latitud": 4.6280, "longitud": -74.0650, "activo": true },
-    { "id": "prs-bog-006", "nombre": "Mecánica Rápida Occidente", "tipo": "MECANICO", "ciudad": "Bogotá", "latitud": 4.6290, "longitud": -74.1500, "activo": true },
-    { "id": "prs-med-001", "nombre": "Clínica El Poblado", "tipo": "MEDICO", "ciudad": "Medellín", "latitud": 6.2088, "longitud": -75.5680, "activo": true },
-    { "id": "prs-med-002", "nombre": "Taller Las Palmas", "tipo": "MECANICO", "ciudad": "Medellín", "latitud": 6.2200, "longitud": -75.5600, "activo": true },
-    { "id": "prs-cal-001", "nombre": "Centro Médico Granada", "tipo": "MEDICO", "ciudad": "Cali", "latitud": 3.4600, "longitud": -76.5320, "activo": true },
-    { "id": "prs-cal-002", "nombre": "Taller Autopista Sur", "tipo": "MECANICO", "ciudad": "Cali", "latitud": 3.4000, "longitud": -76.5200, "activo": true },
-    { "id": "prs-baq-001", "nombre": "Clínica Alto Prado", "tipo": "MEDICO", "ciudad": "Barranquilla", "latitud": 11.0040, "longitud": -74.8110, "activo": true },
-    { "id": "prs-baq-002", "nombre": "Taller Vía 40", "tipo": "MECANICO", "ciudad": "Barranquilla", "latitud": 11.0100, "longitud": -74.7900, "activo": true }
+    { "id": "prs-bog-001", "nombre": "Clínica Norte", "tipo": "MEDICO", "ciudad": "Bogotá", "latitud": 4.6859, "longitud": -74.0524, "activo": true, "aliado": true, "especialidad": "Urgencias", "direccion": "Cl. 93 # 14-20, Bogotá D.C.", "horario": "Abierto 24 h", "foto_url": null },
+    { "id": "prs-bog-002", "nombre": "Taller AutoAyuda", "tipo": "MECANICO", "ciudad": "Bogotá", "latitud": 4.6835, "longitud": -74.0322, "activo": true, "aliado": true, "especialidad": "Mecánica general", "direccion": "Cra. 11 # 94-35, Bogotá D.C.", "horario": "Lun a sáb, 7:00 a. m. a 7:00 p. m.", "foto_url": null },
+    { "id": "prs-bog-003", "nombre": "Centro Médico Sur", "tipo": "MEDICO", "ciudad": "Bogotá", "latitud": 4.6536, "longitud": -74.0555, "activo": true, "aliado": false, "especialidad": "Urgencias", "direccion": "Cra. 15 # 77-50, Bogotá D.C.", "horario": "Abierto 24 h", "foto_url": null },
+    { "id": "prs-bog-004", "nombre": "Taller Express 80", "tipo": "MECANICO", "ciudad": "Bogotá", "latitud": 4.695, "longitud": -74.087, "activo": true, "aliado": false, "especialidad": "Mecánica general", "direccion": "Av. Cra. 68 # 80-22, Bogotá D.C.", "horario": null, "foto_url": null },
+    { "id": "prs-bog-005", "nombre": "Clínica del Parque", "tipo": "MEDICO", "ciudad": "Bogotá", "latitud": 4.628, "longitud": -74.065, "activo": true, "aliado": true, "especialidad": "Medicina general", "direccion": "Cl. 63 # 9-40, Bogotá D.C.", "horario": "Lun a dom, 6:00 a. m. a 10:00 p. m.", "foto_url": null },
+    { "id": "prs-bog-006", "nombre": "Mecánica Rápida Occidente", "tipo": "MECANICO", "ciudad": "Bogotá", "latitud": 4.629, "longitud": -74.15, "activo": true, "aliado": false, "especialidad": "Llantas y frenos", "direccion": "Av. Américas # 68-10, Bogotá D.C.", "horario": null, "foto_url": null },
+    { "id": "prs-med-001", "nombre": "Clínica El Poblado", "tipo": "MEDICO", "ciudad": "Medellín", "latitud": 6.2088, "longitud": -75.568, "activo": true, "aliado": true, "especialidad": "Urgencias", "direccion": "Cra. 43A # 10-50, Medellín", "horario": "Abierto 24 h", "foto_url": null },
+    { "id": "prs-med-002", "nombre": "Taller Las Palmas", "tipo": "MECANICO", "ciudad": "Medellín", "latitud": 6.22, "longitud": -75.56, "activo": true, "aliado": false, "especialidad": "Mecánica general", "direccion": "Cl. 10 # 38-20, Medellín", "horario": null, "foto_url": null },
+    { "id": "prs-cal-001", "nombre": "Centro Médico Granada", "tipo": "MEDICO", "ciudad": "Cali", "latitud": 3.46, "longitud": -76.532, "activo": true, "aliado": true, "especialidad": "Urgencias", "direccion": "Av. 6N # 15-30, Cali", "horario": "Abierto 24 h", "foto_url": null },
+    { "id": "prs-cal-002", "nombre": "Taller Autopista Sur", "tipo": "MECANICO", "ciudad": "Cali", "latitud": 3.4, "longitud": -76.52, "activo": true, "aliado": false, "especialidad": "Mecánica general", "direccion": "Autopista Sur # 44-10, Cali", "horario": null, "foto_url": null },
+    { "id": "prs-baq-001", "nombre": "Clínica Alto Prado", "tipo": "MEDICO", "ciudad": "Barranquilla", "latitud": 11.004, "longitud": -74.811, "activo": true, "aliado": true, "especialidad": "Urgencias", "direccion": "Cra. 51B # 80-12, Barranquilla", "horario": "Abierto 24 h", "foto_url": null },
+    { "id": "prs-baq-002", "nombre": "Taller Vía 40", "tipo": "MECANICO", "ciudad": "Barranquilla", "latitud": 11.01, "longitud": -74.79, "activo": true, "aliado": false, "especialidad": "Mecánica general", "direccion": "Vía 40 # 72-15, Barranquilla", "horario": null, "foto_url": null },
+    { "id": "prs-bog-007", "nombre": "Grúas Express", "tipo": "GRUA", "ciudad": "Bogotá", "latitud": 4.676, "longitud": -74.045, "activo": true, "aliado": true, "especialidad": "Grúa liviana", "direccion": "Cl. 100 # 19-61, Bogotá D.C.", "horario": "Abierto 24 h", "foto_url": null },
+    { "id": "prs-bog-008", "nombre": "Grúas 24/7", "tipo": "GRUA", "ciudad": "Bogotá", "latitud": 4.662, "longitud": -74.078, "activo": true, "aliado": false, "especialidad": "Grúa y carro taller", "direccion": "Av. Cra. 30 # 63-18, Bogotá D.C.", "horario": "Abierto 24 h", "foto_url": null },
+    { "id": "prs-med-003", "nombre": "Grúas Antioquia", "tipo": "GRUA", "ciudad": "Medellín", "latitud": 6.23, "longitud": -75.575, "activo": true, "aliado": true, "especialidad": "Grúa liviana", "direccion": "Cra. 65 # 30-40, Medellín", "horario": "Abierto 24 h", "foto_url": null },
+    { "id": "prs-cal-003", "nombre": "Grúas del Valle", "tipo": "GRUA", "ciudad": "Cali", "latitud": 3.43, "longitud": -76.525, "activo": true, "aliado": false, "especialidad": "Grúa liviana", "direccion": "Cl. 5 # 50-12, Cali", "horario": null, "foto_url": null },
+    { "id": "prs-baq-003", "nombre": "Grúas Caribe", "tipo": "GRUA", "ciudad": "Barranquilla", "latitud": 11.0, "longitud": -74.8, "activo": true, "aliado": true, "especialidad": "Grúa liviana", "direccion": "Cl. 30 # 25-90, Barranquilla", "horario": "Abierto 24 h", "foto_url": null }
   ]
 }

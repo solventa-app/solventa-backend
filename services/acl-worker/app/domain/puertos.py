@@ -317,3 +317,30 @@ class PuertoVerificacionIdentidad(Protocol):
     def verificar_identidad(
         self, referencia: str, imagenes: ImagenesIdentidad, timeout_s: float | None = None
     ) -> ResultadoIdentidad: ...
+
+
+@dataclass
+class PedidoAsistencia:
+    """Asistencia en sitio que CLAIMS pide a la red de prestadores (HU-M06, v0.46). La ubicación del
+    cliente es adónde debe llegar el prestador: viaja al proveedor, nunca a los logs. Sin
+    coordenadas (dirección a mano, hasta que se retire) el proveedor no estima el tiempo."""
+
+    asistencia_id: str  # idempotencia: el mismo id con otro intento es un reintento
+    intento: int
+    tipo_asistencia: str
+    prestador_id: str
+    prestador_latitud: float
+    prestador_longitud: float
+    latitud: float | None = None
+    longitud: float | None = None
+
+
+@dataclass
+class DesenlaceAsistencia:
+    estado: Literal["CONFIRMADA", "NO_CONFIRMADA"]
+    minutos_estimados: int | None = None
+    motivo: str | None = None
+
+
+class PuertoPrestadores(Protocol):
+    def solicitar(self, pedido: PedidoAsistencia) -> DesenlaceAsistencia: ...
