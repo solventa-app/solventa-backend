@@ -17,6 +17,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 
 from app.adapters.autenticacion_servicios import autenticacion_para
+from app.adapters.clima import AdaptadorClima
 from app.adapters.correo_resend import AdaptadorCorreoResend
 from app.adapters.firma import AdaptadorFirma
 from app.adapters.firma_alterna import AdaptadorFirmaAlterna
@@ -36,9 +37,12 @@ from app.adapters.pasarela_alterna import AdaptadorPasarelaAlterna
 from app.adapters.prestadores import AdaptadorPrestadores
 from app.adapters.tasas_cambio import AdaptadorTasasReferencia
 from app.adapters.vehiculos import AdaptadorVehiculos
+from app.adapters.vuelos import AdaptadorVuelo
+from app.application.bus_eventos_parametricos import construir_bus_eventos_parametricos
 from app.application.cache import CacheFuentes
 from app.application.cache_identidad import CacheIdentidad
 from app.application.circuitos import (
+    NOMBRE_CIRCUITO_CLIMA,
     NOMBRE_CIRCUITO_FIRMA,
     NOMBRE_CIRCUITO_IDENTIDAD,
     NOMBRE_CIRCUITO_KYC,
@@ -49,6 +53,7 @@ from app.application.circuitos import (
     NOMBRE_CIRCUITO_PASARELA,
     NOMBRE_CIRCUITO_PRESTADORES,
     NOMBRE_CIRCUITO_VEHICULOS,
+    NOMBRE_CIRCUITO_VUELO,
     construir_fabrica,
 )
 from app.application.cola_tareas import ColaReconciliacionCloudTasks
@@ -64,6 +69,7 @@ from app.application.reconciliacion import (
     MarcaDedupRedis,
     ProductorReconciliacion,
 )
+from app.application.servicio_eventos_parametricos import ServicioEventosParametricos
 from app.application.servicio_firma import ServicioFirma
 from app.application.servicio_fuentes import ServicioConsultaFuentes
 from app.application.servicio_identidad import DescargadorImagenes, ServicioIdentidad
@@ -74,7 +80,9 @@ from app.application.servicio_prestadores import ServicioPrestadores
 from app.application.sonda import SondaRecuperacion
 from app.domain.puertos import (
     Adjunto,
+    ConsultaClima,
     ConsultaFuente,
+    ConsultaVuelo,
     OrdenCobro,
     PedidoAsistencia,
     SolicitudFirma,
@@ -118,6 +126,29 @@ class ConsultaVehiculoRequest(BaseModel):
     fuente: str
     finalidad: str = "cotizacion-auto"
     forzar_proveedor: bool = False
+
+
+class ConsultaEventoParametricoRequest(BaseModel):
+    """KAN-259 Fase 3. Exactamente uno de los dos bloques de campos, según `tipo`: CLIMA necesita
+    `clave`, `latitud`, `longitud` y `variable`; VUELO necesita `numero_vuelo` y `fecha`. Lo llama
+    un Cloud Scheduler (fase de infra posterior): nunca un usuario esperando una respuesta."""
+
+    tipo: str  # "CLIMA" | "VUELO"
+    clave: str | None = None
+    latitud: float | None = None
+    longitud: float | None = None
+    variable: str | None = None
+    numero_vuelo: str | None = None
+    fecha: str | None = None
+
+
+class EventoParametricoResponse(BaseModel):
+    """`publicado = False` no es un error: el proveedor no respondió (circuito abierto o
+    caído) o, en vuelos, no hay dato para ese vuelo+fecha todavía. Siempre 200 (regla #4)."""
+
+    publicado: bool
+    motivo: str | None = None
+    evento: dict | None = None
 
 
 class InvalidarCacheRequest(BaseModel):
@@ -399,6 +430,51 @@ def _construir_servicio_vehiculos(
     return {fuente: servicio for fuente in fuentes}, adaptador
 
 
+def _construir_servicio_eventos_parametricos(
+    config: Configuracion, fabrica
+) -> tuple[ServicioEventosParametricos, AdaptadorClima, AdaptadorVuelo]:
+    """KAN-259 Fase 3: clima y vuelos, cada uno con su propio circuito. En local y CI, las dos URLs
+    apuntan a `stub-eventos-parametricos` (mismo host, rutas distintas)."""
+    presupuesto_clima_s = config.presupuesto_proveedor_s("clima")
+    presupuesto_vuelo_s = config.presupuesto_proveedor_s("vuelo")
+    # Open-Meteo y AviationStack son APIs públicas reales, no un Cloud Run privado: el id_token de
+    # servicio a servicio solo aplica contra `stub-eventos-parametricos` (mismo patrón que
+    # `AdaptadorIdentidadDidit` con Didit vs. `stub-kyc`).
+    autenticacion_clima = (
+        None
+        if config.clima_url.startswith("https://api.open-meteo.com")
+        else autenticacion_para(config.autenticacion_servicios, "stub-eventos-parametricos")
+    )
+    autenticacion_vuelo = (
+        None
+        if config.vuelos_url.startswith("https://api.aviationstack.com")
+        else autenticacion_para(config.autenticacion_servicios, "stub-eventos-parametricos")
+    )
+    adaptador_clima = AdaptadorClima(
+        config.clima_url,
+        presupuesto_clima_s,
+        auth=autenticacion_clima,
+    )
+    adaptador_vuelo = AdaptadorVuelo(
+        config.vuelos_url,
+        config.aviationstack_api_key,
+        presupuesto_vuelo_s,
+        auth=autenticacion_vuelo,
+    )
+    bus_eventos = construir_bus_eventos_parametricos(config.pubsub_tema_eventos_parametricos)
+    servicio = ServicioEventosParametricos(
+        adaptador_clima,
+        adaptador_vuelo,
+        fabrica,
+        NOMBRE_CIRCUITO_CLIMA,
+        NOMBRE_CIRCUITO_VUELO,
+        presupuesto_clima_s,
+        presupuesto_vuelo_s,
+        bus_eventos,
+    )
+    return servicio, adaptador_clima, adaptador_vuelo
+
+
 def _validar_adjuntos(body: SolicitudNotificacionRequest, maximo_bytes: int) -> list[Adjunto]:
     """Los adjuntos ya validados, o un 422 cuyo mensaje nunca repite el contenido ni el correo."""
     if not body.adjuntos:
@@ -462,6 +538,9 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         )
         servicios_vehiculo, adaptador_vehiculos = _construir_servicio_vehiculos(
             config, fabrica, cache_fuentes
+        )
+        servicio_eventos_parametricos, adaptador_clima, adaptador_vuelo = (
+            _construir_servicio_eventos_parametricos(config, fabrica)
         )
 
         presupuesto_pasarela_s = config.presupuesto_proveedor_s("pasarela")
@@ -574,6 +653,8 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 NOMBRE_CIRCUITO_OPEN_FINANCE: adaptador_open_finance.sondear,
                 NOMBRE_CIRCUITO_OPEN_DATA: adaptador_open_data.sondear,
                 NOMBRE_CIRCUITO_VEHICULOS: adaptador_vehiculos.sondear,
+                NOMBRE_CIRCUITO_CLIMA: adaptador_clima.sondear,
+                NOMBRE_CIRCUITO_VUELO: adaptador_vuelo.sondear,
                 NOMBRE_CIRCUITO_PASARELA: adaptador_pasarela.sondear,
                 NOMBRE_CIRCUITO_FIRMA: adaptador_firma.sondear,
                 NOMBRE_CIRCUITO_KYC: adaptador_kyc.sondear,
@@ -593,6 +674,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         app.state.fabrica_circuitos = fabrica
         app.state.servicios_por_fuente = servicios_por_fuente
         app.state.servicios_vehiculo = servicios_vehiculo
+        app.state.servicio_eventos_parametricos = servicio_eventos_parametricos
         app.state.cache_fuentes = cache_fuentes
         app.state.servicio_cobro = servicio_cobro
         app.state.servicio_firma = servicio_firma
@@ -610,6 +692,8 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 adaptador_open_finance.cerrar,
                 adaptador_open_data.cerrar,
                 adaptador_vehiculos.cerrar,
+                adaptador_clima.cerrar,
+                adaptador_vuelo.cerrar,
                 adaptador_pasarela.cerrar,
                 adaptador_firma.cerrar,
                 adaptador_kyc.cerrar,
@@ -642,6 +726,8 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             NOMBRE_CIRCUITO_OPEN_FINANCE,
             NOMBRE_CIRCUITO_OPEN_DATA,
             NOMBRE_CIRCUITO_VEHICULOS,
+            NOMBRE_CIRCUITO_CLIMA,
+            NOMBRE_CIRCUITO_VUELO,
             NOMBRE_CIRCUITO_PASARELA,
             NOMBRE_CIRCUITO_FIRMA,
             NOMBRE_CIRCUITO_KYC,
@@ -707,6 +793,46 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             de_cache=datos.de_cache,
             degradado=datos.degradado,
         )
+
+    @app.post(
+        "/eventos-parametricos/_consultar",
+        tags=["eventos-parametricos"],
+        response_model=EventoParametricoResponse,
+    )
+    def consultar_evento_parametrico(
+        body: ConsultaEventoParametricoRequest,
+    ) -> EventoParametricoResponse:
+        """KAN-259, Fase 3 (HU-M04): consulta Open-Meteo o AviationStack (o sus stubs) y, si hay
+        dato, publica `evento.parametrico.recibido`. La llama un Cloud Scheduler (fase de infra
+        posterior; hoy nadie la invoca en producción), nunca un usuario esperando: por eso siempre
+        responde 200, incluso sin publicar nada (regla #4)."""
+        if body.tipo == "CLIMA":
+            faltan_clima = (
+                body.clave is None
+                or body.latitud is None
+                or body.longitud is None
+                or body.variable is None
+            )
+            if faltan_clima:
+                raise HTTPException(
+                    status_code=422,
+                    detail="CLIMA necesita clave, latitud, longitud y variable",
+                )
+            consulta = ConsultaClima(
+                clave=body.clave,
+                latitud=body.latitud,
+                longitud=body.longitud,
+                variable=body.variable,
+            )
+            evento, motivo = app.state.servicio_eventos_parametricos.consultar_clima(consulta)
+        elif body.tipo == "VUELO":
+            if body.numero_vuelo is None or body.fecha is None:
+                raise HTTPException(status_code=422, detail="VUELO necesita numero_vuelo y fecha")
+            consulta_vuelo = ConsultaVuelo(numero_vuelo=body.numero_vuelo, fecha=body.fecha)
+            evento, motivo = app.state.servicio_eventos_parametricos.consultar_vuelo(consulta_vuelo)
+        else:
+            raise HTTPException(status_code=422, detail=f"tipo desconocido: {body.tipo}")
+        return EventoParametricoResponse(publicado=evento is not None, motivo=motivo, evento=evento)
 
     @app.post(
         "/fuentes/invalidar-cache",

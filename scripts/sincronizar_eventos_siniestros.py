@@ -25,8 +25,12 @@ def main(argumentos: list[str]) -> int:
         for f in FUENTES
         if not (DESTINO / f.name).is_file() or (DESTINO / f.name).read_bytes() != f.read_bytes()
     ]
+    # Solo mira sobrantes entre los `siniestro.*`: otros esquemas en la misma carpeta (KAN-259, Fase
+    # 4) los gestiona `scripts/sincronizar_evento_parametrico_claims.py`, no este script.
     sobrantes = [
-        c for c in DESTINO.glob("*.schema.json") if c.name not in {f.name for f in FUENTES}
+        c
+        for c in DESTINO.glob("siniestro.*.schema.json")
+        if c.name not in {f.name for f in FUENTES}
     ]
     if verificar:
         for f in distintas:
