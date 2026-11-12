@@ -181,5 +181,18 @@ class ClienteRedPrestadores:
     def solicitar(self, pedido: dict) -> dict:
         return _pedir(self._cliente, "POST", "/prestadores/asistencias", json=pedido)
 
+    # HU-M06 (v0.51, B8): rutas y dirección aproximada para la auditoría, por el ACL.
+    def rutas(self, pedido: dict) -> dict:
+        return _pedir(self._cliente, "POST", "/mapas/rutas", json=pedido)
+
+    def direccion_aproximada(self, latitud: float, longitud: float) -> str | None:
+        r = _pedir(
+            self._cliente,
+            "POST",
+            "/lugares/inversa",
+            json={"latitud": latitud, "longitud": longitud},
+        )
+        return r.get("direccion")
+
     def cerrar(self) -> None:
         self._cliente.close()

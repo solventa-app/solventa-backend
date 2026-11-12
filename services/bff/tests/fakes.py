@@ -1504,6 +1504,22 @@ class ClaimsFalso:
         self._revisar("de_cliente", cliente_id)
         return [s for s in self.siniestros.values() if s.get("reportado_por") == cliente_id]
 
+    async def rutas(
+        self, cliente_id: str, latitud: float, longitud: float, prestador_ids: list[str]
+    ) -> list[dict]:
+        """HU-M06 (v0.51): como CLAIMS con el ACL simulado; geometría solo a los 3 primeros."""
+        self._revisar("rutas", cliente_id, prestador_ids)
+        return [
+            {
+                "prestador_id": pid,
+                "distancia_metros": 1000 * (i + 1),
+                "duracion_segundos": 360 * (i + 1),
+                "geometria": "abc" if i < 3 else None,
+                "estimado": True,
+            }
+            for i, pid in enumerate(prestador_ids)
+        ]
+
     async def solicitar_asistencia(self, solicitud: dict) -> dict:
         """HU-M06: como CLAIMS con `primero_falla`; `rechazo_asistencia` simula un 409."""
         self._revisar("solicitar_asistencia", solicitud)

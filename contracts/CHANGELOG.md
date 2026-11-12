@@ -572,6 +572,22 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.51 — 2026-11-12
+
+- HU-M06 (KAN-36), fase 4 del plan de pendientes (B8): rutas tipo semáforo en el mapa.
+  - `rutasPrestadores(latitud, longitud, prestadorIds): [RutaPrestador!]!` (solo CLIENTE, hasta 10, los destacados
+    primero): `distanciaMetros`, `duracionSegundos`, `geometria` (polyline6, solo los 3 primeros) y `estimado`.
+    Si el proveedor falla, lista vacía (la app usa tiempos aproximados), nunca un error.
+  - Va BFF → CLAIMS (`POST /rutas`) → ACL (`POST /mapas/rutas`): Mapbox Matrix (`driving-traffic`) y Directions con
+    el token secreto `mapbox-token`, o simulado en local (`MAPAS_PROVEEDOR=simulado`, línea recta). Circuito propio
+    (`mapas`), sonda sintética y caché en Redis por celda de ~200 m durante 2 min.
+  - Auditoría: CLAIMS `0008` crea `auditoria_rutas` (fecha, cliente, prestadores, proveedor, resultado, latencia; la
+    ubicación exacta y la dirección aproximada **cifradas**; TTL de 90 días). La dirección sale de la Geocoding
+    inversa de Google en español por el ACL (`GET /lugares/inversa`, caché por celda de ~100 m).
+- Cambio de privacidad: la ubicación del cliente sale al backend y a Mapbox al abrir el mapa (antes no salía del
+  teléfono hasta pedir la asistencia). Hay que actualizar el aviso de privacidad.
+- Solo cambios aditivos. Afecta al frontend: el móvil (rutas tipo semáforo, M15).
+
 ## v0.50 — 2026-11-12
 
 - HU-M06 (KAN-36), fase 3 del plan de pendientes (B4 y B9): sin permiso de ubicación o con el GPS apagado, el cliente

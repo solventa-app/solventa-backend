@@ -547,6 +547,10 @@ services:
       OPEN_DATA_URL: http://stub-open-data:8102
       VEHICULOS_URL: http://stub-vehiculos:8107
       PRESTADORES_URL: http://stub-prestadores:8109   # HU-M06 (v0.49): red de prestadores de asistencia
+      # HU-M06 (v0.51): rutas simuladas (línea recta) por defecto. Para Mapbox real: MAPAS_PROVEEDOR=mapbox y
+      # MAPBOX_TOKEN en el .env (ignorado por git).
+      MAPAS_PROVEEDOR: ${MAPAS_PROVEEDOR:-simulado}
+      MAPBOX_TOKEN: ${MAPBOX_TOKEN:-}
       PASARELA_URL: http://stub-pasarela:8103
       FIRMA_URL: http://stub-firma:8104
       KYC_URL: http://stub-kyc:8105   # también la verificación de identidad de M01 (rutas de Didit)

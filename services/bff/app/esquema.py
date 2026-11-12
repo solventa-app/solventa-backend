@@ -1868,6 +1868,17 @@ class Prestador:
 
 
 @strawberry.type
+class RutaPrestador:
+    """v0.51 (HU-M06, B8)."""
+
+    prestador_id: strawberry.ID
+    distancia_metros: int
+    duracion_segundos: int
+    geometria: str | None
+    estimado: bool
+
+
+@strawberry.type
 class CatalogoPrestadores:
     version: str
     vigente: bool
@@ -2766,6 +2777,31 @@ class Query:
             return []
         return [
             SugerenciaDireccion(place_id=x["place_id"], descripcion=x["descripcion"]) for x in lista
+        ]
+
+    @strawberry.field
+    async def rutas_prestadores(
+        self, info: Info, latitud: float, longitud: float, prestador_ids: list[strawberry.ID]
+    ) -> list[RutaPrestador]:
+        """v0.51 (HU-M06, B8): rutas de los prestadores hacia el CLIENTE por CLAIMS (que audita) y
+        el ACL. Si algo falla, lista vacía: nunca un error técnico. La ubicación no se registra."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        if not (-90 <= latitud <= 90 and -180 <= longitud <= 180):
+            return []
+        ids = [str(i) for i in prestador_ids][:10]
+        try:
+            rutas = await _claims(info).rutas(usuario.id, latitud, longitud, ids)
+        except ErrorServicio:
+            return []
+        return [
+            RutaPrestador(
+                prestador_id=strawberry.ID(r["prestador_id"]),
+                distancia_metros=int(r["distancia_metros"]),
+                duracion_segundos=int(r["duracion_segundos"]),
+                geometria=r.get("geometria"),
+                estimado=bool(r.get("estimado")),
+            )
+            for r in rutas
         ]
 
     @strawberry.field

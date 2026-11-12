@@ -28,6 +28,7 @@ from app.adapters.lugares import (
     lugares_desde_entorno,
     no_encontrada,
 )
+from app.adapters.mapas import CacheMapas, mapas_desde_entorno
 from app.adapters.notificaciones import AdaptadorNotificaciones
 from app.adapters.open_data import AdaptadorOpenData
 from app.adapters.open_finance import AdaptadorOpenFinance
@@ -43,12 +44,14 @@ from app.application.circuitos import (
     NOMBRE_CIRCUITO_IDENTIDAD,
     NOMBRE_CIRCUITO_KYC,
     NOMBRE_CIRCUITO_LUGARES,
+    NOMBRE_CIRCUITO_MAPAS,
     NOMBRE_CIRCUITO_NOTIFICACIONES,
     NOMBRE_CIRCUITO_OPEN_DATA,
     NOMBRE_CIRCUITO_OPEN_FINANCE,
     NOMBRE_CIRCUITO_PASARELA,
     NOMBRE_CIRCUITO_PRESTADORES,
     NOMBRE_CIRCUITO_VEHICULOS,
+    CircuitoAbiertoError,
     construir_fabrica,
 )
 from app.application.cola_tareas import ColaReconciliacionCloudTasks
@@ -190,6 +193,26 @@ class UbicarRequest(BaseModel):
     place_id: str | None = None
     texto: str | None = None
     idioma: str = "es"
+
+
+class DestinoRuta(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    latitud: float = Field(ge=-90, le=90)
+    longitud: float = Field(ge=-180, le=180)
+
+
+class PuntoRequest(BaseModel):
+    latitud: float = Field(ge=-90, le=90)
+    longitud: float = Field(ge=-180, le=180)
+
+
+class PedidoRutasRequest(BaseModel):
+    """HU-M06 (v0.51, B8): lo arma CLAIMS. Del cliente solo viaja su ubicación."""
+
+    latitud: float = Field(ge=-90, le=90)
+    longitud: float = Field(ge=-180, le=180)
+    destinos: list[DestinoRuta] = Field(max_length=10)
+    con_geometria: list[str] = Field(default_factory=list, max_length=3)
 
 
 class SolicitudKycRequest(BaseModel):
@@ -580,6 +603,12 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 NOMBRE_CIRCUITO_PRESTADORES: adaptador_prestadores.sondear,
                 # Sonda sintética: un punto de referencia público, nunca una dirección de cliente.
                 NOMBRE_CIRCUITO_LUGARES: lambda: lugares.ubicar(None, "Parque de la 93", "es"),
+                # Sonda sintética con dos puntos públicos de Bogotá, nunca los de un cliente.
+                NOMBRE_CIRCUITO_MAPAS: lambda: mapas.rutas(
+                    (4.6767, -74.0483),
+                    [{"id": "sonda", "latitud": 4.6859, "longitud": -74.0524}],
+                    set(),
+                ),
                 NOMBRE_CIRCUITO_IDENTIDAD: adaptador_identidad.sondear,
                 NOMBRE_CIRCUITO_NOTIFICACIONES: adaptador_notificaciones.sondear,
             },
@@ -599,6 +628,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         app.state.servicio_kyc = servicio_kyc
         app.state.servicio_prestadores = servicio_prestadores
         app.state.cache_lugares = CacheLugares(cache_redis)
+        app.state.cache_mapas = CacheMapas(cache_redis)
         app.state.servicio_identidad = servicio_identidad
         app.state.servicio_notificaciones = servicio_notificaciones
 
@@ -627,6 +657,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
     # No depende de Redis ni de un proveedor externo: se crea aquí y no en el lifespan.
     tasas_cambio = AdaptadorTasasReferencia()
     lugares = lugares_desde_entorno()
+    mapas = mapas_desde_entorno()
 
     @app.get("/health", tags=["operacion"])
     def health() -> dict[str, str]:
@@ -647,6 +678,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             NOMBRE_CIRCUITO_KYC,
             NOMBRE_CIRCUITO_PRESTADORES,
             NOMBRE_CIRCUITO_LUGARES,
+            NOMBRE_CIRCUITO_MAPAS,
             NOMBRE_CIRCUITO_IDENTIDAD,
             NOMBRE_CIRCUITO_NOTIFICACIONES,
         )
@@ -911,6 +943,51 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         """T19: sugerencias de dirección (Places, timeout 700 ms; sin llave, un stub). HU-M06
         (v0.50): en el idioma de la app (`es`/`en`)."""
         return {"sugerencias": lugares.autocompletar(texto, pais, idioma)}
+
+    @app.post("/mapas/rutas", tags=["mapas"])
+    def mapas_rutas(body: PedidoRutasRequest) -> dict:
+        """HU-M06 (v0.51, B8): tiempos de los prestadores hacia el cliente y la geometría de los
+        destacados. Siempre 200: si el proveedor falla o el circuito está abierto, sin rutas y con
+        `resultado` `FALLA` o `CIRCUITO_ABIERTO` (regla 4); la app usa tiempos aproximados.
+        Caché por celda de ~200 m durante 2 min. La ubicación no se registra."""
+        origen = (body.latitud, body.longitud)
+        destinos = [d.model_dump() for d in body.destinos]
+        ids = [d["id"] for d in destinos]
+        geometria = set(body.con_geometria)
+        cache = app.state.cache_mapas
+        guardadas = cache.obtener(origen, ids, geometria)
+        if guardadas is not None:
+            return {"proveedor": mapas.proveedor, "resultado": "OK", "rutas": guardadas}
+        try:
+            with app.state.fabrica_circuitos.get_breaker(NOMBRE_CIRCUITO_MAPAS):
+                rutas = mapas.rutas(origen, destinos, geometria)
+        except CircuitoAbiertoError:
+            return {"proveedor": mapas.proveedor, "resultado": "CIRCUITO_ABIERTO", "rutas": []}
+        except Exception as error:
+            logger.warning("rutas no disponibles error=%s", type(error).__name__)
+            return {"proveedor": mapas.proveedor, "resultado": "FALLA", "rutas": []}
+        cache.guardar(origen, ids, geometria, rutas)
+        return {"proveedor": mapas.proveedor, "resultado": "OK", "rutas": rutas}
+
+    @app.post("/lugares/inversa", tags=["lugares"])
+    def lugares_inversa(body: PuntoRequest) -> dict:
+        """HU-M06 (v0.51, B8): dirección aproximada en español de un punto, para la auditoría de
+        rutas. Caché por celda de ~100 m. Si Google falla, `null` (se audita sin dirección).
+        POST con cuerpo: las coordenadas no quedan en el log de acceso (regla 6)."""
+        latitud, longitud = body.latitud, body.longitud
+        cache = app.state.cache_lugares
+        guardada = cache.obtener_inversa(latitud, longitud)
+        if guardada:
+            return {"direccion": guardada}
+        try:
+            with app.state.fabrica_circuitos.get_breaker(NOMBRE_CIRCUITO_LUGARES):
+                direccion = lugares.inversa(latitud, longitud)
+        except Exception as error:
+            logger.warning("geocodificación inversa no disponible error=%s", type(error).__name__)
+            return {"direccion": None}
+        if direccion:
+            cache.guardar_inversa(latitud, longitud, direccion)
+        return {"direccion": direccion}
 
     @app.post("/lugares/ubicar", tags=["lugares"])
     def lugares_ubicar(body: UbicarRequest) -> dict:

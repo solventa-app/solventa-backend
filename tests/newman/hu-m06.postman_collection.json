@@ -1472,6 +1472,158 @@
           ]
         }
       ]
+    },
+    {
+      "name": "5. Rutas tipo semáforo (v0.51, B8)",
+      "item": [
+        {
+          "name": "5.1 rutas desde el Parque de la 93 (simuladas)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($la: Float!, $lo: Float!, $ids: [ID!]!) { rutasPrestadores(latitud: $la, longitud: $lo, prestadorIds: $ids) { prestadorId distanciaMetros duracionSegundos geometria estimado } }\",\n  \"variables\": {\n    \"la\": 4.6767,\n    \"lo\": -74.0483,\n    \"ids\": [\n      \"prs-bog-001\",\n      \"prs-bog-002\",\n      \"prs-bog-003\",\n      \"prs-bog-007\"\n    ]\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.rutasPrestadores;",
+                  "pm.test('Una por prestador, en orden', () => pm.expect(r.map(x => x.prestadorId)).to.eql([\"prs-bog-001\", \"prs-bog-002\", \"prs-bog-003\", \"prs-bog-007\"]));",
+                  "pm.test('Geometría solo de los 3 destacados', () => pm.expect(r.map(x => x.geometria !== null)).to.eql([true, true, true, false]));",
+                  "pm.test('Clínica Norte a 6 min (como la app)', () => pm.expect(r[0].duracionSegundos).to.eql(360));",
+                  "pm.test('Simuladas (estimado)', () => pm.expect(r.every(x => x.estimado)).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.2 un prestador que no existe se ignora",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($la: Float!, $lo: Float!, $ids: [ID!]!) { rutasPrestadores(latitud: $la, longitud: $lo, prestadorIds: $ids) { prestadorId distanciaMetros duracionSegundos geometria estimado } }\",\n  \"variables\": {\n    \"la\": 4.6767,\n    \"lo\": -74.0483,\n    \"ids\": [\n      \"no-existe\"\n    ]\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Lista vacía', () => pm.expect(cuerpo.data.rutasPrestadores).to.eql([]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.3 sin sesión: SIN_SESION",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($la: Float!, $lo: Float!, $ids: [ID!]!) { rutasPrestadores(latitud: $la, longitud: $lo, prestadorIds: $ids) { prestadorId distanciaMetros duracionSegundos geometria estimado } }\",\n  \"variables\": {\n    \"la\": 4.6767,\n    \"lo\": -74.0483,\n    \"ids\": [\n      \"prs-bog-001\",\n      \"prs-bog-002\",\n      \"prs-bog-003\",\n      \"prs-bog-007\"\n    ]\n  }\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('SIN_SESION', () => pm.expect(cuerpo.errors[0].extensions.code).to.eql('SIN_SESION'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [

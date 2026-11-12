@@ -33,16 +33,20 @@ Revisión del 2026-11-12 contra `develop` (mobile `8dac02f`, backend `fb3b4c6`).
 | A11 | `fotoUrl` queda **null** en toda la semilla: ALMACENAMIENTO no sirve archivos públicos, así que no hay de dónde salir una foto de sede. La app usa el placeholder del tipo y está lista para la foto (se prueba con el fake) | B3 pedía fotos en algunos |
 | A19 | La dirección se guarda en la asistencia tal como la devolvió Google en el idioma de la app; la versión en español para soporte y auditoría (2.0) se agrega con `auditoria_rutas` (fase 4) | Evita una segunda llamada a Google en cada solicitud |
 | A20 | `origenUbicacion` es `OrigenUbicacion! = GPS` (no nulo con valor por defecto): así una app anterior a la v0.50 sigue funcionando sin mandarlo | Strawberry lo expone así y el contrato debe ser idéntico |
+| A24 | Las rutas simuladas (local y CI) van **dentro del ACL** (`MAPAS_PROVEEDOR=simulado`, línea recta con las reglas de la app), no en un `stub-mapas` aparte | Mismo resultado y un contenedor menos |
+| A25 | En `auditoria_rutas` la **dirección aproximada también va cifrada**, no solo la ubicación | También es un dato personal (regla 6) |
+| A26 | Aún no hay una consulta de `auditoria_rutas` para roles de auditoría: la colección existe con su TTL de 90 días y se lee en Mongo. Una consulta sin prestadores conocidos no se audita (no llama a Mapbox) | No hay rol de auditoría en la app hoy |
+| A27 | **Hallazgo:** los endpoints del ACL que llevan dirección o coordenadas en la query string las dejan en el log de acceso de uvicorn. `/lugares/ubicar` (v0.50) y `/lugares/inversa` (v0.51) pasaron a `POST` con cuerpo. **Preexistente, fuera de este trabajo:** `GET /lugares/autocompletar?texto=` y `GET /lugares/validar?place_id=` (T19) tienen el mismo problema | Regla 6 |
 | A12 | Los minutos de llegada simulados se calculan en `stubs/prestadores` (Haversine, 20 km/h + 2 min) y `PRESTADORES_MINUTOS_FIJOS` vive allí | CLAIMS ya no simula (B7) |
 
 ### Avance por fase
 
 | Fase | Backend | Mobile |
 |---|---|---|
-| 1 · Catálogo con detalle, grúa y prestadores detrás del ACL (B1, B2, B3, B7) | `feat/KAN-36-prestadores-aliados-gruas` (v0.49, CLAIMS `0007`) | pendiente |
-| 2 · Mapbox, pines, detalle, hoja arrastrable (M0–M14) | — | pendiente |
-| 3 · Dirección ubicada (B4, B9, 2.0, S1) | `feat/KAN-36-ubicar-direccion` (v0.50, apilada sobre la fase 1) | pendiente |
-| 4 · Rutas y auditoría (B8, M15) | pendiente | pendiente |
+| 1 · Catálogo con detalle, grúa y prestadores detrás del ACL (B1, B2, B3, B7) | PR #590 (v0.49, CLAIMS `0007`) | PR #83 (mobile) |
+| 2 · Mapbox, pines, detalle, hoja arrastrable (M0–M14) | — | PR #84 (mobile) |
+| 3 · Dirección ubicada (B4, B9, 2.0, S1) | PR #591 (v0.50, apilado sobre #590) | PR #85 (mobile) |
+| 4 · Rutas y auditoría (B8, M15) | `feat/KAN-36-rutas-prestadores` (v0.51, CLAIMS `0008`, apilada sobre #591) | pendiente |
 | 5 · «Mis asistencias» y notificación (B5, B6, 4.x) | pendiente | pendiente |
 
 ### Pendiente de verificar fuera de esta máquina (A9)
