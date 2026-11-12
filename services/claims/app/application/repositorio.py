@@ -92,6 +92,15 @@ class RepositorioSiniestrosMongo:
             # HU-M05: el CLIENTE que lo reportó desde la app (id opaco de AUTH); None en la semilla.
             "reportado_por": doc.get("reportado_por"),
             "tipo_siniestro_auto": doc.get("tipo_siniestro_auto"),
+            # KAN-259 Fase 4/5: solo los siniestros paramétricos traen estos campos; `None`/`False`
+            # para el resto (reportados por un cliente o de la semilla).
+            "origen": doc.get("origen"),
+            "evento_parametrico_id": doc.get("evento_parametrico_id"),
+            "evento_valor": doc.get("evento_valor"),
+            "evento_umbral": doc.get("evento_umbral"),
+            "evento_variable": doc.get("evento_variable"),
+            "evento_cancelado": doc.get("evento_cancelado"),
+            "vigencia_hasta_cobertura": doc.get("vigencia_hasta_cobertura"),
         }
 
     @staticmethod
@@ -256,6 +265,21 @@ class RepositorioSiniestrosMongo:
         )
         return [self._a_siniestro(d) for d in docs]
 
+    def listar_parametricos_de_polizas(self, poliza_ids: list[str]) -> list[dict]:
+        """KAN-259 Fase 5: los siniestros paramétricos (ya `APROBADO`) de un conjunto de pólizas,
+        del más reciente al más antiguo (réplica, HA-LAT-003). `notificado_en` equivale a la fecha
+        de resolución: `ServicioParametricos` crea el siniestro y su resolución en el mismo
+        instante, así que ordenar por uno u otro da el mismo resultado sin unir colecciones."""
+        if not poliza_ids:
+            return []
+        docs = self._buscar(
+            SINIESTROS,
+            {"poliza_id": {"$in": poliza_ids}, "origen": "PARAMETRICO"},
+            primaria=False,
+            orden=[("notificado_en", -1)],
+        )
+        return [self._a_siniestro(d) for d in docs]
+
     def _doc_siniestro(self, siniestro: dict, ahora: datetime) -> dict[str, Any]:
         sid = siniestro["id"]
         return {
@@ -284,6 +308,37 @@ class RepositorioSiniestrosMongo:
             "creado_en": ahora,
             "actualizado_en": ahora,
         }
+
+    # ---------- Siniestros paramétricos (KAN-259, HU-M04, Fase 4) ----------
+    # No pasan por `reportar()`: se crean ya `APROBADO` con su resolución, en la misma
+    # transacción. El `siniestro_id` es determinista (`uuid5` del `eventoId` + `polizaId`, lo
+    # calcula `ServicioParametricos`), así que un reintento con el mismo evento golpea la misma
+    # llave primaria: `DuplicateKeyError` es la idempotencia, sin una colección aparte.
+
+    def crear_parametrico(self, siniestro: dict, resolucion: dict, ahora: datetime) -> bool:
+        """`True` si se creó; `False` si ya existía (mismo `eventoId` + `polizaId`): el llamador
+        debe leer el caso existente con `obtener(siniestro['id'], primaria=True)`."""
+        doc_siniestro = {
+            **self._doc_siniestro(siniestro, ahora),
+            "origen": "PARAMETRICO",
+            "evento_parametrico_id": siniestro["evento_parametrico_id"],
+            # KAN-259 Fase 5: sin cifrar (regla #6, no son datos personales); el BFF los usa para
+            # componer `detalleEvento` y `polizaAnterior` sin volver a POLICY ni al ACL.
+            "evento_valor": siniestro.get("evento_valor"),
+            "evento_umbral": siniestro.get("evento_umbral"),
+            "evento_variable": siniestro.get("evento_variable"),
+            "evento_cancelado": siniestro.get("evento_cancelado"),
+            "vigencia_hasta_cobertura": siniestro.get("vigencia_hasta_cobertura"),
+        }
+        doc_resolucion = self._doc_resolucion(resolucion)
+        with self._cliente.start_session() as sesion:
+            try:
+                with sesion.start_transaction():
+                    self._db[SINIESTROS].insert_one(doc_siniestro, session=sesion)
+                    self._db[RESOLUCIONES].insert_one(doc_resolucion, session=sesion)
+            except DuplicateKeyError:
+                return False
+        return True
 
     def evidencia(self, evidencia_id: str) -> dict | None:
         doc = self._db[EVIDENCIAS].find_one({"_id": evidencia_id})

@@ -1,0 +1,31 @@
+{
+  "_descripcion": "KAN-259: catálogo de plantillas de push. El productor del evento `notificacion.push-solicitada` solo elige una clave de aquí y manda sus `variables`; nunca escribe el título ni el cuerpo. `{variable}` se sustituye con `str.format`; una variable que falte deja el `{nombre}` literal (no se cae el envío) y queda un log de advertencia.",
+  "plantillas": {
+    "indemnizacion-liquidada": {
+      "descripcion": "HU-M04 (CA-M04-05/07): se liquidó la indemnización de un siniestro paramétrico.",
+      "ttlSegundos": 86400,
+      "silenciosa": false,
+      "es": {
+        "titulo": "Tu indemnización ya está lista",
+        "cuerpo": "Se liquidaron {monto} {moneda} por tu póliza. Toca para ver el detalle."
+      },
+      "en": {
+        "titulo": "Your payout is ready",
+        "cuerpo": "{monto} {moneda} was paid out on your policy. Tap to see the details."
+      }
+    },
+    "sesion-cerrada": {
+      "descripcion": "D4: aviso silencioso al dispositivo que quedó desactivado porque la cuenta entró en otro teléfono. No lleva banner; el móvil solo lo usa para limpiar la sesión local si el token de acceso aún no venció.",
+      "ttlSegundos": 300,
+      "silenciosa": true,
+      "es": {
+        "titulo": "",
+        "cuerpo": ""
+      },
+      "en": {
+        "titulo": "",
+        "cuerpo": ""
+      }
+    }
+  }
+}

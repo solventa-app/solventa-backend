@@ -287,6 +287,9 @@ class PuertoPolicy(Protocol):
 
     async def obtener_poliza(self, poliza_id: str) -> dict | None: ...
 
+    # KAN-259 Fase 5 (HU-M04): la cobertura paramétrica vigente de una póliza puntual.
+    async def coberturas_parametricas_de_poliza(self, poliza_id: str) -> list[dict]: ...
+
     async def generar_documento(self, poliza_id: str, asegurado: str | None) -> bytes | None: ...
 
     async def reconciliar_cobro(self, propuesta_id: str) -> str | None: ...
@@ -438,6 +441,9 @@ class PuertoClaims(Protocol):
     async def reportar(self, reporte: dict) -> dict: ...
 
     async def de_cliente(self, cliente_id: str) -> list[dict]: ...
+
+    # KAN-259 Fase 5 (HU-M04): los siniestros paramétricos ya liquidados de estas pólizas.
+    async def parametricos_de_polizas(self, poliza_ids: list[str]) -> list[dict]: ...
 
     async def solicitar_asistencia(self, solicitud: dict) -> dict: ...
 
@@ -1252,6 +1258,19 @@ class ClientePolicyHttp:
     async def obtener_poliza(self, poliza_id: str) -> dict | None:
         return _json_o_none(await _pedir(self._cliente, "GET", f"/polizas/{poliza_id}"))
 
+    async def coberturas_parametricas_de_poliza(self, poliza_id: str) -> list[dict]:
+        """KAN-259 Fase 5 (HU-M04): la(s) cobertura(s) paramétrica(s) de una póliza puntual, para
+        `miCoberturaParametrica` en el BFF. Vacía si la póliza no tiene ninguna."""
+        respuesta = await _pedir(
+            self._cliente,
+            "GET",
+            "/interno/coberturas-parametricas",
+            params={"poliza_id": poliza_id},
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
     async def generar_documento(self, poliza_id: str, asegurado: str | None) -> bytes | None:
         """El PDF de la póliza, o `None` si no existe. El nombre del asegurado va en el CUERPO:
         las URL quedan en los logs de acceso y un nombre es un dato personal (regla #6)."""
@@ -1768,6 +1787,21 @@ class ClienteClaimsHttp:
 
     async def de_cliente(self, cliente_id: str) -> list[dict]:
         respuesta = await _pedir(self._cliente, "GET", f"/clientes/{cliente_id}/siniestros")
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def parametricos_de_polizas(self, poliza_ids: list[str]) -> list[dict]:
+        """KAN-259 Fase 5: `?poliza_id=a&poliza_id=b` (httpx repite el parámetro por cada
+        elemento de la lista)."""
+        if not poliza_ids:
+            return []
+        respuesta = await _pedir(
+            self._cliente,
+            "GET",
+            "/siniestros/parametricos",
+            params={"poliza_id": poliza_ids},
+        )
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
