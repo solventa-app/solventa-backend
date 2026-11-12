@@ -27,9 +27,9 @@ PLAZO_SEGUNDOS = 0.7
 # El canal móvil tiene 2 s: crear la cuenta del onboarding (hash de la clave) tarda ~1 s.
 PLAZO_CANAL_APP = 2.0
 RUTAS_CANAL_APP = {("POST", "/graphql/app"), ("POST", "/v1/graphql/app")}
-# La suscripción de la web (firmar, pagar y emitir) tiene 5 s: firmar con imagen tarda de 1,5 a 3,5 s en staging
-# (imagen, ACL, contrato cifrado con KMS) y a los 700 ms el gateway devolvía 504 con la firma ya registrada. Es el
-# mismo esquema que /v1/graphql/web, que conserva los 700 ms.
+# La suscripción de la web (firmar, pagar y emitir) tiene 5 s: firmar con imagen tarda de 1,5 a
+# 3,5 s en staging (imagen, ACL, contrato cifrado con KMS) y a los 700 ms el gateway devolvía 504
+# con la firma ya registrada. Es el mismo esquema que /v1/graphql/web, que conserva los 700 ms.
 PLAZO_SUSCRIPCION = 5.0
 RUTAS_SUSCRIPCION = {("POST", "/v1/graphql/web-suscripcion")}
 # El JWKS de los socios vive en los dos gateways: el de socios lo toma del de los usuarios.
