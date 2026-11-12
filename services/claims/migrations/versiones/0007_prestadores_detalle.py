@@ -5,8 +5,14 @@
 no son obligatorios en el validador: los documentos de la versión anterior siguen siendo válidos
 hasta que `migrations.catalogos` los complete (corre justo después, en el mismo comando).
 
+`asistencias` también acepta `GRUA` (en `tipo_asistencia` y en la copia del prestador): sin esto,
+pedir una grúa fallaba al guardar.
+
 Idempotente: vuelve a fijar el `$jsonSchema` con `collMod` (o crea la colección si no existe).
 """
+
+import copy
+import importlib
 
 TEXTO = {"bsonType": "string"}
 TEXTO_O_NULO = {"bsonType": ["string", "null"]}
@@ -35,8 +41,22 @@ VALIDADOR = {
 }
 
 
+def validador_asistencias() -> dict:
+    """El de `0006_asistencias` con `GRUA` en los dos lugares donde va el tipo."""
+    v = copy.deepcopy(importlib.import_module("migrations.versiones.0006_asistencias").VALIDADOR)
+    propiedades = v["$jsonSchema"]["properties"]
+    propiedades["tipo_asistencia"] = {"enum": TIPOS}
+    propiedades["prestador"]["properties"]["tipo"] = {"enum": TIPOS}
+    return v
+
+
 def aplicar(db) -> None:
-    if "prestadores" in set(db.list_collection_names()):
-        db.command("collMod", "prestadores", validator=VALIDADOR, validationLevel="strict")
-    else:
-        db.create_collection("prestadores", validator=VALIDADOR, validationLevel="strict")
+    existentes = set(db.list_collection_names())
+    for nombre, validador in (
+        ("prestadores", VALIDADOR),
+        ("asistencias", validador_asistencias()),
+    ):
+        if nombre in existentes:
+            db.command("collMod", nombre, validator=validador, validationLevel="strict")
+        else:
+            db.create_collection(nombre, validator=validador, validationLevel="strict")

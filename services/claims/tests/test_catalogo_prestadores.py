@@ -162,15 +162,20 @@ def test_la_0007_agrega_grua_y_el_detalle_sin_volverlos_obligatorios():
             self.comandos = []
 
         def list_collection_names(self):
-            return ["prestadores"]
+            return ["prestadores", "asistencias"]
 
         def command(self, *args, **kwargs):
             self.comandos.append((args, kwargs))
 
     db = DbMigracion()
     migracion_detalle.aplicar(db)
-    ((args, kwargs),) = db.comandos
+    (args, kwargs), (args_asistencias, kwargs_asistencias) = db.comandos
     assert args == ("collMod", "prestadores")
+    # Sin esto, pedir una grúa fallaba al guardar la asistencia.
+    assert args_asistencias == ("collMod", "asistencias")
+    asistencia = kwargs_asistencias["validator"]["$jsonSchema"]["properties"]
+    assert "GRUA" in asistencia["tipo_asistencia"]["enum"]
+    assert "GRUA" in asistencia["prestador"]["properties"]["tipo"]["enum"]
     esquema = kwargs["validator"]["$jsonSchema"]
     assert set(esquema["properties"]["tipo"]["enum"]) == catalogos.TIPOS
     assert set(catalogos.CAMPOS_DETALLE) <= set(esquema["properties"])
