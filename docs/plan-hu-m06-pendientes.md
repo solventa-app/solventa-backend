@@ -62,7 +62,7 @@ Revisión del 2026-11-12 contra `develop` (mobile `8dac02f`, backend `fb3b4c6`).
 | 2 · Mapbox, pines, detalle, hoja arrastrable (M0–M14) | — | PR #84 (mobile) |
 | 3 · Dirección ubicada (B4, B9, 2.0, S1) | PR #591 (v0.50, apilado sobre #590) | PR #85 (mobile) |
 | 4 · Rutas y auditoría (B8, M15) | PR #614 (v0.51, CLAIMS `0008`) | PR #86 (mobile) |
-| 5 · «Mis asistencias» y notificación (B5, B6, 4.x) | PR #615 (v0.52, CLAIMS `0009`) | PR de mobile de la fase 5 (apilado sobre #86) |
+| 5 · «Mis asistencias» y notificación (B5, B6, 4.x) | PR #615 (v0.52, CLAIMS `0009`) | PR #89 (apilado sobre #86) |
 
 ### Pendiente de verificar fuera de esta máquina (A9)
 
