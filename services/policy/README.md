@@ -208,6 +208,24 @@ socio. Plan: `docs/plan-completar-hu-w07.md`.
 | `PURGA_LOTE_MAX` | `200` | Propuestas que revisa la purga diaria por pasada |
 | `AUTENTICACION_SERVICIOS` | `ninguna` | `id_token` en Cloud Run (RATING, el ACL, UNDER y PAYMENTS son privados) |
 
+## Coberturas paramétricas (KAN-259, HU-M04, Fase 4, D8)
+
+Tabla `coberturas_parametricas` (migración `0011`): el producto paramétrico (`VUELO` o `CLIMA`) de una póliza, que
+CLAIMS cruza contra `evento.parametrico.recibido` (clima o vuelo del ACL Worker) para decidir si paga un monto fijo.
+POLICY sigue siendo el **único escritor** (regla #1): CLAIMS solo lee.
+
+- `tipo = VUELO`: `numero_vuelo`, `fecha_salida`, `aeropuerto_origen`, `umbral_retraso_min` (minutos; también paga si
+  el vuelo se cancela).
+- `tipo = CLIMA`: `latitud`, `longitud`, `variable` (`PRECIPITACION_MM`\|`VIENTO_KMH`\|`TEMP_MAX_C`), `umbral`,
+  `ventana_horas`. La "celda" es lat/lon redondeados a 2 decimales (sin un helper de geohash en POLICY todavía: una
+  limitación simple, documentada en la migración).
+- `GET /interno/coberturas-parametricas?tipo=VUELO&vuelo=&fecha=` o `?tipo=CLIMA&celda=lat,lon` (o `lat=`/`lon=`
+  sueltos, con `variable` opcional): las coberturas `VIGENTE` que calzan. Solo lo llama CLAIMS.
+- Semilla `python -m app.sembrar_polizas_parametricas` (tarea `sembrar-polizas-parametricas` de docker compose,
+  perfil `semilla`): 2 pólizas de vuelo (`AV9340`, con retraso sintético de 145 min en
+  `stubs/eventos-parametricos`, sobre el umbral; `AV1234`, bajo el umbral) y 1 de clima en una celda de Bogotá
+  (`4.62,-74.09`). Idempotente.
+
 ## Migraciones y pruebas
 
 ```bash

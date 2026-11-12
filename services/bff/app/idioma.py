@@ -372,6 +372,13 @@ EN: dict[str, str] = {
     "No pudimos consultar los siniestros. Intenta de nuevo.": (
         "We couldn't load the claims. Please try again."
     ),
+    # Indemnización y cobertura paramétrica (v0.48, KAN-259 HU-M04 Fase 5)
+    "No pudimos consultar la indemnización. Intenta de nuevo.": (
+        "We couldn't load the payout. Please try again."
+    ),
+    "No pudimos consultar tu cobertura. Intenta de nuevo.": (
+        "We couldn't load your coverage. Please try again."
+    ),
     "No pudimos consultar los prestadores. Intenta de nuevo.": (
         "We couldn't load the providers. Please try again."
     ),

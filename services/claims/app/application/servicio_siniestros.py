@@ -103,6 +103,8 @@ class PuertoAlmacenamiento(Protocol):
 class PuertoRepositorio(Protocol):
     def listar(self, estado: str | None = None) -> list[dict]: ...
 
+    def listar_parametricos_de_polizas(self, poliza_ids: list[str]) -> list[dict]: ...
+
     def pendientes_vencidos(self, ahora: datetime) -> list[str]: ...
 
     def obtener(self, siniestro_id: str, primaria: bool = False) -> dict | None: ...
@@ -254,6 +256,11 @@ class ServicioSiniestros:
     def de_cliente(self, cliente_id: str) -> list[dict]:
         """Los casos que reportó el cliente, para su seguimiento en la app."""
         return self._armar(self._repo.listar_de_cliente(cliente_id), primaria=False)
+
+    def parametricos_de_polizas(self, poliza_ids: list[str]) -> list[dict]:
+        """KAN-259 Fase 5: los siniestros paramétricos ya liquidados de un conjunto de pólizas del
+        CLIENTE del token, para `ResumenCobertura.movimientos` en el BFF."""
+        return self._armar(self._repo.listar_parametricos_de_polizas(poliza_ids), primaria=False)
 
     def _poliza_del_cliente(self, poliza_id: str, cliente_id: str, titular_id: str | None) -> dict:
         try:

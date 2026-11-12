@@ -139,6 +139,27 @@ class ClientePolicy:
     def obtener_poliza(self, poliza_id: str) -> dict[str, Any]:
         return _pedir(self._cliente, "GET", f"/polizas/{poliza_id}")
 
+    def coberturas_de_vuelo(self, numero_vuelo: str, fecha: str) -> list[dict[str, Any]]:
+        """KAN-259 (HU-M04, Fase 4, D8): las coberturas paramétricas VUELO vigentes que calzan.
+        Solo lectura (regla #1: CLAIMS nunca escribe en POLICY)."""
+        return _pedir(
+            self._cliente,
+            "GET",
+            "/interno/coberturas-parametricas",
+            params={"tipo": "VUELO", "vuelo": numero_vuelo, "fecha": fecha},
+        )
+
+    def coberturas_de_celda(
+        self, latitud: float, longitud: float, variable: str
+    ) -> list[dict[str, Any]]:
+        """KAN-259: las coberturas paramétricas CLIMA vigentes de la celda que midió el evento."""
+        return _pedir(
+            self._cliente,
+            "GET",
+            "/interno/coberturas-parametricas",
+            params={"tipo": "CLIMA", "lat": latitud, "lon": longitud, "variable": variable},
+        )
+
     def cerrar(self) -> None:
         self._cliente.close()
 
