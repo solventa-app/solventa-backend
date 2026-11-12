@@ -94,6 +94,11 @@ Requiere el stack completo: los socios demo los crea `crear-socios-demo` al leva
 están en el entorno (`socio1_*`, `socio2_*`). Se puede repetir: la carpeta 5 cotiza hasta agotar, aunque ya esté
 agotado de una corrida anterior.
 
+**Necesita Prometheus (perfil `observabilidad`).** En el compose el BFF lee las métricas de `prometheus:9090`
+(`METRICAS_FUENTE: prometheus`). Sin él, `GET /v1/estado` y `estadoSistema` (7.4, 8.3 y 8.4) esperan la conexión y el gateway
+corta a los 700 ms con `upstream request timeout`, a veces sí y a veces no. Levántalo con
+`docker compose --profile servicios --profile observabilidad up -d` (o solo `... --profile observabilidad up -d prometheus`).
+
 ```bash
 npx --yes newman@6.2.2 run tests/newman/socios-w07.postman_collection.json \
   -e tests/newman/solventa-local.postman_environment.json
