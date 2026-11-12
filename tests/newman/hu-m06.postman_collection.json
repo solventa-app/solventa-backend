@@ -753,7 +753,7 @@
                   "const a = cuerpo.data.cancelarAsistencia;",
                   "pm.test('Sigue CANCELADA', () => pm.expect(a.estado).to.eql('CANCELADA'));",
                   "// Mongo guarda milisegundos: la primera respuesta traía microsegundos.",
-              "pm.test('La misma fecha', () => pm.expect(a.canceladaEn.slice(0, 23)).to.eql(pm.collectionVariables.get('cancelada_en').slice(0, 23)));"
+                  "pm.test('La misma fecha', () => pm.expect(a.canceladaEn.slice(0, 23)).to.eql(pm.collectionVariables.get('cancelada_en').slice(0, 23)));"
                 ]
               }
             }
@@ -1047,6 +1047,58 @@
                   "const cuerpo = pm.response.json();",
                   "const a = cuerpo.data.solicitarAsistenciaConDireccion;",
                   "pm.test('DATOS_INVALIDOS', () => pm.expect(a.codigo).to.eql('DATOS_INVALIDOS'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.12 una grúa (v0.49): se guarda y no falla",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/app",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "app"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudAsistenciaInput!) { solicitarAsistencia(entrada: $e) { __typename ... on Asistencia { id estado motivo minutosEstimados canceladaEn prestador { id } } ... on ErrorAsistencia { codigo mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idSolicitud\": \"{{$guid}}\",\n      \"prestadorId\": \"prs-bog-007\",\n      \"tipoAsistencia\": \"GRUA\",\n      \"descripcion\": \"Prueba de Newman\",\n      \"direccion\": \"Cra 15 # 93-20\",\n      \"latitud\": 4.676,\n      \"longitud\": -74.048\n    }\n  }\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const a = cuerpo.data.solicitarAsistencia;",
+                  "pm.test('Es una asistencia (no un error al guardar)', () => pm.expect(a.__typename).to.eql('Asistencia'));",
+                  "pm.test('Del prestador grúa', () => pm.expect(a.prestador.id).to.eql('prs-bog-007'));"
                 ]
               }
             }
