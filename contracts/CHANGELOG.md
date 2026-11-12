@@ -572,6 +572,21 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.50 — 2026-11-12
+
+- HU-M06 (KAN-36), fase 3 del plan de pendientes (B4 y B9): sin permiso de ubicación o con el GPS apagado, el cliente
+  escribe su dirección y el mapa funciona igual que con GPS.
+  - `ubicarDireccion(placeId, texto): UbicacionDireccion!` (solo CLIENTE): coordenadas por el ACL con Place Details
+    (`placeId` de `autocompletarDireccion`) o Geocoding (`texto`, solo Colombia), con Circuit Breaker propio
+    (`lugares`), sonda sintética y caché en Redis por idioma (24 h, la llave es un hash). Responde códigos
+    (`DIRECCION_NO_ENCONTRADA`, `SERVICIO_NO_DISPONIBLE`), nunca textos para el usuario.
+  - `SolicitudAsistenciaInput.origenUbicacion: OrigenUbicacion! = GPS` (`GPS` o `DIRECCION`); con `DIRECCION` la
+    dirección es obligatoria. CLAIMS la guarda con la asistencia (`ubicacion.origen`).
+  - `solicitarAsistenciaConDireccion` queda `@deprecated` (sigue funcionando hasta que la app deje de usarla).
+  - El BFF reenvía el idioma de la app (`Accept-Language`) al ACL: `autocompletarDireccion` y `ubicarDireccion`
+    responden en `es` o `en`.
+- Solo cambios aditivos. Afecta al frontend: el móvil (flujo de ubicación 2.0 y M06-02 sin el campo de texto libre).
+
 ## v0.49 — 2026-11-12
 
 - HU-M06 (KAN-36), fase 1 del plan de pendientes: catálogo de prestadores con el detalle y la grúa. `TipoPrestador`

@@ -142,6 +142,8 @@ class SolicitudAsistenciaRequest(BaseModel):
     # Sin ubicación (CA-M06-02) la dirección es obligatoria: lo valida ServicioAsistencias.
     latitud: float | None = Field(default=None, ge=-90, le=90)
     longitud: float | None = Field(default=None, ge=-180, le=180)
+    # v0.50 (B4): GPS o la dirección escrita y ubicada. Sin él se deduce de si hay coordenadas.
+    origen_ubicacion: Literal["GPS", "DIRECCION"] | None = None
 
 
 class CancelarAsistenciaRequest(BaseModel):

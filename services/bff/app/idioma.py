@@ -20,6 +20,10 @@ from strawberry.extensions import SchemaExtension
 Idioma = Literal["es", "en"]
 
 EN: dict[str, str] = {
+    # HU-M06 (v0.50): asistencia con la dirección escrita y ubicada.
+    "Escribe la dirección a la que debe llegar el prestador.": (
+        "Enter the address the provider should go to."
+    ),
     # API de socios (HU-W07, contracts/openapi/socios-v1.json)
     "Credenciales inválidas.": ("Invalid credentials."),
     "Falta el token de acceso o no es válido.": ("The access token is missing or invalid."),

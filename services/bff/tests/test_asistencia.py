@@ -119,6 +119,7 @@ def test_el_bff_manda_el_cliente_del_token_y_el_id_en_minusculas():
         "direccion": "Cra 45 # 22-18",
         "latitud": 4.676,
         "longitud": -74.048,
+        "origen_ubicacion": "GPS",
     }
 
 
@@ -205,3 +206,66 @@ def test_el_cliente_http_trata_503_y_422_como_corresponde():
     with pytest.raises(AsistenciaRechazada) as error:
         asyncio.run(_http(httpx.Response(422, json={"detail": []})).solicitar_asistencia({}))
     assert error.value.codigo == "DATOS_INVALIDOS"
+
+
+# ---------- v0.50 (HU-M06, B4 y B9): dirección escrita y ubicada ----------
+
+UBICAR = """query($p: String, $t: String) { ubicarDireccion(placeId: $p, texto: $t) {
+  encontrada latitud longitud direccion codigo } }"""
+
+
+def _ubicar(variables, rol="CLIENTE", idioma="es", fallan=()):
+    clientes = clientes_falsos()
+    clientes.acl.fallan = set(fallan)
+    headers = {"Accept-Language": idioma}
+    if rol:
+        headers["Authorization"] = f"Bearer {token_de_prueba(rol, usuario_id='cli-1')}"
+    app = create_app(config=Configuracion.desde_entorno(), clientes=clientes)
+    with TestClient(app) as http:
+        r = http.post(
+            "/graphql/app", json={"query": UBICAR, "variables": variables}, headers=headers
+        )
+    assert r.status_code == 200, r.text
+    return r.json(), clientes.acl
+
+
+def test_ubicar_por_place_id_en_el_idioma_de_la_app():
+    cuerpo, acl = _ubicar({"p": "stub:CO:Cra 45 # 22-18"}, idioma="en")
+    u = cuerpo["data"]["ubicarDireccion"]
+    assert u == {
+        "encontrada": True,
+        "latitud": 4.6767,
+        "longitud": -74.0483,
+        "direccion": "Cra 45 # 22-18",
+        "codigo": None,
+    }
+    assert acl.idiomas_lugares == ["en"]
+
+
+def test_ubicar_responde_codigos_y_nunca_un_error_tecnico():
+    u = _ubicar({"t": "calle noexiste"})[0]["data"]["ubicarDireccion"]
+    assert u["encontrada"] is False and u["codigo"] == "DIRECCION_NO_ENCONTRADA"
+    u = _ubicar({"t": "Cra 45"}, fallan={"lugares"})[0]["data"]["ubicarDireccion"]
+    assert u["codigo"] == "SERVICIO_NO_DISPONIBLE"
+
+
+def test_ubicar_solo_el_cliente():
+    assert _ubicar({"t": "Cra 45"}, rol="ASESOR")[0]["errors"][0]["message"] == MENSAJE_SIN_PERMISO
+
+
+def test_solicitar_con_la_direccion_ubicada_viaja_con_su_origen():
+    claims = ClaimsFalso()
+    _pedir(claims, SOLICITAR, {"e": _entrada(origenUbicacion="DIRECCION")})
+    solicitud = next(a for n, *a in claims.llamadas if n == "solicitar_asistencia")[0]
+    assert solicitud["origen_ubicacion"] == "DIRECCION"
+    # Por defecto, GPS (la app anterior a la v0.50 no lo manda).
+    _pedir(claims, SOLICITAR, {"e": _entrada(idSolicitud=ID.replace("0b6", "1b6"))})
+    ultima = [a for n, *a in claims.llamadas if n == "solicitar_asistencia"][-1][0]
+    assert ultima["origen_ubicacion"] == "GPS"
+
+
+def test_con_origen_direccion_la_direccion_es_obligatoria_y_no_llama_a_claims():
+    claims = ClaimsFalso()
+    r = _pedir(claims, SOLICITAR, {"e": _entrada(origenUbicacion="DIRECCION", direccion=" ")})
+    assert r["data"]["solicitarAsistencia"]["codigo"] == "DATOS_INVALIDOS"
+    assert all(n != "solicitar_asistencia" for n, *_ in claims.llamadas)

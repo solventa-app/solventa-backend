@@ -22,7 +22,12 @@ from app.adapters.firma import AdaptadorFirma
 from app.adapters.firma_alterna import AdaptadorFirmaAlterna
 from app.adapters.identidad_didit import AdaptadorIdentidadDidit
 from app.adapters.kyc import AdaptadorKyc
-from app.adapters.lugares import lugares_desde_entorno
+from app.adapters.lugares import (
+    SERVICIO_NO_DISPONIBLE,
+    CacheLugares,
+    lugares_desde_entorno,
+    no_encontrada,
+)
 from app.adapters.notificaciones import AdaptadorNotificaciones
 from app.adapters.open_data import AdaptadorOpenData
 from app.adapters.open_finance import AdaptadorOpenFinance
@@ -37,6 +42,7 @@ from app.application.circuitos import (
     NOMBRE_CIRCUITO_FIRMA,
     NOMBRE_CIRCUITO_IDENTIDAD,
     NOMBRE_CIRCUITO_KYC,
+    NOMBRE_CIRCUITO_LUGARES,
     NOMBRE_CIRCUITO_NOTIFICACIONES,
     NOMBRE_CIRCUITO_OPEN_DATA,
     NOMBRE_CIRCUITO_OPEN_FINANCE,
@@ -564,6 +570,8 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 NOMBRE_CIRCUITO_FIRMA: adaptador_firma.sondear,
                 NOMBRE_CIRCUITO_KYC: adaptador_kyc.sondear,
                 NOMBRE_CIRCUITO_PRESTADORES: adaptador_prestadores.sondear,
+                # Sonda sintética: un punto de referencia público, nunca una dirección de cliente.
+                NOMBRE_CIRCUITO_LUGARES: lambda: lugares.ubicar(None, "Parque de la 93", "es"),
                 NOMBRE_CIRCUITO_IDENTIDAD: adaptador_identidad.sondear,
                 NOMBRE_CIRCUITO_NOTIFICACIONES: adaptador_notificaciones.sondear,
             },
@@ -582,6 +590,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         app.state.servicio_firma = servicio_firma
         app.state.servicio_kyc = servicio_kyc
         app.state.servicio_prestadores = servicio_prestadores
+        app.state.cache_lugares = CacheLugares(cache_redis)
         app.state.servicio_identidad = servicio_identidad
         app.state.servicio_notificaciones = servicio_notificaciones
 
@@ -629,6 +638,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             NOMBRE_CIRCUITO_FIRMA,
             NOMBRE_CIRCUITO_KYC,
             NOMBRE_CIRCUITO_PRESTADORES,
+            NOMBRE_CIRCUITO_LUGARES,
             NOMBRE_CIRCUITO_IDENTIDAD,
             NOMBRE_CIRCUITO_NOTIFICACIONES,
         )
@@ -887,9 +897,38 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         )
 
     @app.get("/lugares/autocompletar", tags=["lugares"])
-    def lugares_autocompletar(texto: str, pais: str | None = None) -> dict[str, list]:
-        """T19: sugerencias de dirección (Places, timeout 700 ms; sin llave, un stub)."""
-        return {"sugerencias": lugares.autocompletar(texto, pais)}
+    def lugares_autocompletar(
+        texto: str, pais: str | None = None, idioma: str | None = None
+    ) -> dict[str, list]:
+        """T19: sugerencias de dirección (Places, timeout 700 ms; sin llave, un stub). HU-M06
+        (v0.50): en el idioma de la app (`es`/`en`)."""
+        return {"sugerencias": lugares.autocompletar(texto, pais, idioma)}
+
+    @app.get("/lugares/ubicar", tags=["lugares"])
+    def lugares_ubicar(
+        place_id: str | None = None, texto: str | None = None, idioma: str = "es"
+    ) -> dict:
+        """HU-M06 (v0.50, B9): coordenadas de la dirección que escribió el cliente sin GPS. Con
+        `place_id`, Place Details; sin él, Geocoding con el texto (solo Colombia). Siempre 200:
+        `encontrada: false` con `DIRECCION_NO_ENCONTRADA` o, si Google no responde o el circuito
+        está abierto, `SERVICIO_NO_DISPONIBLE` (regla 4). La dirección no se registra."""
+        idioma = idioma if idioma in ("es", "en") else "es"
+        place_id = (place_id or "").strip()[:300] or None
+        texto = (texto or "").strip()[:200] or None
+        if not place_id and not texto:
+            return no_encontrada()
+        cache = app.state.cache_lugares
+        guardado = cache.obtener(place_id, texto, idioma)
+        if guardado is not None:
+            return guardado
+        try:
+            with app.state.fabrica_circuitos.get_breaker(NOMBRE_CIRCUITO_LUGARES):
+                resultado = lugares.ubicar(place_id, texto, idioma)
+        except Exception as error:
+            logger.warning("Places no ubicó la dirección error=%s", type(error).__name__)
+            return no_encontrada(SERVICIO_NO_DISPONIBLE)
+        cache.guardar(place_id, texto, idioma, resultado)
+        return resultado
 
     @app.get("/lugares/validar", tags=["lugares"])
     def lugares_validar(place_id: str) -> dict:

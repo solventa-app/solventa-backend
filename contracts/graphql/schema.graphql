@@ -1237,9 +1237,32 @@ input SolicitudAsistenciaInput {
   prestadorId: ID!
   tipoAsistencia: TipoPrestador!
   descripcion: String = null # opcional, hasta 500 caracteres
-  direccion: String = null # la que el cliente confirmó o corrigió, hasta 200 caracteres
-  latitud: Float! # WGS84, del GPS del teléfono
+  direccion: String = null # la que el cliente confirmó o corrigió, hasta 200 caracteres; obligatoria con DIRECCION
+  latitud: Float! # WGS84, del GPS del teléfono o de la dirección ubicada (`ubicarDireccion`)
   longitud: Float!
+  # v0.50 (HU-M06, B4): de dónde salió la ubicación. Se guarda con la asistencia y en la auditoría.
+  origenUbicacion: OrigenUbicacion! = GPS
+}
+
+# v0.50 (HU-M06, B4 y B9): sin permiso de ubicación o con el GPS apagado, el cliente escribe su dirección; la app la
+# convierte en coordenadas con `ubicarDireccion` y el mapa funciona igual que con GPS.
+enum OrigenUbicacion {
+  GPS
+  DIRECCION
+}
+
+# El backend no devuelve textos para mostrar: la app pone el mensaje en el idioma del usuario.
+enum CodigoUbicacion {
+  DIRECCION_NO_ENCONTRADA # ni Places ni Geocoding la encontraron (o no es de Colombia)
+  SERVICIO_NO_DISPONIBLE # Google no respondió o el circuito del ACL está abierto: reintentar
+}
+
+type UbicacionDireccion {
+  encontrada: Boolean!
+  latitud: Float # WGS84; solo si encontrada
+  longitud: Float
+  direccion: String # normalizada por Google, en el idioma de la app (`Accept-Language`)
+  codigo: CodigoUbicacion # solo si no encontrada
 }
 
 # v0.41 (CA-M06-02): sin permiso de ubicación o con el GPS apagado, el cliente escribe adónde debe llegar el prestador.
@@ -1319,6 +1342,9 @@ type Query {
   # ---------- v0.36 (HU-M06) ----------
   # Sesión de CLIENTE (SIN_SESION si no hay). versionLocal null o distinta de la vigente: la lista completa.
   catalogoPrestadores(versionLocal: String = null): CatalogoPrestadores!
+  # v0.50 (HU-M06, B9): coordenadas de la dirección escrita, por el ACL (Place Details con `placeId` de
+  # `autocompletarDireccion`, o Geocoding con `texto`; solo Colombia). Solo CLIENTE. La dirección no se registra.
+  ubicarDireccion(placeId: String = null, texto: String = null): UbicacionDireccion!
 }
 
 type Mutation {
@@ -1464,6 +1490,7 @@ type Mutation {
   solicitarAsistencia(entrada: SolicitudAsistenciaInput!): ResultadoAsistencia!
   # v0.41 (HU-M06, CA-M06-02): lo mismo sin ubicación, con la dirección a mano. Sin dirección: DATOS_INVALIDOS.
   solicitarAsistenciaConDireccion(entrada: SolicitudAsistenciaDireccionInput!): ResultadoAsistencia!
+    @deprecated(reason: "v0.50: usar solicitarAsistencia con las coordenadas de ubicarDireccion y origenUbicacion DIRECCION")
   # Idempotente: cancelar dos veces devuelve la misma asistencia CANCELADA.
   cancelarAsistencia(id: ID!): ResultadoAsistencia!
 }

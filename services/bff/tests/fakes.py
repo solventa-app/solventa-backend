@@ -614,10 +614,29 @@ class AclFalso:
             "degradado": False,
         }
 
-    async def autocompletar_direccion(self, texto: str, pais: str | None) -> list[dict]:
+    async def autocompletar_direccion(
+        self, texto: str, pais: str | None, idioma: str = "es"
+    ) -> list[dict]:
+        self.idiomas_lugares = [*getattr(self, "idiomas_lugares", []), idioma]
         if "lugares" in self.fallan:
             raise ErrorServicio("timeout")
         return [{"place_id": f"stub:{pais or 'CO'}:{texto}", "descripcion": texto}]
+
+    async def ubicar_direccion(self, place_id: str | None, texto: str | None, idioma: str) -> dict:
+        """HU-M06 (v0.50): como el stub del ACL; «noexiste» no se encuentra."""
+        self.idiomas_lugares = [*getattr(self, "idiomas_lugares", []), idioma]
+        if "lugares" in self.fallan:
+            raise ErrorServicio("timeout")
+        valor = (place_id or "").split(":", 2)[-1] if place_id else (texto or "")
+        if "noexiste" in valor:
+            return {"encontrada": False, "codigo": "DIRECCION_NO_ENCONTRADA"}
+        return {
+            "encontrada": True,
+            "latitud": 4.6767,
+            "longitud": -74.0483,
+            "direccion": valor,
+            "codigo": None,
+        }
 
     async def validar_direccion(self, place_id: str) -> dict:
         if "lugares" in self.fallan:
