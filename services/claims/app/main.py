@@ -10,14 +10,20 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
+from app.application.asistencias import (
+    ErrorAsistencia,
+    RepositorioAsistenciasMongo,
+    ServicioAsistencias,
+)
 from app.application.autenticacion_servicios import autenticacion_para
 from app.application.bus_eventos import BusEventosLog
 from app.application.catalogo_prestadores import (
@@ -59,6 +65,8 @@ class EstadoSiniestro(StrEnum):
 
 class AprobarRequest(BaseModel):
     actor_usuario_id: str | None = None  # el BACKOFFICE que resuelve (id opaco de AUTH)
+    # KAN-290: el valor del daño en un siniestro de auto parcial o de RC (decimal como texto).
+    valor_dano: str | None = Field(default=None, pattern=r"^\d{1,13}(\.\d{1,2})?$")
 
 
 class RechazarRequest(BaseModel):
@@ -97,10 +105,45 @@ class ReporteRequest(BaseModel):
     asegurado: AseguradoReporte
     poliza_id: str = Field(min_length=1)
     cobertura_aplicada: str = Field(min_length=1)
+    # KAN-290: obligatorio si la póliza es de AUTO.
+    tipo_siniestro_auto: (
+        Literal[
+            "CHOQUE_PARCIAL",
+            "PERDIDA_TOTAL_DANOS",
+            "HURTO_TOTAL",
+            "HURTO_PARCIAL",
+            "RESPONSABILIDAD_CIVIL",
+        ]
+        | None
+    ) = None
     ocurrido_en: datetime
     descripcion: str
     ubicacion: UbicacionReporte
     evidencias: list[FotoReporte]
+
+
+class TipoAsistencia(StrEnum):
+    MEDICO = "MEDICO"
+    MECANICO = "MECANICO"
+
+
+class SolicitudAsistenciaRequest(BaseModel):
+    """HU-M06: lo arma el BFF con el CLIENTE del token y lo que mandó la app. `id_solicitud` lo
+    genera la app (UUID) y es el id de la asistencia: reenviar con el mismo no crea otra."""
+
+    id_solicitud: str = Field(min_length=8, max_length=64)
+    cliente_id: str = Field(min_length=1)
+    prestador_id: str = Field(min_length=1, max_length=64)
+    tipo_asistencia: TipoAsistencia
+    descripcion: str | None = Field(default=None, max_length=2000)
+    direccion: str | None = Field(default=None, max_length=1000)
+    # Sin ubicación (CA-M06-02) la dirección es obligatoria: lo valida ServicioAsistencias.
+    latitud: float | None = Field(default=None, ge=-90, le=90)
+    longitud: float | None = Field(default=None, ge=-180, le=180)
+
+
+class CancelarAsistenciaRequest(BaseModel):
+    cliente_id: str = Field(min_length=1)
 
 
 class DerivarRequest(BaseModel):
@@ -114,9 +157,10 @@ def create_app(
     servicio: ServicioSiniestros | None = None,
     reiniciar: Callable[[], int] | None = None,
     catalogo=None,
+    asistencias: ServicioAsistencias | None = None,
 ) -> FastAPI:
-    """`servicio`, `reiniciar` y `catalogo` permiten inyectar dobles de prueba sin levantar
-    MongoDB (ver `tests/fakes.py`)."""
+    """`servicio`, `reiniciar`, `catalogo` y `asistencias` permiten inyectar dobles de prueba sin
+    levantar MongoDB (ver `tests/fakes.py`)."""
     config = config or Configuracion.desde_entorno()
 
     @asynccontextmanager
@@ -127,6 +171,7 @@ def create_app(
         almacenamiento: ClienteAlmacenamiento | None = None
         app.state.reiniciar = reiniciar
         app.state.catalogo = catalogo
+        app.state.asistencias = asistencias
         if servicio is not None:
             app.state.servicio = servicio
         else:
@@ -142,6 +187,11 @@ def create_app(
             if app.state.catalogo is None:
                 app.state.catalogo = LectorCatalogoPrestadores(
                     cliente_mongo, config.mongo_db, config.lectura_max_ms
+                )
+            if app.state.asistencias is None:
+                app.state.asistencias = ServicioAsistencias(
+                    RepositorioAsistenciasMongo(cliente_mongo, cifrador, config.mongo_db),
+                    simulacion=config.asistencia_simulacion,
                 )
             modo = config.autenticacion_servicios
             policy = ClientePolicy(
@@ -221,6 +271,29 @@ def create_app(
         except DependenciaNoDisponible as error:
             return JSONResponse(status_code=503, content={"detail": str(error)})
 
+    def _asistencia(accion) -> dict | JSONResponse:
+        """409 con `codigo` estable (la app elige el texto) o 404 si no es del cliente."""
+        try:
+            return accion()
+        except ErrorAsistencia as error:
+            estado = 404 if error.codigo == "NO_ENCONTRADA" else 409
+            contenido = {"detail": str(error), "codigo": error.codigo}
+            return JSONResponse(status_code=estado, content=contenido)
+        except PyMongoError:
+            detalle = "No pudimos registrar la asistencia. Intenta de nuevo."
+            return JSONResponse(status_code=503, content={"detail": detalle})
+
+    @app.post("/asistencias", tags=["asistencia"])
+    def solicitar_asistencia(body: SolicitudAsistenciaRequest) -> dict:
+        """HU-M06 (KAN-265): idempotente por `id_solicitud`; reenviar una NO_CONFIRMADA
+        reintenta."""
+        return _asistencia(lambda: app.state.asistencias.solicitar(body.model_dump(mode="json")))
+
+    @app.post("/asistencias/{asistencia_id}/cancelar", tags=["asistencia"])
+    def cancelar_asistencia(asistencia_id: str, body: CancelarAsistenciaRequest) -> dict:
+        """HU-M06 (KAN-266): idempotente; solo el cliente que la pidió."""
+        return _asistencia(lambda: app.state.asistencias.cancelar(asistencia_id, body.cliente_id))
+
     @app.post("/siniestros", tags=["reporte"])
     def reportar(body: ReporteRequest) -> dict:
         """HU-M05: el cliente reporta desde la app y el caso llega PENDIENTE a la bandeja (W04-01).
@@ -240,7 +313,11 @@ def create_app(
     @app.post("/siniestros/{siniestro_id}/aprobar", tags=["resolucion"])
     def aprobar(siniestro_id: str, body: AprobarRequest) -> dict:
         """Registra la orden de pago en PAYMENTS y aprueba (W04-6)."""
-        return _accion(lambda: app.state.servicio.aprobar(siniestro_id, body.actor_usuario_id))
+        return _accion(
+            lambda: app.state.servicio.aprobar(
+                siniestro_id, body.actor_usuario_id, valor_dano=body.valor_dano
+            )
+        )
 
     @app.post("/siniestros/{siniestro_id}/rechazar", tags=["resolucion"])
     def rechazar(siniestro_id: str, body: RechazarRequest) -> dict:
@@ -265,6 +342,12 @@ def create_app(
             """Solo local (W04-15, `DEMO_REINICIAR=true`): deja los casos como en la semilla para
             las pruebas E2E de la web. Nunca existe en staging."""
             return {"siniestros": app.state.reiniciar()}
+
+        @app.post("/_demo/siniestros/{siniestro_id}/vencer", tags=["operacion"])
+        def vencer_demo(siniestro_id: str, minutos: int = Query(2, ge=0, le=1440)) -> dict:
+            """Solo local (Q-03): el plazo del dictamen de un caso PENDIENTE vence en `minutos`.
+            El disparador local (`aprobar-vencidos-local`) lo aprueba en el minuto siguiente."""
+            return _accion(lambda: app.state.servicio.vencer_en(siniestro_id, minutos))
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app

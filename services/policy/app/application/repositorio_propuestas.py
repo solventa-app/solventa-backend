@@ -38,7 +38,7 @@ from app.application.comisiones import calcular_comision, mes
 _COLUMNAS = (
     "id, oferta_id, cliente_id, consentimiento_id, version_reglas, actor_usuario_id, estado, "
     "oferta_cifrada, intentos_emision, motivo_estado, creado_en, actualizado_en, "
-    "origen_contacto, actor_rol, contacto_borrado_en, tasa_comision"
+    "origen_contacto, actor_rol, contacto_borrado_en, tasa_comision, producto"
 )
 _PRIVADAS = ("nombre_cifrado", "correo_cifrado", "firma_texto_cifrado")
 # La póliza de la propuesta, si ya se emitió (una subconsulta: `polizas.propuesta_id` es UNIQUE).
@@ -52,6 +52,9 @@ _COLUMNAS_POLIZA = (
 _COLUMNAS_EVIDENCIA = (
     "id, propuesta_id, documento_hash, version_documento, firmante_id, "
     "referencia_proveedor, firmada_en, creado_en, modo_firma, imagen_firma_archivo_id"
+)
+_COLUMNAS_DOCUMENTO = (
+    "id, propuesta_id, tipo, archivo_id, clave_envuelta, sha256, tamano_bytes, creado_en"
 )
 # Estados en los que una propuesta todavía puede cancelarse (W03-26): todo lo que no es final.
 ESTADOS_ABIERTOS = (
@@ -102,6 +105,11 @@ class RepositorioPropuestasPostgres:
         oferta = {k: datos[k] for k in ("tipo", "prima", "cobertura", "plazo_meses")}
         # El nivel de riesgo de la oferta lo necesita UNDER al decidir (puede faltar).
         oferta["nivel_riesgo"] = datos.get("nivel_riesgo")
+        # KAN-290: en AUTO, el vehículo y las coberturas viajan cifrados con la oferta.
+        if datos.get("producto") == "AUTO":
+            oferta["vehiculo"] = datos.get("vehiculo")
+            oferta["coberturas"] = datos.get("coberturas") or []
+            oferta["requiere_revision"] = bool(datos.get("requiere_revision"))
         cifrada = self._cifrador.cifrar(json.dumps(oferta), propuesta_id)
         contacto = datos.get("contacto")
         with self._pool.connection() as conexion:
@@ -110,12 +118,12 @@ class RepositorioPropuestasPostgres:
                 INSERT INTO propuestas
                     (id, oferta_id, cliente_id, consentimiento_id, version_reglas,
                      actor_usuario_id, estado, oferta_cifrada, actor_rol, origen_contacto,
-                     nombre_cifrado, correo_cifrado, tasa_comision)
+                     nombre_cifrado, correo_cifrado, tasa_comision, producto)
                 VALUES
                     (%(id)s, %(oferta_id)s, %(cliente_id)s, %(consentimiento_id)s,
                      %(version_reglas)s, %(actor_usuario_id)s, 'ACEPTADA', %(oferta_cifrada)s,
                      %(actor_rol)s, %(origen_contacto)s, %(nombre_cifrado)s, %(correo_cifrado)s,
-                     %(tasa_comision)s)
+                     %(tasa_comision)s, %(producto)s)
                 ON CONFLICT (oferta_id) DO NOTHING
                 RETURNING {_COLUMNAS}, NULL::text AS poliza_id
                 """,
@@ -130,6 +138,7 @@ class RepositorioPropuestasPostgres:
                     "actor_rol": datos.get("actor_rol"),
                     "origen_contacto": datos.get("origen_contacto"),
                     "tasa_comision": datos.get("tasa_comision"),
+                    "producto": datos.get("producto") or "VIDA_DEUDOR",
                     "nombre_cifrado": self._cifrar_opcional(
                         contacto and contacto["nombre"], f"nombre:{propuesta_id}"
                     ),
@@ -332,6 +341,10 @@ class RepositorioPropuestasPostgres:
             "cobertura": propuesta["cobertura"],
             "plazo_meses": propuesta["plazo_meses"],
             "actor_usuario_id": propuesta["actor_usuario_id"],
+            # KAN-290
+            "producto": propuesta.get("producto") or "VIDA_DEUDOR",
+            "vehiculo": propuesta.get("vehiculo"),
+            "coberturas": propuesta.get("coberturas") or [],
             # Quien firmó es el CLIENTE titular: a él se le avisa y de él es el nombre del
             # documento.
             "firmante_id": evidencia["firmante_id"] if evidencia else None,
@@ -403,6 +416,58 @@ class RepositorioPropuestasPostgres:
                     {"propuesta_id": propuesta_id},
                 ).fetchone()
         return fila, creada
+
+    # ------------------------------------------------------------------ documentos firmados (T6)
+
+    def obtener_documento(self, propuesta_id: str, tipo: str) -> dict[str, Any] | None:
+        with self._pool.connection() as conexion:
+            return conexion.execute(
+                f"SELECT {_COLUMNAS_DOCUMENTO} FROM documentos_firmados "
+                "WHERE propuesta_id = %(propuesta_id)s AND tipo = %(tipo)s",
+                {"propuesta_id": propuesta_id, "tipo": tipo},
+            ).fetchone()
+
+    def guardar_documento(
+        self,
+        propuesta_id: str,
+        tipo: str,
+        archivo_id: str,
+        clave_envuelta: str,
+        sha256: str,
+        tamano_bytes: int,
+    ) -> bool:
+        """Registra el documento cifrado (una sola vez por propuesta y tipo; inmutable). Devuelve
+        False si otra petición ya lo había guardado."""
+        with self._pool.connection() as conexion:
+            fila = conexion.execute(
+                """
+                INSERT INTO documentos_firmados
+                    (id, propuesta_id, tipo, archivo_id, clave_envuelta, sha256, tamano_bytes)
+                VALUES
+                    (%(id)s, %(propuesta_id)s, %(tipo)s, %(archivo_id)s, %(clave_envuelta)s,
+                     %(sha256)s, %(tamano_bytes)s)
+                ON CONFLICT (propuesta_id, tipo) DO NOTHING
+                RETURNING id
+                """,
+                {
+                    "id": str(uuid.uuid4()),
+                    "propuesta_id": propuesta_id,
+                    "tipo": tipo,
+                    "archivo_id": archivo_id,
+                    "clave_envuelta": clave_envuelta,
+                    "sha256": sha256,
+                    "tamano_bytes": tamano_bytes,
+                },
+            ).fetchone()
+        return fila is not None
+
+    def documentos_de(self, propuesta_id: str) -> list[dict[str, Any]]:
+        with self._pool.connection() as conexion:
+            return conexion.execute(
+                f"SELECT {_COLUMNAS_DOCUMENTO} FROM documentos_firmados "
+                "WHERE propuesta_id = %(propuesta_id)s ORDER BY creado_en",
+                {"propuesta_id": propuesta_id},
+            ).fetchall()
 
     # ------------------------------------------------------------------ bloque 9 (W03-19 a W03-37)
 

@@ -1,0 +1,55 @@
+{
+  "version": "auto-2026-11",
+  "moneda": "COP",
+  "vigencia_meses": 12,
+  "smmlv": "1423500",
+  "descripcion": "Tarifa ilustrativa de la póliza de auto todo riesgo (docs/plan-poliza-auto.md §3). prima_anual = valor_comercial × tasa_base × factores + prima_rce; prima mensual = anual / 12.",
+  "tasa_base_anual": {
+    "AUTOMOVIL": "0.032",
+    "CAMPERO": "0.036",
+    "CAMIONETA": "0.036",
+    "MOTOCICLETA": "0.055"
+  },
+  "factor_uso": {"PARTICULAR": "1.00", "COMERCIAL": "1.15"},
+  "prima_rce_anual": {
+    "AUTOMOVIL": "420000",
+    "CAMPERO": "480000",
+    "CAMIONETA": "480000",
+    "MOTOCICLETA": "260000"
+  },
+  "valor_asegurado_rce": "1000000000",
+  "antiguedad_max_anios": 15,
+  "factor_antiguedad": [
+    {"hasta_anios": 2, "factor": "0.95"},
+    {"hasta_anios": 5, "factor": "1.00"},
+    {"hasta_anios": 10, "factor": "1.10"},
+    {"hasta_anios": 15, "factor": "1.25"}
+  ],
+  "factor_kilometraje": [
+    {"hasta_km": 9999, "factor": "0.90"},
+    {"hasta_km": 19999, "factor": "1.00"},
+    {"hasta_km": 29999, "factor": "1.10"},
+    {"hasta_km": null, "factor": "1.20"}
+  ],
+  "factor_indice_hurto": {"BAJO": "0.95", "MEDIO": "1.00", "ALTO": "1.20", "MUY_ALTO": "1.40"},
+  "factor_siniestralidad": [
+    {"siniestros": 0, "factor": "0.90"},
+    {"siniestros": 1, "factor": "1.10"},
+    {"siniestros": 2, "factor": "1.30"}
+  ],
+  "siniestros_para_revision": 3,
+  "factor_ciudad": {"BOGOTA": "1.10", "MEDELLIN": "1.10", "CALI": "1.10", "_OTRAS": "1.00"},
+  "factor_deducible": {"DIEZ_POR_CIENTO": "1.00", "SIN_DEDUCIBLE": "1.25"},
+  "deducible": {"porcentaje": "0.10", "minimo_smmlv": "1"},
+  "rango_preliminar": "0.20",
+  "valor_referencia_preliminar": {
+    "descripcion": "Si la guía Fasecolda no responde, el valor comercial se estima con el valor de un vehículo nuevo de su clase, depreciado 10 % por año, y la oferta es PRELIMINAR (regla 4).",
+    "depreciacion_anual": "0.10",
+    "valor_nuevo": {
+      "AUTOMOVIL": "80000000",
+      "CAMPERO": "120000000",
+      "CAMIONETA": "140000000",
+      "MOTOCICLETA": "12000000"
+    }
+  }
+}

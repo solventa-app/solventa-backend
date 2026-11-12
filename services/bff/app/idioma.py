@@ -39,6 +39,23 @@ EN: dict[str, str] = {
     "El servicio no está disponible en este momento. Intenta de nuevo.": (
         "The service is not available right now. Please try again."
     ),
+    # Acceso biométrico del teléfono (KAN-26, contrato v0.44)
+    "No pudimos verificar este teléfono. Ingresa con tu correo y contraseña.": (
+        "We could not verify this phone. Sign in with your email and password."
+    ),
+    "No pudimos activar el acceso biométrico. Intenta de nuevo.": (
+        "We could not turn on biometric sign-in. Please try again."
+    ),
+    "No pudimos activar el acceso biométrico en este teléfono.": (
+        "We could not turn on biometric sign-in on this phone."
+    ),
+    # «Olvidé mi contraseña» (KAN-26, contrato v0.43)
+    "El enlace no es válido o ya venció. Pide uno nuevo.": (
+        "The link is not valid or has expired. Request a new one."
+    ),
+    "No pudimos cambiar tu clave. Intenta de nuevo.": (
+        "We could not change your password. Please try again."
+    ),
     # Onboarding del móvil (HU-M01, contrato v0.20)
     "Estamos verificando tu identidad. Podrás usar esto al terminar.": (
         "We are verifying your identity. You can use this once it is done."
@@ -231,6 +248,12 @@ EN: dict[str, str] = {
     "El documento no coincide con el de tu cuenta.": (
         "The document doesn't match the one on your account."
     ),
+    "La dirección del inmueble está en un país que no atendemos.": (
+        "The property address is in a country we don't serve."
+    ),
+    "El documento de identidad no es válido para ese tipo y país.": (
+        "The ID document isn't valid for that type and country."
+    ),
     "No pudimos consultar las propuestas. Intenta de nuevo.": (
         "We couldn't load the proposals. Please try again."
     ),
@@ -243,6 +266,9 @@ EN: dict[str, str] = {
     # Oferta (app/servicio_oferta.py)
     "No hay un consentimiento vigente para consultar tus datos.": (
         "There is no valid consent to look up your data."
+    ),
+    "No pudimos cargar tus consultas. Intenta nuevamente.": (
+        "We could not load your queries. Please try again."
     ),
     "No pudimos calcular tu oferta en este momento. Intenta de nuevo o habla con un asesor.": (
         "We couldn't calculate your offer right now. Please try again or talk to an advisor."
@@ -296,6 +322,35 @@ EN: dict[str, str] = {
     ),
     "El identificador del reporte no es válido.": "The report identifier is not valid.",
     "La póliza no existe o no es tuya.": "The policy doesn't exist or isn't yours.",
+    "La placa no es válida. Escríbela como ABC123 (o ABC12D si es una moto).": (
+        "The plate isn't valid. Write it as ABC123 (or ABC12D for a motorcycle)."
+    ),
+    "El kilometraje anual debe estar entre 0 y 200.000 km.": (
+        "The annual mileage must be between 0 and 200,000 km."
+    ),
+    "Ingresa la ciudad donde circula el vehículo.": "Enter the city where the vehicle is driven.",
+    "No pudimos consultar los datos del vehículo en este momento. Intenta de nuevo en unos "
+    "minutos.": "We couldn't check the vehicle's data right now. Try again in a few minutes.",
+    "No encontramos esa placa en el RUNT. Revísala e intenta de nuevo.": (
+        "We couldn't find that plate in the vehicle registry. Check it and try again."
+    ),
+    "El vehículo tiene una limitación a la propiedad registrada en el RUNT.": (
+        "The vehicle has an ownership restriction in the vehicle registry."
+    ),
+    "El vehículo tiene una denuncia de hurto vigente en el RUNT.": (
+        "The vehicle has an active theft report in the vehicle registry."
+    ),
+    "El vehículo tiene más de 15 años: no lo aseguramos en todo riesgo.": (
+        "The vehicle is more than 15 years old: we don't offer comprehensive cover for it."
+    ),
+    "No aseguramos vehículos de esa clase.": "We don't insure that type of vehicle.",
+    "Indica qué le pasó al vehículo.": "Tell us what happened to the vehicle.",
+    "Digita el valor del daño para aprobar este siniestro.": (
+        "Enter the amount of the damage to approve this claim."
+    ),
+    "El valor del daño no supera el deducible: no hay indemnización. Rechaza el caso.": (
+        "The damage doesn't exceed the deductible: there's no payout. Reject the claim."
+    ),
     "La fecha del siniestro está fuera de la vigencia de la póliza.": (
         "The claim date is outside the policy's coverage period."
     ),
@@ -320,6 +375,27 @@ EN: dict[str, str] = {
     "No pudimos consultar los prestadores. Intenta de nuevo.": (
         "We couldn't load the providers. Please try again."
     ),
+    # Asistencia en sitio (HU-M06): mensajes del BFF y de CLAIMS, que llegan tal cual
+    "No pudimos registrar la asistencia. Intenta de nuevo.": (
+        "We couldn't register the assistance request. Please try again."
+    ),
+    "El identificador de la solicitud no es válido.": "The request identifier is not valid.",
+    "Este prestador ya no está disponible. Elige otro prestador cercano.": (
+        "This provider is no longer available. Choose another nearby provider."
+    ),
+    "Este prestador no atiende ese tipo de asistencia. Elige otro prestador.": (
+        "This provider doesn't handle that type of assistance. Choose another provider."
+    ),
+    "La descripción no puede pasar de 500 caracteres.": (
+        "The description can't be longer than 500 characters."
+    ),
+    "La dirección no puede pasar de 200 caracteres.": (
+        "The address can't be longer than 200 characters."
+    ),
+    "Esta solicitud ya existe. Vuelve a intentarlo desde el mapa.": (
+        "This request already exists. Try again from the map."
+    ),
+    "No encontramos esa asistencia.": "We couldn't find that assistance request.",
     "La ventana debe ser 15m, 1h, 24h o 7d.": ("The window must be 15m, 1h, 24h or 7d."),
     "No pudimos calcular el estado del sistema. Intenta de nuevo.": (
         "We couldn't compute the system status. Please try again."

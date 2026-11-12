@@ -29,7 +29,23 @@ COPIAS = [
 ]
 
 
-PARES = [(FUENTE, COPIAS), (SESION, COPIAS_SESION)]
+# v0.42 (póliza de auto): las fuentes del vehículo van aparte para no tocar el score de vida, que
+# recorre todas las de `fuentes.json`. La tarifa de auto la lee RATING.
+FUENTES_VEHICULO = RAIZ / "contracts" / "fuentes-vehiculo.json"
+COPIAS_VEHICULO = [
+    RAIZ / "services" / servicio / "app" / "fuentes-vehiculo.json"
+    for servicio in ("acl-worker", "risk", "rating")
+]
+TARIFAS_AUTO = RAIZ / "contracts" / "tarifas-auto.json"
+COPIAS_TARIFAS = [RAIZ / "services" / "rating" / "app" / "tarifas-auto.json"]
+
+
+PARES = [
+    (FUENTE, COPIAS),
+    (SESION, COPIAS_SESION),
+    (FUENTES_VEHICULO, COPIAS_VEHICULO),
+    (TARIFAS_AUTO, COPIAS_TARIFAS),
+]
 
 
 def main(argumentos: list[str]) -> int:

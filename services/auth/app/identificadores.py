@@ -7,6 +7,9 @@ compartido entre servicios)."""
 
 import hashlib
 import hmac
+import re
+
+_SEPARADORES = re.compile(r"[\s.\-]")
 
 
 def id_opaco(valor: str) -> str:
@@ -14,9 +17,28 @@ def id_opaco(valor: str) -> str:
     return hashlib.sha256(valor.encode("utf-8")).hexdigest()[:12]
 
 
-def cliente_id_desde_documento(documento: str, clave: str) -> str:
+def cliente_id_desde_documento(
+    documento: str, clave: str, pais: str | None = None, tipo: str | None = None
+) -> str:
     """`titular_id` estable y opaco calculado con HMAC-SHA256 sobre el documento de identidad
-    (mismo algoritmo que usa el BFF). AUTH nunca guarda ni loguea el documento en claro."""
+    (mismo algoritmo que usa el BFF). AUTH nunca guarda ni loguea el documento en claro. T20: con
+    país y tipo (ver `valor_titular`)."""
     return hmac.new(
-        clave.encode("utf-8"), documento.strip().encode("utf-8"), hashlib.sha256
+        clave.encode("utf-8"), valor_titular(documento, pais, tipo).encode("utf-8"), hashlib.sha256
     ).hexdigest()
+
+
+def valor_titular(numero: str, pais: str | None = None, tipo: str | None = None) -> str:
+    """T20: lo que entra al HMAC del `titular_id`. Cédula de ciudadanía colombiana (o sin país ni
+    tipo, como antes de T20): solo el número, para que los titulares, consentimientos y pólizas
+    que ya existen sigan ligados. Cualquier otro par: `PAIS:TIPO:NUMERO`, así dos documentos con
+    el mismo número en tipos o países distintos no son la misma persona."""
+    # Sin puntos, espacios ni guiones: la cédula que lee la verificación de identidad
+    # («1.090.000.001») y la que digita el asesor («1090000001») son el mismo titular, y su
+    # póliza queda en la misma cuenta (QA 2026-11-10).
+    limpio = _SEPARADORES.sub("", numero).upper()
+    pais_n = (pais or "CO").strip().upper()
+    tipo_n = (tipo or "CC").strip().upper()
+    if (pais_n, tipo_n) == ("CO", "CC"):
+        return limpio
+    return f"{pais_n}:{tipo_n}:{limpio}"

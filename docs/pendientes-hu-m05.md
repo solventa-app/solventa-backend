@@ -74,7 +74,7 @@ Hoy el cliente se entera solo al consultar.
 ### 6. Medición (opcional)
 k6 de `misSiniestros` sobre la secundaria (EC011/EC012), igual que la bandeja (`tests/k6/w04-bandeja.js`).
 
-### 7. Documentación (KAN-279)
+### 7. Documentación (KAN-279): **hecho** (2026-11-08)
 `PROJECT_STATUS.md` y `CLAUDE.md`:
 - HU-M05 en código y en local.
 - Contrato **v0.35**; siguiente libre **v0.36**.

@@ -75,3 +75,19 @@ def test_cuenta_que_ya_no_espera_se_da_por_notificada() -> None:
     sesion = _ligada(pila)
     pila.servicio.enviar(sesion)
     assert pila.servicio.verificar(sesion["id"])["cuenta_notificada_en"] is not None
+
+
+def test_t20_la_cuenta_se_cierra_con_el_tipo_y_el_pais_de_la_sesion() -> None:
+    from fakes import CLAVE_HMAC
+
+    from app.application.identificadores import titular_id_desde_documento
+
+    pila = Pila()
+    sesion, _ = pila.sesion_lista("CE")
+    sesion = pila.servicio.vincular_cuenta(sesion, "u-1")
+    pila.servicio.enviar(sesion)
+    cerrada = pila.servicio.verificar(sesion["id"])
+
+    assert pila.cuentas.tipos == [("CE", "CO")]
+    assert cerrada["titular_id"] == titular_id_desde_documento("1000000001", CLAVE_HMAC, "CO", "CE")
+    assert cerrada["titular_id"] != titular_id_desde_documento("1000000001", CLAVE_HMAC)

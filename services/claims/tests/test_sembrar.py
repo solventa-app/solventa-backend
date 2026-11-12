@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 from pathlib import Path
 
 from fakes import AHORA, AlmacenamientoFalso, PolicyFalso, RepositorioFalso
@@ -123,3 +124,33 @@ def test_el_reinicio_quita_los_casos_reportados_desde_la_app():
     assert reiniciar(repo, DATOS) == TOTAL
     assert "0c9f2b7e-reportado" not in repo.siniestros
     assert len(repo.siniestros) == TOTAL
+
+
+def test_la_demo_deja_un_caso_pendiente_venciendo_en_minutos_y_la_pasada_lo_aprueba():
+    """QA 2026-11-10 (Q-03): QA mueve el plazo, el disparador local corre y el caso queda aprobado
+    como automático. Un caso que no está pendiente no se mueve. Fuera de la demo no existe."""
+    from fakes import PaymentsFalso, PolicyPolizas
+
+    repo, *_ = _sembrado()
+    pendiente = next(i for i, s in repo.siniestros.items() if s["estado"] == "PENDIENTE")
+    derivado = next(i for i, s in repo.siniestros.items() if s["estado"] == "EN_REVISION")
+    reloj = {"ahora": AHORA}
+    servicio = ServicioSiniestros(
+        repo, policy=PolicyPolizas(), payments=PaymentsFalso(), reloj=lambda: reloj["ahora"]
+    )
+    apagado = create_app(Configuracion(mongo_uri="x"), servicio, reiniciar=lambda: 0)
+    encendido = create_app(
+        Configuracion(mongo_uri="x", demo_reiniciar=True), servicio, reiniciar=lambda: 0
+    )
+    with TestClient(apagado) as c:
+        assert c.post(f"/_demo/siniestros/{pendiente}/vencer").status_code == 404
+    with TestClient(encendido) as c:
+        assert c.post(f"/_demo/siniestros/{pendiente}/vencer?minutos=2").status_code == 200
+        assert c.post(f"/_demo/siniestros/{derivado}/vencer").status_code == 409
+        assert c.post("/siniestros/_aprobar-vencidos").json()["aprobados"] == 0
+
+        reloj["ahora"] = AHORA + timedelta(minutes=3)
+        assert c.post("/siniestros/_aprobar-vencidos").json()["aprobados"] >= 1
+    assert repo.siniestros[pendiente]["estado"] == "APROBADO"
+    assert repo.resoluciones_por[pendiente]["automatica"] is True
+    assert repo.siniestros[derivado]["estado"] == "EN_REVISION"

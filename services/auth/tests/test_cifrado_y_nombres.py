@@ -312,7 +312,13 @@ def test_http_el_login_y_el_get_traen_el_nombre_propio_pero_la_lista_no() -> Non
     with _http() as client:
         creado = client.post(
             "/usuarios",
-            json={"usuario": "asesor.uno", "clave": CLAVE, "rol": "ASESOR", "nombre": NOMBRE},
+            json={
+                "usuario": "asesor.uno",
+                "clave": CLAVE,
+                "rol": "ASESOR",
+                "nombre": NOMBRE,
+                "correo": "asesor@ejemplo.co",
+            },
         ).json()
         sesion = client.post("/sesiones", json={"usuario": "asesor.uno", "clave": CLAVE}).json()
         propio = client.get(f"/usuarios/{creado['id']}").json()
@@ -328,7 +334,13 @@ def test_http_el_nombre_no_viaja_en_el_jwt() -> None:
     with _http() as client:
         client.post(
             "/usuarios",
-            json={"usuario": "asesor.uno", "clave": CLAVE, "rol": "ASESOR", "nombre": NOMBRE},
+            json={
+                "usuario": "asesor.uno",
+                "clave": CLAVE,
+                "rol": "ASESOR",
+                "nombre": NOMBRE,
+                "correo": "asesor@ejemplo.co",
+            },
         )
         sesion = client.post("/sesiones", json={"usuario": "asesor.uno", "clave": CLAVE}).json()
 

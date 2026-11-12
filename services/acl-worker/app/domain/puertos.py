@@ -27,6 +27,9 @@ class ConsultaFuente:
     fuente: Fuente
     finalidad: str = "perfilamiento"  # finalidad autorizada del consentimiento (CE 004/2024)
     forzar_proveedor: bool = False
+    # KAN-290: solo en las fuentes del vehículo. Viaja al proveedor y a nada más; `cliente_id` es
+    # entonces el HMAC de la placa (`vehiculo_id`), que es lo que ven la caché y los logs.
+    placa: str | None = None
 
 
 @dataclass

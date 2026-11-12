@@ -1,0 +1,1027 @@
+{
+  "info": {
+    "name": "Solventa - Historial de fuentes consultadas (Q-08, por el gateway)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "clave_nuevos",
+      "value": "Clave-newman-0001"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Preparación",
+      "item": [
+        {
+          "name": "0.1 iniciarSesion como BACKOFFICE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) {\\n  iniciarSesion(entrada: $e) { __typename ... on Sesion { token usuario { id rol } } ... on ErrorAutenticacion { mensaje } }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{usuario_backoffice}}\",\n      \"clave\": \"{{clave_backoffice}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const letras = 'abcdefghijklmnopqrstuvwxyz';",
+                  "let sufijo = '';",
+                  "for (let i = 0; i < 8; i++) sufijo += letras[Math.floor(Math.random() * letras.length)];",
+                  "pm.collectionVariables.set('alias_asesor_a', 'asesor.a.' + sufijo);",
+                  "pm.collectionVariables.set('alias_asesor_b', 'asesor.b.' + sufijo);",
+                  "pm.collectionVariables.set('alias_cliente', 'cliente.h.' + sufijo);",
+                  "const base = String(Date.now()).slice(-9);",
+                  "pm.collectionVariables.set('doc_a1', '7' + base);",
+                  "pm.collectionVariables.set('doc_a2', '8' + base);",
+                  "pm.collectionVariables.set('doc_cliente', '9' + base);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const s = cuerpo.data.iniciarSesion;",
+                  "pm.test('Sesión de BACKOFFICE', () => pm.expect(s.__typename).to.eql('Sesion'));",
+                  "pm.collectionVariables.set('token_backoffice', s.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.2 crearUsuario ASESOR A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $e) { __typename ... on Usuario { id rol } ... on ErrorUsuario { mensaje } }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{alias_asesor_a}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\",\n      \"correo\": \"{{alias_asesor_a}}@ejemplo.co\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const u = cuerpo.data.crearUsuario;",
+                  "pm.test('Usuario ASESOR creado', () => pm.expect(u.rol).to.eql('ASESOR'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.3 crearUsuario ASESOR B",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $e) { __typename ... on Usuario { id rol } ... on ErrorUsuario { mensaje } }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{alias_asesor_b}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"ASESOR\",\n      \"correo\": \"{{alias_asesor_b}}@ejemplo.co\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const u = cuerpo.data.crearUsuario;",
+                  "pm.test('Usuario ASESOR creado', () => pm.expect(u.rol).to.eql('ASESOR'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.4 crearUsuario CLIENTE (con su documento)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $e) { __typename ... on Usuario { id rol } ... on ErrorUsuario { mensaje } }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"correo\": \"{{alias_cliente}}@ejemplo.co\",\n      \"nombre\": \"Cliente Historial Newman\",\n      \"documentoIdentidad\": \"{{doc_cliente}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const u = cuerpo.data.crearUsuario;",
+                  "pm.test('Usuario CLIENTE creado', () => pm.expect(u.rol).to.eql('CLIENTE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.5 iniciarSesion ASESOR A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) {\\n  iniciarSesion(entrada: $e) { __typename ... on Sesion { token usuario { id rol } } ... on ErrorAutenticacion { mensaje } }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{alias_asesor_a}}\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const s = cuerpo.data.iniciarSesion;",
+                  "pm.test('Sesión iniciada', () => pm.expect(s.__typename).to.eql('Sesion'));",
+                  "pm.collectionVariables.set('token_asesor_a', s.token);",
+                  "pm.collectionVariables.set('id_asesor_a', s.usuario.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.6 iniciarSesion ASESOR B",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) {\\n  iniciarSesion(entrada: $e) { __typename ... on Sesion { token usuario { id rol } } ... on ErrorAutenticacion { mensaje } }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{alias_asesor_b}}\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const s = cuerpo.data.iniciarSesion;",
+                  "pm.test('Sesión iniciada', () => pm.expect(s.__typename).to.eql('Sesion'));",
+                  "pm.collectionVariables.set('token_asesor_b', s.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.7 iniciarSesion CLIENTE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: CredencialesInput!) {\\n  iniciarSesion(entrada: $e) { __typename ... on Sesion { token usuario { id rol } } ... on ErrorAutenticacion { mensaje } }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"usuario\": \"{{alias_cliente}}\",\n      \"clave\": \"{{clave_nuevos}}\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const s = cuerpo.data.iniciarSesion;",
+                  "pm.test('Sesión iniciada', () => pm.expect(s.__typename).to.eql('Sesion'));",
+                  "pm.collectionVariables.set('token_cliente', s.token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. El asesor A cotiza dos veces",
+      "item": [
+        {
+          "name": "1.1 A: consentimiento del titular 1",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor_a}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: ConsentimientoInput!) { registrarConsentimiento(entrada: $e) { id vigente } }\",\n  \"variables\": {\n    \"e\": {\n      \"finalidad\": \"cotizacion-vida-hipotecario\",\n      \"versionTexto\": \"v1\",\n      \"documentoIdentidad\": \"{{doc_a1}}\",\n      \"tipoDato\": \"financiero\",\n      \"fuenteDatos\": \"open-finance\",\n      \"canal\": \"web\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const c = cuerpo.data.registrarConsentimiento;",
+                  "pm.test('Consentimiento vigente (regla 7: antes de consultar)', () => pm.expect(c.vigente).to.eql(true));",
+                  "pm.collectionVariables.set('cons_a1', c.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 A: cotiza el titular 1",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor_a}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $e) { __typename ... on Oferta { id tipo } ... on ErrorOferta { mensaje } }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"consentimientoId\": \"{{cons_a1}}\",\n      \"documentoIdentidad\": \"{{doc_a1}}\",\n      \"valorCredito\": \"200000000\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Calle 100 # 15-20, Bogotá\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const o = cuerpo.data.solicitarOferta;",
+                  "pm.test('Oferta entregada', () => pm.expect(o.__typename).to.eql('Oferta'));",
+                  "pm.collectionVariables.set('oferta_a1', o.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 A: consentimiento del titular 2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor_a}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: ConsentimientoInput!) { registrarConsentimiento(entrada: $e) { id vigente } }\",\n  \"variables\": {\n    \"e\": {\n      \"finalidad\": \"cotizacion-vida-hipotecario\",\n      \"versionTexto\": \"v1\",\n      \"documentoIdentidad\": \"{{doc_a2}}\",\n      \"tipoDato\": \"financiero\",\n      \"fuenteDatos\": \"open-finance\",\n      \"canal\": \"web\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const c = cuerpo.data.registrarConsentimiento;",
+                  "pm.test('Consentimiento vigente (regla 7: antes de consultar)', () => pm.expect(c.vigente).to.eql(true));",
+                  "pm.collectionVariables.set('cons_a2', c.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 A: cotiza el titular 2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor_a}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: SolicitudOfertaInput!) {\\n  solicitarOferta(entrada: $e) { __typename ... on Oferta { id tipo } ... on ErrorOferta { mensaje } }\\n}\",\n  \"variables\": {\n    \"e\": {\n      \"consentimientoId\": \"{{cons_a2}}\",\n      \"documentoIdentidad\": \"{{doc_a2}}\",\n      \"valorCredito\": \"200000000\",\n      \"plazoMeses\": 60,\n      \"direccionInmueble\": \"Calle 100 # 15-20, Bogotá\"\n    }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const o = cuerpo.data.solicitarOferta;",
+                  "pm.test('Oferta entregada', () => pm.expect(o.__typename).to.eql('Oferta'));",
+                  "pm.collectionVariables.set('oferta_a2', o.id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. El asesor A ve su historial",
+      "item": [
+        {
+          "name": "2.1 A lista sus consultas: las dos, la más reciente primero",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor_a}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: Int, $t: Int) {\\n  consultasFuentes(pagina: $p, tamano: $t) {\\n    total pagina tamano\\n    consultas { id creadaEn documentoEnmascarado tipoOferta producto ofertaId\\n      fuentes { id nombre origen estado capturadoEn } }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": 1,\n    \"t\": 10\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const p = cuerpo.data.consultasFuentes;",
+                  "pm.test('Sin errores', () => pm.expect(cuerpo.errors).to.be.undefined);",
+                  "pm.test('Total 2 en la página 1 de 10', () => { pm.expect(p.total).to.eql(2); pm.expect(p.pagina).to.eql(1); pm.expect(p.tamano).to.eql(10); });",
+                  "pm.test('La más reciente primero', () => { pm.expect(p.consultas[0].ofertaId).to.eql(pm.collectionVariables.get('oferta_a2')); pm.expect(p.consultas[1].ofertaId).to.eql(pm.collectionVariables.get('oferta_a1')); });",
+                  "pm.test('Documento enmascarado: nunca el completo (regla 6)', () => { pm.expect(p.consultas[0].documentoEnmascarado).to.include('•'); pm.expect(pm.response.text()).to.not.include(pm.collectionVariables.get('doc_a1')); pm.expect(pm.response.text()).to.not.include(pm.collectionVariables.get('doc_a2')); });",
+                  "pm.test('Tipo de oferta y producto', () => { pm.expect(['COMPLETA', 'PRELIMINAR']).to.include(p.consultas[0].tipoOferta); pm.expect(p.consultas[0].producto).to.eql('VIDA_DEUDOR'); });",
+                  "pm.test('Las 5 fuentes con su estado y sin datos', () => { const f = p.consultas[0].fuentes; pm.expect(f).to.have.length(5); f.forEach(x => { pm.expect(['OK', 'CACHE', 'FALLO']).to.include(x.estado); pm.expect(x).to.have.all.keys('id', 'nombre', 'origen', 'estado', 'capturadoEn'); }); });",
+                  "pm.collectionVariables.set('consulta_a', p.consultas[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 A pide el detalle de una consulta suya",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor_a}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  consultaFuentes(id: $id) { id documentoEnmascarado tipoOferta fuentes { id nombre estado } }\\n}\",\n  \"variables\": {\n    \"id\": \"{{consulta_a}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const c = cuerpo.data.consultaFuentes;",
+                  "pm.test('El detalle es el de la consulta', () => { pm.expect(c.id).to.eql(pm.collectionVariables.get('consulta_a')); pm.expect(c.fuentes).to.have.length(5); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 A pagina de 1 en 1: dos páginas",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor_a}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: Int, $t: Int) {\\n  consultasFuentes(pagina: $p, tamano: $t) {\\n    total pagina tamano\\n    consultas { id creadaEn documentoEnmascarado tipoOferta producto ofertaId\\n      fuentes { id nombre origen estado capturadoEn } }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": 2,\n    \"t\": 1\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const p = cuerpo.data.consultasFuentes;",
+                  "pm.test('Página 2 con una consulta', () => { pm.expect(p.total).to.eql(2); pm.expect(p.consultas).to.have.length(1); pm.expect(p.consultas[0].ofertaId).to.eql(pm.collectionVariables.get('oferta_a1')); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Otros roles no ven lo del asesor A",
+      "item": [
+        {
+          "name": "3.1 El asesor B no ve nada del A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor_b}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: Int, $t: Int) {\\n  consultasFuentes(pagina: $p, tamano: $t) {\\n    total pagina tamano\\n    consultas { id creadaEn documentoEnmascarado tipoOferta producto ofertaId\\n      fuentes { id nombre origen estado capturadoEn } }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": 1,\n    \"t\": 10\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const p = cuerpo.data.consultasFuentes;",
+                  "pm.test('Historial vacío', () => { pm.expect(p.total).to.eql(0); pm.expect(p.consultas).to.eql([]); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 El asesor B pide el detalle de una consulta de A: null",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_asesor_b}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  consultaFuentes(id: $id) { id documentoEnmascarado tipoOferta fuentes { id nombre estado } }\\n}\",\n  \"variables\": {\n    \"id\": \"{{consulta_a}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Una ajena responde null', () => pm.expect(cuerpo.data.consultaFuentes).to.eql(null));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 El CLIENTE no ve el historial",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: Int, $t: Int) {\\n  consultasFuentes(pagina: $p, tamano: $t) {\\n    total pagina tamano\\n    consultas { id creadaEn documentoEnmascarado tipoOferta producto ofertaId\\n      fuentes { id nombre origen estado capturadoEn } }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": 1,\n    \"t\": 10\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Sin permiso', () => { pm.expect(cuerpo.errors).to.have.length(1); pm.expect(cuerpo.errors[0].message).to.include('permiso'); pm.expect(cuerpo.data).to.eql(null); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 El CLIENTE no ve el detalle",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($id: ID!) {\\n  consultaFuentes(id: $id) { id documentoEnmascarado tipoOferta fuentes { id nombre estado } }\\n}\",\n  \"variables\": {\n    \"id\": \"{{consulta_a}}\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Sin permiso', () => { pm.expect(cuerpo.errors[0].message).to.include('permiso'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.5 El BACKOFFICE tampoco",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_backoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: Int, $t: Int) {\\n  consultasFuentes(pagina: $p, tamano: $t) {\\n    total pagina tamano\\n    consultas { id creadaEn documentoEnmascarado tipoOferta producto ofertaId\\n      fuentes { id nombre origen estado capturadoEn } }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": 1,\n    \"t\": 10\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Sin permiso', () => pm.expect(cuerpo.errors[0].message).to.include('permiso'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.6 Sin sesión: nada",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/graphql/web",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "graphql",
+                "web"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: Int, $t: Int) {\\n  consultasFuentes(pagina: $p, tamano: $t) {\\n    total pagina tamano\\n    consultas { id creadaEn documentoEnmascarado tipoOferta producto ofertaId\\n      fuentes { id nombre origen estado capturadoEn } }\\n  }\\n}\",\n  \"variables\": {\n    \"p\": 1,\n    \"t\": 10\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "pm.test('Pide sesión', () => pm.expect(cuerpo.errors).to.have.length(1));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

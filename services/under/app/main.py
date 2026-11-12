@@ -8,6 +8,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from decimal import Decimal, InvalidOperation
+from typing import Literal
 
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -46,6 +47,9 @@ class DecisionRequest(BaseModel):
     # `BAJO`, `MEDIO` o `ALTO` (el `perfilRiesgo` de la oferta). Sin él no se aprueba sola.
     nivel_riesgo: str | None = None
     cobertura: MontoRequest
+    # KAN-290: en AUTO no hay perfil financiero; decide la siniestralidad que marcó RATING.
+    producto: Literal["VIDA_DEUDOR", "AUTO"] = "VIDA_DEUDOR"
+    requiere_revision: bool = False
 
 
 class KycResponse(BaseModel):
@@ -100,6 +104,8 @@ def create_app(
             body.nivel_riesgo,
             Decimal(body.cobertura.valor),
             body.cobertura.moneda,
+            producto=body.producto,
+            requiere_revision=body.requiere_revision,
         )
         return DecisionResponse(
             decision=resultado.decision.decision,

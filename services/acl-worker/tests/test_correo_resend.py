@@ -210,3 +210,22 @@ def test_el_codigo_de_registro_no_menciona_al_asesor() -> None:
     asunto, cuerpo, texto = componer("codigo-registro", {"codigo": "123456", "minutos": "10"})
     assert "123456" in cuerpo and "123456" in texto
     assert "asesor" not in (asunto + cuerpo + texto).lower()
+
+
+def test_restablecer_clave_lleva_el_enlace_y_no_revela_si_la_cuenta_existe() -> None:
+    from app.adapters.correo_resend import componer
+
+    asunto, cuerpo, texto = componer(
+        "restablecer-clave",
+        {"enlace": "https://app.solventa.co/restablecer-clave#t=abc", "minutos": "30"},
+    )
+    assert "https://app.solventa.co/restablecer-clave#t=abc" in cuerpo
+    assert "https://app.solventa.co/restablecer-clave#t=abc" in texto
+    assert "30 minutos" in texto and "una sola vez" in texto
+
+
+def test_clave_cambiada_avisa_y_no_trae_datos_personales() -> None:
+    from app.adapters.correo_resend import componer
+
+    asunto, cuerpo, texto = componer("clave-cambiada", {})
+    assert "contraseña" in cuerpo and "{" not in cuerpo + texto

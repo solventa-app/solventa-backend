@@ -18,6 +18,10 @@ locals {
     "iamcredentials.googleapis.com",
     "sts.googleapis.com",
     "cloudresourcemanager.googleapis.com",
+    # T19 (KAN-26): Places y Geocoding para el ACL Worker. Cobran por uso (con crédito mensual de Google);
+    # la llave se crea y carga a mano en el secreto `google-places-api-key` (infra/README.md).
+    "places.googleapis.com",
+    "geocoding-backend.googleapis.com",
   ])
   registry_host = "${var.region}-docker.pkg.dev"
 }

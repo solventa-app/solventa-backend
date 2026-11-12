@@ -41,6 +41,7 @@ from psycopg_pool import ConnectionPool
 
 from app.cifrado import CifradorCampos, ErrorDeCifrado
 from app.identificadores import cliente_id_desde_documento, id_opaco
+from app.jurisdicciones import PAISES, documento_valido, limpiar_numero, tipo_por_defecto
 
 logger = logging.getLogger("auth.usuarios")
 
@@ -68,7 +69,9 @@ IDIOMAS: tuple[str, ...] = ("ES", "EN")
 MONEDAS: tuple[str, ...] = ("COP", "MXN", "BRL", "CLP", "PEN", "USD", "EUR")
 
 # Columnas que pueden salir del servicio: nunca el hash ni el estado del bloqueo.
-_PUBLICAS = "id, usuario, rol, estado, creado_en, idioma, moneda"
+_PUBLICAS = (
+    "id, usuario, rol, estado, creado_en, idioma, moneda, tipo_documento, pais, notificaciones_push"
+)
 _TODAS = (
     f"{_PUBLICAS}, hash_clave, intentos_fallidos, bloqueado_hasta, nombre_cifrado, "
     "correo_cifrado, telefono_cifrado, titular_id, documento_cifrado, correo_hmac"
@@ -82,11 +85,16 @@ class DatoInvalido(Exception):
     """La solicitud no cumple las reglas (alias, clave o rol). Mensaje apto para el cliente."""
 
 
+class CuentaNoActiva(Exception):
+    """La cuenta no existe o no está activa (no se le puede restablecer la clave)."""
+
+
 class UsuarioDuplicado(Exception):
     """Ya existe un usuario con ese alias, o un CLIENTE con ese documento."""
 
 
 MENSAJE_DOCUMENTO_DUPLICADO = "Ya existe un cliente con ese documento."
+MENSAJE_CORREO_DUPLICADO = "Ya existe una cuenta con ese correo."
 
 
 def validar_alias(alias: str) -> None:
@@ -216,19 +224,48 @@ def contexto_telefono(usuario_id: str) -> str:
     return f"telefono:{usuario_id}"
 
 
-def validar_preferencias(idioma: str, moneda: str) -> None:
+def validar_preferencias(idioma: str, moneda: str, pais: str | None = None) -> None:
     if idioma not in IDIOMAS:
         raise DatoInvalido(f"Idioma no válido. Usa uno de: {', '.join(IDIOMAS)}.")
     if moneda not in MONEDAS:
         raise DatoInvalido(f"Moneda no válida. Usa una de: {', '.join(MONEDAS)}.")
+    if pais is not None:
+        validar_pais(pais)
+
+
+def validar_pais(pais: str) -> str:
+    """T20: uno de los siete países de `jurisdicciones.json`, en mayúsculas."""
+    codigo = pais.strip().upper()
+    if codigo not in PAISES:
+        raise DatoInvalido(f"País no válido. Usa uno de: {', '.join(PAISES)}.")
+    return codigo
+
+
+def normalizar_documento_tipado(
+    documento: str, tipo: str | None, pais: str | None
+) -> tuple[str, str, str]:
+    """T20: el número limpio, el tipo y el país, validados contra el catálogo del país (el tipo
+    por defecto es el nacional del país, y el país por defecto, Colombia)."""
+    pais_n = validar_pais(pais or "CO")
+    tipo_n = (tipo or tipo_por_defecto(pais_n)).strip().upper()
+    if not documento_valido(pais_n, tipo_n, documento):
+        raise DatoInvalido("El documento de identidad no es válido para ese tipo y país.")
+    return limpiar_numero(documento), tipo_n, pais_n
 
 
 def publico(fila: dict[str, Any]) -> dict[str, Any]:
     """Lo único que se devuelve hacia afuera de un usuario (sin hash ni intentos)."""
     campos = ("id", "usuario", "rol", "estado", "creado_en", "idioma", "moneda")
+    # KAN-259: preferencia del cliente para el push; las cuentas de antes de la `0014` la
+    # traen encendida por defecto.
     datos = {campo: fila[campo] for campo in campos}
+    # T20: un titular de antes de la `0012` solo pudo registrarse con cédula colombiana.
+    con_titular = bool(fila.get("titular_id"))
+    datos["tipo_documento"] = fila.get("tipo_documento") or ("CC" if con_titular else None)
+    datos["pais"] = fila.get("pais") or ("CO" if con_titular else None)
     # Solo dice si hay contacto (para que la web sepa cuándo pedirlo), nunca cuál es.
     datos["tiene_contacto"] = bool(fila.get("correo_cifrado") or fila.get("telefono_cifrado"))
+    datos["notificaciones_push"] = fila.get("notificaciones_push", True)
     return datos
 
 
@@ -244,6 +281,9 @@ class RepositorioUsuarios(Protocol):
         telefono_cifrado: str | None = None,
         titular_id: str | None = None,
         documento_cifrado: str | None = None,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
+        correo_hmac: str | None = None,
     ) -> dict | None: ...
 
     def obtener_por_titular(self, titular_id: str) -> dict | None: ...
@@ -262,11 +302,21 @@ class RepositorioUsuarios(Protocol):
 
     def suspender(self, usuario_id: str) -> dict | None: ...
 
-    def actualizar_preferencias(self, usuario_id: str, idioma: str, moneda: str) -> dict | None: ...
+    def actualizar_preferencias(
+        self, usuario_id: str, idioma: str, moneda: str, pais: str | None = None
+    ) -> dict | None: ...
+
+    def actualizar_preferencia_push(self, usuario_id: str, habilitado: bool) -> dict | None: ...
 
     def actualizar_contacto(
-        self, usuario_id: str, correo_cifrado: str | None, telefono_cifrado: str | None
+        self,
+        usuario_id: str,
+        correo_cifrado: str | None,
+        telefono_cifrado: str | None,
+        correo_hmac: str | None = None,
     ) -> dict | None: ...
+
+    def actualizar_clave(self, usuario_id: str, hash_clave: str) -> dict | None: ...
 
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int: ...
 
@@ -285,6 +335,8 @@ class RepositorioUsuarios(Protocol):
         nombre_cifrado: str | None,
         titular_id: str | None = None,
         documento_cifrado: str | None = None,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
     ) -> dict | None: ...
 
 
@@ -310,6 +362,9 @@ class RepositorioUsuariosPostgres:
         telefono_cifrado: str | None = None,
         titular_id: str | None = None,
         documento_cifrado: str | None = None,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
+        correo_hmac: str | None = None,
     ) -> dict | None:
         """`None` si el alias ya existe (índice único: correcto también bajo concurrencia). Un
         documento repetido choca con `usuarios_titular_unico` y lanza `UsuarioDuplicado`."""
@@ -318,10 +373,10 @@ class RepositorioUsuariosPostgres:
                 f"""
                 INSERT INTO usuarios (id, usuario, hash_clave, rol, nombre_cifrado,
                                       correo_cifrado, telefono_cifrado, titular_id,
-                                      documento_cifrado)
+                                      documento_cifrado, tipo_documento, pais, correo_hmac)
                 VALUES (%(id)s, %(usuario)s, %(hash_clave)s, %(rol)s, %(nombre_cifrado)s,
                         %(correo_cifrado)s, %(telefono_cifrado)s, %(titular_id)s,
-                        %(documento_cifrado)s)
+                        %(documento_cifrado)s, %(tipo_documento)s, %(pais)s, %(correo_hmac)s)
                 ON CONFLICT (usuario) DO NOTHING
                 RETURNING {_TODAS}
                 """,
@@ -335,9 +390,14 @@ class RepositorioUsuariosPostgres:
                     "telefono_cifrado": telefono_cifrado,
                     "titular_id": titular_id,
                     "documento_cifrado": documento_cifrado,
+                    "tipo_documento": tipo_documento,
+                    "pais": pais,
+                    "correo_hmac": correo_hmac,
                 },
             )
         except UniqueViolation as error:
+            if error.diag.constraint_name == "ux_usuarios_correo_hmac":
+                raise UsuarioDuplicado(MENSAJE_CORREO_DUPLICADO) from error
             raise UsuarioDuplicado(MENSAJE_DOCUMENTO_DUPLICADO) from error
 
     def obtener_por_titular(self, titular_id: str) -> dict | None:
@@ -408,28 +468,67 @@ class RepositorioUsuariosPostgres:
             {"id": usuario_id},
         )
 
-    def actualizar_preferencias(self, usuario_id: str, idioma: str, moneda: str) -> dict | None:
+    def actualizar_preferencias(
+        self, usuario_id: str, idioma: str, moneda: str, pais: str | None = None
+    ) -> dict | None:
+        """El país que no llega (`None`) se conserva."""
         return self._una(
             f"""
-            UPDATE usuarios SET idioma = %(idioma)s, moneda = %(moneda)s, actualizado_en = now()
+            UPDATE usuarios SET idioma = %(idioma)s, moneda = %(moneda)s,
+                pais = COALESCE(%(pais)s, pais), actualizado_en = now()
             WHERE id = %(id)s RETURNING {_TODAS}
             """,
-            {"id": usuario_id, "idioma": idioma, "moneda": moneda},
+            {"id": usuario_id, "idioma": idioma, "moneda": moneda, "pais": pais},
+        )
+
+    def actualizar_preferencia_push(self, usuario_id: str, habilitado: bool) -> dict | None:
+        """KAN-259: encender o apagar el push desde la app."""
+        return self._una(
+            f"""
+            UPDATE usuarios SET notificaciones_push = %(h)s, actualizado_en = now()
+            WHERE id = %(id)s RETURNING {_TODAS}
+            """,
+            {"id": usuario_id, "h": habilitado},
         )
 
     def actualizar_contacto(
-        self, usuario_id: str, correo_cifrado: str | None, telefono_cifrado: str | None
+        self,
+        usuario_id: str,
+        correo_cifrado: str | None,
+        telefono_cifrado: str | None,
+        correo_hmac: str | None = None,
     ) -> dict | None:
-        """Solo cambia lo que llega: un campo en `None` conserva el valor que ya tenía."""
+        """Solo cambia lo que llega: un campo en `None` conserva el valor que ya tenía. Un correo
+        que ya es de otra cuenta lanza `UsuarioDuplicado`."""
+        try:
+            return self._una(
+                f"""
+                UPDATE usuarios SET
+                    correo_cifrado = COALESCE(%(correo)s, correo_cifrado),
+                    telefono_cifrado = COALESCE(%(telefono)s, telefono_cifrado),
+                    correo_hmac = COALESCE(%(hmac)s, correo_hmac),
+                    actualizado_en = now()
+                WHERE id = %(id)s RETURNING {_TODAS}
+                """,
+                {
+                    "id": usuario_id,
+                    "correo": correo_cifrado,
+                    "telefono": telefono_cifrado,
+                    "hmac": correo_hmac,
+                },
+            )
+        except UniqueViolation as error:
+            raise UsuarioDuplicado(MENSAJE_CORREO_DUPLICADO) from error
+
+    def actualizar_clave(self, usuario_id: str, hash_clave: str) -> dict | None:
+        """Cambia el hash y levanta el bloqueo por intentos fallidos."""
         return self._una(
             f"""
-            UPDATE usuarios SET
-                correo_cifrado = COALESCE(%(correo)s, correo_cifrado),
-                telefono_cifrado = COALESCE(%(telefono)s, telefono_cifrado),
-                actualizado_en = now()
+            UPDATE usuarios SET hash_clave = %(hash)s, intentos_fallidos = 0,
+                bloqueado_hasta = NULL, actualizado_en = now()
             WHERE id = %(id)s RETURNING {_TODAS}
             """,
-            {"id": usuario_id, "correo": correo_cifrado, "telefono": telefono_cifrado},
+            {"id": usuario_id, "hash": hash_clave},
         )
 
     def registrar_fallo(self, usuario_id: str, bloquear_hasta: datetime | None) -> int:
@@ -490,6 +589,8 @@ class RepositorioUsuariosPostgres:
         nombre_cifrado: str | None,
         titular_id: str | None = None,
         documento_cifrado: str | None = None,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
     ) -> dict | None:
         """Solo desde PENDIENTE_VERIFICACION; idempotente si ya está en `estado`. `None` si no
         aplica (no existe, o está en otro estado). `UsuarioDuplicado` si el titular ya es de otra
@@ -501,6 +602,8 @@ class RepositorioUsuariosPostgres:
                     nombre_cifrado = COALESCE(%(nombre)s, nombre_cifrado),
                     titular_id = COALESCE(%(titular)s, titular_id),
                     documento_cifrado = COALESCE(%(documento)s, documento_cifrado),
+                    tipo_documento = COALESCE(%(tipo_documento)s, tipo_documento),
+                    pais = COALESCE(%(pais)s, pais),
                     actualizado_en = now()
                 WHERE id = %(id)s AND estado IN ('PENDIENTE_VERIFICACION', %(estado)s)
                 RETURNING {_TODAS}
@@ -511,6 +614,8 @@ class RepositorioUsuariosPostgres:
                     "nombre": nombre_cifrado,
                     "titular": titular_id,
                     "documento": documento_cifrado,
+                    "tipo_documento": tipo_documento,
+                    "pais": pais,
                 },
             )
         except UniqueViolation as error:
@@ -557,6 +662,8 @@ class ServicioUsuarios:
         correo: str | None = None,
         telefono: str | None = None,
         documento: str | None = None,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
     ) -> dict:
         validar_alias(alias)
         validar_clave(clave)
@@ -571,7 +678,12 @@ class ServicioUsuarios:
                 raise DatoInvalido("Este servicio no está configurado para guardar nombres.")
             nombre_cifrado = self._cifrador.cifrar(limpio, usuario_id)
         correo_cifrado, telefono_cifrado = self._cifrar_contacto(usuario_id, rol, correo, telefono)
-        titular_id, documento_cifrado = self._titular(usuario_id, rol, documento)
+        huella_correo = self._huella_correo(correo)
+        titular_id, documento_cifrado, tipo_documento, pais_documento = self._titular(
+            usuario_id, rol, documento, tipo_documento, pais
+        )
+        # T20: el país de la cuenta (cualquier rol); el de un CLIENTE sale de su documento.
+        pais_cuenta = pais_documento or (validar_pais(pais) if pais else None)
         if titular_id is not None:
             # El alias primero: repetir el alta de un usuario que ya existe dice eso, no que el
             # documento está tomado (los scripts de prueba son idempotentes por alias).
@@ -579,6 +691,11 @@ class ServicioUsuarios:
                 raise UsuarioDuplicado("Ya existe un usuario con ese alias.")
             if self._repositorio.obtener_por_titular(titular_id):
                 raise UsuarioDuplicado(MENSAJE_DOCUMENTO_DUPLICADO)
+        if huella_correo and self._repositorio.obtener_por_correo_hmac(huella_correo):
+            # El alias primero: repetir un alta dice que el alias existe.
+            if self._repositorio.obtener_por_alias(alias):
+                raise UsuarioDuplicado("Ya existe un usuario con ese alias.")
+            raise UsuarioDuplicado(MENSAJE_CORREO_DUPLICADO)
         creado = self._repositorio.crear(
             usuario_id,
             alias,
@@ -589,6 +706,9 @@ class ServicioUsuarios:
             telefono_cifrado,
             titular_id,
             documento_cifrado,
+            tipo_documento,
+            pais_cuenta,
+            huella_correo,
         )
         if creado is None:
             raise UsuarioDuplicado("Ya existe un usuario con ese alias.")
@@ -633,20 +753,32 @@ class ServicioUsuarios:
         return resultado
 
     def _titular(
-        self, usuario_id: str, rol: str, documento: str | None
-    ) -> tuple[str | None, str | None]:
-        """El `titular_id` (HMAC) y el documento cifrado de un CLIENTE. Quien crea el usuario es un
-        BACKOFFICE, que verifica la identidad: por eso aquí sí se fija el titular (W03-36)."""
+        self,
+        usuario_id: str,
+        rol: str,
+        documento: str | None,
+        tipo: str | None = None,
+        pais: str | None = None,
+    ) -> tuple[str | None, str | None, str | None, str | None]:
+        """El `titular_id` (HMAC), el documento cifrado, el tipo y el país de un CLIENTE. Quien crea
+        el usuario es un BACKOFFICE, que verifica la identidad: por eso aquí sí se fija el titular
+        (W03-36). T20: con tipo o país, el número se valida con el formato del catálogo y ambos
+        entran al titular; sin ninguno de los dos, como antes (cédula colombiana)."""
         if documento is None:
-            return None, None
+            return None, None, None, None
         if rol != "CLIENTE":
             raise DatoInvalido("El documento solo se guarda para clientes.")
-        limpio = normalizar_documento(documento)
+        if tipo is None and pais is None:
+            limpio, tipo_n, pais_n = normalizar_documento(documento), None, None
+        else:
+            limpio, tipo_n, pais_n = normalizar_documento_tipado(documento, tipo, pais)
         if self._cifrador is None or not self._clave_titular:
             raise DatoInvalido("Este servicio no está configurado para guardar el documento.")
         return (
-            cliente_id_desde_documento(limpio, self._clave_titular),
+            cliente_id_desde_documento(limpio, self._clave_titular, pais_n, tipo_n),
             self._cifrador.cifrar(limpio, contexto_documento(usuario_id)),
+            tipo_n,
+            pais_n,
         )
 
     def _documento(self, fila: dict) -> str | None:
@@ -666,7 +798,7 @@ class ServicioUsuarios:
         documento = self._documento(fila) if fila else None
         return enmascarar_documento(documento) if documento else None
 
-    def identidad_de(self, usuario_id: str) -> dict[str, str] | None:
+    def identidad_de(self, usuario_id: str) -> dict[str, str | None] | None:
         """El titular y el documento en claro de un CLIENTE con identidad verificada, o `None`. Dato
         personal: solo lo pide el BFF con el id del token, para cotizar sin pedirle la cédula
         (W03-34) y para autorizar por titular (W03-33). Nunca se loguea."""
@@ -676,17 +808,24 @@ class ServicioUsuarios:
         documento = self._documento(fila)
         if documento is None:
             return None
-        return {"titular_id": fila["titular_id"], "documento": documento}
+        datos = publico(fila)
+        return {
+            "titular_id": fila["titular_id"],
+            "documento": documento,
+            "tipo_documento": datos["tipo_documento"],
+            "pais": datos["pais"],
+        }
 
     def _cifrar_contacto(
         self, usuario_id: str, rol: str, correo: str | None, telefono: str | None
     ) -> tuple[str | None, str | None]:
         """Valida y cifra lo que llegue; `(None, None)` si no llegó nada. Solo los CLIENTE tienen
-        contacto: es a quienes se les envía el PDF, y así no se guardan datos de más."""
+        contacto: es a quienes se les envía el PDF, y así no se guardan datos de más. El correo lo
+        tienen todos los roles (es con lo que se inicia sesión); el teléfono, solo los CLIENTE."""
         if correo is None and telefono is None:
             return None, None
-        if rol != "CLIENTE":
-            raise DatoInvalido("El contacto solo se guarda para clientes.")
+        if rol != "CLIENTE" and telefono is not None:
+            raise DatoInvalido("El teléfono solo se guarda para clientes.")
         correo_limpio = normalizar_correo(correo) if correo is not None else None
         telefono_limpio = normalizar_telefono(telefono) if telefono is not None else None
         if self._cifrador is None:
@@ -703,6 +842,13 @@ class ServicioUsuarios:
         )
         return correo_cifrado, telefono_cifrado
 
+    def _huella_correo(self, correo: str | None) -> str | None:
+        """El HMAC del correo normalizado (con él se busca la cuenta al iniciar sesión), o `None`
+        si no llegó correo o el servicio no tiene la clave."""
+        if correo is None or not self._clave_titular:
+            return None
+        return correo_hmac(normalizar_correo(correo), self._clave_titular)
+
     def actualizar_contacto(
         self, usuario_id: str, correo: str | None, telefono: str | None
     ) -> dict | None:
@@ -716,8 +862,13 @@ class ServicioUsuarios:
         correo_cifrado, telefono_cifrado = self._cifrar_contacto(
             usuario_id, fila["rol"], correo, telefono
         )
+        huella_correo = self._huella_correo(correo)
+        if huella_correo:
+            existente = self._repositorio.obtener_por_correo_hmac(huella_correo)
+            if existente and existente["id"] != usuario_id:
+                raise UsuarioDuplicado(MENSAJE_CORREO_DUPLICADO)
         actualizado = self._repositorio.actualizar_contacto(
-            usuario_id, correo_cifrado, telefono_cifrado
+            usuario_id, correo_cifrado, telefono_cifrado, huella_correo
         )
         return publico(actualizado) if actualizado else None
 
@@ -765,6 +916,29 @@ class ServicioUsuarios:
         fila = self._repositorio.suspender(usuario_id)
         return publico(fila) if fila else None
 
+    def id_para_restablecer(self, correo: str) -> str | None:
+        """El id de la cuenta ACTIVA con ese correo, o `None` (no existe o no está activa).
+        Solo lo llama el BFF para el «olvidé mi contraseña»: al visitante nunca se le dice."""
+        if not self._clave_titular:
+            raise DatoInvalido("Este servicio no está configurado para buscar por correo.")
+        try:
+            limpio = normalizar_correo(correo)
+        except DatoInvalido:
+            return None
+        fila = self._repositorio.obtener_por_correo_hmac(correo_hmac(limpio, self._clave_titular))
+        return fila["id"] if fila is not None and fila["estado"] == "ACTIVO" else None
+
+    def restablecer_clave(self, usuario_id: str, clave: str) -> str | None:
+        """Cambia la clave con las mismas reglas del alta y devuelve el correo de la cuenta (para
+        avisarle del cambio). Lanza `CuentaNoActiva` si no existe o no está activa. El BFF ya
+        comprobó el enlace de un solo uso; las sesiones abiertas las cierra quien llama."""
+        validar_clave(clave)
+        fila = self._repositorio.obtener(usuario_id)
+        if fila is None or fila["estado"] != "ACTIVO":
+            raise CuentaNoActiva(usuario_id)
+        self._repositorio.actualizar_clave(usuario_id, self._hasher.hash(clave))
+        return self._descifrar_contacto(fila, "correo_cifrado", contexto_correo(usuario_id))
+
     def crear_cuenta_onboarding(self, correo: str, clave: str) -> dict:
         """Cuenta CLIENTE del onboarding del móvil (M01-05b): correo y clave, en
         PENDIENTE_VERIFICACION hasta que el servicio `onboarding` verifique la identidad. El alias
@@ -802,18 +976,22 @@ class ServicioUsuarios:
         aprobada: bool,
         nombre: str | None = None,
         documento: str | None = None,
+        tipo_documento: str | None = None,
+        pais: str | None = None,
     ) -> dict | None:
         """Lo llama el servicio `onboarding` al cerrar: ACTIVO o RECHAZADA. Con la identidad
         verificada se fijan el nombre (cifrado) y el titular y documento del CLIENTE (W03-36): así
         «Mis pólizas» liga las que le vendieron antes. Idempotente. `None` si la cuenta no existe o
         no está pendiente; `UsuarioDuplicado` si el documento ya es de otra cuenta."""
-        nombre_cifrado = titular_id = documento_cifrado = None
+        nombre_cifrado = titular_id = documento_cifrado = tipo_n = pais_n = None
         if aprobada and nombre:
             if self._cifrador is None:
                 raise DatoInvalido("Este servicio no está configurado para guardar nombres.")
             nombre_cifrado = self._cifrador.cifrar(normalizar_nombre(nombre), usuario_id)
         if aprobada and documento:
-            titular_id, documento_cifrado = self._titular(usuario_id, "CLIENTE", documento)
+            titular_id, documento_cifrado, tipo_n, pais_n = self._titular(
+                usuario_id, "CLIENTE", documento, tipo_documento, pais
+            )
             otro = self._repositorio.obtener_por_titular(titular_id)
             if otro is not None and otro["id"] != usuario_id:
                 raise UsuarioDuplicado(MENSAJE_DOCUMENTO_DUPLICADO)
@@ -823,12 +1001,22 @@ class ServicioUsuarios:
             nombre_cifrado,
             titular_id,
             documento_cifrado,
+            tipo_n,
+            pais_n,
         )
         return publico(fila) if fila else None
 
-    def actualizar_preferencias(self, usuario_id: str, idioma: str, moneda: str) -> dict | None:
-        """Idioma y moneda por defecto del propio usuario (el BFF solo lo llama con el id del
-        token). `None` si el usuario no existe."""
-        validar_preferencias(idioma, moneda)
-        fila = self._repositorio.actualizar_preferencias(usuario_id, idioma, moneda)
+    def actualizar_preferencias(
+        self, usuario_id: str, idioma: str, moneda: str, pais: str | None = None
+    ) -> dict | None:
+        """Idioma, moneda y (T20) país por defecto del propio usuario (el BFF solo lo llama con el
+        id del token). El país que no llega se conserva. `None` si el usuario no existe."""
+        validar_preferencias(idioma, moneda, pais)
+        pais_n = validar_pais(pais) if pais is not None else None
+        fila = self._repositorio.actualizar_preferencias(usuario_id, idioma, moneda, pais_n)
+        return publico(fila) if fila else None
+
+    def actualizar_preferencia_push(self, usuario_id: str, habilitado: bool) -> dict | None:
+        """KAN-259: `actualizarPreferenciaPush` del BFF."""
+        fila = self._repositorio.actualizar_preferencia_push(usuario_id, habilitado)
         return publico(fila) if fila else None

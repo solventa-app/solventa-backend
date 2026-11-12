@@ -99,6 +99,27 @@ npx --yes newman@6.2.2 run tests/newman/socios-w07.postman_collection.json \
   -e tests/newman/solventa-local.postman_environment.json
 ```
 
+## Colección de HU-M02 (`hu-m02.postman_collection.json`)
+
+Sesión de la app con refresh por el gateway (KAN-227, T22): 17 peticiones y 57 aserciones en 8 carpetas, en orden y de una
+sola corrida (las carpetas 3 y 4 necesitan menos de 30 s desde la 2.1, por el período de gracia).
+
+| Carpeta | Qué verifica |
+|---|---|
+| 0. Preparación | Sesión de BACKOFFICE en la web (refresh solo en la cookie `solventa_refresh`, nunca en el cuerpo) y alta de un CLIENTE (alias al azar) |
+| 1. Ingreso en la app trae refresh | `iniciarSesion` en `/graphql/app` devuelve `refreshToken` y `refreshExpiraEn` |
+| 2. Rotación | `renovarSesion` entrega un refresh distinto |
+| 3. Período de gracia | Reintentar con el refresh anterior antes de 30 s da un par nuevo y revoca el sucesor que «se perdió» |
+| 4. Reuso real | Con el sucesor ya usado, el refresh viejo da `SESION_VENCIDA` y cae toda la cadena |
+| 5. Cerrar sesión | `cerrarSesion` revoca, es idempotente y el refresh cerrado ya no renueva |
+| 6. Canal | El refresh de la cookie web no sirve en `/graphql/app` |
+| 7. Cuenta suspendida | Tras `suspenderUsuario`, el refresh del CLIENTE ya no renueva |
+
+```bash
+npx --yes newman@6.2.2 run tests/newman/hu-m02.postman_collection.json \
+  -e tests/newman/solventa-local.postman_environment.json
+```
+
 ## Colección de HU-M05 (`hu-m05.postman_collection.json`)
 
 Reporte de siniestro desde la app por el gateway (KAN-35, KAN-278): 18 peticiones en 5 carpetas, en orden.
@@ -121,13 +142,14 @@ npx --yes newman@6.2.2 run tests/newman/hu-m05.postman_collection.json \
 
 ## Colección de HU-M06 (`hu-m06.postman_collection.json`)
 
-Catálogo maestro de prestadores por el gateway (KAN-263): 9 peticiones y 28 aserciones en 3 carpetas, en orden.
+Catálogo maestro de prestadores y asistencia en sitio por el gateway (KAN-263 a KAN-267): 20 peticiones y 60 aserciones en 4 carpetas, en orden.
 
 | Carpeta | Qué verifica |
 |---|---|
 | 0. Preparación | Sesión de BACKOFFICE, alta de un CLIENTE (alias al azar) y su sesión en el canal `app` |
 | 1. Catálogo versionado | Sin versión: los 12 de la semilla, tipos y coordenadas; con la vigente: `vigente` y lista vacía; con una vieja: completa; `/v1/graphql/app` igual |
 | 2. Autorización | Sin sesión: `SIN_SESION`; un BACKOFFICE no lo usa |
+| 3. Asistencia en sitio | Solicitar, reenviar y cancelar (idempotentes), tipo no atendido, prestador inexistente y la dirección a mano sin ubicación (v0.41) |
 
 No necesita semilla: el catálogo lo carga `migrar-claims`.
 
@@ -175,6 +197,7 @@ comparten variables.
 | 4. Degradación | Open Finance lento (la `PRELIMINAR` no se acepta); KYC caído (`EN_REVISION`, sin póliza); pasarela que rechaza (`PAGO_RECHAZADO`, sin póliza); pago rechazado que se recupera (lo reabre el back-office: el cliente no puede y la póliza se emite con un solo aviso); firma caída y firma lenta, **por el gateway** (`ErrorFirma` reintentable con HTTP 200, nunca un 5xx, y al volver el reintento emite); notificaciones caídas (la póliza se emite y el PDF se descarga, el aviso sale solo al volver). Cada escenario restaura el stub y espera a que cierren los circuitos | CA-W03-05 y 06, EC009 / EC010 |
 | 5. Registro del cliente y su contacto | W03-27 y W03-34: un CLIENTE sin correo, sin documento o con el documento de otro no se crea; `yo` trae el documento **enmascarado** (`12••••1234`) y `tieneContacto`; `actualizarContacto` (correo inválido, sin datos, el titular cambia su correo, ASESOR, BACKOFFICE, sin token) y que el contacto no se puede leer por GraphQL. Los avisos por SMS y sin contacto (W03-18) ya no se prueban aquí: con el correo obligatorio ya no se puede crear ese cliente, y los cubren las pruebas de POLICY | CA-W03-08, CA-W03-09 |
 | 6. Flujos v0.18 (F-B9) | **Asesor:** aceptar sin el contacto del titular da `ErrorAceptacion`; con él, emitir antes del código da `ErrorEmision`; el código llega por correo (sin el correo en claro), uno errado da `CODIGO_INVALIDO` con los intentos que quedan y el bueno `IDENTIDAD_VERIFICADA`; «Emitir» manda el enlace (`#t=` en el fragmento, la URL nunca vuelve al asesor); reenviarlo anula el anterior y un token inventado no revela nada; imagen sin fondo `IMAGEN_INVALIDA`, imagen válida (PUT a la URL firmada con `tests/newman/archivos/`) `FIRMADA`; pago aprobado con la pasarela caída al confirmar (`PASARELA_NO_DISPONIBLE`, 1 fallo) y luego conciliado sin doble cobro; avisos al titular (con el PDF) y al asesor. **Titular:** al abrir su cuenta con su documento ve la póliza que le vendió el asesor (sin `nombreTitular`); otro CLIENTE no. **Cliente con sesión:** sin enlace, firma `NOMBRE`, rechazo `FONDOS_INSUFICIENTES` (no cuenta como falla), pasarela caída 3 veces (1, 2 y `REQUIERE_OTRA_TARJETA`) y luego paga; otro CLIENTE no ve su página; listas por rol. **Tercer modo:** otro CLIENTE firma con `TRAZO` | CA-W03-02 a 08, W03-20 a W03-35 |
+| 7. Clave segura y sesión con refresh | T17: `registrarCuenta` con `clave1234` da `CLAVE_DEBIL` (falta una mayúscula y un carácter especial) antes de validar el código. T22: el CLIENTE titular entra por `/graphql/app` con refresh, `renovarSesion` lo rota, `cerrarSesion` lo revoca y renovar con el cerrado da `SESION_VENCIDA`. La gracia y el reuso están en `hu-m02` | T17, T22 |
 
 ```bash
 npx --yes newman@6.2.2 run tests/newman/hu-w03.postman_collection.json \
@@ -191,3 +214,43 @@ npx --yes newman@6.2.2 run tests/newman/hu-w03.postman_collection.json \
   notificaciones). Antes: corrida del 2026-10-24 sin fallos (111 peticiones ejecutadas y 204 aserciones; las 105 definidas más los
   sondeos); resultados y hallazgos en `docs/evidencias/HU-W03-newman-EC009-EC010-2026-10-24.md`, `CA-W03-05-firma-2026-10-24.md` y `CA-W03-06-reapertura-2026-10-24.md`.
   Si el `:8080` o el `:5432` están ocupados, ver «Cómo correrlas».
+- **Carpeta 7 (2026-11-07):** agregada sin correr aún contra el stack (no había Docker donde se escribió); sirve contra local y staging.
+
+## Colección de HU-W08 (`hu-w08.postman_collection.json`)
+
+Póliza de auto todo riesgo de punta a punta por el gateway (KAN-290, [`docs/plan-poliza-auto.md`](../../docs/plan-poliza-auto.md)).
+
+| Carpeta | Qué verifica |
+|---|---|
+| 0. Preparación | Sesiones del BACKOFFICE y del CLIENTE demo; consentimiento de la cotización del auto (regla 7) |
+| 1. Cotización | Placas de demo de `stub-vehiculos`: `ABC123` completa con la prima exacta de la tarifa, 6 coberturas y 7 factores, sin la placa completa en la respuesta; `GHI789` más cara por hurto; `YZA456` preliminar con Fasecolda caída; `NOX000`, `STU901` y `PQR678` con su motivo; placa y kilometraje inválidos |
+| 2. Suscripción | Aceptar y emitir `ABC123` llega a `EN_FIRMA`; `JKL012` (3 siniestros) queda `EN_REVISION` |
+| 3. API de socios | `POST /v1/cotizaciones-auto` con producto, vehículo y coberturas; un vehículo no asegurable responde 422 y no gasta presupuesto |
+| 4. Siniestro de auto | Sobre la póliza de auto de la semilla: foto, reporte sin tipo rechazado, choque parcial PENDIENTE; aprobar sin valor, con un daño menor que el deducible y con 8.000.000 → 6.576.500 |
+| 5. Autorización | El BACKOFFICE y una petición sin sesión no cotizan; el CLIENTE no aprueba |
+
+```bash
+docker compose --profile servicios up -d --build --wait
+docker compose --profile servicios --profile semilla run --rm crear-cliente-siniestros-demo
+docker compose --profile servicios --profile semilla run --rm sembrar-polizas-demo
+npx --yes newman@6.2.2 run tests/newman/hu-w08.postman_collection.json \
+  -e tests/newman/solventa-local.postman_environment.json
+```
+
+- **Solo local:** usa las placas de demo de `stub-vehiculos` y la póliza de auto que siembra `sembrar-polizas-demo`.
+- Se puede repetir sin reiniciar el stack: cada corrida crea su reporte, sus ofertas y sus propuestas.
+- **Estado:** dos corridas seguidas contra el stack local el 2026-11-10 sin fallos (33 peticiones y 76 aserciones); evidencia en
+  `docs/evidencias/hu-w08-poliza-auto-2026-11-10.md`.
+
+## Colección del historial de fuentes (`historial-fuentes-w01.postman_collection.json`)
+
+Q-08, contrato v0.45 (KAN-24), por el gateway: 20 peticiones y 45 aserciones en 4 carpetas. El asesor A cotiza dos veces y ve
+su historial (más reciente primero, documento enmascarado, las 5 fuentes con su estado y sin datos, paginación de 1 en 1 y
+el detalle); el asesor B no ve nada de A (la consulta ajena responde `null`); el CLIENTE, el BACKOFFICE y quien no tiene
+sesión no pasan. Crea sus propios usuarios (alias y documentos únicos por corrida) con el BACKOFFICE local; **solo local**
+por eso. Se corre con el mismo entorno que las demás:
+
+```bash
+npx --yes newman@6.2.2 run tests/newman/historial-fuentes-w01.postman_collection.json \
+  -e tests/newman/solventa-local.postman_environment.json
+```

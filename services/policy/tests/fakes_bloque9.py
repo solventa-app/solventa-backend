@@ -9,7 +9,11 @@ from typing import Any
 from fakes import RepositorioPropuestasFalso
 from PIL import Image
 
-from app.application.cliente_almacenamiento import ArchivoRechazado, Subida
+from app.application.cliente_almacenamiento import (
+    AlmacenamientoNoDisponible,
+    ArchivoRechazado,
+    Subida,
+)
 from app.application.cliente_payments import PaymentsNoDisponible, SesionPago
 from app.application.repositorio_propuestas import ESTADOS_ABIERTOS, ESTADOS_POR_VISIBLE
 
@@ -203,14 +207,17 @@ class AlmacenamientoFalso:
         self.archivos: dict[str, dict[str, Any]] = {}
         self.contenidos: dict[str, bytes] = {}
         self.retenidos: list[str] = []
+        self.documentos_caidos = False
 
-    def solicitar_subida(self, propuesta_id, consentimiento_id, tipo_contenido, tamano) -> Subida:
-        if tamano > 512_000:
+    def solicitar_subida(
+        self, propuesta_id, consentimiento_id, tipo_contenido, tamano, tipo="firma-imagen"
+    ) -> Subida:
+        if tamano > (512_000 if tipo == "firma-imagen" else 5_242_880):
             raise ArchivoRechazado("TAMANO_NO_ADMITIDO")
         archivo_id = str(uuid.uuid4())
         self.archivos[archivo_id] = {
             "id": archivo_id,
-            "tipo": "firma-imagen",
+            "tipo": tipo,
             "estado": "PENDIENTE",
             "propietario_id": propuesta_id,
             "consentimiento_id": consentimiento_id,
@@ -239,7 +246,22 @@ class AlmacenamientoFalso:
             archivo["motivo"] = "CONTENIDO_NO_COINCIDE"
         return {k: v for k, v in archivo.items() if k != "rechazar"}
 
-    def bajar(self, archivo_id: str) -> bytes:
+    def subir_documento(self, tipo: str, propuesta_id: str, contenido: bytes) -> str:
+        """T6: lo que hace `ClienteAlmacenamiento.subir_documento` (pedir, PUT y confirmar), con el
+        mismo filtro del servicio real: solo entra el contenedor cifrado de Solventa."""
+        if self.documentos_caidos:
+            raise AlmacenamientoNoDisponible("HTTP 503")
+        subida = self.solicitar_subida(
+            propuesta_id, None, "application/octet-stream", len(contenido), tipo=tipo
+        )
+        archivo_id = subida.archivo["id"]
+        self.subir(archivo_id, contenido, rechazar=not contenido.startswith(b"SOLVENC1"))
+        resultado = self.confirmar(archivo_id)
+        if resultado["estado"] != "DISPONIBLE":
+            raise ArchivoRechazado(resultado.get("motivo", "ARCHIVO_RECHAZADO"))
+        return archivo_id
+
+    def bajar(self, archivo_id: str, tamano_max: int | None = None) -> bytes:
         if self.archivos.get(archivo_id, {}).get("estado") != "DISPONIBLE":
             raise ArchivoRechazado("ARCHIVO_NO_DISPONIBLE")
         return self.contenidos[archivo_id]

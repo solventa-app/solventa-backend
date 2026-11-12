@@ -155,15 +155,16 @@
     "instancia_fija": true,
     "puerto": 8005,
     "url_env": "ACL_URL",
-    "llama": ["stub-open-finance", "stub-open-data", "stub-pasarela", "stub-firma", "stub-kyc", "stub-notificaciones", "consolidador-fuentes"],
+    "llama": ["stub-open-finance", "stub-open-data", "stub-vehiculos", "stub-pasarela", "stub-firma", "stub-kyc", "stub-notificaciones", "consolidador-fuentes"],
     "disparador_externo": true,
-    "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "NOTIFICACIONES_PROVEEDOR": "resend", "IDENTIDAD_URL": "https://verification.didit.me", "CORREO_REMITENTE": "Solventa <avisos@solventa.globalspark.io>" },
+    "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "NOTIFICACIONES_PROVEEDOR": "resend", "IDENTIDAD_URL": "https://verification.didit.me", "CORREO_REMITENTE": "Solventa <avisos@solventa.globalspark.io>", "PLACES_PROVEEDOR": "google" },
     "secretos": {
       "REDIS_URL": "redis-url-acl",
       "COLA_RECONCILIACION_REDIS_URL": "redis-url-cola-reconciliacion",
       "DIDIT_API_KEY": "didit-api-key",
       "RESEND_API_KEY": "resend-api-key",
-      "IDENTIDAD_LLAVE_CACHE": "clave-cache-identidad"
+      "IDENTIDAD_LLAVE_CACHE": "clave-cache-identidad",
+      "GOOGLE_PLACES_API_KEY": "google-places-api-key"
     }
   },
   {
@@ -190,6 +191,14 @@
     "instancia_fija": true,
     "puerto": 8102,
     "url_env": "OPEN_DATA_URL",
+    "entorno": { "TRAZAS_GCP": "true" }
+  },
+  {
+    "nombre": "stub-vehiculos",
+    "ruta": "stubs/vehiculos",
+    "instancia_fija": true,
+    "puerto": 8107,
+    "url_env": "VEHICULOS_URL",
     "entorno": { "TRAZAS_GCP": "true" }
   },
   {

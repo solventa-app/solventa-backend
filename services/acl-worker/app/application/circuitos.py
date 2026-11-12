@@ -27,6 +27,7 @@ NOMBRE_CIRCUITO_FIRMA = "firma"
 NOMBRE_CIRCUITO_KYC = "kyc"
 NOMBRE_CIRCUITO_NOTIFICACIONES = "notificaciones"
 NOMBRE_CIRCUITO_IDENTIDAD = "identidad"
+NOMBRE_CIRCUITO_VEHICULOS = "vehiculos"  # KAN-290: RUNT, Fasecolda y siniestralidad
 
 
 def construir_fabrica(

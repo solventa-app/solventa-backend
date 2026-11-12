@@ -177,10 +177,12 @@ services:
     <<: *tarea
     image: solventa/auth:local
     build: ./services/auth
-    command: ["python", "-m", "app.crear_usuario", "--usuario", "admin.solventa", "--rol", "BACKOFFICE"]
+    command: ["python", "-m", "app.crear_usuario", "--usuario", "admin.solventa", "--rol", "BACKOFFICE", "--correo", "admin@solventa.local"]
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-solventa-local}@postgres:5432/auth
       CLAVE_INICIAL: Admin-local-solventa
+      CIFRADO_CLAVE: c29sby1sb2NhbC1ub19zZWNyZXRhLWNpZnJhZG8tMDE=
+      CLIENTE_ID_CLAVE: solo-local-no-secreta
     depends_on:
       migrar-auth: { condition: service_completed_successfully }
 
@@ -293,6 +295,28 @@ services:
     depends_on:
       mongo-init: { condition: service_completed_successfully }
       migrar-claims: { condition: service_completed_successfully }
+
+  # Solo local (QA 2026-11-10, Q-03): hace lo que Cloud Scheduler hace en staging (`aprobar_siniestros_cron`):
+  # cada minuto llama a la pasada que aprueba los siniestros PENDIENTE con el plazo vencido. Sin esto, en local el
+  # contador llega a cero y nada cambia. Para probarlo: POST localhost:8012/_demo/siniestros/<id>/vencer?minutos=2.
+  aprobar-vencidos-local:
+    profiles: ["servicios"]
+    image: solventa/claims:local
+    restart: unless-stopped
+    command:
+      - python
+      - -c
+      - |
+        import time, urllib.request
+        while True:
+            time.sleep(60)
+            try:
+                peticion = urllib.request.Request("http://claims:8012/siniestros/_aprobar-vencidos", method="POST")
+                print(urllib.request.urlopen(peticion, timeout=30).read().decode(), flush=True)
+            except Exception as error:
+                print(f"pasada fallida: {error}", flush=True)
+    depends_on:
+      claims: { condition: service_healthy }
 
   # Semillas de la mesa de siniestros (HU-W04, W04-3), solo local: primero las pólizas en POLICY
   # (escritor único de sus tablas) y luego los siniestros, que apuntan a esas pólizas y suben sus
@@ -519,6 +543,7 @@ services:
       REDIS_URL: redis://redis:6379/1
       OPEN_FINANCE_URL: http://stub-open-finance:8101
       OPEN_DATA_URL: http://stub-open-data:8102
+      VEHICULOS_URL: http://stub-vehiculos:8107
       PASARELA_URL: http://stub-pasarela:8103
       FIRMA_URL: http://stub-firma:8104
       KYC_URL: http://stub-kyc:8105   # también la verificación de identidad de M01 (rutas de Didit)
@@ -565,6 +590,13 @@ services:
     <<: *servicio
     build: ./stubs/open-data
     ports: ["8102:8102"]
+
+  # KAN-290 (póliza de auto): RUNT, guía Fasecolda y siniestralidad por placa. Placas de demo en
+  # GET localhost:8107/control/placas.
+  stub-vehiculos:
+    <<: *servicio
+    build: ./stubs/vehiculos
+    ports: ["8107:8107"]
 
   stub-pasarela:
     <<: *servicio

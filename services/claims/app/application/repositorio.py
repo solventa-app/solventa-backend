@@ -91,6 +91,7 @@ class RepositorioSiniestrosMongo:
             "vence_dictamen_en": doc["vence_dictamen_en"],
             # HU-M05: el CLIENTE que lo reportó desde la app (id opaco de AUTH); None en la semilla.
             "reportado_por": doc.get("reportado_por"),
+            "tipo_siniestro_auto": doc.get("tipo_siniestro_auto"),
         }
 
     @staticmethod
@@ -278,6 +279,8 @@ class RepositorioSiniestrosMongo:
             "descripcion_cifrada": self._cifrar(siniestro["descripcion"], "descripcion", sid),
             "suma_reclamada": siniestro["suma_reclamada"],
             "vence_dictamen_en": siniestro["vence_dictamen_en"],
+            # KAN-290: solo en pólizas de auto (un código, no un dato personal).
+            "tipo_siniestro_auto": siniestro.get("tipo_siniestro_auto"),
             "creado_en": ahora,
             "actualizado_en": ahora,
         }
@@ -293,6 +296,15 @@ class RepositorioSiniestrosMongo:
     def guardar_verificacion(self, verificacion: dict) -> None:
         doc = {**{k: v for k, v in verificacion.items() if k != "id"}, "_id": verificacion["id"]}
         self._db[VERIFICACIONES].replace_one({"_id": verificacion["id"]}, doc, upsert=True)
+
+    def fijar_vencimiento(self, siniestro_id: str, vence_en: datetime) -> bool:
+        """Solo para la demo local (QA 2026-11-10, Q-03): mueve el plazo del dictamen de un caso
+        PENDIENTE para probar la aprobación automática sin esperar horas. False si no está
+        pendiente."""
+        resultado = self._db[SINIESTROS].update_one(
+            {"_id": siniestro_id, "estado": "PENDIENTE"}, {"$set": {"vence_dictamen_en": vence_en}}
+        )
+        return resultado.matched_count == 1
 
     def borrar_reportados_por_clientes(self) -> int:
         """Solo para el reinicio de la demo local (W04-15): quita los casos que reportaron los

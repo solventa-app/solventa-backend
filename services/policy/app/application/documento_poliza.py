@@ -2,8 +2,10 @@
 
 Un documento formal con el membrete, el asegurado, el crédito, la cobertura, la prima, la vigencia
 y el sello de la firma electrónica (la referencia de la evidencia, cuándo se firmó y la huella del
-documento que se firmó). Se genera al pedirlo, a partir de los datos guardados: no se almacena, así
-que el PDF nunca queda desactualizado ni es un archivo más que proteger.
+documento que se firmó). Se genera a partir de los datos guardados. Desde KAN-26 (T6, D-1) el primer
+PDF que se genera de una póliza, y el contrato firmado, se **guardan cifrados** en ALMACENAMIENTO
+(`servicio_documentos.py`) para que el documento que se entregó no cambie; este módulo solo los
+genera.
 
 Regla #6: el nombre del asegurado llega solo en el cuerpo de la petición y no se guarda ni se
 loguea. Sin él, el documento identifica al asegurado por la referencia opaca de su cliente.
@@ -23,6 +25,31 @@ AVISO_AMBIENTE_PRUEBAS = (
     "y esta póliza no tiene validez legal."
 )
 FORMA_COBRO = "con la cuota de tu crédito"
+# KAN-290: el subtítulo, el texto del contrato y los nombres de las coberturas de cada producto.
+SUBTITULO = {
+    "VIDA_DEUDOR": "Seguro de vida para tu crédito hipotecario",
+    "AUTO": "Seguro de automóviles todo riesgo",
+}
+CONDICIONES = {
+    "VIDA_DEUDOR": (
+        "Al firmar aceptas las condiciones del seguro de vida para tu crédito hipotecario y "
+        "autorizas el cobro recurrente de la prima. La póliza se emite cuando se confirme el "
+        "primer pago."
+    ),
+    "AUTO": (
+        "Al firmar aceptas las condiciones del seguro de automóviles todo riesgo y autorizas el "
+        "cobro recurrente de la prima. La póliza se emite cuando se confirme el primer pago."
+    ),
+}
+NOMBRE_COBERTURA = {
+    "RESPONSABILIDAD_CIVIL": "Responsabilidad civil extracontractual",
+    "PERDIDA_TOTAL_DANOS": "Pérdida total por daños",
+    "PERDIDA_PARCIAL_DANOS": "Pérdida parcial por daños",
+    "PERDIDA_TOTAL_HURTO": "Pérdida total por hurto",
+    "PERDIDA_PARCIAL_HURTO": "Pérdida parcial por hurto",
+    "ASISTENCIA": "Asistencia (grúa, mecánico y conductor elegido)",
+}
+NOMBRE_USO = {"PARTICULAR": "Particular", "COMERCIAL": "Comercial"}
 
 
 def _latin1(texto: str) -> str:
@@ -45,15 +72,17 @@ def _fecha(valor: datetime) -> str:
 
 
 class _Documento(FPDF):
-    def __init__(self, numero: str) -> None:
+    def __init__(self, numero: str, titulo: str = "Poliza") -> None:
         super().__init__(format="A4")
         self.set_compression(False)  # texto legible en el flujo y salida estable
-        self.set_title(_latin1(f"Poliza {numero}"))
+        self.set_title(_latin1(f"{titulo} {numero}"))
         self.set_author("Solventa")
         self.set_auto_page_break(auto=True, margin=15)
         self.add_page()
 
-    def membrete(self, numero: str) -> None:
+    def membrete(
+        self, numero: str, producto: str = "VIDA_DEUDOR", titulo: str | None = None
+    ) -> None:
         self.set_fill_color(18, 52, 86)
         self.rect(0, 0, 210, 32, style="F")
         self.set_text_color(255, 255, 255)
@@ -62,11 +91,11 @@ class _Documento(FPDF):
         self.cell(0, 9, "SOLVENTA", new_x="LMARGIN", new_y="NEXT")
         self.set_font("Helvetica", "", 11)
         self.set_x(15)
-        self.cell(0, 6, _latin1("Seguro de vida para tu crédito hipotecario"))
+        self.cell(0, 6, _latin1(SUBTITULO.get(producto, SUBTITULO["VIDA_DEUDOR"])))
         self.set_text_color(0, 0, 0)
         self.set_y(40)
         self.set_font("Helvetica", "B", 16)
-        self.cell(0, 9, _latin1(f"Póliza No. {numero}"), new_x="LMARGIN", new_y="NEXT")
+        self.cell(0, 9, _latin1(titulo or f"Póliza No. {numero}"), new_x="LMARGIN", new_y="NEXT")
         self.ln(2)
 
     def firma(self, imagen: bytes | None, texto: str | None) -> None:
@@ -80,17 +109,53 @@ class _Documento(FPDF):
             self.cell(0, 12, _latin1(texto), new_x="LMARGIN", new_y="NEXT")
             self.ln(1)
 
-    def seccion(self, titulo: str, filas: list[tuple[str, str]]) -> None:
+    def seccion(self, titulo: str, filas: list[tuple[str, str]], ancho: int = 55) -> None:
         self.set_font("Helvetica", "B", 11)
         self.set_fill_color(235, 240, 246)
         self.cell(0, 7, _latin1(titulo), new_x="LMARGIN", new_y="NEXT", fill=True)
         self.ln(1)
         for etiqueta, valor in filas:
             self.set_font("Helvetica", "B", 10)
-            self.cell(55, 6, _latin1(etiqueta))
+            self.cell(ancho, 6, _latin1(etiqueta))
             self.set_font("Helvetica", "", 10)
             self.multi_cell(0, 6, _latin1(valor), new_x="LMARGIN", new_y="NEXT")
         self.ln(3)
+
+
+def _secciones_del_producto(pdf: _Documento, propuesta: dict[str, Any]) -> None:
+    """Vida: el crédito asegurado. Auto (KAN-290): el vehículo (placa enmascarada: la placa completa
+    nunca se guarda) y las coberturas con su valor asegurado y deducible."""
+    cobertura = propuesta["cobertura"]
+    if propuesta.get("producto") != "AUTO":
+        pdf.seccion(
+            "Crédito asegurado",
+            [
+                ("Plazo del crédito", f"{propuesta['plazo_meses']} meses"),
+                ("Valor asegurado", formatear_monto(cobertura["valor"], cobertura["moneda"])),
+            ],
+        )
+        return
+    vehiculo = propuesta.get("vehiculo") or {}
+    pdf.seccion(
+        "Vehículo asegurado",
+        [
+            # «•» no existe en Latin-1 (las fuentes base del PDF): se dibuja con asteriscos.
+            ("Placa", vehiculo.get("placaEnmascarada", "").replace("•", "*")),
+            ("Vehículo", f"{vehiculo.get('marca', '')} {vehiculo.get('linea', '')}".strip()),
+            ("Modelo", str(vehiculo.get("modelo", ""))),
+            ("Uso", NOMBRE_USO.get(vehiculo.get("uso", ""), vehiculo.get("uso", ""))),
+            ("Ciudad de circulación", vehiculo.get("ciudadCirculacion", "")),
+            ("Valor comercial", formatear_monto(cobertura["valor"], cobertura["moneda"])),
+        ],
+    )
+    filas = []
+    for item in propuesta.get("coberturas") or []:
+        valor = item.get("valorAsegurado")
+        texto = formatear_monto(valor["valor"], valor["moneda"]) if valor else "Incluida"
+        if item.get("deducible"):
+            texto += f" · deducible {item['deducible']}"
+        filas.append((NOMBRE_COBERTURA.get(item["tipo"], item["tipo"]), texto))
+    pdf.seccion("Coberturas", filas, ancho=85)
 
 
 def generar_pdf(
@@ -105,28 +170,26 @@ def generar_pdf(
 ) -> bytes:
     """El PDF de la póliza. `numero` es el número ya formateado (`SOL-AAAA-NNNNNN`). `firma_imagen`
     o `firma_texto` estampan la firma del titular (bloque 9); nada de eso se guarda."""
-    prima, cobertura = propuesta["prima"], propuesta["cobertura"]
+    prima = propuesta["prima"]
     nombre = (asegurado or "").strip()
     referencia = str(poliza["cliente_id"])[:12]
 
+    producto = propuesta.get("producto") or "VIDA_DEUDOR"
     pdf = _Documento(numero)
-    pdf.membrete(numero)
+    pdf.membrete(numero, producto)
     pdf.seccion(
         "Asegurado",
         [("Nombre", nombre)] if nombre else [("Referencia del titular", referencia)],
     )
-    pdf.seccion(
-        "Crédito asegurado",
-        [
-            ("Plazo del crédito", f"{propuesta['plazo_meses']} meses"),
-            ("Valor asegurado", formatear_monto(cobertura["valor"], cobertura["moneda"])),
-        ],
-    )
+    _secciones_del_producto(pdf, propuesta)
     pdf.seccion(
         "Prima",
         [
             ("Prima mensual", formatear_monto(prima["valor"], prima["moneda"])),
-            ("Forma de cobro", FORMA_COBRO),
+            (
+                "Forma de cobro",
+                FORMA_COBRO if producto != "AUTO" else "Recurrente, con tu tarjeta",
+            ),
         ],
     )
     pdf.seccion(
@@ -169,16 +232,11 @@ def generar_pdf(
 def generar_borrador(propuesta: dict[str, Any], ambiente_pruebas: bool = True) -> bytes:
     """El contrato que el titular lee antes de firmar (W03-31: W03-02 muestra el contrato en PDF).
     Es un borrador: sin número de póliza, vigencia ni firma. No lleva datos personales."""
-    prima, cobertura = propuesta["prima"], propuesta["cobertura"]
+    prima = propuesta["prima"]
+    producto = propuesta.get("producto") or "VIDA_DEUDOR"
     pdf = _Documento("borrador")
-    pdf.membrete("en trámite")
-    pdf.seccion(
-        "Crédito asegurado",
-        [
-            ("Plazo del crédito", f"{propuesta['plazo_meses']} meses"),
-            ("Valor asegurado", formatear_monto(cobertura["valor"], cobertura["moneda"])),
-        ],
-    )
+    pdf.membrete("en trámite", producto)
+    _secciones_del_producto(pdf, propuesta)
     pdf.seccion(
         "Prima y autorización de cobro",
         [
@@ -190,14 +248,68 @@ def generar_borrador(propuesta: dict[str, Any], ambiente_pruebas: bool = True) -
     pdf.multi_cell(
         0,
         5,
-        _latin1(
-            "Al firmar aceptas las condiciones del seguro de vida para tu crédito hipotecario y "
-            "autorizas el cobro recurrente de la prima. La póliza se emite cuando se confirme el "
-            "primer pago."
-        ),
+        _latin1(CONDICIONES.get(producto, CONDICIONES["VIDA_DEUDOR"])),
         new_x="LMARGIN",
         new_y="NEXT",
     )
+    if ambiente_pruebas:
+        pdf.ln(3)
+        pdf.set_text_color(160, 0, 0)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.multi_cell(0, 5, _latin1(AVISO_AMBIENTE_PRUEBAS), new_x="LMARGIN", new_y="NEXT")
+    return bytes(pdf.output())
+
+
+def generar_contrato_firmado(
+    propuesta: dict[str, Any],
+    evidencia: dict[str, Any],
+    asegurado: str | None = None,
+    ambiente_pruebas: bool = True,
+    firma_imagen: bytes | None = None,
+    firma_texto: str | None = None,
+) -> bytes:
+    """El contrato que el titular firmó (T6): lo mismo que leyó (`generar_borrador`) más la
+    evidencia de la firma (referencia del proveedor, cuándo, huella del documento) y la firma
+    estampada. Se guarda cifrado al firmar. Sin nombre, identifica al titular por su referencia
+    opaca."""
+    prima = propuesta["prima"]
+    producto = propuesta.get("producto") or "VIDA_DEUDOR"
+    nombre = (asegurado or "").strip()
+    pdf = _Documento("firmado", titulo="Contrato")
+    pdf.membrete("firmado", producto, titulo="Contrato firmado")
+    pdf.seccion(
+        "Titular",
+        [("Nombre", nombre)]
+        if nombre
+        else [("Referencia del titular", str(propuesta["cliente_id"])[:12])],
+    )
+    _secciones_del_producto(pdf, propuesta)
+    pdf.seccion(
+        "Prima y autorización de cobro",
+        [
+            ("Prima mensual", formatear_monto(prima["valor"], prima["moneda"])),
+            ("Cobro", "Recurrente, con la tarjeta que registres al pagar"),
+        ],
+    )
+    pdf.set_font("Helvetica", "", 10)
+    pdf.multi_cell(
+        0,
+        5,
+        _latin1(CONDICIONES.get(producto, CONDICIONES["VIDA_DEUDOR"])),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.ln(3)
+    pdf.seccion(
+        "Firma electrónica",
+        [
+            ("Referencia de la firma", evidencia["referencia_proveedor"]),
+            ("Firmada el", evidencia["firmada_en"].strftime("%d/%m/%Y %H:%M UTC")),
+            ("Versión del documento", evidencia["version_documento"]),
+            ("Huella del documento", evidencia["documento_hash"]),
+        ],
+    )
+    pdf.firma(firma_imagen, firma_texto)
     if ambiente_pruebas:
         pdf.ln(3)
         pdf.set_text_color(160, 0, 0)

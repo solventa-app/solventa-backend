@@ -41,6 +41,7 @@ from app.autenticacion_usuarios import (
 )
 from app.clientes import (
     ArchivoRechazado,
+    AsistenciaRechazada,
     ErrorOnboardingServicio,
     ErrorServicio,
     ResolucionRechazada,
@@ -74,6 +75,7 @@ from app.servicio_firma_pago import (
     documento_del_cliente,
 )
 from app.servicio_oferta import ErrorOfertaDatos
+from app.servicio_restablecimiento import EnlaceInvalido
 from app.servicio_suscripcion import (
     MENSAJE_SUSCRIPCION_NO_DISPONIBLE,
     ErrorAceptacionDatos,
@@ -86,6 +88,14 @@ from app.trazas_graphql import TrazaGraphQL
 logger = logging.getLogger("bff.cobros")
 # POLICY no tiene producto: hay uno solo y su ramo lo pone el BFF (W04-4, HU-W04).
 RAMO_POLIZA = os.getenv("RAMO_POLIZA", "Vida grupo deudor con amparo de daños al bien financiado")
+# v0.42 (KAN-290): el ramo sale del producto de la póliza.
+RAMO_POLIZA_AUTO = os.getenv("RAMO_POLIZA_AUTO", "Automóviles todo riesgo")
+
+
+def ramo_de(producto: str | None) -> str:
+    return RAMO_POLIZA_AUTO if producto == "AUTO" else RAMO_POLIZA
+
+
 TAMANO_LOTE_NOMBRES = 200  # el máximo de ids por llamada que admite AUTH
 
 
@@ -177,6 +187,9 @@ class MotivoErrorOferta(Enum):
     CONSENTIMIENTO_NO_VIGENTE = "CONSENTIMIENTO_NO_VIGENTE"
     DATOS_INSUFICIENTES = "DATOS_INSUFICIENTES"
     FUENTES_NO_DISPONIBLES = "FUENTES_NO_DISPONIBLES"
+    # v0.42 (póliza de auto)
+    VEHICULO_NO_ENCONTRADO = "VEHICULO_NO_ENCONTRADO"
+    VEHICULO_NO_ASEGURABLE = "VEHICULO_NO_ASEGURABLE"
 
 
 @strawberry.enum
@@ -220,6 +233,9 @@ class ConsentimientoInput:
     tipo_dato: str | None = None
     fuente_datos: str | None = None
     canal: str | None = None
+    # v0.38 (T20): tipo del documento y país. Sin ellos, cédula colombiana (como antes).
+    tipo_documento: str | None = None
+    pais: str | None = None
 
 
 @strawberry.type
@@ -290,6 +306,87 @@ class FuenteConsultada:
     capturado_en: datetime | None
 
 
+# ---------- Póliza de auto (v0.42, docs/plan-poliza-auto.md) ----------
+
+
+@strawberry.enum
+class Producto(Enum):
+    VIDA_DEUDOR = "VIDA_DEUDOR"
+    AUTO = "AUTO"
+
+
+@strawberry.enum
+class UsoVehiculo(Enum):
+    PARTICULAR = "PARTICULAR"
+    COMERCIAL = "COMERCIAL"
+
+
+@strawberry.enum
+class DeducibleAuto(Enum):
+    DIEZ_POR_CIENTO = "DIEZ_POR_CIENTO"
+    SIN_DEDUCIBLE = "SIN_DEDUCIBLE"
+
+
+@strawberry.enum
+class TipoCobertura(Enum):
+    RESPONSABILIDAD_CIVIL = "RESPONSABILIDAD_CIVIL"
+    PERDIDA_TOTAL_DANOS = "PERDIDA_TOTAL_DANOS"
+    PERDIDA_PARCIAL_DANOS = "PERDIDA_PARCIAL_DANOS"
+    PERDIDA_TOTAL_HURTO = "PERDIDA_TOTAL_HURTO"
+    PERDIDA_PARCIAL_HURTO = "PERDIDA_PARCIAL_HURTO"
+    ASISTENCIA = "ASISTENCIA"
+
+
+@strawberry.enum
+class TipoSiniestroAuto(Enum):
+    CHOQUE_PARCIAL = "CHOQUE_PARCIAL"
+    PERDIDA_TOTAL_DANOS = "PERDIDA_TOTAL_DANOS"
+    HURTO_TOTAL = "HURTO_TOTAL"
+    HURTO_PARCIAL = "HURTO_PARCIAL"
+    RESPONSABILIDAD_CIVIL = "RESPONSABILIDAD_CIVIL"
+
+
+@strawberry.type
+class VehiculoAsegurado:
+    placa_enmascarada: str
+    marca: str
+    linea: str
+    modelo: int
+    clase: str
+    uso: UsoVehiculo
+    valor_comercial: Monto
+    ciudad_circulacion: str
+    kilometraje_anual: int
+    deducible: DeducibleAuto
+
+
+@strawberry.type
+class CoberturaAuto:
+    tipo: TipoCobertura
+    valor_asegurado: Monto | None = None
+    deducible: str | None = None
+
+
+@strawberry.type
+class FactorTarifa:
+    nombre: str
+    factor: float
+    detalle: str | None = None
+
+
+@strawberry.input
+class SolicitudOfertaAutoInput:
+    consentimiento_id: strawberry.ID
+    placa: str
+    kilometraje_anual: int
+    ciudad_circulacion: str
+    documento_identidad: str | None = None
+    tipo_documento: str | None = None
+    pais: str | None = None
+    uso: UsoVehiculo = UsoVehiculo.PARTICULAR
+    deducible: DeducibleAuto = DeducibleAuto.DIEZ_POR_CIENTO
+
+
 @strawberry.type
 class Oferta:
     id: strawberry.ID
@@ -300,6 +397,12 @@ class Oferta:
     desglose_score: list[FactorScore]
     fuentes: list[FuenteConsultada]
     perfil_riesgo: PerfilRiesgo | None = None
+    # v0.42: las ofertas de `solicitarOferta` son de VIDA_DEUDOR; las de auto traen vehículo y
+    # coberturas.
+    producto: Producto = Producto.VIDA_DEUDOR
+    vehiculo: VehiculoAsegurado | None = None
+    coberturas: list[CoberturaAuto] = strawberry.field(default_factory=list)
+    factores_tarifa: list[FactorTarifa] = strawberry.field(default_factory=list)
 
 
 @strawberry.type
@@ -320,6 +423,12 @@ class SolicitudOfertaInput:
     direccion_inmueble: str
     # Obligatorio para un ASESOR; un CLIENTE con documento en AUTH no lo manda (v0.18, W03-34).
     documento_identidad: str | None = None
+    # v0.38 (T20): tipo del documento y país; el CLIENTE con documento en AUTH tampoco los manda.
+    tipo_documento: str | None = None
+    pais: str | None = None
+    # v0.39 (T19): el lugar elegido en `autocompletarDireccion`. Sin él (o si Places no responde)
+    # la dirección escrita se usa «sin verificar»; con él, un país no soportado se rechaza.
+    place_id: str | None = None
 
 
 @strawberry.type
@@ -479,6 +588,10 @@ class Poliza:
     cobertura: Monto
     documento_url: str  # ruta del BFF que entrega el PDF
     ramo: str  # v0.21 (HU-W04): un solo producto hoy, por configuración (RAMO_POLIZA)
+    # v0.42
+    producto: Producto = Producto.VIDA_DEUDOR
+    vehiculo: VehiculoAsegurado | None = None
+    coberturas: list[CoberturaAuto] = strawberry.field(default_factory=list)
 
 
 @strawberry.type
@@ -503,6 +616,9 @@ class Propuesta:
     nombre_titular: str | None = None
     nombre_asesor: str | None = None  # solo para el BACKOFFICE
     nombre_socio: str | None = None  # v0.22 (HU-W07): solo para el BACKOFFICE
+    # v0.42
+    producto: Producto = Producto.VIDA_DEUDOR
+    vehiculo: VehiculoAsegurado | None = None
 
 
 @strawberry.type
@@ -725,6 +841,11 @@ class Usuario:
     documento_enmascarado: str | None = None
     # v0.24: el correo del propio usuario (perfil común); solo en `iniciarSesion` y `yo`.
     correo: str | None = None
+    # v0.38 (T20): tipo del documento del CLIENTE (nunca el número) y país de la cuenta.
+    tipo_documento: str | None = None
+    pais: str | None = None
+    # KAN-259: preferencia del cliente para el push (siempre viene; default encendida).
+    notificaciones_push: bool = True
 
 
 @strawberry.type
@@ -746,7 +867,36 @@ class ErrorAutenticacion:
     codigo: str | None = None
 
 
+MENSAJE_DISPOSITIVO = "No pudimos verificar este teléfono. Ingresa con tu correo y contraseña."
+
+
+def _dispositivo_no_valido() -> ErrorAutenticacion:
+    return ErrorAutenticacion(mensaje=MENSAJE_DISPOSITIVO, codigo="DISPOSITIVO_NO_VALIDO")
+
+
+MENSAJE_ENLACE_CLAVE = "El enlace no es válido o ya venció. Pide uno nuevo."
+
 ResultadoSesion = Annotated[Sesion | ErrorAutenticacion, strawberry.union("ResultadoSesion")]
+
+
+@strawberry.type
+class DesafioDispositivo:
+    """v0.44 (KAN-26): el texto que el teléfono firma con su llave tras la biometría."""
+
+    reto: str
+    vence_en: datetime
+
+
+@strawberry.type
+class RestablecimientoExitoso:
+    """v0.43 (KAN-26): la clave cambió y se cerraron todas las sesiones de la cuenta."""
+
+    ok: bool = True
+
+
+ResultadoRestablecimiento = Annotated[
+    RestablecimientoExitoso | ErrorAutenticacion, strawberry.union("ResultadoRestablecimiento")
+]
 
 
 @strawberry.type
@@ -757,6 +907,21 @@ class ErrorUsuario:
 ResultadoUsuario = Annotated[Usuario | ErrorUsuario, strawberry.union("ResultadoUsuario")]
 
 
+@strawberry.enum
+class PlataformaMovil(Enum):
+    ANDROID = "android"
+    IOS = "ios"
+
+
+@strawberry.input
+class DispositivoPushInput:
+    """KAN-259: la instalación de la app que inicia sesión, para la sesión única por cliente y el
+    push. Independiente del dispositivo de la llave de login (KAN-26)."""
+
+    instalacion_id: str
+    plataforma: PlataformaMovil
+
+
 @strawberry.input
 class CredencialesInput:
     usuario: str
@@ -764,6 +929,8 @@ class CredencialesInput:
     # T17: rol del chip elegido en la web. Si no es el de la cuenta, la respuesta es la misma que
     # con una clave errada (no se revela qué rol tiene el usuario).
     rol: RolUsuario | None = None
+    # KAN-259: solo con sesión en la app; la app lo manda siempre que entra con usuario y clave.
+    dispositivo: DispositivoPushInput | None = None
 
 
 @strawberry.input
@@ -777,12 +944,16 @@ class CrearUsuarioInput:
     telefono: str | None = None
     # v0.18 (W03-27): obligatorio para un CLIENTE, junto con el correo (lo exige AUTH).
     documento_identidad: str | None = None
+    # v0.38 (T20): tipo del documento (del catálogo del país) y país de la cuenta (cualquier rol).
+    tipo_documento: str | None = None
+    pais: str | None = None
 
 
 @strawberry.input
 class PreferenciasInput:
     idioma: str  # ES | EN
     moneda: str  # COP | USD | EUR | MXN | BRL | CLP | PEN
+    pais: str | None = None  # v0.38 (T20): uno de los siete; si no llega, se conserva
 
 
 @strawberry.input
@@ -859,6 +1030,8 @@ def _propuesta(
         nombre_titular=nombre_titular,
         nombre_asesor=nombre_asesor,
         nombre_socio=nombre_socio,
+        producto=Producto(datos.get("producto") or "VIDA_DEUDOR"),
+        vehiculo=_vehiculo(datos.get("vehiculo")),
     )
 
 
@@ -873,6 +1046,9 @@ def _poliza_de_resumen(resumen: dict | None, propuesta: dict) -> Poliza | None:
             "estado": "EMITIDA",
             "prima": propuesta["prima"],
             "cobertura": propuesta["cobertura"],
+            "producto": propuesta.get("producto"),
+            "vehiculo": propuesta.get("vehiculo"),
+            "coberturas": propuesta.get("coberturas"),
         }
     )
 
@@ -888,7 +1064,10 @@ def _poliza(datos: dict) -> Poliza:
         cobertura=Monto(valor=datos["cobertura"]["valor"], moneda=datos["cobertura"]["moneda"]),
         # El PDF lo entrega el BFF en esta ruta (bloque 5); hasta entonces responde 404.
         documento_url=f"/polizas/{datos['id']}/documento",
-        ramo=RAMO_POLIZA,
+        ramo=ramo_de(datos.get("producto")),
+        producto=Producto(datos.get("producto") or "VIDA_DEUDOR"),
+        vehiculo=_vehiculo(datos.get("vehiculo")),
+        coberturas=_coberturas(datos.get("coberturas")),
     )
 
 
@@ -912,6 +1091,53 @@ def _perfil_riesgo(datos: dict | None) -> PerfilRiesgo | None:
         score=int(datos["score"]),
         nivel_riesgo=NivelRiesgo(datos["nivelRiesgo"]),
         fecha_vigencia=datetime.fromisoformat(datos["fechaVigencia"]),
+    )
+
+
+MENSAJE_CONSULTAS_NO_DISPONIBLE = "No pudimos cargar tus consultas. Intenta nuevamente."
+TAMANO_MAXIMO_CONSULTAS = 50
+
+
+@strawberry.type
+class ConsultaFuentes:
+    """v0.45 (Q-08): una cotización del asesor y el estado de cada fuente que consultó."""
+
+    id: strawberry.ID
+    creada_en: datetime
+    documento_enmascarado: str
+    tipo_oferta: TipoOferta
+    producto: Producto
+    oferta_id: strawberry.ID | None
+    fuentes: list[FuenteConsultada]
+
+
+@strawberry.type
+class PaginaConsultasFuentes:
+    consultas: list[ConsultaFuentes]
+    total: int
+    pagina: int
+    tamano: int
+
+
+def _consulta_fuentes(datos: dict) -> ConsultaFuentes:
+    """`datos` es la respuesta de RISK (`GET /consultas`), en snake_case."""
+    return ConsultaFuentes(
+        id=strawberry.ID(datos["id"]),
+        creada_en=datetime.fromisoformat(datos["creada_en"]),
+        documento_enmascarado=datos["documento_enmascarado"],
+        tipo_oferta=TipoOferta(datos["tipo_oferta"]),
+        producto=Producto(datos["producto"]),
+        oferta_id=strawberry.ID(datos["oferta_id"]) if datos.get("oferta_id") else None,
+        fuentes=[
+            FuenteConsultada(
+                id=strawberry.ID(f["id"]),
+                nombre=f["nombre"],
+                origen=OrigenFuente(f["origen"]),
+                estado=EstadoFuente(f["estado"]),
+                capturado_en=_fecha(f.get("capturado_en")),
+            )
+            for f in datos["fuentes"]
+        ],
     )
 
 
@@ -942,7 +1168,44 @@ def _oferta(datos: dict) -> Oferta:
             for f in datos["fuentes"]
         ],
         perfil_riesgo=_perfil_riesgo(datos.get("perfilRiesgo")),
+        producto=Producto(datos.get("producto") or "VIDA_DEUDOR"),
+        vehiculo=_vehiculo(datos.get("vehiculo")),
+        coberturas=_coberturas(datos.get("coberturas")),
+        factores_tarifa=[
+            FactorTarifa(nombre=f["nombre"], factor=f["factor"], detalle=f.get("detalle"))
+            for f in datos.get("factoresTarifa") or []
+        ],
     )
+
+
+def _vehiculo(datos: dict | None) -> VehiculoAsegurado | None:
+    """KAN-290: el vehículo como lo entregan RATING y POLICY (camelCase), con la placa ya
+    enmascarada: la placa completa nunca sale del backend."""
+    if not datos:
+        return None
+    return VehiculoAsegurado(
+        placa_enmascarada=datos["placaEnmascarada"],
+        marca=datos["marca"],
+        linea=datos["linea"],
+        modelo=int(datos["modelo"]),
+        clase=datos["clase"],
+        uso=UsoVehiculo(datos["uso"]),
+        valor_comercial=_monto(datos["valorComercial"]),
+        ciudad_circulacion=datos["ciudadCirculacion"],
+        kilometraje_anual=int(datos["kilometrajeAnual"]),
+        deducible=DeducibleAuto(datos["deducible"]),
+    )
+
+
+def _coberturas(datos: list[dict] | None) -> list[CoberturaAuto]:
+    return [
+        CoberturaAuto(
+            tipo=TipoCobertura(c["tipo"]),
+            valor_asegurado=_monto(c.get("valorAsegurado")),
+            deducible=c.get("deducible"),
+        )
+        for c in datos or []
+    ]
 
 
 def _cobro(datos: dict, nombres: dict[str, str] | None = None) -> Cobro:
@@ -991,6 +1254,9 @@ def _usuario(datos: dict) -> Usuario:
         tiene_contacto=bool(datos.get("tiene_contacto", False)),
         documento_enmascarado=datos.get("documento_enmascarado"),
         correo=datos.get("correo"),
+        tipo_documento=datos.get("tipo_documento"),
+        pais=datos.get("pais"),
+        notificaciones_push=bool(datos.get("notificaciones_push", True)),
     )
 
 
@@ -1275,6 +1541,19 @@ def _sesion_vencida(contexto: dict) -> "ErrorAutenticacion":
     )
 
 
+# KAN-259 (D3/D4): tope del token de acceso (`contracts/sesion.json`, `acceso_minutos`). AUTH no
+# dice cuánto le queda al token del dispositivo que echó fuera, así que se anota por el máximo
+# posible: peor caso, ese acceso sigue vetado un poco más de lo necesario, nunca menos.
+TTL_ACCESO_SEGUNDOS_MAX = 15 * 60
+
+
+async def _anotar_sids_revocados(datos: dict, contexto: dict) -> None:
+    """KAN-259 (D3): reusa el mecanismo de `cerrarSesion` para que el teléfono viejo deje de
+    servir al instante, sin esperar a que intente renovar o a que llegue el push."""
+    for sid in datos.get("sids_revocados") or []:
+        await contexto["sesiones_revocadas"].revocar(sid, TTL_ACCESO_SEGUNDOS_MAX)
+
+
 def _sesion(datos: dict, contexto: dict | None = None) -> Sesion:
     """`contexto` (T22): en la web el refresh se pasa a la cookie y no sale en la respuesta."""
     refresh = datos.get("refresh_token")
@@ -1420,6 +1699,7 @@ class Siniestro:
     evidencias: list[Evidencia]
     verificaciones: list[Verificacion]
     resolucion: Resolucion | None
+    tipo_siniestro_auto: TipoSiniestroAuto | None = None  # v0.42: solo en pólizas de AUTO
 
     @strawberry.field
     async def poliza(self, info: Info) -> Poliza:
@@ -1469,6 +1749,7 @@ class SiniestroReportado:
     vence_dictamen_en: datetime
     fotos: int
     resolucion: ResolucionCliente | None = None
+    tipo_siniestro_auto: TipoSiniestroAuto | None = None  # v0.42: solo en pólizas de AUTO
 
 
 ResultadoReporteSiniestro = Annotated[
@@ -1502,6 +1783,8 @@ class ReporteSiniestroInput:
     descripcion: str
     ubicacion: UbicacionReporteInput
     fotos: list[FotoReporteInput]
+    # v0.42: obligatorio si la póliza es de AUTO; se ignora en VIDA_DEUDOR.
+    tipo_siniestro_auto: TipoSiniestroAuto | None = None
 
 
 MENSAJE_REPORTE_SIN_IDENTIDAD = (
@@ -1509,6 +1792,10 @@ MENSAJE_REPORTE_SIN_IDENTIDAD = (
 )
 MENSAJE_REPORTE_NO_DISPONIBLE = "No pudimos registrar tu reporte. Intenta de nuevo."
 MENSAJE_ID_REPORTE = "El identificador del reporte no es válido."
+
+
+def _tipo_siniestro_auto(valor: str | None) -> TipoSiniestroAuto | None:
+    return TipoSiniestroAuto(valor) if valor else None
 
 
 def _siniestro_reportado(datos: dict) -> SiniestroReportado:
@@ -1522,6 +1809,7 @@ def _siniestro_reportado(datos: dict) -> SiniestroReportado:
         vence_dictamen_en=_fecha(datos["vence_dictamen_en"]),
         fotos=sum(1 for e in datos.get("evidencias", []) if e["tipo"] == "FOTO"),
         resolucion=_resolucion_cliente(datos.get("resolucion")),
+        tipo_siniestro_auto=_tipo_siniestro_auto(datos.get("tipo_siniestro_auto")),
     )
 
 
@@ -1602,6 +1890,116 @@ def _catalogo_prestadores(datos: dict) -> CatalogoPrestadores:
             if p["tipo"] in TIPOS_PRESTADOR
         ],
     )
+
+
+# ---------- Asistencia en sitio (v0.40, HU-M06) ----------
+
+
+@strawberry.enum
+class EstadoAsistencia(Enum):
+    CONFIRMADA = "CONFIRMADA"
+    NO_CONFIRMADA = "NO_CONFIRMADA"
+    CANCELADA = "CANCELADA"
+
+
+@strawberry.enum
+class MotivoNoConfirmada(Enum):
+    PRESTADOR_SIN_RESPUESTA = "PRESTADOR_SIN_RESPUESTA"
+
+
+@strawberry.enum
+class CodigoErrorAsistencia(Enum):
+    PRESTADOR_NO_DISPONIBLE = "PRESTADOR_NO_DISPONIBLE"
+    TIPO_NO_ATENDIDO = "TIPO_NO_ATENDIDO"
+    DATOS_INVALIDOS = "DATOS_INVALIDOS"
+    NO_ENCONTRADA = "NO_ENCONTRADA"
+
+
+@strawberry.input
+class SolicitudAsistenciaInput:
+    # UUID generado por la app: es el id de la asistencia y su clave de idempotencia.
+    id_solicitud: strawberry.ID
+    prestador_id: strawberry.ID
+    tipo_asistencia: TipoPrestador
+    latitud: float
+    longitud: float
+    descripcion: str | None = None
+    direccion: str | None = None
+
+
+@strawberry.input
+class SolicitudAsistenciaDireccionInput:
+    # v0.41 (CA-M06-02): sin ubicación, el cliente escribe adónde debe llegar el prestador.
+    id_solicitud: strawberry.ID
+    prestador_id: strawberry.ID
+    tipo_asistencia: TipoPrestador
+    direccion: str
+    descripcion: str | None = None
+
+
+@strawberry.type
+class Asistencia:
+    id: strawberry.ID
+    estado: EstadoAsistencia
+    tipo_asistencia: TipoPrestador
+    prestador: Prestador
+    minutos_estimados: int | None
+    motivo: MotivoNoConfirmada | None
+    solicitada_en: datetime
+    cancelada_en: datetime | None
+
+
+@strawberry.type
+class ErrorAsistencia:
+    codigo: CodigoErrorAsistencia
+    mensaje: str
+
+
+ResultadoAsistencia = Annotated[
+    Asistencia | ErrorAsistencia, strawberry.union("ResultadoAsistencia")
+]
+
+MENSAJE_ASISTENCIA_NO_DISPONIBLE = "No pudimos registrar la asistencia. Intenta de nuevo."
+MENSAJE_ID_SOLICITUD = "El identificador de la solicitud no es válido."
+CODIGOS_ASISTENCIA = {c.value for c in CodigoErrorAsistencia}
+
+
+def _asistencia(datos: dict) -> Asistencia:
+    p = datos["prestador"]
+    return Asistencia(
+        id=strawberry.ID(datos["id"]),
+        estado=EstadoAsistencia(datos["estado"]),
+        tipo_asistencia=TipoPrestador(datos["tipo_asistencia"]),
+        prestador=Prestador(
+            id=strawberry.ID(p["id"]),
+            nombre=p["nombre"],
+            tipo=TipoPrestador(p["tipo"]),
+            ciudad=p["ciudad"],
+            latitud=float(p["latitud"]),
+            longitud=float(p["longitud"]),
+            activo=p["activo"],
+        ),
+        minutos_estimados=datos.get("minutos_estimados"),
+        motivo=MotivoNoConfirmada(datos["motivo"]) if datos.get("motivo") else None,
+        solicitada_en=datetime.fromisoformat(datos["solicitada_en"]),
+        cancelada_en=_fecha(datos.get("cancelada_en")),
+    )
+
+
+def _error_asistencia(error: AsistenciaRechazada) -> ErrorAsistencia:
+    """Un código que este BFF no conoce se entrega como DATOS_INVALIDOS (nunca rompe la union)."""
+    codigo = error.codigo if error.codigo in CODIGOS_ASISTENCIA else "DATOS_INVALIDOS"
+    return ErrorAsistencia(codigo=CodigoErrorAsistencia(codigo), mensaje=error.mensaje)
+
+
+async def _accion_asistencia(accion) -> ResultadoAsistencia:
+    try:
+        return _asistencia(await accion())
+    except AsistenciaRechazada as error:
+        return _error_asistencia(error)
+    except ErrorServicio as error:
+        # Idempotente: la app reintenta con el mismo idSolicitud sin riesgo de duplicar.
+        raise ErrorPublico(MENSAJE_ASISTENCIA_NO_DISPONIBLE) from error
 
 
 # ---------- Estado del sistema (v0.22, HU-W07) ----------
@@ -1767,6 +2165,7 @@ def _siniestro(datos: dict) -> Siniestro:
             for v in datos["verificaciones"]
         ],
         resolucion=_resolucion(datos.get("resolucion")),
+        tipo_siniestro_auto=_tipo_siniestro_auto(datos.get("tipo_siniestro_auto")),
     )
 
 
@@ -1944,15 +2343,71 @@ class Query:
         return _oferta(datos) if datos else None
 
     @strawberry.field
-    async def propuesta(self, info: Info, id: strawberry.ID) -> Propuesta | None:
-        usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
+    async def consultas_fuentes(
+        self, info: Info, pagina: int | None = 1, tamano: int | None = 10
+    ) -> PaginaConsultasFuentes:
+        """v0.45 (Q-08): el historial de fuentes del ASESOR, de la más reciente a la más antigua. El
+        filtro es el asesor del token: nunca ve lo de otro, y los demás roles no entran."""
+        usuario = exigir_rol(info, "ASESOR", siempre=True)
+        if usuario is None:  # `siempre=True` ya lo impide; por si cambia
+            raise ErrorPublico(MENSAJE_SIN_SESION, "SIN_SESION")
         try:
-            datos = await ServicioSuscripcion(info.context["clientes"]).obtener_propuesta(
-                str(id), usuario
+            datos = await info.context["clientes"].risk.listar_consultas(
+                usuario.id,
+                max(1, pagina or 1),
+                min(max(1, tamano or 10), TAMANO_MAXIMO_CONSULTAS),
             )
         except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_CONSULTAS_NO_DISPONIBLE) from error
+        return PaginaConsultasFuentes(
+            consultas=[_consulta_fuentes(c) for c in datos["consultas"]],
+            total=datos["total"],
+            pagina=datos["pagina"],
+            tamano=datos["tamano"],
+        )
+
+    @strawberry.field
+    async def consulta_fuentes(self, info: Info, id: strawberry.ID) -> ConsultaFuentes | None:
+        """v0.45 (Q-08): una consulta del asesor del token; una ajena o inexistente, `null`."""
+        usuario = exigir_rol(info, "ASESOR", siempre=True)
+        if usuario is None:
+            raise ErrorPublico(MENSAJE_SIN_SESION, "SIN_SESION")
+        try:
+            datos = await info.context["clientes"].risk.obtener_consulta(str(id), usuario.id)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_CONSULTAS_NO_DISPONIBLE) from error
+        return _consulta_fuentes(datos) if datos else None
+
+    @strawberry.field
+    async def propuesta(self, info: Info, id: strawberry.ID) -> Propuesta | None:
+        """Una propuesta con lo mismo que trae la lista (`propuestas`): la póliza si ya se emitió y,
+        solo para el ASESOR, el nombre del titular. Son datos de apoyo: si POLICY no los entrega la
+        propuesta sale igual, sin ellos (regla 4)."""
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
+        servicio = ServicioSuscripcion(info.context["clientes"])
+        try:
+            datos = await servicio.obtener_propuesta(str(id), usuario)
+        except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_SUSCRIPCION_NO_DISPONIBLE) from error
-        return _propuesta(datos) if datos else None
+        if not datos:
+            return None
+        poliza: Poliza | None = None
+        if datos.get("poliza_id") and datos["estado"] == "EMITIDA":
+            try:
+                completa = await servicio.obtener_poliza(datos["poliza_id"], usuario)
+                poliza = _poliza(completa) if completa else None
+            except ErrorServicio as error:
+                logger.warning(
+                    "póliza de la propuesta no disponible error=%s", type(error).__name__
+                )
+        titular: str | None = None
+        if usuario is not None and usuario.rol != "CLIENTE":
+            try:
+                nombres = await info.context["clientes"].policy.nombres_titulares([datos["id"]])
+                titular = nombres.get(datos["id"])
+            except ErrorServicio as error:
+                logger.warning("nombre del titular no disponible error=%s", type(error).__name__)
+        return _propuesta(datos, poliza=poliza, nombre_titular=titular)
 
     @strawberry.field
     async def documento_firma(
@@ -2218,6 +2673,12 @@ class Query:
         return _onboarding_de(datos) if datos else None
 
     @strawberry.field
+    async def enlace_restablecimiento_vigente(self, info: Info) -> bool:
+        """v0.43 (KAN-26): ¿el enlace de `X-Enlace-Clave` sirve? Público; solo dice sí o no."""
+        servicio = info.context["servicio_restablecimiento"]
+        return await servicio.enlace_vigente(info.context.get("enlace_clave"))
+
+    @strawberry.field
     async def yo(self, info: Info) -> Usuario | None:
         usuario = exigir_rol(
             info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True, admite_pendiente=True
@@ -2334,12 +2795,19 @@ class Mutation:
         clave_titular = info.context.get("cliente_id_clave", "dev-cliente-id-clave-local")
         # W03-34: como en `solicitarOferta`, un CLIENTE consiente con el documento de su cuenta.
         titular = await documento_del_cliente(
-            info.context["clientes"], usuario, entrada.documento_identidad, clave_titular
+            info.context["clientes"],
+            usuario,
+            entrada.documento_identidad,
+            clave_titular,
+            entrada.tipo_documento,
+            entrada.pais,
         )
         if titular.error:
             raise ErrorPublico(titular.error)
         titular_id = (
-            cliente_id_desde_documento(titular.documento, clave_titular)
+            cliente_id_desde_documento(
+                titular.documento, clave_titular, titular.pais, titular.tipo_documento
+            )
             if titular.documento
             else None
         )
@@ -2377,6 +2845,46 @@ class Mutation:
         return _consentimiento(datos)
 
     @strawberry.mutation
+    async def solicitar_oferta_auto(
+        self, info: Info, entrada: SolicitudOfertaAutoInput
+    ) -> ResultadoOferta:
+        """v0.42 (KAN-290): la oferta de la póliza de auto, con las mismas reglas de documento y
+        consentimiento que `solicitarOferta` (un CLIENTE cotiza con el documento de su cuenta)."""
+        usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
+        titular = await documento_del_cliente(
+            info.context["clientes"],
+            usuario,
+            entrada.documento_identidad,
+            info.context["cliente_id_clave"],
+            entrada.tipo_documento,
+            entrada.pais,
+        )
+        if titular.error or not titular.documento:
+            return ErrorOferta(
+                mensaje=titular.error or MENSAJE_DOCUMENTO_REQUERIDO,
+                puede_reintentar=False,
+                motivo=MotivoErrorOferta.DATOS_INSUFICIENTES,
+            )
+        resultado = await info.context["servicio_oferta"].solicitar_auto(
+            str(entrada.consentimiento_id),
+            titular.documento,
+            entrada.placa,
+            entrada.kilometraje_anual,
+            entrada.ciudad_circulacion,
+            entrada.uso.value,
+            entrada.deducible.value,
+            tipo_documento=titular.tipo_documento,
+            pais=titular.pais,
+        )
+        if isinstance(resultado, ErrorOfertaDatos):
+            return ErrorOferta(
+                mensaje=resultado.mensaje,
+                puede_reintentar=resultado.puede_reintentar,
+                motivo=MotivoErrorOferta(resultado.motivo) if resultado.motivo else None,
+            )
+        return _oferta(resultado)
+
+    @strawberry.mutation
     async def solicitar_oferta(self, info: Info, entrada: SolicitudOfertaInput) -> ResultadoOferta:
         usuario = exigir_rol(info, *CLIENTE_O_ASESOR)
         # W03-34: un CLIENTE cotiza con el documento de su cuenta (AUTH lo da en memoria); el
@@ -2386,6 +2894,8 @@ class Mutation:
             usuario,
             entrada.documento_identidad,
             info.context["cliente_id_clave"],
+            entrada.tipo_documento,
+            entrada.pais,
         )
         if titular.error or not titular.documento:
             return ErrorOferta(
@@ -2399,12 +2909,26 @@ class Mutation:
             entrada.valor_credito,
             entrada.plazo_meses,
             entrada.direccion_inmueble,
+            tipo_documento=titular.tipo_documento,
+            pais=titular.pais,
+            place_id=entrada.place_id,
         )
         if isinstance(resultado, ErrorOfertaDatos):
             return ErrorOferta(
                 mensaje=resultado.mensaje,
                 puede_reintentar=resultado.puede_reintentar,
                 motivo=MotivoErrorOferta(resultado.motivo) if resultado.motivo else None,
+            )
+        if usuario is not None:
+            # Q-08: el historial de fuentes de quien cotizó (solo el ASESOR lo consulta).
+            await info.context["servicio_oferta"].registrar_consulta(
+                usuario.id,
+                usuario.rol,
+                titular.documento,
+                str(entrada.consentimiento_id),
+                resultado,
+                tipo_documento=titular.tipo_documento,
+                pais=titular.pais,
             )
         return _oferta(resultado)
 
@@ -2520,6 +3044,14 @@ class Mutation:
                 entrada.clave,
                 info.context.get("canal"),
                 entrada.rol.value if entrada.rol else None,
+                (
+                    {
+                        "instalacion_id": entrada.dispositivo.instalacion_id,
+                        "plataforma": entrada.dispositivo.plataforma.value,
+                    }
+                    if entrada.dispositivo
+                    else None
+                ),
             )
         except VerificacionPendiente:
             return ErrorAutenticacion(
@@ -2530,6 +3062,75 @@ class Mutation:
             raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
         if sesion is None:
             return ErrorAutenticacion(mensaje="Usuario o clave incorrectos.")
+        await _anotar_sids_revocados(sesion, info.context)
+        return _sesion(sesion, info.context)
+
+    @strawberry.mutation
+    async def registrar_dispositivo(self, info: Info, clave_publica: str) -> str:
+        """v0.44 (KAN-26): con sesión de la app, guarda la llave pública del teléfono (EC P-256,
+        SPKI en base64) para entrar luego con huella o rostro. Revoca la anterior; devuelve el id
+        del dispositivo."""
+        usuario = exigir_rol(info, "CLIENTE", siempre=True, admite_pendiente=True)
+        if info.context.get("canal") != CANAL_APP:
+            raise ErrorPublico(MENSAJE_SIN_PERMISO)
+        try:
+            dispositivo_id = await _auth(info).registrar_dispositivo(usuario.id, clave_publica)
+        except ErrorServicio as error:
+            raise ErrorPublico(
+                "No pudimos activar el acceso biométrico. Intenta de nuevo."
+            ) from error
+        if dispositivo_id is None:
+            raise ErrorPublico("No pudimos activar el acceso biométrico en este teléfono.")
+        return dispositivo_id
+
+    @strawberry.mutation
+    async def desafio_dispositivo(
+        self, info: Info, dispositivo_id: strawberry.ID
+    ) -> DesafioDispositivo:
+        """v0.44 (KAN-26): pública. Entrega un reto de 60 s, exista o no el dispositivo."""
+        try:
+            datos = await _auth(info).reto_dispositivo(str(dispositivo_id))
+        except ErrorServicio as error:
+            raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
+        return DesafioDispositivo(
+            reto=datos["reto"], vence_en=datetime.fromisoformat(str(datos["expira_en"]))
+        )
+
+    @strawberry.mutation
+    async def iniciar_sesion_con_dispositivo(
+        self,
+        info: Info,
+        dispositivo_id: strawberry.ID,
+        reto: str,
+        firma: str,
+        dispositivo: DispositivoPushInput | None = None,
+    ) -> ResultadoSesion:
+        """v0.44 (KAN-26): pública, solo en la app. Entra con la firma del reto hecha con la llave
+        del teléfono (tras la biometría), sin clave. Cualquier fallo responde lo mismo con el
+        código `DISPOSITIVO_NO_VALIDO`: la app pide entonces correo y contraseña.
+        KAN-259: `dispositivo` (push) aplica la misma sesión única por cliente que con clave."""
+        if info.context.get("canal") != CANAL_APP:
+            return _dispositivo_no_valido()
+        try:
+            sesion = await _auth(info).sesion_con_dispositivo(
+                str(dispositivo_id),
+                reto,
+                firma,
+                CANAL_APP,
+                (
+                    {
+                        "instalacion_id": dispositivo.instalacion_id,
+                        "plataforma": dispositivo.plataforma.value,
+                    }
+                    if dispositivo
+                    else None
+                ),
+            )
+        except ErrorServicio as error:
+            raise ErrorPublico("No pudimos iniciar sesión. Intenta de nuevo.") from error
+        if sesion is None:
+            return _dispositivo_no_valido()
+        await _anotar_sids_revocados(sesion, info.context)
         return _sesion(sesion, info.context)
 
     @strawberry.mutation
@@ -2564,6 +3165,11 @@ class Mutation:
         refresh = contexto.get("cookie_refresh") if web else refresh_token
         if web:
             borrar_cookie(contexto)
+        usuario = contexto.get("usuario")
+        if usuario is not None and usuario.sid and usuario.expira:
+            # El token de acceso tampoco debe servir tras cerrar sesión: se anota hasta que venza.
+            restante = usuario.expira - int(datetime.now(UTC).timestamp())
+            await contexto["sesiones_revocadas"].revocar(usuario.sid, restante)
         if refresh:
             try:
                 await _auth(info).cerrar_sesion(refresh)
@@ -2583,6 +3189,8 @@ class Mutation:
                 entrada.correo,
                 entrada.telefono,
                 entrada.documento_identidad,
+                entrada.tipo_documento,
+                entrada.pais,
             )
         except SolicitudInvalida as error:
             return ErrorUsuario(mensaje=str(error))
@@ -2613,7 +3221,7 @@ class Mutation:
         usuario = exigir_rol(info, *CLIENTE_O_ASESOR, *SOLO_BACKOFFICE, siempre=True)
         try:
             datos = await _auth(info).actualizar_preferencias(
-                usuario.id, entrada.idioma, entrada.moneda
+                usuario.id, entrada.idioma, entrada.moneda, entrada.pais
             )
         except SolicitudInvalida as error:
             return ErrorUsuario(mensaje=str(error))
@@ -2622,6 +3230,35 @@ class Mutation:
         if datos is None:
             return ErrorUsuario(mensaje=MENSAJE_USUARIO_NO_ENCONTRADO)
         return _usuario(datos)
+
+    # ---------- Dispositivos de push (KAN-259) ----------
+
+    @strawberry.mutation
+    async def registrar_token_push(self, info: Info, instalacion_id: str, token_fcm: str) -> bool:
+        """Solo CLIENTE, en la app: al obtener el token de FCM y en `onTokenRefresh`. Solo lo
+        acepta sobre el dispositivo que la sesión actual dejó activo."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        if info.context.get("canal") != CANAL_APP:
+            raise ErrorPublico(MENSAJE_SIN_PERMISO)
+        try:
+            await _auth(info).registrar_token_push(usuario.id, instalacion_id, token_fcm)
+        except SolicitudInvalida as error:
+            raise ErrorPublico(str(error)) from error
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_AUTH_NO_DISPONIBLE) from error
+        return True
+
+    @strawberry.mutation
+    async def actualizar_preferencia_push(self, info: Info, habilitado: bool) -> bool:
+        """Enciende o apaga el push del propio cliente (el id sale del token)."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        try:
+            datos = await _auth(info).actualizar_preferencia_push(usuario.id, habilitado)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_AUTH_NO_DISPONIBLE) from error
+        if datos is None:
+            raise ErrorPublico(MENSAJE_USUARIO_NO_ENCONTRADO)
+        return True
 
     @strawberry.mutation
     async def actualizar_contacto(self, info: Info, entrada: ContactoInput) -> ResultadoUsuario:
@@ -2965,6 +3602,36 @@ class Mutation:
         return await _paso_onboarding(llamada)
 
     @strawberry.mutation
+    async def solicitar_restablecimiento_clave(self, info: Info, correo: str) -> bool:
+        """v0.43 (KAN-26): «olvidé mi contraseña». Responde `true` siempre (exista o no la cuenta,
+        o se haya topado el límite): nunca revela quién está registrado."""
+        await info.context["servicio_restablecimiento"].solicitar(
+            correo, info.context.get("ip_cliente")
+        )
+        return True
+
+    @strawberry.mutation
+    async def restablecer_clave(self, info: Info, clave: str) -> ResultadoRestablecimiento:
+        """v0.43 (KAN-26): fija la clave nueva con el enlace de `X-Enlace-Clave` (1 uso, 30 min).
+        Cierra todas las sesiones de la cuenta. Enlace malo = mensaje genérico `ENLACE_INVALIDO`."""
+        motivo = motivo_clave_invalida(clave)
+        if motivo is not None:
+            return ErrorAutenticacion(mensaje=motivo, codigo="CLAVE_DEBIL")
+        try:
+            await info.context["servicio_restablecimiento"].restablecer(
+                info.context.get("enlace_clave"), clave
+            )
+        except EnlaceInvalido:
+            return ErrorAutenticacion(mensaje=MENSAJE_ENLACE_CLAVE, codigo="ENLACE_INVALIDO")
+        except SolicitudInvalida as error:
+            return ErrorAutenticacion(mensaje=str(error), codigo="CLAVE_DEBIL")
+        except ErrorServicio:
+            return ErrorAutenticacion(
+                mensaje="No pudimos cambiar tu clave. Intenta de nuevo.", codigo="NO_DISPONIBLE"
+            )
+        return RestablecimientoExitoso()
+
+    @strawberry.mutation
     async def enviar_codigo_onboarding(self, info: Info, correo: str) -> ResultadoCodigoOnboarding:
         """Envía un código de 6 dígitos al correo para verificarlo en el onboarding (HU-M01)."""
         try:
@@ -3137,10 +3804,16 @@ class Mutation:
         return _sesion(sesion)
 
     @strawberry.mutation
-    async def aprobar_siniestro(self, info: Info, id: strawberry.ID) -> ResultadoResolucion:
-        """HU-W04 (W04-6): CLAIMS registra primero la orden de pago en PAYMENTS y luego aprueba."""
+    async def aprobar_siniestro(
+        self, info: Info, id: strawberry.ID, valor_dano: str | None = None
+    ) -> ResultadoResolucion:
+        """HU-W04 (W04-6): CLAIMS registra primero la orden de pago en PAYMENTS y luego aprueba.
+        v0.42: `valor_dano` lo usa la indemnización de auto (tarea 8 del plan); hoy no cambia
+        nada."""
         usuario = exigir_rol(info, *SOLO_BACKOFFICE, siempre=True)
-        return await _resolver_siniestro(lambda: _claims(info).aprobar(str(id), usuario.id))
+        return await _resolver_siniestro(
+            lambda: _claims(info).aprobar(str(id), usuario.id, valor_dano)
+        )
 
     @strawberry.mutation
     async def rechazar_siniestro(
@@ -3227,6 +3900,10 @@ class Mutation:
             "asegurado": {"nombre": perfil["nombre"], "documento": identidad["documento"]},
             "poliza_id": str(entrada.poliza_id),
             "cobertura_aplicada": RAMO_POLIZA,
+            # KAN-290: CLAIMS lo exige si la póliza es de auto y fija la cobertura según el tipo.
+            "tipo_siniestro_auto": entrada.tipo_siniestro_auto.value
+            if entrada.tipo_siniestro_auto
+            else None,
             "ocurrido_en": entrada.ocurrido_en.isoformat(),
             "descripcion": entrada.descripcion,
             "ubicacion": {
@@ -3251,6 +3928,61 @@ class Mutation:
             return ErrorSiniestro(mensaje=error.mensaje)
         except ErrorServicio:
             return ErrorSiniestro(mensaje=MENSAJE_REPORTE_NO_DISPONIBLE)
+
+    @strawberry.mutation
+    async def solicitar_asistencia(
+        self, info: Info, entrada: SolicitudAsistenciaInput
+    ) -> ResultadoAsistencia:
+        """v0.40 (HU-M06, KAN-265): el CLIENTE pide asistencia en sitio a un prestador del
+        catálogo. Idempotente por `idSolicitud`; las reglas las aplica CLAIMS. La ubicación viaja
+        solo a CLAIMS (cifrada allí) y nunca a los logs."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        id_solicitud = str(entrada.id_solicitud).lower()
+        if not _id_reporte_valido(id_solicitud):
+            return ErrorAsistencia(
+                codigo=CodigoErrorAsistencia.DATOS_INVALIDOS, mensaje=MENSAJE_ID_SOLICITUD
+            )
+        solicitud = {
+            "id_solicitud": id_solicitud,
+            "cliente_id": usuario.id,
+            "prestador_id": str(entrada.prestador_id),
+            "tipo_asistencia": entrada.tipo_asistencia.value,
+            "descripcion": entrada.descripcion,
+            "direccion": entrada.direccion,
+            "latitud": entrada.latitud,
+            "longitud": entrada.longitud,
+        }
+        return await _accion_asistencia(lambda: _claims(info).solicitar_asistencia(solicitud))
+
+    @strawberry.mutation
+    async def solicitar_asistencia_con_direccion(
+        self, info: Info, entrada: SolicitudAsistenciaDireccionInput
+    ) -> ResultadoAsistencia:
+        """v0.41 (HU-M06, KAN-264, CA-M06-02): sin ubicación, con la dirección a mano. La dirección
+        viaja solo a CLAIMS (cifrada allí) y nunca a los logs."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        id_solicitud = str(entrada.id_solicitud).lower()
+        if not _id_reporte_valido(id_solicitud):
+            return ErrorAsistencia(
+                codigo=CodigoErrorAsistencia.DATOS_INVALIDOS, mensaje=MENSAJE_ID_SOLICITUD
+            )
+        solicitud = {
+            "id_solicitud": id_solicitud,
+            "cliente_id": usuario.id,
+            "prestador_id": str(entrada.prestador_id),
+            "tipo_asistencia": entrada.tipo_asistencia.value,
+            "descripcion": entrada.descripcion,
+            "direccion": entrada.direccion,
+        }
+        return await _accion_asistencia(lambda: _claims(info).solicitar_asistencia(solicitud))
+
+    @strawberry.mutation
+    async def cancelar_asistencia(self, info: Info, id: strawberry.ID) -> ResultadoAsistencia:
+        """v0.40 (HU-M06, KAN-266): solo el CLIENTE que la pidió; cancelar dos veces no falla."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        return await _accion_asistencia(
+            lambda: _claims(info).cancelar_asistencia(str(id).lower(), usuario.id)
+        )
 
 
 schema = strawberry.Schema(

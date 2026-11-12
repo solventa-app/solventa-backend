@@ -35,6 +35,10 @@ input ConsentimientoInput {
   tipoDato: String = null
   fuenteDatos: String = null
   canal: String = null
+  # v0.38 (T20): tipo del documento (de `Jurisdiccion.tiposDocumento`) y país (uno de los siete). Con alguno de
+  # los dos, el número se valida con el formato del país y ambos entran al titular; sin ninguno, cédula colombiana.
+  tipoDocumento: String = null
+  pais: String = null
 }
 
 # ---------- Oferta (CA-W01-03/04/05/06) ----------
@@ -63,6 +67,10 @@ type PerfilRiesgo {
 }
 
 enum MotivoErrorOferta {
+  # v0.42 (auto): la placa no existe en RUNT, o el vehículo no se puede asegurar (más de 15 años, limitación o hurto
+  # vigente). El mensaje dice cuál.
+  VEHICULO_NO_ENCONTRADO
+  VEHICULO_NO_ASEGURABLE
   CONSENTIMIENTO_NO_VIGENTE
   DATOS_INSUFICIENTES
   FUENTES_NO_DISPONIBLES
@@ -96,6 +104,27 @@ enum OrigenFuente {
   OPEN_DATA
 }
 
+# ---------- Historial de fuentes consultadas (v0.45, QA 2026-11-10, Q-08) ----------
+# Cada cotización deja un renglón en RISK (colección `consultas`): quién la hizo, cuándo, a qué documento (enmascarado),
+# qué tipo de oferta salió y el ESTADO de cada fuente, nunca sus datos. Se conserva aunque el consentimiento se revoque
+# o venza (el perfil sí se borra). Solo lo ve el ASESOR que cotizó: el filtro sale de su token.
+type ConsultaFuentes {
+  id: ID!
+  creadaEn: DateTime!
+  documentoEnmascarado: String! # «10••••3040»; el nombre del titular no se conoce al cotizar
+  tipoOferta: TipoOferta!
+  producto: Producto!
+  ofertaId: ID
+  fuentes: [FuenteConsultada!]!
+}
+
+type PaginaConsultasFuentes {
+  consultas: [ConsultaFuentes!]! # de la más reciente a la más antigua
+  total: Int!
+  pagina: Int!
+  tamano: Int!
+}
+
 type Oferta {
   id: ID!
   tipo: TipoOferta!
@@ -105,6 +134,81 @@ type Oferta {
   desgloseScore: [FactorScore!]!
   fuentes: [FuenteConsultada!]!
   perfilRiesgo: PerfilRiesgo
+  # v0.42 (póliza de auto): VIDA_DEUDOR en las ofertas de `solicitarOferta`. En AUTO, `cobertura` es el valor comercial
+  # del vehículo, `desgloseScore` va vacío y los factores de la tarifa vienen en `factoresTarifa`.
+  producto: Producto!
+  vehiculo: VehiculoAsegurado # solo AUTO
+  coberturas: [CoberturaAuto!]! # solo AUTO; vacía en VIDA_DEUDOR
+  factoresTarifa: [FactorTarifa!]! # solo AUTO; vacía en VIDA_DEUDOR
+}
+
+# ---------- Póliza de auto (v0.42, docs/plan-poliza-auto.md) ----------
+# Se cotiza con `solicitarOfertaAuto` (los datos del crédito hipotecario no aplican) y desde la oferta el recorrido es el
+# mismo de hoy: aceptarOferta, firma, pago y emisión. Los datos del vehículo salen de RUNT, la guía Fasecolda y la
+# siniestralidad por placa, siempre por el ACL Worker y con el consentimiento registrado antes (regla 7).
+
+enum Producto {
+  VIDA_DEUDOR
+  AUTO
+}
+
+enum UsoVehiculo {
+  PARTICULAR
+  COMERCIAL
+}
+
+enum DeducibleAuto {
+  DIEZ_POR_CIENTO # 10 % de la pérdida, mínimo 1 SMMLV
+  SIN_DEDUCIBLE
+}
+
+enum TipoCobertura {
+  RESPONSABILIDAD_CIVIL
+  PERDIDA_TOTAL_DANOS
+  PERDIDA_PARCIAL_DANOS
+  PERDIDA_TOTAL_HURTO
+  PERDIDA_PARCIAL_HURTO
+  ASISTENCIA # grúa, mecánico y conductor elegido
+}
+
+input SolicitudOfertaAutoInput {
+  consentimientoId: ID!
+  # Como en `SolicitudOfertaInput`: obligatorio para un ASESOR; un CLIENTE con documento en su cuenta no lo manda.
+  documentoIdentidad: String = null
+  tipoDocumento: String = null
+  pais: String = null
+  # Placa colombiana: 3 letras y 3 números (ABC123) o, en motos, 3 letras, 2 números y 1 letra (ABC12D). Se guarda cifrada.
+  placa: String!
+  kilometrajeAnual: Int! # declarado por el cliente; se contrasta con el odómetro de la última revisión (RUNT)
+  ciudadCirculacion: String!
+  uso: UsoVehiculo! = PARTICULAR
+  deducible: DeducibleAuto! = DIEZ_POR_CIENTO
+}
+
+type VehiculoAsegurado {
+  placaEnmascarada: String! # «ABC•••»; la placa completa nunca sale del backend
+  marca: String!
+  linea: String!
+  modelo: Int! # año de fabricación
+  clase: String! # AUTOMOVIL, CAMIONETA, CAMPERO, MOTOCICLETA
+  uso: UsoVehiculo!
+  valorComercial: Monto! # guía Fasecolda
+  ciudadCirculacion: String!
+  kilometrajeAnual: Int!
+  deducible: DeducibleAuto!
+}
+
+type CoberturaAuto {
+  tipo: TipoCobertura!
+  valorAsegurado: Monto # null en ASISTENCIA
+  deducible: String # texto legible («10 % mín. 1 SMMLV»); null si no aplica
+}
+
+# Un factor de la tarifa de auto (contracts/tarifas-auto.json): nombre estable y multiplicador aplicado.
+type FactorTarifa {
+  nombre: String! # ANTIGUEDAD, KILOMETRAJE, INDICE_HURTO, SINIESTRALIDAD, CIUDAD, DEDUCIBLE, USO
+  factor: Float!
+  detalle: String # «3 años», «12.000 km/año», «índice alto»…
 }
 
 type ErrorOferta {
@@ -120,6 +224,13 @@ input SolicitudOfertaInput {
   # Obligatorio para un ASESOR. Un CLIENTE con documento en su cuenta no lo manda: el BFF lo toma de AUTH y valida que
   # coincida con el titular del consentimiento (v0.18, W03-34).
   documentoIdentidad: String = null
+  # v0.38 (T20): como en `ConsentimientoInput`; deben ser los mismos del consentimiento. El CLIENTE con documento en
+  # su cuenta tampoco los manda.
+  tipoDocumento: String = null
+  pais: String = null
+  # v0.39 (T19): el `placeId` elegido en `autocompletarDireccion`. Con él, la dirección se normaliza con Places y una de
+  # un país no soportado se rechaza; sin él, o si Places no responde, la dirección escrita se usa «sin verificar».
+  placeId: String = null
   valorCredito: String!
   plazoMeses: Int!
   direccionInmueble: String!
@@ -296,6 +407,9 @@ type Propuesta {
   # v0.22 (HU-W07): solo para el BACKOFFICE; el socio de distribución que la vendió por la API. Entonces
   # `nombreAsesor` es null.
   nombreSocio: String
+  # v0.42: el producto vendido; en AUTO, el vehículo (con la placa enmascarada).
+  producto: Producto!
+  vehiculo: VehiculoAsegurado
 }
 
 type PaginaPropuestas {
@@ -357,8 +471,12 @@ type Poliza {
   prima: Monto!
   cobertura: Monto!
   documentoUrl: String! # ruta del BFF que entrega el PDF; solo el titular, su asesor o un BACKOFFICE
-  # v0.21 (HU-W04): ramo del producto. Hoy hay uno solo y lo pone el BFF por configuración (RAMO_POLIZA).
+  # v0.21 (HU-W04): ramo del producto. v0.42: sale del producto («Vida grupo deudor…» o «Automóviles todo riesgo»).
   ramo: String!
+  # v0.42
+  producto: Producto!
+  vehiculo: VehiculoAsegurado # solo AUTO
+  coberturas: [CoberturaAuto!]! # solo AUTO; vacía en VIDA_DEUDOR
 }
 
 # ---------- Firma y pago con el asesor o en la sesión del CLIENTE (v0.18, HU-W03 bloque 9) ----------
@@ -524,6 +642,13 @@ type Usuario {
   # `usuarios`, `crearUsuario` y los demás cambios va en null, y null si no tiene (solo los CLIENTE guardan correo).
   # Nunca viaja dentro del JWT. El teléfono sigue sin volver por GraphQL.
   correo: String
+  # v0.38 (T20): tipo del documento del CLIENTE (CC, CE, CURP...; nunca el número), null si no tiene documento.
+  tipoDocumento: String
+  # v0.38 (T20): país de la cuenta (uno de los siete); el CLIENTE lo trae de su documento y cualquiera lo cambia en
+  # `actualizarPreferencias`. Null si nunca se fijó.
+  pais: String
+  # v0.45 (KAN-259): preferencia del propio cliente para el push (siempre viene; enciende por defecto).
+  notificacionesPush: Boolean!
 }
 
 type Sesion {
@@ -550,11 +675,38 @@ type ErrorAutenticacion {
 
 union ResultadoSesion = Sesion | ErrorAutenticacion
 
+# v0.44 (KAN-26): lo que el teléfono firma con su llave (tras la biometría) para entrar sin escribir la clave.
+type DesafioDispositivo {
+  reto: String!
+  venceEn: DateTime!
+}
+
+# v0.43 (KAN-26): la clave cambió y se cerraron todas las sesiones de la cuenta.
+type RestablecimientoExitoso {
+  ok: Boolean!
+}
+
+# `ErrorAutenticacion.codigo`: ENLACE_INVALIDO (no existe, venció o ya se usó; mismo mensaje siempre) o CLAVE_DEBIL
+# (el mensaje dice qué falta; el enlace no se gasta).
+union ResultadoRestablecimiento = RestablecimientoExitoso | ErrorAutenticacion
+
 type ErrorUsuario {
   mensaje: String!
 }
 
 union ResultadoUsuario = Usuario | ErrorUsuario
+
+# v0.45 (KAN-259): la instalación de la app que inicia sesión, para la sesión única por cliente (D3) y el push.
+# Independiente del dispositivo de la llave de login sin clave (KAN-26).
+enum PlataformaMovil {
+  ANDROID
+  IOS
+}
+
+input DispositivoPushInput {
+  instalacionId: String!
+  plataforma: PlataformaMovil!
+}
 
 input CredencialesInput {
   usuario: String!
@@ -562,6 +714,9 @@ input CredencialesInput {
   # v0.29 (T17): rol del chip elegido en la web. Si no es el de la cuenta, la respuesta es la de una clave errada
   # («Usuario o clave incorrectos.»): no se revela qué rol tiene. Opcional: los clientes viejos no lo mandan.
   rol: RolUsuario = null
+  # v0.45 (KAN-259): solo con sesión en la app; la app lo manda siempre que entra con usuario y clave. Al iniciar
+  # sesión en un dispositivo nuevo se revocan las demás sesiones `app` del cliente y su dispositivo de push.
+  dispositivo: DispositivoPushInput = null
 }
 
 input CrearUsuarioInput {
@@ -575,11 +730,15 @@ input CrearUsuarioInput {
   # v0.18 (W03-27): obligatorio para un CLIENTE, junto con el correo. Se guarda cifrado y como titular (el mismo HMAC
   # del consentimiento): el BACKOFFICE da por verificada la identidad al crearlo.
   documentoIdentidad: String = null
+  # v0.38 (T20): tipo del documento del CLIENTE (del catálogo del país) y país de la cuenta (cualquier rol).
+  tipoDocumento: String = null
+  pais: String = null
 }
 
 input PreferenciasInput {
   idioma: String! # ES | EN
   moneda: String! # COP | USD | EUR | MXN | BRL | CLP | PEN
+  pais: String = null # v0.38 (T20): uno de los siete; si no llega, se conserva
 }
 
 # Al menos uno de los dos; lo que no llega se conserva (HU-W03, bloque 8).
@@ -847,6 +1006,8 @@ type Siniestro {
   evidencias: [Evidencia!]!
   verificaciones: [Verificacion!]!
   resolucion: Resolucion
+  # v0.42: solo en pólizas de AUTO. Si es parcial o de responsabilidad civil, `aprobarSiniestro` exige `valorDano`.
+  tipoSiniestroAuto: TipoSiniestroAuto
 }
 
 # Error de negocio en lenguaje del operador (caso ya resuelto, perito no disponible, texto de más de 500 caracteres,
@@ -886,6 +1047,7 @@ type SiniestroReportado {
   fotos: Int!
   # v0.37: null mientras el caso está PENDIENTE.
   resolucion: ResolucionCliente
+  tipoSiniestroAuto: TipoSiniestroAuto # v0.42: solo en pólizas de AUTO
 }
 
 # El error trae el mensaje para el cliente (póliza ajena o fuera de vigencia, foto inválida, relato muy corto, sin
@@ -907,9 +1069,20 @@ input FotoReporteInput {
   longitud: Float = null
 }
 
+# v0.42: qué pasó, en una póliza de AUTO. Decide la cobertura y cómo se calcula la indemnización.
+enum TipoSiniestroAuto {
+  CHOQUE_PARCIAL # pérdida parcial por daños: el operador digita el valor del daño al aprobar
+  PERDIDA_TOTAL_DANOS # valor asegurado menos deducible
+  HURTO_TOTAL # valor asegurado menos deducible
+  HURTO_PARCIAL # el operador digita el valor al aprobar
+  RESPONSABILIDAD_CIVIL # daños a terceros: el operador digita el valor al aprobar
+}
+
 input ReporteSiniestroInput {
   idReporte: ID!
   polizaId: ID!
+  # v0.42: obligatorio si la póliza es de AUTO; se ignora en VIDA_DEUDOR.
+  tipoSiniestroAuto: TipoSiniestroAuto = null
   ocurridoEn: DateTime!
   # De 10 a 1000 caracteres.
   descripcion: String!
@@ -1031,6 +1204,64 @@ type CatalogoPrestadores {
   prestadores: [Prestador!]! # completa (activos e inactivos) cuando vigente = false
 }
 
+# v0.40 (HU-M06, KAN-265 y KAN-266). Solicitar y cancelar la asistencia en sitio. Transaccional: lo escribe CLAIMS en
+# la primaria. Aquí sí viaja la ubicación del cliente (adónde debe llegar el prestador): CLAIMS la guarda cifrada y
+# nunca va a logs ni vuelve en la respuesta. Mientras no haya prestadores reales el desenlace es simulado: el primer
+# intento queda NO_CONFIRMADA y el reintento con el mismo `idSolicitud` se confirma (M06-04b y M06-04a).
+enum EstadoAsistencia {
+  CONFIRMADA # el prestador va en camino (`minutosEstimados`)
+  NO_CONFIRMADA # no se pudo confirmar (`motivo`); reenviar con el mismo idSolicitud reintenta
+  CANCELADA
+}
+
+enum MotivoNoConfirmada {
+  PRESTADOR_SIN_RESPUESTA
+}
+
+enum CodigoErrorAsistencia {
+  PRESTADOR_NO_DISPONIBLE # dado de baja o inexistente: elegir otro desde el mapa
+  TIPO_NO_ATENDIDO # el prestador no atiende ese tipo de asistencia
+  DATOS_INVALIDOS # idSolicitud mal formado o de otra persona, o textos demasiado largos
+  NO_ENCONTRADA # cancelar una asistencia que no existe o no es del cliente
+}
+
+input SolicitudAsistenciaInput {
+  idSolicitud: ID! # UUID generado por la app: es el id de la asistencia y su clave de idempotencia
+  prestadorId: ID!
+  tipoAsistencia: TipoPrestador!
+  descripcion: String = null # opcional, hasta 500 caracteres
+  direccion: String = null # la que el cliente confirmó o corrigió, hasta 200 caracteres
+  latitud: Float! # WGS84, del GPS del teléfono
+  longitud: Float!
+}
+
+# v0.41 (CA-M06-02): sin permiso de ubicación o con el GPS apagado, el cliente escribe adónde debe llegar el prestador.
+input SolicitudAsistenciaDireccionInput {
+  idSolicitud: ID! # UUID generado por la app: es el id de la asistencia y su clave de idempotencia
+  prestadorId: ID!
+  tipoAsistencia: TipoPrestador!
+  direccion: String! # obligatoria, hasta 200 caracteres
+  descripcion: String = null # opcional, hasta 500 caracteres
+}
+
+type Asistencia {
+  id: ID!
+  estado: EstadoAsistencia!
+  tipoAsistencia: TipoPrestador!
+  prestador: Prestador!
+  minutosEstimados: Int # solo CONFIRMADA con ubicación (mismas reglas que la app: 20 km/h + 2 min); null si se pidió con la dirección a mano
+  motivo: MotivoNoConfirmada # solo NO_CONFIRMADA
+  solicitadaEn: DateTime!
+  canceladaEn: DateTime
+}
+
+type ErrorAsistencia {
+  codigo: CodigoErrorAsistencia!
+  mensaje: String!
+}
+
+union ResultadoAsistencia = Asistencia | ErrorAsistencia
+
 type Query {
   # v0.32 (T19). Places detrás del ACL Worker (timeout 700 ms; sin llave, un stub). Lista vacía si no responde.
   autocompletarDireccion(texto: String!, pais: String = null): [SugerenciaDireccion!]!
@@ -1042,7 +1273,13 @@ type Query {
   # El archivo si existe y quien pregunta puede leerlo; si no, null.
   archivo(id: ID!): Archivo
   oferta(id: ID!): Oferta
+  # v0.45 (Q-08). Solo ASESOR y solo las suyas; los demás roles reciben el error de sin permiso. `consultaFuentes` de
+  # una ajena o inexistente devuelve null.
+  consultasFuentes(pagina: Int = 1, tamano: Int = 10): PaginaConsultasFuentes!
+  consultaFuentes(id: ID!): ConsultaFuentes
   cobros(polizaId: ID, estado: EstadoCobro, pagina: Int = 1, tamano: Int = 10): [Cobro!]!
+  # v0.43 (KAN-26): ¿sirve el enlace de la cabecera `X-Enlace-Clave`? Público; solo dice sí o no.
+  enlaceRestablecimientoVigente: Boolean!
   yo: Usuario
   usuarios(rol: RolUsuario): [Usuario!]!
   # Solo para mostrar: los montos en otra moneda con las tasas del ACL Worker (hasta 50 por llamada).
@@ -1081,6 +1318,8 @@ type Mutation {
   registrarConsentimiento(entrada: ConsentimientoInput!): Consentimiento!
   revocarConsentimiento(id: ID!): Consentimiento!
   solicitarOferta(entrada: SolicitudOfertaInput!): ResultadoOferta!
+  # v0.42: la oferta de la póliza de auto. Mismas reglas de consentimiento y degradación que `solicitarOferta`.
+  solicitarOfertaAuto(entrada: SolicitudOfertaAutoInput!): ResultadoOferta!
   contactarAsesor(ofertaId: ID!, canal: CanalContacto!): ConfirmacionContacto!
   # PENDIENTE: concilia y cobra con la misma clave. RECHAZADO: un intento nuevo ante la pasarela,
   # hasta 3 veces. COBRADO o COBRANDO: lo devuelve sin cambios.
@@ -1147,6 +1386,27 @@ type Mutation {
   ): ResultadoSubidaOnboarding!
   # Con `X-Onboarding-Token`, tras el PUT. Idempotente.
   confirmarSubidaOnboarding(onboardingId: ID!, archivoId: ID!): ResultadoOnboarding!
+  # v0.44 (KAN-26): con sesión de la app, guarda la llave pública del teléfono (EC P-256, SPKI en base64; la privada
+  # nunca sale del Keystore/Keychain y exige biometría). Un solo dispositivo por cuenta: registrar otro revoca el anterior.
+  # Cambiar la clave los revoca todos. Devuelve el id del dispositivo.
+  registrarDispositivo(clavePublica: String!): String!
+  # v0.44: pública. Entrega un reto de 60 s (exista o no el dispositivo, para no revelar cuáles existen).
+  desafioDispositivo(dispositivoId: ID!): DesafioDispositivo!
+  # v0.44: pública, solo canal app. Entra con la firma del reto (ECDSA SHA-256, DER en base64). Cualquier fallo responde
+  # ErrorAutenticacion con codigo DISPOSITIVO_NO_VALIDO; la app pide entonces correo y contraseña.
+  # v0.45 (KAN-259): `dispositivo` aplica la misma sesión única por cliente (D3) que con usuario y clave.
+  iniciarSesionConDispositivo(
+    dispositivoId: ID!
+    reto: String!
+    firma: String!
+    dispositivo: DispositivoPushInput = null
+  ): ResultadoSesion!
+  # v0.43 (KAN-26): «olvidé mi contraseña». Responde `true` siempre, exista o no la cuenta (o se tope el límite de 3 por
+  # correo y 10 por IP por hora): nunca revela quién está registrado. Si hay cuenta activa envía un enlace que vence a los
+  # 30 minutos, sirve una vez y reemplaza al anterior.
+  solicitarRestablecimientoClave(correo: String!): Boolean!
+  # v0.43 (KAN-26): fija la clave nueva con el token de la cabecera `X-Enlace-Clave`. Cierra todas las sesiones de la cuenta.
+  restablecerClave(clave: String!): ResultadoRestablecimiento!
   # Envía un código de 6 dígitos al correo para verificarlo en el onboarding (10 min, hasta 5 intentos).
   # Si ya hay una cuenta con ese correo no envía nada y responde `ErrorOnboarding` con `CORREO_YA_REGISTRADO`.
   enviarCodigoOnboarding(correo: String!): ResultadoCodigoOnboarding!
@@ -1172,14 +1432,31 @@ type Mutation {
   renovarSesion(refreshToken: String = null): ResultadoSesion!
   # Revoca la cadena del refresh (y borra la cookie en la web, con la misma cabecera anti-CSRF). Idempotente.
   cerrarSesion(refreshToken: String = null): Boolean!
+  # ---------- v0.45 (KAN-259): dispositivos de push ----------
+  # Solo CLIENTE, en la app. Al obtener el token de FCM y en `onTokenRefresh`; solo lo acepta sobre el dispositivo
+  # que la sesión actual (`iniciarSesion`/`iniciarSesionConDispositivo` con `dispositivo`) dejó activo.
+  registrarTokenPush(instalacionId: String!, tokenFcm: String!): Boolean!
+  # Solo CLIENTE. Enciende o apaga el push del propio cliente (el id sale del token).
+  actualizarPreferenciaPush(habilitado: Boolean!): Boolean!
   # ---------- v0.21 (HU-W04): mesa de siniestros, solo BACKOFFICE ----------
   # Aprobar registra la orden de pago de la indemnización en PAYMENTS (sin
   # dispersión); si no se puede registrar, responde ErrorSiniestro y el caso sigue abierto.
-  aprobarSiniestro(id: ID!): ResultadoResolucion!
+  # v0.42: `valorDano` (decimal en la moneda de la póliza) es obligatorio en un siniestro de AUTO parcial o de
+  # responsabilidad civil, con tope del valor asegurado; la indemnización es ese valor menos el deducible. En pérdida
+  # total se ignora: es el valor asegurado menos el deducible.
+  aprobarSiniestro(id: ID!, valorDano: String = null): ResultadoResolucion!
   rechazarSiniestro(id: ID!, motivo: MotivoRechazo!, comentario: String = null): ResultadoResolucion!
   derivarSiniestro(id: ID!, peritoId: ID!, instrucciones: String = null): ResultadoResolucion!
   # ---------- v0.35 (HU-M05): reporte del cliente, solo CLIENTE ----------
   # URL firmada para una foto del caso que va a reportar (tipo `siniestro-foto`, a nombre de `idReporte`).
   solicitarSubidaEvidenciaSiniestro(idReporte: ID!, tipoContenido: String!, tamanoBytes: Int!): ResultadoSubidaArchivo!
   reportarSiniestro(entrada: ReporteSiniestroInput!): ResultadoReporteSiniestro!
+  # ---------- v0.40 (HU-M06): asistencia en sitio, solo CLIENTE ----------
+  # Idempotente por `idSolicitud`: reenviar una CONFIRMADA o CANCELADA la devuelve sin cambios; una NO_CONFIRMADA
+  # reintenta confirmarla. Sin sesión: SIN_SESION. CLAIMS caído: error público con reintento (nunca un 5xx).
+  solicitarAsistencia(entrada: SolicitudAsistenciaInput!): ResultadoAsistencia!
+  # v0.41 (HU-M06, CA-M06-02): lo mismo sin ubicación, con la dirección a mano. Sin dirección: DATOS_INVALIDOS.
+  solicitarAsistenciaConDireccion(entrada: SolicitudAsistenciaDireccionInput!): ResultadoAsistencia!
+  # Idempotente: cancelar dos veces devuelve la misma asistencia CANCELADA.
+  cancelarAsistencia(id: ID!): ResultadoAsistencia!
 }

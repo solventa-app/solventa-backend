@@ -64,6 +64,15 @@ Cuando el trámite termina, `POST /archivos/{id}/retencion` (un CLIENTE no puede
 Lo que no pidas retener se conserva: el bucket no tiene regla por edad. Solo las subidas que nunca se confirmaron
 (`PENDIENTE`) se borran solas, a los 90 días, con la purga diaria del servicio.
 
+## Documentos cifrados por el propio servicio (T6)
+
+`poliza-pdf` y `contrato-firmado` (KAN-26) los sube y los lee solo `servicio:policy`, y **llegan cifrados**: POLICY los cifra
+(AES-256-GCM, una llave de datos por documento envuelta por Cloud KMS) antes de subirlos, así que el tipo de contenido es
+`application/octet-stream` y el bucket nunca ve el PDF. Para que no entre un PDF en claro por esa puerta, el servicio solo
+confirma un `application/octet-stream` que empieza por la marca `SOLVENC1` (`servicio_archivos._firma_coincide`). No los lee
+nadie más: el quien-lee real es la autorización de POLICY (`documentoUrl` y `contrato.pdf` del BFF). `poliza-pdf` no tiene
+retención; `contrato-firmado` tiene 1 día y solo la pide POLICY al purgar una propuesta cancelada antes de emitir.
+
 ## Local
 
 `docker compose up almacenamiento` levanta Postgres, `fake-gcs-server` (`:4443`) y el servicio (`:8009`). Con un

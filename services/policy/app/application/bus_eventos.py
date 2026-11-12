@@ -28,8 +28,9 @@ def construir_evento_poliza_emitida(
     cliente_id: str,
     vigencia_desde: datetime,
     vigencia_hasta: datetime,
+    producto: str = "VIDA_DEUDOR",
 ) -> dict[str, Any]:
-    """Construye el payload de `poliza.emitida` (contrato v1)."""
+    """Construye el payload de `poliza.emitida` (contrato v1; `producto` desde v0.42)."""
     return {
         "eventId": str(uuid.uuid4()),
         "tipo": "poliza.emitida",
@@ -42,6 +43,7 @@ def construir_evento_poliza_emitida(
             "clienteId": cliente_id,
             "vigenciaDesde": vigencia_desde.isoformat(),
             "vigenciaHasta": vigencia_hasta.isoformat(),
+            "producto": producto,
         },
     }
 

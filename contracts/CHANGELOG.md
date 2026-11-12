@@ -437,6 +437,81 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `null` mientras el caso está PENDIENTE. Solo cambios aditivos.
 - Afecta al frontend: sí (móvil: «Mis siniestros» y el detalle del caso).
 
+## v0.42 — 2026-11-10
+
+- KAN-290 (HU-W08, póliza de auto todo riesgo, `docs/plan-poliza-auto.md`). Solo cambios aditivos (sin rompedores
+  contra v0.41):
+  - Enums `Producto` (`VIDA_DEUDOR`, `AUTO`), `UsoVehiculo`, `DeducibleAuto`, `TipoCobertura` y `TipoSiniestroAuto`;
+    tipos `VehiculoAsegurado` (placa enmascarada), `CoberturaAuto` y `FactorTarifa`.
+  - `Mutation.solicitarOfertaAuto(entrada: SolicitudOfertaAutoInput!)`: placa, kilometraje anual, ciudad, uso y
+    deducible. Devuelve la misma `Oferta`; desde ahí el recorrido es el de hoy (aceptar, firmar, pagar, emitir).
+  - `Oferta`, `Propuesta` y `Poliza` suman `producto` (VIDA_DEUDOR en todo lo existente) y, en AUTO, `vehiculo`;
+    `Oferta` y `Poliza`, `coberturas`; `Oferta`, `factoresTarifa`. `Poliza.ramo` sale del producto.
+  - `MotivoErrorOferta` suma `VEHICULO_NO_ENCONTRADO` y `VEHICULO_NO_ASEGURABLE` (valores nuevos de un enum de salida:
+    la web y el móvil deben tolerar valores desconocidos).
+  - Siniestros: `ReporteSiniestroInput.tipoSiniestroAuto` (opcional; obligatorio en pólizas de auto),
+    `Siniestro.tipoSiniestroAuto`, `SiniestroReportado.tipoSiniestroAuto` y `aprobarSiniestro(id, valorDano)`: en un
+    siniestro parcial o de RC el operador digita el valor del daño, con tope del valor asegurado; la indemnización le
+    resta el deducible.
+  - API de socios: `POST /v1/cotizaciones-auto` (`SolicitudCotizacionAuto`) y `producto`, `vehiculo` y `coberturas` en
+    `Oferta` y `Poliza`. También en Envoy y en `openapi-socios.yaml`.
+  - Evento `poliza.emitida`: `datos.producto` opcional.
+  - Configuración nueva: `contracts/fuentes-vehiculo.json` (RUNT, Fasecolda y siniestralidad, aparte de `fuentes.json`
+    para no tocar el score de vida) y `contracts/tarifas-auto.json` (tarifa ilustrativa). Copias en los servicios con
+    `scripts/sincronizar_fuentes.py`.
+  - En el BFF solo el esqueleto: `solicitarOfertaAuto` responde «La póliza de auto todavía no está disponible.» y
+    `/v1/cotizaciones-auto` responde 503 sin gastar presupuesto, hasta la tarea 7 del plan.
+- `tarifas-auto.json` (2026-11-10, sin cambio de esquema): suma `valor_referencia_preliminar`, el valor de un vehículo nuevo
+  por clase depreciado 10 % por año, para tarifar como PRELIMINAR cuando la guía Fasecolda no responde (regla 4).
+- Afecta al frontend: sí (aditivo). Web y móvil: regenerar tipos; nada cambia de forma en lo existente.
+
+## v0.41 — 2026-11-08
+
+- KAN-264 (HU-M06, KAN-36, CA-M06-02): sin permiso de ubicación o con el GPS apagado, el cliente indica la dirección a
+  mano. Solo cambios aditivos:
+  - Tipo `SolicitudAsistenciaDireccionInput` y `Mutation.solicitarAsistenciaConDireccion(entrada)`, solo con sesión de
+    CLIENTE. Las mismas reglas de `solicitarAsistencia`, idempotente por `idSolicitud`. Sin dirección responde
+    `DATOS_INVALIDOS`.
+  - `Asistencia.minutosEstimados` llega `null` en una CONFIRMADA pedida así: sin coordenadas no hay cómo estimarlo.
+- Afecta al frontend: sí (móvil: M06-01, M06-02 y M06-04a; regenerar `lib/core/contrato/`).
+
+## v0.40 — 2026-11-07
+
+- KAN-265 y KAN-266 (HU-M06, KAN-36): solicitar y cancelar la asistencia en sitio. Solo cambios aditivos:
+  - Tipos `EstadoAsistencia`, `MotivoNoConfirmada`, `CodigoErrorAsistencia`, `SolicitudAsistenciaInput`, `Asistencia`,
+    `ErrorAsistencia` y la union `ResultadoAsistencia`.
+  - `Mutation.solicitarAsistencia(entrada)` y `Mutation.cancelarAsistencia(id)`, solo con sesión de CLIENTE.
+    Idempotentes: `idSolicitud` (UUID de la app) es el id de la asistencia; reenviar una CONFIRMADA o CANCELADA la
+    devuelve sin cambios y una NO_CONFIRMADA reintenta confirmarla (M06-03b). Cancelar dos veces no falla.
+  - Lo escribe CLAIMS en la primaria (colección `asistencias`, migración `0006`). La ubicación del cliente y su
+    descripción se guardan cifradas por campo y no vuelven en la respuesta. `minutosEstimados` usa las mismas reglas
+    que la app (Haversine, 20 km/h + 2 min).
+  - Desenlace **simulado** mientras no haya prestadores reales (`ASISTENCIA_SIMULACION`, por defecto `primero_falla`:
+    el primer intento queda NO_CONFIRMADA con `PRESTADOR_SIN_RESPUESTA` y el reintento se confirma; `confirma`
+    confirma siempre).
+- Afecta al frontend: sí (móvil: M06-02 a M06-06; regenerar `lib/core/contrato/`).
+
+## v0.39 — 2026-11-07
+
+- KAN-26 (T19): `SolicitudOfertaInput.placeId` (opcional). Con él, el BFF valida el lugar con Places (detrás del ACL,
+  700 ms): cotiza con la dirección normalizada y rechaza una de un país no soportado («La dirección del inmueble está
+  en un país que no atendemos.»). Sin él, o si Places no responde, la dirección escrita se usa «sin verificar» y no se
+  bloquea la cotización. Infra: APIs de Places y Geocoding y el secreto `google-places-api-key` del ACL Worker
+  (`PLACES_PROVEEDOR=google` en la nube). Afecta al frontend: sí (aditivo: mandar el `placeId` de la sugerencia).
+
+## v0.38 — 2026-11-07
+
+- KAN-26 (T20, `plan-cierre-HU-W03.md`): tipo de documento y país en el resto del recorrido. Solo cambios aditivos:
+  - `ConsentimientoInput`, `SolicitudOfertaInput` y `CrearUsuarioInput` suman `tipoDocumento` y `pais` (opcionales).
+    Con alguno de los dos, el número se valida con el formato del catálogo del país (`contracts/jurisdicciones.json`,
+    el mismo de `documentoValido`); el tipo por defecto es el nacional del país y el país por defecto, `CO`.
+  - `Usuario.tipoDocumento` (nunca el número) y `Usuario.pais`; `PreferenciasInput.pais` (si no llega, se conserva).
+  - `titular_id` = HMAC de `PAIS:TIPO:NUMERO`, salvo la cédula colombiana (o sin tipo ni país), que sigue siendo el
+    HMAC del número: los titulares, consentimientos y pólizas que ya existen no cambian. AUTH `0012` guarda
+    `tipo_documento` y `pais` del usuario; el onboarding cierra la cuenta con el tipo y el país de su sesión.
+- Afecta al frontend: sí (aditivo). Web: el selector de país y de tipo en W01-01 y en el alta del operador, y el país en
+  Preferencias. Móvil: el país en el perfil.
+
 ## v0.26 — 2026-11-01
 
 - KAN-26 (T22, `plan-cierre-HU-W03.md`): sesión con token de acceso corto y refresh largo. Aditivo:
@@ -449,3 +524,64 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
     `services/auth/app/sesion.json`, verificada por `scripts/sincronizar_fuentes.py --verificar`); el cliente las recibe en
     `expiraEn` y `refreshExpiraEn`.
 - Afecta al frontend: sí (web: temporizador y cookie; móvil: almacenamiento seguro e interceptor). Aditivo.
+
+## `sesion.json` — 2026-11-06 (sin cambio de esquema)
+
+- KAN-227 (HU-M02): `contracts/sesion.json` suma `refresh_gracia_segundos: 30` (copia en `services/auth/app/sesion.json`;
+  `REFRESH_GRACIA_SEGUNDOS` la sobrescribe y `0` vuelve al comportamiento anterior). Si la app reintenta `renovarSesion`
+  con el refresh anterior antes de 30 s y nadie usó su sucesor (la respuesta se perdió en la red), AUTH revoca ese sucesor
+  y entrega un par nuevo en vez de revocar la cadena. Fuera de la gracia, o con el sucesor ya usado, el reuso sigue
+  revocando todo. El esquema GraphQL no cambia.
+- Afecta al frontend: no cambia la forma; el móvil puede reintentar una vez con el mismo refresh ante un error de red.
+
+## `sesion.json` — 2026-11-10 (sin cambio de esquema GraphQL)
+
+- KAN-26 (autenticación, fase 3): el token de acceso pasa de 60 a **15 minutos**. En la web el refresh vence **8 horas
+  después de iniciar sesión** (`refresh_web_horas`) y renovar ya no lo alarga; en la app sigue siendo de 8 días con
+  rotación. El token suma el claim `sid` (la cadena de refresh) y, al cerrar sesión, el BFF lo anota en Redis hasta que
+  el token venza: ese acceso deja de servir aunque alguien lo conserve (`SESION_INVALIDA`). Un token sin `sid` sigue
+  valiendo hasta vencer.
+- Afecta al frontend: la web debe renovar antes de los 15 minutos y mostrar el aviso de inactividad; la app, lo mismo
+  con su bloqueo local.
+
+## `POST /usuarios` de AUTH — 2026-11-10 (sin cambio de esquema GraphQL)
+
+- KAN-26 (autenticación): todos los roles entran con correo y clave. `POST /usuarios` (y `crearUsuario` del BFF) exige
+  `correo` también para ASESOR y BACKOFFICE; no se verifica (lo da quien crea la cuenta) y se guarda cifrado y con su
+  HMAC (`correo_hmac`), así `iniciarSesion` lo encuentra por correo igual que a un cliente. El teléfono sigue siendo solo
+  de CLIENTE. Un correo repetido responde 409. La tarea `crear_usuario` suma `--correo` obligatorio.
+- Afecta al frontend: la web puede pedir «Correo» en el ingreso de todos los roles; el alias sigue funcionando.
+
+## v0.43 — 2026-11-10
+
+- KAN-26 (autenticación): «olvidé mi contraseña». Consulta `enlaceRestablecimientoVigente` y mutaciones
+  `solicitarRestablecimientoClave(correo)` (siempre `true`, no revela si la cuenta existe) y `restablecerClave(clave)`,
+  con el token del enlace en la cabecera `X-Enlace-Clave` (nunca en la URL ni en el cuerpo). Tipo `RestablecimientoExitoso` y
+  unión `ResultadoRestablecimiento` (`ErrorAutenticacion` con `ENLACE_INVALIDO` o `CLAVE_DEBIL`). El enlace vence a los 30
+  minutos, sirve una vez y uno nuevo anula el anterior; tope de 3 por correo y 10 por IP por hora. Restablecer cierra todas
+  las sesiones de la cuenta. Solo cambios aditivos.
+- Afecta al frontend: sí (pantallas G-07 `/olvide-clave` y G-08 `/restablecer-clave#t=…` en la web y M02-04 en el móvil).
+
+## v0.44 — 2026-11-10
+
+- KAN-26 (autenticación): acceso con huella o rostro aunque la sesión se haya cerrado, con una llave por teléfono.
+  Mutaciones `registrarDispositivo(clavePublica)` (con sesión de la app), `desafioDispositivo(dispositivoId)` y
+  `iniciarSesionConDispositivo(dispositivoId, reto, firma)` (públicas, solo canal app); tipo `DesafioDispositivo`.
+  La llave privada nunca sale del dispositivo; el reto vive 60 s. Un dispositivo por cuenta; cambiar la clave los revoca.
+  Fallo siempre `DISPOSITIVO_NO_VALIDO` (sin decir el motivo). AUTH suma la tabla `dispositivos` (migración `0013`).
+  Solo cambios aditivos.
+- Afecta al frontend: el móvil (la web no usa dispositivos).
+
+## v0.45 — 2026-11-11
+
+- KAN-259 (notificaciones push, HU-M04): base de dispositivos de push y sesión única por cliente en la app (D3).
+  `CredencialesInput` e `iniciarSesionConDispositivo` ganan `dispositivo: DispositivoPushInput` (instalación y
+  plataforma, `enum PlataformaMovil { ANDROID IOS }`); al entrar en un teléfono nuevo, AUTH revoca las demás sesiones
+  `app` del cliente y su dispositivo de push anterior, y el BFF anota esos `sid` al instante en `sesiones_revocadas`
+  (D4, mismo mecanismo que `cerrarSesion`). Mutaciones `registrarTokenPush(instalacionId, tokenFcm)` (solo sobre el
+  dispositivo activo) y `actualizarPreferenciaPush(habilitado)`, ambas solo CLIENTE. `Usuario` gana
+  `notificacionesPush: Boolean!` (siempre viene; enciende por defecto). AUTH suma `usuarios.notificaciones_push` y la
+  tabla `dispositivos_push` (migración `0014`), independiente de `dispositivos` (KAN-26). Solo cambios aditivos.
+- Afecta al frontend: el móvil (manda `dispositivo` al iniciar sesión, llama `registrarTokenPush` al obtener o rotar
+  el token de FCM y `actualizarPreferenciaPush` desde el interruptor del perfil). Pendiente: la función `enviar-push`
+  que de verdad manda el mensaje (fuera de este contrato, no toca GraphQL).

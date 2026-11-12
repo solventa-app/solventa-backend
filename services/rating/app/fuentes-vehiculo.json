@@ -1,0 +1,5 @@
+[
+  {"nombre": "runt-vehiculo", "origen": "OPEN_DATA", "obligatoria": true, "descripcion": "RUNT: marca, línea, modelo, clase, servicio, estado (limitaciones o hurto) y odómetro de la última revisión técnico-mecánica"},
+  {"nombre": "fasecolda-valor", "origen": "OPEN_DATA", "obligatoria": true, "descripcion": "Guía de valores Fasecolda: valor comercial de la referencia por año e índice de hurto"},
+  {"nombre": "siniestralidad-placa", "origen": "OPEN_DATA", "obligatoria": false, "descripcion": "Siniestros pagados a la placa en los últimos 3 años (sector asegurador)"}
+]

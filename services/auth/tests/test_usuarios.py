@@ -33,6 +33,9 @@ def test_crear_devuelve_solo_datos_publicos() -> None:
         "idioma",
         "moneda",
         "tiene_contacto",  # solo dice si hay contacto, nunca cuál es
+        "tipo_documento",  # T20: el tipo, nunca el número
+        "pais",
+        "notificaciones_push",  # KAN-259: preferencia del cliente para el push
     }
     assert usuario["estado"] == "ACTIVO"
     assert usuario["tiene_contacto"] is False

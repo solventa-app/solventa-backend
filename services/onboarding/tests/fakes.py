@@ -190,13 +190,17 @@ class CuentasFalsas:
 
     def __init__(self) -> None:
         self.llamadas: list[tuple] = []
+        self.tipos: list[tuple] = []
         self.respuesta = "ok"
         self.caido = False
 
-    def cerrar_verificacion(self, usuario_id, aprobada, nombre, documento) -> None:
+    def cerrar_verificacion(
+        self, usuario_id, aprobada, nombre, documento, tipo_documento=None, pais=None
+    ) -> None:
         if self.caido:
             raise ServicioNoDisponible("ConnectError")
         self.llamadas.append((usuario_id, aprobada, nombre, documento))
+        self.tipos.append((tipo_documento, pais))
         if self.respuesta == "duplicado" and aprobada:
             raise DocumentoEnOtraCuenta()
         if self.respuesta == "no_pendiente":
@@ -224,9 +228,9 @@ class Pila:
             cuentas=self.cuentas,
         )
 
-    def sesion_lista(self) -> tuple[dict[str, Any], str]:
+    def sesion_lista(self, tipo_documento: str = "CC") -> tuple[dict[str, Any], str]:
         """Una sesión con consentimiento y las cuatro piezas subidas y confirmadas."""
-        sesion, token = self.servicio.iniciar("CO", "CC")
+        sesion, token = self.servicio.iniciar("CO", tipo_documento)
         sesion = self.servicio.registrar_consentimiento(sesion, "c-1")
         for paso, contenido in (
             ("ANVERSO", "image/jpeg"),
