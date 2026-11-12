@@ -138,7 +138,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"{ propuestas(estado: EMITIDA) { propuestas { polizaId } } }\",\n  \"variables\": {}\n}"
+              "raw": "{\n  \"query\": \"{ propuestas(estado: EMITIDA) { propuestas { polizaId poliza { vigenciaDesde } } } }\",\n  \"variables\": {}\n}"
             }
           },
           "event": [
@@ -152,7 +152,15 @@
                   "const cuerpo = pm.response.json();",
                   "const p = cuerpo.data.propuestas.propuestas.find(x => x.polizaId);",
                   "pm.test('Tiene póliza emitida (sembrar-polizas-demo)', () => pm.expect(p).to.not.be.undefined);",
-                  "pm.collectionVariables.set('poliza_cliente', p.polizaId);"
+                  "pm.collectionVariables.set('poliza_cliente', p.polizaId);",
+                  "// CLAIMS exige desde <= ocurrido <= hasta y no acepta fechas futuras. La póliza demo se crea al sembrar, así que una fecha fija",
+                  "// termina antes de su vigencia: la fecha del siniestro se calcula desde la vigencia real (desde 1 s después, porque JS trunca los",
+                  "// microsegundos), con tope en una hora atrás y en ahora. La foto se toma 5 minutos después, sin pasar de ahora.",
+                  "const ahora = Date.now();",
+                  "const desde = p.poliza ? new Date(p.poliza.vigenciaDesde).getTime() + 1000 : ahora - 3600000;",
+                  "const ocurrido = Math.min(ahora, Math.max(desde, ahora - 3600000));",
+                  "pm.collectionVariables.set('ocurrido_en', new Date(ocurrido).toISOString());",
+                  "pm.collectionVariables.set('foto_tomada_en', new Date(Math.min(ahora, ocurrido + 300000)).toISOString());"
                 ]
               }
             }
@@ -394,7 +402,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"2026-11-01T13:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"2026-11-01T13:05:00-05:00\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"{{ocurrido_en}}\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"{{foto_tomada_en}}\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
             }
           },
           "event": [
@@ -450,7 +458,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"2026-11-01T13:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"2026-11-01T13:05:00-05:00\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"{{ocurrido_en}}\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"{{foto_tomada_en}}\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
             }
           },
           "event": [
@@ -506,7 +514,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_ajena}}\",\n      \"ocurridoEn\": \"2026-11-01T13:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"2026-11-01T13:05:00-05:00\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_ajena}}\",\n      \"ocurridoEn\": \"{{ocurrido_en}}\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"{{foto_tomada_en}}\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
             }
           },
           "event": [
@@ -558,7 +566,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"2099-01-01T10:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"2026-11-01T13:05:00-05:00\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"2099-01-01T10:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"{{foto_tomada_en}}\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
             }
           },
           "event": [
@@ -610,7 +618,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"2025-06-01T10:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"2026-11-01T13:05:00-05:00\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"2025-06-01T10:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"{{foto_tomada_en}}\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
             }
           },
           "event": [
@@ -662,7 +670,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"2026-11-01T13:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"2026-11-01T13:05:00-05:00\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"{{ocurrido_en}}\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"{{foto_tomada_en}}\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
             }
           },
           "event": [
@@ -762,7 +770,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"2026-11-01T13:00:00-05:00\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"2026-11-01T13:05:00-05:00\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($e: ReporteSiniestroInput!) { reportarSiniestro(entrada: $e) { __typename\\n  ... on SiniestroReportado { id radicado estado polizaId fotos resolucion { tipo } }\\n  ... on ErrorSiniestro { mensaje } } }\",\n  \"variables\": {\n    \"e\": {\n      \"idReporte\": \"{{id_reporte_2}}\",\n      \"polizaId\": \"{{poliza_cliente}}\",\n      \"ocurridoEn\": \"{{ocurrido_en}}\",\n      \"descripcion\": \"Me chocaron por detrás en un semáforo de la 93.\",\n      \"ubicacion\": {\n        \"descripcion\": \"Cra 15 con Calle 93\",\n        \"ciudad\": \"Bogotá\",\n        \"latitud\": 4.6767,\n        \"longitud\": -74.0483\n      },\n      \"fotos\": [\n        {\n          \"archivoId\": \"{{archivo_1}}\",\n          \"tomadaEn\": \"{{foto_tomada_en}}\",\n          \"latitud\": 4.6767,\n          \"longitud\": -74.0483\n        }\n      ]\n    }\n  }\n}"
             }
           },
           "event": [

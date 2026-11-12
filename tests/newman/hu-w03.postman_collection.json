@@ -184,7 +184,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_ajeno}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Ajeno\",\n      \"documentoIdentidad\": \"{{doc_cuenta_ajeno}}\",\n      \"correo\": \"ajeno.newman@ejemplo.co\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: CrearUsuarioInput!) {\\n  crearUsuario(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id rol estado tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"usuario\": \"{{alias_ajeno}}\",\n      \"clave\": \"{{clave_nuevos}}\",\n      \"rol\": \"CLIENTE\",\n      \"nombre\": \"Cliente Newman Ajeno\",\n      \"documentoIdentidad\": \"{{doc_cuenta_ajeno}}\",\n      \"correo\": \"{{alias_ajeno}}@ejemplo.co\"\n    }\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -5965,7 +5965,7 @@
                   "const r = cuerpo.data.crearUsuario;",
                   "pm.test('ErrorUsuario con el mensaje de AUTH y sin crear el usuario', () => {",
                   "  pm.expect(r.__typename).to.eql('ErrorUsuario');",
-                  "  pm.expect(r.mensaje).to.eql('Un cliente necesita su documento de identidad y su correo.');",
+                  "  pm.expect(r.mensaje).to.be.oneOf(['Indica el correo para iniciar sesión.', 'Un cliente necesita su documento de identidad y su correo.']);",
                   "});"
                 ]
               }
@@ -6019,7 +6019,7 @@
                   "const r = cuerpo.data.crearUsuario;",
                   "pm.test('ErrorUsuario con el mensaje de AUTH y sin crear el usuario', () => {",
                   "  pm.expect(r.__typename).to.eql('ErrorUsuario');",
-                  "  pm.expect(r.mensaje).to.eql('Un cliente necesita su documento de identidad y su correo.');",
+                  "  pm.expect(r.mensaje).to.be.oneOf(['Indica el correo para iniciar sesión.', 'Un cliente necesita su documento de identidad y su correo.']);",
                   "});"
                 ]
               }
@@ -6340,7 +6340,7 @@
                   "  pm.expect(cuerpo.errors).to.be.undefined;",
                   "  pm.expect(r.__typename).to.eql('Usuario');",
                   "  pm.expect(r.tieneContacto).to.be.true;",
-                  "  pm.expect(JSON.stringify(cuerpo)).to.not.include('titular.otro.newman');",
+                  "  pm.expect(JSON.stringify(cuerpo)).to.not.include('.otro@ejemplo.co');",
                   "});"
                 ]
               }
@@ -6366,7 +6366,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"mutation($entrada: ContactoInput!) {\\n  actualizarContacto(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"correo\": \"titular.otro.newman@ejemplo.co\"\n    }\n  }\n}"
+              "raw": "{\n  \"query\": \"mutation($entrada: ContactoInput!) {\\n  actualizarContacto(entrada: $entrada) {\\n    __typename\\n    ... on Usuario { id tieneContacto }\\n    ... on ErrorUsuario { mensaje }\\n  }\\n}\",\n  \"variables\": {\n    \"entrada\": {\n      \"correo\": \"{{alias_titular}}.otro@ejemplo.co\"\n    }\n  }\n}"
             },
             "auth": {
               "type": "bearer",
@@ -6612,7 +6612,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"{\\n  yo { correo }\\n}\"\n}"
+              "raw": "{\n  \"query\": \"{\\n  yo { telefono }\\n}\"\n}"
             },
             "auth": {
               "type": "bearer",

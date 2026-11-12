@@ -464,7 +464,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"consentimientoId\": \"{{w7_cons}}\",\n  \"documentoIdentidad\": \"1098765432\",\n  \"valorCredito\": \"150000000\",\n  \"plazoMeses\": 61,\n  \"direccionInmueble\": \"Calle 26 # 13-19, Bogotá\"\n}"
+              "raw": "{\n  \"consentimientoId\": \"{{w7_cons}}\",\n  \"documentoIdentidad\": \"1098765432\",\n  \"valorCredito\": \"150000000\",\n  \"plazoMeses\": 201,\n  \"direccionInmueble\": \"Calle 26 # 13-19, Bogotá\"\n}"
             }
           },
           "event": [
