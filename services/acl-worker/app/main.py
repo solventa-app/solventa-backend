@@ -29,6 +29,7 @@ from app.adapters.open_data import AdaptadorOpenData
 from app.adapters.open_finance import AdaptadorOpenFinance
 from app.adapters.pasarela import AdaptadorPasarela
 from app.adapters.pasarela_alterna import AdaptadorPasarelaAlterna
+from app.adapters.prestadores import AdaptadorPrestadores
 from app.adapters.tasas_cambio import AdaptadorTasasReferencia
 from app.adapters.vehiculos import AdaptadorVehiculos
 from app.adapters.vuelos import AdaptadorVuelo
@@ -44,6 +45,7 @@ from app.application.circuitos import (
     NOMBRE_CIRCUITO_OPEN_DATA,
     NOMBRE_CIRCUITO_OPEN_FINANCE,
     NOMBRE_CIRCUITO_PASARELA,
+    NOMBRE_CIRCUITO_PRESTADORES,
     NOMBRE_CIRCUITO_VEHICULOS,
     NOMBRE_CIRCUITO_VUELO,
     construir_fabrica,
@@ -68,6 +70,7 @@ from app.application.servicio_identidad import DescargadorImagenes, ServicioIden
 from app.application.servicio_kyc import ServicioKyc
 from app.application.servicio_notificaciones import ServicioNotificaciones
 from app.application.servicio_pagos import ServicioCobro
+from app.application.servicio_prestadores import ServicioPrestadores
 from app.application.sonda import SondaRecuperacion
 from app.domain.puertos import (
     Adjunto,
@@ -75,6 +78,7 @@ from app.domain.puertos import (
     ConsultaFuente,
     ConsultaVuelo,
     OrdenCobro,
+    PedidoAsistencia,
     SolicitudFirma,
     SolicitudKyc,
     SolicitudNotificacion,
@@ -183,6 +187,25 @@ class ResultadoFirmaResponse(BaseModel):
     estado: str
     referencia: str | None
     firmada_en: str | None
+    motivo: str | None
+
+
+class PedidoAsistenciaRequest(BaseModel):
+    """HU-M06 (v0.49): lo arma CLAIMS. Del cliente solo viaja adónde debe llegar el prestador."""
+
+    asistencia_id: str = Field(min_length=1, max_length=64)
+    intento: int = Field(ge=1)
+    tipo_asistencia: str = Field(min_length=1, max_length=20)
+    prestador_id: str = Field(min_length=1, max_length=64)
+    prestador_latitud: float = Field(ge=-90, le=90)
+    prestador_longitud: float = Field(ge=-180, le=180)
+    latitud: float | None = Field(default=None, ge=-90, le=90)
+    longitud: float | None = Field(default=None, ge=-180, le=180)
+
+
+class DesenlaceAsistenciaResponse(BaseModel):
+    estado: str
+    minutos_estimados: int | None
     motivo: str | None
 
 
@@ -544,6 +567,16 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         )
         servicio_kyc = ServicioKyc(adaptador_kyc, fabrica, NOMBRE_CIRCUITO_KYC, presupuesto_kyc_s)
 
+        presupuesto_prestadores_s = config.presupuesto_proveedor_s("prestadores")
+        adaptador_prestadores = AdaptadorPrestadores(
+            config.prestadores_url,
+            presupuesto_prestadores_s,
+            auth=autenticacion_para(config.autenticacion_servicios, "stub-prestadores"),
+        )
+        servicio_prestadores = ServicioPrestadores(
+            adaptador_prestadores, fabrica, NOMBRE_CIRCUITO_PRESTADORES, presupuesto_prestadores_s
+        )
+
         adaptador_identidad = AdaptadorIdentidadDidit(
             config.identidad_url,
             config.identidad_api_key,
@@ -611,6 +644,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 NOMBRE_CIRCUITO_PASARELA: adaptador_pasarela.sondear,
                 NOMBRE_CIRCUITO_FIRMA: adaptador_firma.sondear,
                 NOMBRE_CIRCUITO_KYC: adaptador_kyc.sondear,
+                NOMBRE_CIRCUITO_PRESTADORES: adaptador_prestadores.sondear,
                 NOMBRE_CIRCUITO_IDENTIDAD: adaptador_identidad.sondear,
                 NOMBRE_CIRCUITO_NOTIFICACIONES: adaptador_notificaciones.sondear,
             },
@@ -629,6 +663,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         app.state.servicio_cobro = servicio_cobro
         app.state.servicio_firma = servicio_firma
         app.state.servicio_kyc = servicio_kyc
+        app.state.servicio_prestadores = servicio_prestadores
         app.state.servicio_identidad = servicio_identidad
         app.state.servicio_notificaciones = servicio_notificaciones
 
@@ -645,6 +680,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 adaptador_pasarela.cerrar,
                 adaptador_firma.cerrar,
                 adaptador_kyc.cerrar,
+                adaptador_prestadores.cerrar,
                 adaptador_identidad.cerrar,
                 descargador_imagenes.cerrar,
                 adaptador_notificaciones.cerrar,
@@ -678,6 +714,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             NOMBRE_CIRCUITO_PASARELA,
             NOMBRE_CIRCUITO_FIRMA,
             NOMBRE_CIRCUITO_KYC,
+            NOMBRE_CIRCUITO_PRESTADORES,
             NOMBRE_CIRCUITO_IDENTIDAD,
             NOMBRE_CIRCUITO_NOTIFICACIONES,
         )
@@ -902,6 +939,19 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             referencia=resultado.referencia,
             motivo=resultado.motivo,
             verificada_en=resultado.verificada_en,
+        )
+
+    @app.post(
+        "/prestadores/asistencias", tags=["prestadores"], response_model=DesenlaceAsistenciaResponse
+    )
+    def solicitar_asistencia(body: PedidoAsistenciaRequest) -> DesenlaceAsistenciaResponse:
+        """HU-M06 (v0.49, B7): CLAIMS pide a la red de prestadores que atienda una asistencia.
+        Siempre 200: si el proveedor falla o el circuito está abierto, `NO_CONFIRMADA` (regla 4)."""
+        desenlace = app.state.servicio_prestadores.solicitar(PedidoAsistencia(**body.model_dump()))
+        return DesenlaceAsistenciaResponse(
+            estado=desenlace.estado,
+            minutos_estimados=desenlace.minutos_estimados,
+            motivo=desenlace.motivo,
         )
 
     @app.post("/identidad/verificar", tags=["identidad"], response_model=ResultadoIdentidadResponse)

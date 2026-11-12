@@ -39,6 +39,7 @@ from app.application.clientes import (
     ClienteAlmacenamiento,
     ClientePayments,
     ClientePolicy,
+    ClienteRedPrestadores,
     reglas_de_reescritura,
 )
 from app.application.configuracion import Configuracion
@@ -129,6 +130,7 @@ class ReporteRequest(BaseModel):
 class TipoAsistencia(StrEnum):
     MEDICO = "MEDICO"
     MECANICO = "MECANICO"
+    GRUA = "GRUA"  # v0.49
 
 
 class SolicitudAsistenciaRequest(BaseModel):
@@ -208,12 +210,16 @@ def create_app(
                 app.state.catalogo = LectorCatalogoPrestadores(
                     cliente_mongo, config.mongo_db, config.lectura_max_ms
                 )
+            modo = config.autenticacion_servicios
             if app.state.asistencias is None:
                 app.state.asistencias = ServicioAsistencias(
                     RepositorioAsistenciasMongo(cliente_mongo, cifrador, config.mongo_db),
-                    simulacion=config.asistencia_simulacion,
+                    ClienteRedPrestadores(
+                        config.acl_url,
+                        config.servicios_timeout_segundos,
+                        autenticacion_para(modo, "acl-worker"),
+                    ),
                 )
-            modo = config.autenticacion_servicios
             policy = ClientePolicy(
                 config.policy_url,
                 config.servicios_timeout_segundos,

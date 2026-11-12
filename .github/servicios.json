@@ -141,7 +141,7 @@
     "puerto": 8012,
     "url_env": "CLAIMS_URL",
     "migracion": ["python", "-m", "migrations"],
-    "llama": ["almacenamiento", "policy", "payments"],
+    "llama": ["almacenamiento", "policy", "payments", "acl-worker"],
     "entorno": { "MONGO_DB": "claims", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": {
       "MONGO_URI": "mongo-uri-claims",
@@ -165,7 +165,7 @@
     "instancia_fija": true,
     "puerto": 8005,
     "url_env": "ACL_URL",
-    "llama": ["stub-open-finance", "stub-open-data", "stub-vehiculos", "stub-eventos-parametricos", "stub-pasarela", "stub-firma", "stub-kyc", "stub-notificaciones", "consolidador-fuentes"],
+    "llama": ["stub-open-finance", "stub-open-data", "stub-vehiculos", "stub-eventos-parametricos", "stub-prestadores", "stub-pasarela", "stub-firma", "stub-kyc", "stub-notificaciones", "consolidador-fuentes"],
     "disparador_externo": true,
     "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "NOTIFICACIONES_PROVEEDOR": "resend", "IDENTIDAD_URL": "https://verification.didit.me", "CORREO_REMITENTE": "Solventa <avisos@solventa.globalspark.io>", "PLACES_PROVEEDOR": "google" },
     "secretos": {
@@ -217,6 +217,14 @@
     "instancia_fija": true,
     "puerto": 8108,
     "url_env": "VUELOS_URL",
+    "entorno": { "TRAZAS_GCP": "true" }
+  },
+  {
+    "nombre": "stub-prestadores",
+    "ruta": "stubs/prestadores",
+    "instancia_fija": true,
+    "puerto": 8109,
+    "url_env": "PRESTADORES_URL",
     "entorno": { "TRAZAS_GCP": "true" }
   },
   {

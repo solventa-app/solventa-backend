@@ -12,7 +12,9 @@ from app.esquema import MENSAJE_PRESTADORES
 from app.main import create_app
 
 CATALOGO = """query($v: String) { catalogoPrestadores(versionLocal: $v) {
-  version vigente prestadores { id nombre tipo ciudad latitud longitud activo }
+  version vigente prestadores {
+    id nombre tipo ciudad latitud longitud activo aliado especialidad direccion horario fotoUrl
+  }
 } }"""
 
 
@@ -33,12 +35,22 @@ def test_sin_version_o_con_una_vieja_trae_el_catalogo(variables):
     datos = _post(claims, variables)["data"]["catalogoPrestadores"]
     assert datos["version"] == "2026-11-04.1"
     assert datos["vigente"] is False
-    # El tipo que el BFF no conoce (GRUA) se omite; el inactivo viaja para que la app lo descarte.
+    # El tipo que el BFF no conoce se omite; el inactivo viaja para que la app lo descarte.
+    # v0.49: GRUA ya es un tipo conocido.
     assert [(p["id"], p["tipo"], p["activo"]) for p in datos["prestadores"]] == [
         ("prs-bog-001", "MEDICO", True),
         ("prs-bog-002", "MECANICO", False),
+        ("prs-bog-099", "GRUA", True),
     ]
-    assert datos["prestadores"][0]["latitud"] == 4.6859
+    clinica, taller, grua = datos["prestadores"]
+    assert clinica["latitud"] == 4.6859
+    assert clinica["aliado"] is True
+    assert clinica["especialidad"] == "Urgencias"
+    assert clinica["horario"] == "Abierto 24 h"
+    assert clinica["fotoUrl"] is None
+    assert grua["fotoUrl"] == "https://example.test/grua.webp"
+    # Un CLAIMS anterior a la v0.49 no rompe la respuesta: valores por defecto.
+    assert (taller["aliado"], taller["especialidad"], taller["direccion"]) == (False, "", "")
     assert claims.llamadas == [("catalogo_prestadores", variables.get("v"))]
 
 

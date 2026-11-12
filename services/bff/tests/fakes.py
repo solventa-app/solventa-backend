@@ -1386,10 +1386,18 @@ class OnboardingFalso:
 
 PRESTADORES_DE_PRUEBA = [
     {"id": "prs-bog-001", "nombre": "Clínica Norte", "tipo": "MEDICO", "ciudad": "Bogotá",
-     "latitud": 4.6859, "longitud": -74.0524, "activo": True},
+     "latitud": 4.6859, "longitud": -74.0524, "activo": True, "aliado": True,
+     "especialidad": "Urgencias", "direccion": "Cl. 93 # 14-20, Bogotá D.C.",
+     "horario": "Abierto 24 h", "foto_url": None},
+    # Sin los campos de la v0.49: un CLAIMS anterior. El BFF les pone su valor por defecto.
     {"id": "prs-bog-002", "nombre": "Taller AutoAyuda", "tipo": "MECANICO", "ciudad": "Bogotá",
      "latitud": 4.6835, "longitud": -74.0322, "activo": False},
     {"id": "prs-bog-099", "nombre": "Grúas del Norte", "tipo": "GRUA", "ciudad": "Bogotá",
+     "latitud": 4.70, "longitud": -74.05, "activo": True, "aliado": False,
+     "especialidad": "Grúa liviana", "direccion": "Cl. 100 # 19-61", "horario": None,
+     "foto_url": "https://example.test/grua.webp"},
+    # Un tipo que este BFF aún no conoce: se omite.
+    {"id": "prs-bog-098", "nombre": "Bomberos", "tipo": "BOMBEROS", "ciudad": "Bogotá",
      "latitud": 4.70, "longitud": -74.05, "activo": True},
 ]  # fmt: skip
 

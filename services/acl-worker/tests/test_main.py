@@ -19,6 +19,7 @@ CONFIG_SIN_PROVEEDORES = Configuracion(
     kyc_url="http://127.0.0.1:1",
     notificaciones_url="http://127.0.0.1:1",
     vehiculos_url="http://127.0.0.1:1",
+    prestadores_url="http://127.0.0.1:1",
     clima_url="http://127.0.0.1:1",
     vuelos_url="http://127.0.0.1:1",
     timeout_s=0.2,
@@ -190,6 +191,25 @@ def test_vehiculo_fuente_desconocida_responde_404() -> None:
     with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
         r = client.post("/vehiculos/consultar", json={**CONSULTA_VEHICULO, "fuente": "simit"})
         assert r.status_code == 404
+
+
+def test_asistencia_con_la_red_de_prestadores_caida_queda_no_confirmada_sin_5xx() -> None:
+    # HU-M06 (v0.49): PRESTADORES_URL apunta a un puerto sin servicio.
+    pedido = {
+        "asistencia_id": "a-1", "intento": 1, "tipo_asistencia": "GRUA",
+        "prestador_id": "prs-1", "prestador_latitud": 4.68, "prestador_longitud": -74.05,
+        "latitud": 4.67, "longitud": -74.04,
+    }  # fmt: skip
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post("/prestadores/asistencias", json=pedido)
+        assert "prestadores" in client.get("/circuitos").json()
+
+    assert r.status_code == 200
+    assert r.json() == {
+        "estado": "NO_CONFIRMADA",
+        "minutos_estimados": None,
+        "motivo": "PRESTADOR_SIN_RESPUESTA",
+    }
 
 
 # ---------- KAN-259 Fase 3: eventos paramétricos (clima y vuelos) ----------

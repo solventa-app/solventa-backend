@@ -1986,6 +1986,7 @@ async def _poliza_es_del_cliente(info: Info, poliza_id: str, usuario_id: str) ->
 class TipoPrestador(Enum):
     MEDICO = "MEDICO"
     MECANICO = "MECANICO"
+    GRUA = "GRUA"  # v0.49
 
 
 @strawberry.type
@@ -1997,6 +1998,12 @@ class Prestador:
     latitud: float
     longitud: float
     activo: bool
+    # v0.49: el detalle del prestador en la app.
+    aliado: bool
+    especialidad: str
+    direccion: str
+    horario: str | None
+    foto_url: str | None
 
 
 @strawberry.type
@@ -2010,24 +2017,30 @@ MENSAJE_PRESTADORES = "No pudimos consultar los prestadores. Intenta de nuevo."
 TIPOS_PRESTADOR = {t.value for t in TipoPrestador}
 
 
+def _prestador(p: dict) -> Prestador:
+    """Los campos de la v0.49 tienen un valor por defecto mientras CLAIMS no los mande."""
+    return Prestador(
+        id=strawberry.ID(p["id"]),
+        nombre=p["nombre"],
+        tipo=TipoPrestador(p["tipo"]),
+        ciudad=p["ciudad"],
+        latitud=float(p["latitud"]),
+        longitud=float(p["longitud"]),
+        activo=p["activo"],
+        aliado=bool(p.get("aliado", False)),
+        especialidad=p.get("especialidad") or "",
+        direccion=p.get("direccion") or "",
+        horario=p.get("horario"),
+        foto_url=p.get("foto_url"),
+    )
+
+
 def _catalogo_prestadores(datos: dict) -> CatalogoPrestadores:
     """Un tipo que este BFF aún no conoce se omite en vez de romper la respuesta entera."""
     return CatalogoPrestadores(
         version=datos["version"],
         vigente=datos["vigente"],
-        prestadores=[
-            Prestador(
-                id=strawberry.ID(p["id"]),
-                nombre=p["nombre"],
-                tipo=TipoPrestador(p["tipo"]),
-                ciudad=p["ciudad"],
-                latitud=float(p["latitud"]),
-                longitud=float(p["longitud"]),
-                activo=p["activo"],
-            )
-            for p in datos["prestadores"]
-            if p["tipo"] in TIPOS_PRESTADOR
-        ],
+        prestadores=[_prestador(p) for p in datos["prestadores"] if p["tipo"] in TIPOS_PRESTADOR],
     )
 
 
@@ -2109,15 +2122,7 @@ def _asistencia(datos: dict) -> Asistencia:
         id=strawberry.ID(datos["id"]),
         estado=EstadoAsistencia(datos["estado"]),
         tipo_asistencia=TipoPrestador(datos["tipo_asistencia"]),
-        prestador=Prestador(
-            id=strawberry.ID(p["id"]),
-            nombre=p["nombre"],
-            tipo=TipoPrestador(p["tipo"]),
-            ciudad=p["ciudad"],
-            latitud=float(p["latitud"]),
-            longitud=float(p["longitud"]),
-            activo=p["activo"],
-        ),
+        prestador=_prestador(p),
         minutos_estimados=datos.get("minutos_estimados"),
         motivo=MotivoNoConfirmada(datos["motivo"]) if datos.get("motivo") else None,
         solicitada_en=datetime.fromisoformat(datos["solicitada_en"]),

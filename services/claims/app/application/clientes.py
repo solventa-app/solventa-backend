@@ -188,3 +188,19 @@ class ClientePayments:
 
     def cerrar(self) -> None:
         self._cliente.close()
+
+
+class ClienteRedPrestadores:
+    """HU-M06 (v0.49, B7): la red de prestadores está detrás del ACL Worker (regla 2). El ACL
+    responde siempre 200 con el desenlace; si su circuito está abierto, `NO_CONFIRMADA`."""
+
+    def __init__(self, url: str, timeout_s: float, auth: httpx.Auth | None = None) -> None:
+        self._cliente = httpx.Client(
+            base_url=url, timeout=timeout_s, auth=auth, headers=CABECERAS_ACTOR
+        )
+
+    def solicitar(self, pedido: dict) -> dict:
+        return _pedir(self._cliente, "POST", "/prestadores/asistencias", json=pedido)
+
+    def cerrar(self) -> None:
+        self._cliente.close()

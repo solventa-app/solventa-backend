@@ -1226,6 +1226,7 @@ type DireccionValidada {
 enum TipoPrestador {
   MEDICO
   MECANICO
+  GRUA # v0.49
 }
 
 type Prestador {
@@ -1236,6 +1237,12 @@ type Prestador {
   latitud: Float! # WGS84
   longitud: Float!
   activo: Boolean! # false = dado de baja; la app lo descarta
+  # v0.49 (detalle del prestador en la app, HU-M06): el color del pin dice si es aliado Solventa.
+  aliado: Boolean!
+  especialidad: String! # «Urgencias», «Grúa liviana»; vacío si el catálogo aún no la tiene
+  direccion: String! # de la sede; vacía si el catálogo aún no la tiene
+  horario: String # «Abierto 24 h»; null si no se publica
+  fotoUrl: String # foto de la sede; null = la app muestra el placeholder del tipo
 }
 
 type CatalogoPrestadores {
