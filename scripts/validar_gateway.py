@@ -1,8 +1,9 @@
 """Valida que `infra/gateway/openapi.yaml` (nube) e `infra/gateway/envoy.yaml` (local) coincidan.
 
 Comprueba que ambos archivos declaren las mismas rutas HTTP, el mismo método por ruta y el mismo
-corte duro de 700 ms (`deadline: 0.7` en OpenAPI 2.0 y `timeout: 0.7s` en Envoy), y que Envoy
-escuche en el puerto 8080 hacia `bff:8000`.
+corte duro de 700 ms (`deadline: 0.7` en OpenAPI 2.0 y `timeout: 0.7s` en Envoy), salvo las dos
+excepciones documentadas (el canal móvil y la ruta de suscripción de la web), y que Envoy escuche en
+el puerto 8080 hacia `bff:8000`.
 
 La API de los socios (HU-W07) va en otro gateway de la nube (`openapi-socios.yaml`) y en el mismo
 Envoy local: sus rutas (`/v1/...` fuera de `/v1/graphql`) deben ser las mismas en el contrato
@@ -26,6 +27,11 @@ PLAZO_SEGUNDOS = 0.7
 # El canal móvil tiene 2 s: crear la cuenta del onboarding (hash de la clave) tarda ~1 s.
 PLAZO_CANAL_APP = 2.0
 RUTAS_CANAL_APP = {("POST", "/graphql/app"), ("POST", "/v1/graphql/app")}
+# La suscripción de la web (firmar, pagar y emitir) tiene 5 s: firmar con imagen tarda de 1,5 a 3,5 s en staging
+# (imagen, ACL, contrato cifrado con KMS) y a los 700 ms el gateway devolvía 504 con la firma ya registrada. Es el
+# mismo esquema que /v1/graphql/web, que conserva los 700 ms.
+PLAZO_SUSCRIPCION = 5.0
+RUTAS_SUSCRIPCION = {("POST", "/v1/graphql/web-suscripcion")}
 # El JWKS de los socios vive en los dos gateways: el de socios lo toma del de los usuarios.
 RUTA_JWKS = ("GET", "/v1/.well-known/jwks.json")
 RUTAS_ESPERADAS = {
@@ -36,11 +42,21 @@ RUTAS_ESPERADAS = {
     ("POST", "/v1/graphql/web"),
     ("POST", "/v1/graphql/movil"),
     ("POST", "/v1/graphql/app"),
+    ("POST", "/v1/graphql/web-suscripcion"),
     ("GET", "/polizas/{*}/documento"),
     ("GET", "/propuestas/{*}/contrato.pdf"),
     RUTA_JWKS,
 }
 PARAMETRO = "{*}"  # cómo se escribe cualquier parámetro de ruta al comparar OpenAPI con Envoy
+
+
+def plazo_esperado(clave: tuple[str, str]) -> float:
+    """700 ms, salvo el canal móvil (2 s) y la suscripción de la web (5 s)."""
+    if clave in RUTAS_CANAL_APP:
+        return PLAZO_CANAL_APP
+    if clave in RUTAS_SUSCRIPCION:
+        return PLAZO_SUSCRIPCION
+    return PLAZO_SEGUNDOS
 
 
 def extraer_openapi(texto: str) -> dict[tuple[str, str], float]:
@@ -174,13 +190,13 @@ def validar(texto_openapi: str | None = None, texto_envoy: str | None = None) ->
         errores.append(f"Faltan rutas obligatorias en el gateway: {sorted(faltantes)}")
 
     for clave, deadline in sorted(rutas_oa.items()):
-        esperado = PLAZO_CANAL_APP if clave in RUTAS_CANAL_APP else PLAZO_SEGUNDOS
+        esperado = plazo_esperado(clave)
         if abs(deadline - esperado) > 1e-6:
             errores.append(
                 f"openapi.yaml {clave[0]} {clave[1]}: deadline={deadline}s (debe ser {esperado}s)"
             )
     for clave, timeout in sorted(rutas_ev.items()):
-        esperado = PLAZO_CANAL_APP if clave in RUTAS_CANAL_APP else PLAZO_SEGUNDOS
+        esperado = plazo_esperado(clave)
         if abs(timeout - esperado) > 1e-6:
             errores.append(
                 f"envoy.yaml {clave[0]} {clave[1]}: timeout={timeout}s (debe ser {esperado}s)"

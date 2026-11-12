@@ -324,6 +324,39 @@ def test_el_cliente_firma_en_su_sesion_sin_codigo_ni_enlace(e) -> None:
 # ---------- firma en tres modos (W03-24)
 
 
+def test_firmar_otra_vez_con_el_enlace_vencido_devuelve_la_evidencia(e) -> None:
+    """El gateway corta a los 700 ms y la primera respuesta puede perderse con la firma ya
+    registrada: el reintento no puede decir «venció» cuando el titular ya firmó."""
+    propuesta, token = e.hasta_en_firma()
+    auth = Autorizacion(enlace_token=token)
+    evidencia, _ = e.firmar_nombre(propuesta["id"], auth)
+    e.reloj.ahora += timedelta(minutes=31)
+
+    otra_vez, estado = e.firmar_nombre(propuesta["id"], auth)
+
+    assert otra_vez["referencia_proveedor"] == evidencia["referencia_proveedor"]
+    assert estado == "FIRMADA"
+
+
+def test_con_el_enlace_vencido_una_firma_nueva_sigue_rechazada(e) -> None:
+    propuesta, token = e.hasta_en_firma()
+    e.reloj.ahora += timedelta(minutes=31)
+
+    error = _motivo(e.firmar_nombre, propuesta["id"], Autorizacion(enlace_token=token))
+
+    assert error.motivo == "ENLACE_VENCIDO"
+    assert e.repo.obtener_evidencia(propuesta["id"]) is None
+
+
+def test_la_firma_ya_registrada_no_se_entrega_a_un_token_ajeno(e) -> None:
+    propuesta, token = e.hasta_en_firma()
+    e.firmar_nombre(propuesta["id"], Autorizacion(enlace_token=token))
+    e.reloj.ahora += timedelta(minutes=31)
+
+    for auth in (Autorizacion(), Autorizacion(enlace_token="token-que-no-existe-0000")):
+        assert _motivo(e.firmar_nombre, propuesta["id"], auth).motivo == "PROPUESTA_NO_ENCONTRADA"
+
+
 def test_firma_con_nombre_estilizado(e) -> None:
     propuesta, token = e.hasta_en_firma()
     auth = Autorizacion(enlace_token=token)

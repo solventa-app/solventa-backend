@@ -87,6 +87,7 @@
   {
     "nombre": "policy",
     "ruta": "services/policy",
+    "instancia_fija": true,
     "puerto": 8007,
     "url_env": "POLICY_URL",
     "migracion": ["alembic", "upgrade", "head"],
@@ -106,6 +107,7 @@
   {
     "nombre": "under",
     "ruta": "services/under",
+    "instancia_fija": true,
     "puerto": 8008,
     "url_env": "UNDER_URL",
     "llama": ["acl-worker"],
@@ -114,6 +116,7 @@
   {
     "nombre": "almacenamiento",
     "ruta": "services/almacenamiento",
+    "instancia_fija": true,
     "puerto": 8009,
     "url_env": "ALMACENAMIENTO_URL",
     "migracion": ["alembic", "upgrade", "head"],
@@ -213,6 +216,7 @@
   {
     "nombre": "stub-firma",
     "ruta": "stubs/firma",
+    "instancia_fija": true,
     "puerto": 8104,
     "url_env": "FIRMA_URL",
     "entorno": { "TRAZAS_GCP": "true" }
@@ -220,6 +224,7 @@
   {
     "nombre": "stub-kyc",
     "ruta": "stubs/kyc",
+    "instancia_fija": true,
     "puerto": 8105,
     "url_env": "KYC_URL",
     "entorno": { "TRAZAS_GCP": "true" }
@@ -227,6 +232,7 @@
   {
     "nombre": "stub-notificaciones",
     "ruta": "stubs/notificaciones",
+    "instancia_fija": true,
     "puerto": 8106,
     "url_env": "NOTIFICACIONES_URL",
     "entorno": { "TRAZAS_GCP": "true" }
