@@ -132,6 +132,15 @@ class Configuracion:
     fuentes_config_path: str | None = None
     # KAN-290: el proveedor de los datos del vehículo (stub-vehiculos en local).
     vehiculos_url: str = "http://localhost:8107"
+    # KAN-259 Fase 3 (HU-M04): las fuentes paramétricas. En local y en el CI, las dos apuntan a
+    # `stub-eventos-parametricos` (mismo host, rutas distintas: `/v1/forecast` y `/v1/flights`,
+    # igual que los proveedores reales). En la nube, Open-Meteo no necesita llave; AviationStack sí.
+    clima_url: str = "http://localhost:8108"
+    vuelos_url: str = "http://localhost:8108"
+    aviationstack_api_key: str = ""
+    # Vacío = solo log (mismo patrón que RISK/CLAIMS/enviar-push sin su tema real): no hay
+    # infraestructura de Pub/Sub para este tema todavía (fase 7, fuera de esta tarea).
+    pubsub_tema_eventos_parametricos: str = ""
 
     @property
     def techo_ruta_sincrona_s(self) -> float:
@@ -179,6 +188,13 @@ class Configuracion:
         identidad_api_key = os.getenv("DIDIT_API_KEY", "local").strip()
         if os.getenv("IDENTIDAD_URL") and identidad_api_key in ("", "local", VALOR_MARCADOR):
             raise ValueError("IDENTIDAD_URL apunta a un proveedor real y falta DIDIT_API_KEY")
+        vuelos_url = os.getenv("VUELOS_URL", "http://localhost:8108")
+        aviationstack_api_key = os.getenv("AVIATIONSTACK_API_KEY", "").strip()
+        if vuelos_url.startswith("https://api.aviationstack.com") and aviationstack_api_key in (
+            "",
+            VALOR_MARCADOR,
+        ):
+            raise ValueError("VUELOS_URL apunta a AviationStack real y falta AVIATIONSTACK_API_KEY")
         proveedor_notificaciones = os.getenv("NOTIFICACIONES_PROVEEDOR", "simulado").strip()
         if proveedor_notificaciones not in ("simulado", "resend"):
             raise ValueError("NOTIFICACIONES_PROVEEDOR debe ser 'simulado' o 'resend'")
@@ -213,6 +229,12 @@ class Configuracion:
             open_finance_url=os.getenv("OPEN_FINANCE_URL", "http://localhost:8101"),
             open_data_url=os.getenv("OPEN_DATA_URL", "http://localhost:8102"),
             vehiculos_url=os.getenv("VEHICULOS_URL", "http://localhost:8107"),
+            clima_url=os.getenv("CLIMA_URL", "http://localhost:8108"),
+            vuelos_url=vuelos_url,
+            aviationstack_api_key=aviationstack_api_key,
+            pubsub_tema_eventos_parametricos=os.getenv(
+                "PUBSUB_TEMA_EVENTOS_PARAMETRICOS", ""
+            ).strip(),
             pasarela_url=os.getenv("PASARELA_URL", "http://localhost:8103"),
             firma_url=os.getenv("FIRMA_URL", "http://localhost:8104"),
             kyc_url=os.getenv("KYC_URL", "http://localhost:8105"),

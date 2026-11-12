@@ -425,3 +425,115 @@ class GeneradorDeDocumentoFalso:
     def __call__(self, poliza_id: str, asegurado: str | None = None) -> bytes | None:
         self.llamadas.append((poliza_id, asegurado))
         return None if self.devuelve_none else self.CONTENIDO
+
+
+class RepositorioCoberturasParametricasFalso:
+    """Doble de `RepositorioCoberturasParametricas` (KAN-259, HU-M04, Fase 4, D8): en memoria, sin
+    PostgreSQL real. Mismo contrato de datos que la clase real (`dict`, no filas de psycopg)."""
+
+    def __init__(self) -> None:
+        self._coberturas: dict[str, dict[str, Any]] = {}
+        self._contador = 0
+
+    def _crear(
+        self, poliza_id: str, tipo: str, monto_fijo: str, moneda: str, **campos: Any
+    ) -> dict:
+        self._contador += 1
+        cobertura = {
+            "id": f"cobertura-{self._contador}",
+            "poliza_id": poliza_id,
+            "tipo": tipo,
+            "monto_fijo": {"valor": monto_fijo, "moneda": moneda},
+            "estado": "VIGENTE",
+            "numero_vuelo": None,
+            "fecha_salida": None,
+            "aeropuerto_origen": None,
+            "umbral_retraso_min": None,
+            "latitud": None,
+            "longitud": None,
+            "variable": None,
+            "umbral": None,
+            "ventana_horas": None,
+            **campos,
+        }
+        self._coberturas[cobertura["id"]] = cobertura
+        return dict(cobertura)
+
+    def crear_vuelo(
+        self,
+        poliza_id: str,
+        monto_fijo: str,
+        moneda: str,
+        vigencia_desde: datetime,
+        vigencia_hasta: datetime,
+        numero_vuelo: str,
+        fecha_salida,
+        aeropuerto_origen: str,
+        umbral_retraso_min: int,
+    ) -> dict:
+        return self._crear(
+            poliza_id,
+            "VUELO",
+            monto_fijo,
+            moneda,
+            vigencia_desde=vigencia_desde,
+            vigencia_hasta=vigencia_hasta,
+            numero_vuelo=numero_vuelo,
+            fecha_salida=fecha_salida,
+            aeropuerto_origen=aeropuerto_origen,
+            umbral_retraso_min=umbral_retraso_min,
+        )
+
+    def crear_clima(
+        self,
+        poliza_id: str,
+        monto_fijo: str,
+        moneda: str,
+        vigencia_desde: datetime,
+        vigencia_hasta: datetime,
+        latitud: float,
+        longitud: float,
+        variable: str,
+        umbral: str,
+        ventana_horas: int,
+    ) -> dict:
+        return self._crear(
+            poliza_id,
+            "CLIMA",
+            monto_fijo,
+            moneda,
+            vigencia_desde=vigencia_desde,
+            vigencia_hasta=vigencia_hasta,
+            latitud=latitud,
+            longitud=longitud,
+            variable=variable,
+            umbral=umbral,
+            ventana_horas=ventana_horas,
+        )
+
+    def vigentes_de_vuelo(self, numero_vuelo: str, fecha) -> list[dict]:
+        return [
+            c
+            for c in self._coberturas.values()
+            if c["tipo"] == "VUELO"
+            and c["estado"] == "VIGENTE"
+            and c["numero_vuelo"] == numero_vuelo
+            and c["fecha_salida"] == fecha
+        ]
+
+    def vigentes_de_celda(
+        self, latitud: float, longitud: float, variable: str | None = None
+    ) -> list[dict]:
+        return [
+            c
+            for c in self._coberturas.values()
+            if c["tipo"] == "CLIMA"
+            and c["estado"] == "VIGENTE"
+            and c["latitud"] is not None
+            and round(c["latitud"], 2) == round(latitud, 2)
+            and round(c["longitud"], 2) == round(longitud, 2)
+            and (variable is None or c["variable"] == variable)
+        ]
+
+    def de_poliza(self, poliza_id: str) -> list[dict]:
+        return [c for c in self._coberturas.values() if c["poliza_id"] == poliza_id]

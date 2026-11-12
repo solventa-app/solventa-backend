@@ -35,6 +35,7 @@ from app.application.planificador import (
     PlanificadorLocal,
     PuertoPlanificador,
 )
+from app.application.repositorio_coberturas_parametricas import RepositorioCoberturasParametricas
 from app.application.repositorio_propuestas import RepositorioPropuestasPostgres, construir_pool
 from app.application.servicio_documentos import DocumentoAlterado, ServicioDocumentos
 from app.application.servicio_emision import (
@@ -342,6 +343,29 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
+class CoberturaParametricaResponse(BaseModel):
+    """KAN-259 (HU-M04, Fase 4, D8): la cobertura paramétrica de una póliza. Solo la lee CLAIMS
+    por `GET /interno/coberturas-parametricas` para cruzar un evento (clima o vuelo); POLICY sigue
+    siendo el único escritor (regla #1)."""
+
+    id: str
+    poliza_id: str
+    tipo: str
+    monto_fijo: MontoResponse
+    vigencia_desde: datetime
+    vigencia_hasta: datetime
+    estado: str
+    numero_vuelo: str | None = None
+    fecha_salida: date | None = None
+    aeropuerto_origen: str | None = None
+    umbral_retraso_min: int | None = None
+    latitud: float | None = None
+    longitud: float | None = None
+    variable: str | None = None
+    umbral: str | None = None
+    ventana_horas: int | None = None
+
+
 def _respuesta(propuesta: dict[str, Any]) -> PropuestaResponse:
     return PropuestaResponse(**propuesta, estado_visible=estado_visible(propuesta["estado"]))
 
@@ -399,6 +423,7 @@ def create_app(
     servicio_polizas: ServicioPolizas | None = None,
     servicio_firma_y_pago: ServicioFirmaYPago | None = None,
     servicio_purga: ServicioPurga | None = None,
+    repositorio_coberturas: Any = None,
 ) -> FastAPI:
     """Los `servicio_*` permiten inyectar dobles de prueba sin PostgreSQL ni
     RATING reales (ver `tests/fakes.py`). En producción se omiten y `create_app` los construye
@@ -421,6 +446,7 @@ def create_app(
             app.state.servicio_polizas = servicio_polizas
             app.state.servicio_firma_y_pago = servicio_firma_y_pago
             app.state.servicio_purga = servicio_purga
+            app.state.repositorio_coberturas = repositorio_coberturas
         else:
             pool = construir_pool(config.database_url)
             cliente_rating = ClienteRating(
@@ -429,6 +455,7 @@ def create_app(
                 autenticacion_para(config.autenticacion_servicios, "rating"),
             )
             repositorio = RepositorioPropuestasPostgres(pool, cifrador_desde_entorno())
+            app.state.repositorio_coberturas = RepositorioCoberturasParametricas(pool)
             cliente_acl = ClienteAcl(
                 config.acl_url,
                 config.acl_timeout_segundos,
@@ -979,6 +1006,51 @@ def create_app(
     def purgar_contactos() -> ResumenPurgaResponse:
         """W03-26: pasada diaria (Cloud Scheduler) por los consentimientos vencidos."""
         return ResumenPurgaResponse(**app.state.servicio_purga.purgar_vencidos())
+
+    @app.get(
+        "/interno/coberturas-parametricas",
+        tags=["parametricos"],
+        response_model=list[CoberturaParametricaResponse],
+        responses={422: {"model": ErrorResponse}},
+    )
+    def coberturas_parametricas(
+        tipo: str | None = None,
+        vuelo: str | None = None,
+        fecha: date | None = None,
+        celda: str | None = None,
+        lat: float | None = None,
+        lon: float | None = None,
+        variable: str | None = None,
+        poliza_id: str | None = None,
+    ) -> list[CoberturaParametricaResponse]:
+        """KAN-259 (HU-M04, Fase 4, D8): solo lo llama CLAIMS para cruzar un evento paramétrico
+        contra las coberturas vigentes. POLICY es el único escritor (regla #1); este endpoint es de
+        solo lectura.
+
+        Fase 5: con `poliza_id` (sin `tipo`), el BFF consulta la cobertura paramétrica vigente de
+        una póliza puntual (para armar `ResumenCobertura`), sin cruzar ningún evento."""
+        repo = app.state.repositorio_coberturas
+        if poliza_id is not None and tipo is None:
+            return [CoberturaParametricaResponse(**f) for f in repo.de_poliza(poliza_id)]
+        if tipo == "VUELO":
+            if not vuelo or fecha is None:
+                raise HTTPException(status_code=422, detail="VUELO necesita vuelo y fecha")
+            filas = repo.vigentes_de_vuelo(vuelo, fecha)
+        elif tipo == "CLIMA":
+            if celda:
+                try:
+                    lat_s, lon_s = celda.split(",", 1)
+                    lat_q, lon_q = float(lat_s), float(lon_s)
+                except ValueError as error:
+                    raise HTTPException(status_code=422, detail="celda inválida") from error
+            elif lat is not None and lon is not None:
+                lat_q, lon_q = lat, lon
+            else:
+                raise HTTPException(status_code=422, detail="CLIMA necesita celda o lat y lon")
+            filas = repo.vigentes_de_celda(lat_q, lon_q, variable)
+        else:
+            raise HTTPException(status_code=422, detail="tipo debe ser VUELO o CLIMA")
+        return [CoberturaParametricaResponse(**f) for f in filas]
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app

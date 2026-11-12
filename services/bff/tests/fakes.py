@@ -906,6 +906,8 @@ class PolicyFalso:
         self.firmas: dict[str, dict] = {}
         self.firmas_pedidas: list[tuple[str, bool, str, str]] = []
         self.polizas: dict[str, dict] = {}
+        # KAN-259 Fase 5: poliza_id -> lista de coberturas paramétricas (vacía si no se fijó).
+        self.coberturas_parametricas: dict[str, list[dict]] = {}
         self.documentos_pedidos: list[tuple[str, str | None]] = []
         self.error_documento: Exception | None = None
         self.reconciliaciones: list[str] = []
@@ -1152,6 +1154,13 @@ class PolicyFalso:
         if self.error is not None:
             raise self.error
         return self.polizas.get(poliza_id)
+
+    async def coberturas_parametricas_de_poliza(self, poliza_id: str) -> list[dict]:
+        """KAN-259 Fase 5: `self.coberturas_parametricas[poliza_id]`, vacía si no se fijó."""
+        if self.error is not None:
+            raise self.error
+        self.pedidos.append(("coberturas_parametricas", poliza_id))
+        return self.coberturas_parametricas.get(poliza_id, [])
 
     async def generar_documento(self, poliza_id: str, asegurado: str | None) -> bytes | None:
         self.documentos_pedidos.append((poliza_id, asegurado))
@@ -1419,6 +1428,16 @@ class ClaimsFalso:
     async def obtener(self, siniestro_id: str) -> dict | None:
         self._revisar("obtener", siniestro_id)
         return self.siniestros.get(siniestro_id)
+
+    async def parametricos_de_polizas(self, poliza_ids: list[str]) -> list[dict]:
+        """KAN-259 Fase 5: los siniestros paramétricos (`origen == "PARAMETRICO"`) de esas
+        pólizas, del más reciente al más antiguo."""
+        self._revisar("parametricos_de_polizas", tuple(poliza_ids))
+        return [
+            s
+            for s in self.siniestros.values()
+            if s.get("origen") == "PARAMETRICO" and s["poliza_id"] in poliza_ids
+        ]
 
     async def catalogo_prestadores(self, version_local: str | None) -> dict:
         self._revisar("catalogo_prestadores", version_local)
