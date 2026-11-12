@@ -1,4 +1,4 @@
-"""stub-prestadores (HU-M06, v0.46, B7): desenlace simulado de la asistencia en sitio."""
+"""stub-prestadores (HU-M06, v0.49, B7): desenlace simulado de la asistencia en sitio."""
 
 import pytest
 from fastapi.testclient import TestClient

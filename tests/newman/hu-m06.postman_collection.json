@@ -213,10 +213,10 @@
                   "pm.test('Sin errores', () => pm.expect(cuerpo.errors).to.be.undefined);",
                   "pm.test('No vigente', () => pm.expect(c.vigente).to.eql(false));",
                   "pm.test('Versión AAAA-MM-DD.n', () => pm.expect(c.version).to.match(/^\\d{4}-\\d{2}-\\d{2}\\.\\d+$/));",
-                  "pm.test('Los 17 prestadores de la semilla (v0.46)', () => pm.expect(c.prestadores.length).to.eql(17));",
+                  "pm.test('Los 17 prestadores de la semilla (v0.49)', () => pm.expect(c.prestadores.length).to.eql(17));",
                   "pm.test('MEDICO, MECANICO y GRUA', () => pm.expect([...new Set(c.prestadores.map(p => p.tipo))].sort()).to.eql(['GRUA', 'MECANICO', 'MEDICO']));",
                   "pm.test('8 en Bogotá', () => pm.expect(c.prestadores.filter(p => p.ciudad === 'Bogotá').length).to.eql(8));",
-                  "pm.test('Aliados y no aliados (v0.46)', () => pm.expect([...new Set(c.prestadores.map(p => p.aliado))].sort()).to.eql([false, true]));",
+                  "pm.test('Aliados y no aliados (v0.49)', () => pm.expect([...new Set(c.prestadores.map(p => p.aliado))].sort()).to.eql([false, true]));",
                   "pm.test('Cada uno con especialidad y dirección', () => pm.expect(c.prestadores.every(p => p.especialidad && p.direccion)).to.be.true);",
                   "const norte = c.prestadores.find(p => p.id === 'prs-bog-001');",
                   "pm.test('Coordenadas como número', () => pm.expect([norte.latitud, norte.longitud]).to.eql([4.6859, -74.0524]));"

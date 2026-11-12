@@ -72,7 +72,7 @@ peticiones simultáneas (verificado: 8 aprobaciones a la vez dejan una resoluci�
 | `MONGO_DB` | `claims` | Base |
 | `LECTURA_MAX_MS` | `500` | Tope de cada lectura en la réplica |
 | `CIFRADO_CLAVE` / `KMS_KEY_NAME` / `CIFRADO_CLAVE_ENVUELTA` | clave local de desarrollo | Igual que RISK (D-04) |
-| `ACL_URL` | `http://localhost:8005` | HU-M06 (v0.46): la red de prestadores está detrás del ACL Worker (`POST /prestadores/asistencias`); el desenlace simulado vive en `stubs/prestadores` (`PRESTADORES_SIMULACION`) |
+| `ACL_URL` | `http://localhost:8005` | HU-M06 (v0.49): la red de prestadores está detrás del ACL Worker (`POST /prestadores/asistencias`); el desenlace simulado vive en `stubs/prestadores` (`PRESTADORES_SIMULACION`) |
 
 ## Correr
 
@@ -85,7 +85,7 @@ cd services/claims && python -m pytest
 
 ## Pendiente
 
-- HU-M06: el desenlace de la asistencia lo simula `stubs/prestadores` detrás del ACL (v0.46) hasta que haya
+- HU-M06: el desenlace de la asistencia lo simula `stubs/prestadores` detrás del ACL (v0.49) hasta que haya
   prestadores reales que acepten o rechacen; falta la verificación en staging.
 
 - Los plazos en días hábiles no descuentan festivos (falta un calendario oficial).

@@ -170,7 +170,7 @@ class ClientePayments:
 
 
 class ClienteRedPrestadores:
-    """HU-M06 (v0.46, B7): la red de prestadores está detrás del ACL Worker (regla 2). El ACL
+    """HU-M06 (v0.49, B7): la red de prestadores está detrás del ACL Worker (regla 2). El ACL
     responde siempre 200 con el desenlace; si su circuito está abierto, `NO_CONFIRMADA`."""
 
     def __init__(self, url: str, timeout_s: float, auth: httpx.Auth | None = None) -> None:

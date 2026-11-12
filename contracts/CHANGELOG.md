@@ -572,7 +572,7 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
-## v0.46 — 2026-11-12
+## v0.49 — 2026-11-12
 
 - HU-M06 (KAN-36), fase 1 del plan de pendientes: catálogo de prestadores con el detalle y la grúa. `TipoPrestador`
   gana `GRUA` y `Prestador` gana `aliado`, `especialidad`, `direccion`, `horario` y `fotoUrl` (nulos los dos últimos).
@@ -581,7 +581,7 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   tipos que no conoce.
 - Sin cambio en GraphQL pero sí de comportamiento: el desenlace de `solicitarAsistencia` ya no lo simula CLAIMS. Lo
   decide la red de prestadores **detrás del ACL** (regla 2): `POST /prestadores/asistencias` en el ACL Worker, con su
-  Circuit Breaker, contra el nuevo `stubs/prestadores` (puerto 8108). Si el ACL no responde o el circuito está abierto,
+  Circuit Breaker, contra el nuevo `stubs/prestadores` (puerto 8109). Si el ACL no responde o el circuito está abierto,
   la asistencia queda `NO_CONFIRMADA` (`PRESTADOR_SIN_RESPUESTA`) y la app reintenta. `ASISTENCIA_SIMULACION` de
   CLAIMS se retira; el modo vive en `PRESTADORES_SIMULACION` del stub.
 - Afecta al frontend: el móvil (detalle del prestador, color por aliado e ícono de grúa).

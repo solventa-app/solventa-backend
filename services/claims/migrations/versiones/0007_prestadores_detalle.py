@@ -1,4 +1,4 @@
-"""detalle de los prestadores y tipo grúa (HU-M06, contrato v0.46)
+"""detalle de los prestadores y tipo grúa (HU-M06, contrato v0.49)
 
 `prestadores` gana el tipo `GRUA` y los campos que muestra el detalle del prestador en la app:
 `aliado` (aliado Solventa o no), `especialidad`, `direccion`, `horario` y `foto_url`. Los nuevos

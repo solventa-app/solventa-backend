@@ -9,6 +9,6 @@ RUN useradd --system --no-create-home solventa
 USER solventa
 
 # Cloud Run inyecta PORT; en local se usa el puerto por defecto del servicio.
-ENV PORT=8108
-EXPOSE 8108
+ENV PORT=8109
+EXPOSE 8109
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]

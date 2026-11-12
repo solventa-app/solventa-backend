@@ -295,7 +295,7 @@ def test_http_errores_de_negocio_con_codigo():
         assert r.status_code == 404
         assert r.json()["codigo"] == "NO_ENCONTRADA"
         r = http.post("/asistencias", json=_solicitud(tipo_asistencia="GRUA"))
-        assert r.status_code == 409  # v0.46: GRUA existe, pero esta clínica no la atiende
+        assert r.status_code == 409  # v0.49: GRUA existe, pero esta clínica no la atiende
         assert r.json()["codigo"] == "TIPO_NO_ATENDIDO"
         r = http.post("/asistencias", json=_solicitud(tipo_asistencia="BOMBEROS"))
         assert r.status_code == 422

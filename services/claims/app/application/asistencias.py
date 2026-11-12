@@ -7,7 +7,7 @@ solicitud se escribe en la **primaria** (escritor único: CLAIMS) y se lee de el
   asistencia. Si la primera quedó NO_CONFIRMADA, reenviar vuelve a intentar confirmarla.
 - La ubicación del cliente (adónde debe llegar el prestador) y su descripción son datos personales:
   se guardan cifradas por campo con el id de la asistencia como dueño y nunca van a los logs.
-- El desenlace lo decide la red de prestadores **detrás del ACL** (regla 2, contrato v0.46, B7 del
+- El desenlace lo decide la red de prestadores **detrás del ACL** (regla 2, contrato v0.49, B7 del
   plan de HU-M06): CLAIMS ya no simula. Mientras no haya prestadores reales, `stubs/prestadores`
   confirma o no (modo `primero_falla`: el primer intento queda NO_CONFIRMADA y el reintento se
   confirma) y calcula los minutos. Si el ACL no responde o su circuito está abierto, la asistencia

@@ -1,4 +1,4 @@
-"""Adaptador de la red de prestadores de asistencia en sitio (HU-M06, contrato v0.46, B7).
+"""Adaptador de la red de prestadores de asistencia en sitio (HU-M06, contrato v0.49, B7).
 
 Traducción pura a HTTP contra `stubs/prestadores` mientras no haya prestadores reales. Sin Circuit
 Breaker aquí: lo orquesta `ServicioPrestadores`. La ubicación del cliente viaja al prestador (es

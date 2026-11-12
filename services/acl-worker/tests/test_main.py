@@ -192,7 +192,7 @@ def test_vehiculo_fuente_desconocida_responde_404() -> None:
 
 
 def test_asistencia_con_la_red_de_prestadores_caida_queda_no_confirmada_sin_5xx() -> None:
-    # HU-M06 (v0.46): PRESTADORES_URL apunta a un puerto sin servicio.
+    # HU-M06 (v0.49): PRESTADORES_URL apunta a un puerto sin servicio.
     pedido = {
         "asistencia_id": "a-1", "intento": 1, "tipo_asistencia": "GRUA",
         "prestador_id": "prs-1", "prestador_latitud": 4.68, "prestador_longitud": -74.05,

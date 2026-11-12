@@ -26,7 +26,7 @@ class Configuracion:
     # Solo local (W04-15): `POST /_demo/reiniciar` vuelve a la semilla de `SEMILLA_DIR`.
     demo_reiniciar: bool = False
     semilla_dir: str = "/semilla"
-    # HU-M06 (v0.46, B7): la red de prestadores está detrás del ACL Worker.
+    # HU-M06 (v0.49, B7): la red de prestadores está detrás del ACL Worker.
     acl_url: str = "http://localhost:8005"
 
     @classmethod

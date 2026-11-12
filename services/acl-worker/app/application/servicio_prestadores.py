@@ -1,4 +1,4 @@
-"""Caso de uso: pedir a la red de prestadores que atienda una asistencia en sitio (HU-M06, v0.46).
+"""Caso de uso: pedir a la red de prestadores que atienda una asistencia en sitio (HU-M06, v0.49).
 
 La llama CLAIMS. Siempre responde: si el proveedor falla o el circuito está abierto, la asistencia
 queda `NO_CONFIRMADA` con `PRESTADOR_SIN_RESPUESTA` (regla 4, nunca un 5xx crudo) y la app ofrece

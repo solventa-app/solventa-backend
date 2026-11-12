@@ -36,7 +36,7 @@ def test_sin_version_o_con_una_vieja_trae_el_catalogo(variables):
     assert datos["version"] == "2026-11-04.1"
     assert datos["vigente"] is False
     # El tipo que el BFF no conoce se omite; el inactivo viaja para que la app lo descarte.
-    # v0.46: GRUA ya es un tipo conocido.
+    # v0.49: GRUA ya es un tipo conocido.
     assert [(p["id"], p["tipo"], p["activo"]) for p in datos["prestadores"]] == [
         ("prs-bog-001", "MEDICO", True),
         ("prs-bog-002", "MECANICO", False),
@@ -49,7 +49,7 @@ def test_sin_version_o_con_una_vieja_trae_el_catalogo(variables):
     assert clinica["horario"] == "Abierto 24 h"
     assert clinica["fotoUrl"] is None
     assert grua["fotoUrl"] == "https://example.test/grua.webp"
-    # Un CLAIMS anterior a la v0.46 no rompe la respuesta: valores por defecto.
+    # Un CLAIMS anterior a la v0.49 no rompe la respuesta: valores por defecto.
     assert (taller["aliado"], taller["especialidad"], taller["direccion"]) == (False, "", "")
     assert claims.llamadas == [("catalogo_prestadores", variables.get("v"))]
 

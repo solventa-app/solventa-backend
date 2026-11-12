@@ -160,7 +160,7 @@ class ResultadoFirmaResponse(BaseModel):
 
 
 class PedidoAsistenciaRequest(BaseModel):
-    """HU-M06 (v0.46): lo arma CLAIMS. Del cliente solo viaja adónde debe llegar el prestador."""
+    """HU-M06 (v0.49): lo arma CLAIMS. Del cliente solo viaja adónde debe llegar el prestador."""
 
     asistencia_id: str = Field(min_length=1, max_length=64)
     intento: int = Field(ge=1)
@@ -819,7 +819,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         "/prestadores/asistencias", tags=["prestadores"], response_model=DesenlaceAsistenciaResponse
     )
     def solicitar_asistencia(body: PedidoAsistenciaRequest) -> DesenlaceAsistenciaResponse:
-        """HU-M06 (v0.46, B7): CLAIMS pide a la red de prestadores que atienda una asistencia.
+        """HU-M06 (v0.49, B7): CLAIMS pide a la red de prestadores que atienda una asistencia.
         Siempre 200: si el proveedor falla o el circuito está abierto, `NO_CONFIRMADA` (regla 4)."""
         desenlace = app.state.servicio_prestadores.solicitar(PedidoAsistencia(**body.model_dump()))
         return DesenlaceAsistenciaResponse(

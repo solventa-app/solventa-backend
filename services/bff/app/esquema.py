@@ -1847,7 +1847,7 @@ MENSAJE_SINIESTROS = "No pudimos consultar los siniestros. Intenta de nuevo."
 class TipoPrestador(Enum):
     MEDICO = "MEDICO"
     MECANICO = "MECANICO"
-    GRUA = "GRUA"  # v0.46
+    GRUA = "GRUA"  # v0.49
 
 
 @strawberry.type
@@ -1859,7 +1859,7 @@ class Prestador:
     latitud: float
     longitud: float
     activo: bool
-    # v0.46: el detalle del prestador en la app.
+    # v0.49: el detalle del prestador en la app.
     aliado: bool
     especialidad: str
     direccion: str
@@ -1879,7 +1879,7 @@ TIPOS_PRESTADOR = {t.value for t in TipoPrestador}
 
 
 def _prestador(p: dict) -> Prestador:
-    """Los campos de la v0.46 tienen un valor por defecto mientras CLAIMS no los mande."""
+    """Los campos de la v0.49 tienen un valor por defecto mientras CLAIMS no los mande."""
     return Prestador(
         id=strawberry.ID(p["id"]),
         nombre=p["nombre"],

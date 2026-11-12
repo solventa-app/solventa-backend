@@ -1,4 +1,4 @@
-"""Red de prestadores en el ACL (HU-M06, v0.46, B7): degradación sin 5xx y Circuit Breaker."""
+"""Red de prestadores en el ACL (HU-M06, v0.49, B7): degradación sin 5xx y Circuit Breaker."""
 
 import json
 

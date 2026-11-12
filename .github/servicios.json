@@ -205,7 +205,7 @@
     "nombre": "stub-prestadores",
     "ruta": "stubs/prestadores",
     "instancia_fija": true,
-    "puerto": 8108,
+    "puerto": 8109,
     "url_env": "PRESTADORES_URL",
     "entorno": { "TRAZAS_GCP": "true" }
   },

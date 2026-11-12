@@ -13,7 +13,7 @@ CONTROL = "prestadores"
 
 
 def prestador_desde_documento(doc: dict) -> dict:
-    """Un prestador como lo ven el BFF y la app. Los campos de la v0.46 tienen un valor por
+    """Un prestador como lo ven el BFF y la app. Los campos de la v0.49 tienen un valor por
     defecto para los documentos que todavía no los tienen (antes de sincronizar el catálogo)."""
     return {
         "id": doc["_id"],

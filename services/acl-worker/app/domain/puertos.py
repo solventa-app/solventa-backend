@@ -321,7 +321,7 @@ class PuertoVerificacionIdentidad(Protocol):
 
 @dataclass
 class PedidoAsistencia:
-    """Asistencia en sitio que CLAIMS pide a la red de prestadores (HU-M06, v0.46). La ubicación del
+    """Asistencia en sitio que CLAIMS pide a la red de prestadores (HU-M06, v0.49). La ubicación del
     cliente es adónde debe llegar el prestador: viaja al proveedor, nunca a los logs. Sin
     coordenadas (dirección a mano, hasta que se retire) el proveedor no estima el tiempo."""
 

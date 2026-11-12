@@ -20,7 +20,7 @@ Revisión del 2026-11-12 contra `develop` (mobile `8dac02f`, backend `fb3b4c6`).
 
 | # | Ajuste | Motivo |
 |---|---|---|
-| A1 | Una versión de contrato por fase: **v0.46** catálogo y grúa, **v0.47** dirección ubicada, **v0.48** rutas, **v0.49** «Mis asistencias» | Al revisar, el contrato ya iba en v0.45 |
+| A1 | Una versión de contrato por fase: **v0.49** catálogo y grúa, **v0.50** dirección ubicada, **v0.51** rutas, **v0.52** «Mis asistencias» | El contrato iba en v0.45 y el PR #589 del backend (KAN-259, push de HU-M04) ya reserva v0.46 a v0.48 |
 | A2 | La notificación local de llegada **convive con FCM** (`firebase_messaging` ya está en el `pubspec.yaml`, KAN-259) en un canal propio «Asistencias» | El plan la elegía porque FCM «faltaba»; ya no es así |
 | A3 | Antes de tocar el CI de mobile se confirma si Gradle necesita token de descargas de Mapbox para **compilar** (Emuladores, MobSF y CD compilan un APK aunque usen el mapa falso) | El plan solo lo consideraba para ejecutar |
 | A4 | La app envía `Accept-Language` en el cliente GraphQL | 2.0 lo necesita y hoy no se envía |
@@ -29,7 +29,7 @@ Revisión del 2026-11-12 contra `develop` (mobile `8dac02f`, backend `fb3b4c6`).
 | A7 | Claves de texto `misAsistenciasEnCamino` y `misAsistenciasYaLlegaron` en vez de `homeEnCamino` y `homeYaLlegaron` | Ya no está en Inicio |
 | A8 | Volver a pasar MobSF y revisar R8 por Mapbox y los permisos nuevos | Cambian el APK y sus permisos |
 | A9 | En la máquina de desarrollo solo se corre lo que cabe en contenedores (análisis, unitarias, widget, goldens, pytest, ruff, migraciones contra Mongo y Newman con el compose). **Emuladores, Mapbox real, teléfono real y staging quedan pendientes** para una prueba posterior | Regla del equipo |
-| A10 | `stub-prestadores` usa el puerto **8108** | El 8107 que proponía el plan ya es de `stub-vehiculos` |
+| A10 | `stub-prestadores` usa el puerto **8109** | El 8107 que proponía el plan ya es de `stub-vehiculos` y el 8108 lo toma `stub-eventos-parametricos` en el PR #589 |
 | A11 | `fotoUrl` queda **null** en toda la semilla: ALMACENAMIENTO no sirve archivos públicos, así que no hay de dónde salir una foto de sede. La app usa el placeholder del tipo y está lista para la foto (se prueba con el fake) | B3 pedía fotos en algunos |
 | A12 | Los minutos de llegada simulados se calculan en `stubs/prestadores` (Haversine, 20 km/h + 2 min) y `PRESTADORES_MINUTOS_FIJOS` vive allí | CLAIMS ya no simula (B7) |
 
@@ -37,7 +37,7 @@ Revisión del 2026-11-12 contra `develop` (mobile `8dac02f`, backend `fb3b4c6`).
 
 | Fase | Backend | Mobile |
 |---|---|---|
-| 1 · Catálogo con detalle, grúa y prestadores detrás del ACL (B1, B2, B3, B7) | `feat/KAN-36-prestadores-aliados-gruas` (v0.46, CLAIMS `0007`) | pendiente |
+| 1 · Catálogo con detalle, grúa y prestadores detrás del ACL (B1, B2, B3, B7) | `feat/KAN-36-prestadores-aliados-gruas` (v0.49, CLAIMS `0007`) | pendiente |
 | 2 · Mapbox, pines, detalle, hoja arrastrable (M0–M14) | — | pendiente |
 | 3 · Dirección ubicada (B4, B9, 2.0, S1) | pendiente | pendiente |
 | 4 · Rutas y auditoría (B8, M15) | pendiente | pendiente |

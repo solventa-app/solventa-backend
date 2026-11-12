@@ -126,7 +126,7 @@ class ReporteRequest(BaseModel):
 class TipoAsistencia(StrEnum):
     MEDICO = "MEDICO"
     MECANICO = "MECANICO"
-    GRUA = "GRUA"  # v0.46
+    GRUA = "GRUA"  # v0.49
 
 
 class SolicitudAsistenciaRequest(BaseModel):

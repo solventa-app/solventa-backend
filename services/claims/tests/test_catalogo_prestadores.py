@@ -62,7 +62,7 @@ def test_el_catalogo_del_repo_es_valido():
     assert version == "2026-11-12.1"
     assert len(prestadores) == 17
     assert {p["tipo"] for p in prestadores} == {"MEDICO", "MECANICO", "GRUA"}
-    # v0.46: hay aliados y no aliados para probar los dos colores en la app.
+    # v0.49: hay aliados y no aliados para probar los dos colores en la app.
     assert {p["aliado"] for p in prestadores} == {True, False}
 
 

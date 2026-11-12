@@ -26,10 +26,10 @@ log = logging.getLogger("migraciones.catalogos")
 
 ARCHIVO = Path(__file__).resolve().parent / "datos" / "prestadores.json"
 CONTROL = "prestadores"
-TIPOS = {"MEDICO", "MECANICO", "GRUA"}  # v0.46: GRUA
+TIPOS = {"MEDICO", "MECANICO", "GRUA"}  # v0.49: GRUA
 VERSION = re.compile(r"^(\d{4}-\d{2}-\d{2})\.(\d+)$")
 CAMPOS = ("nombre", "tipo", "ciudad", "latitud", "longitud", "activo")
-# v0.46: lo que muestra el detalle del prestador. Obligatorios en el archivo; `horario` y
+# v0.49: lo que muestra el detalle del prestador. Obligatorios en el archivo; `horario` y
 # `foto_url` pueden ser null (la app muestra el placeholder del tipo sin foto).
 CAMPOS_DETALLE = ("aliado", "especialidad", "direccion", "horario", "foto_url")
 

@@ -1,4 +1,4 @@
-"""Stub de la red de prestadores de asistencia en sitio (HU-M06, contrato v0.46, B7).
+"""Stub de la red de prestadores de asistencia en sitio (HU-M06, contrato v0.49, B7).
 
 Mientras no haya prestadores reales (clínicas, talleres y grúas que acepten o rechacen por su
 sistema), este servicio decide el desenlace de cada asistencia que CLAIMS pide por el ACL Worker
