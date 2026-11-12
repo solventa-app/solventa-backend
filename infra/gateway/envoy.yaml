@@ -74,6 +74,15 @@ static_resources:
                             cluster: bff_cluster
                             timeout: 0.7s
                         - match:
+                            path: "/v1/graphql/web-suscripcion"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 5s
+                        - match:
                             path: "/v1/graphql/movil"
                             headers:
                               - name: ":method"

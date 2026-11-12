@@ -459,11 +459,17 @@ class ServicioFirmaYPago:
         imagen_archivo_id: str | None = None,
         nombre_firma: str | None = None,
     ) -> tuple[dict[str, Any], str]:
-        """Firma siempre el titular (W03-8). Firmar dos veces devuelve la misma evidencia."""
-        propuesta = self.autorizar(propuesta_id, auth)
+        """Firma siempre el titular (W03-8). Firmar dos veces devuelve la misma evidencia, también
+        si el enlace venció entre un intento y el otro: con el gateway cortando a los 700 ms, la
+        primera respuesta puede perderse aunque la firma sí quedó registrada, y el reintento no
+        debe decir que el enlace venció cuando ya firmó."""
+        # Primero quién es (el token tiene que ser de esta propuesta) sin exigir que siga vigente...
+        propuesta = self.autorizar(propuesta_id, auth, permitir_vencido=True)
         existente = self._repo.obtener_evidencia(propuesta_id)
         if existente is not None:
             return existente, propuesta["estado"]
+        # ...y solo para una firma nueva se exige el enlace vigente.
+        propuesta = self.autorizar(propuesta_id, auth)
         if propuesta["estado"] != "EN_FIRMA":
             raise ErrorFlujo(NO_VALIDA)
         if not (acepta_terminos and autoriza_cobro):

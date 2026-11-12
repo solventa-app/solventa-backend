@@ -109,7 +109,7 @@ variable "redis_encendida" {
 }
 
 variable "instancias_fijas_encendidas" {
-  description = "Si los servicios marcados `instancia_fija` en el manifiesto (los que atiende el usuario: BFF, AUTH, RISK, RATING, PAYMENTS, ACL y los stubs de proveedores) corren con 1 instancia mínima en vez de 0, para que la primera petición no espere un arranque en frío. La CPU sigue limitada a las peticiones. Cobran por hora aunque nadie las use (estimado, sin verificar: ~USD 10 al mes por instancia mínima); es el \"apagado\" de esas instancias en staging (workflow `Costos staging`). Apagadas, los servicios vuelven a mínimo 0 con CPU solo mientras atienden una petición. No tiene efecto si `crear_servicios = false`."
+  description = "Si los servicios marcados `instancia_fija` en el manifiesto (los que atiende el usuario: BFF, AUTH, RISK, RATING, PAYMENTS, ACL, UNDER, POLICY, ALMACENAMIENTO y los stubs de proveedores) corren con 1 instancia mínima en vez de 0, para que la primera petición no espere un arranque en frío. La CPU sigue limitada a las peticiones. Cobran por hora aunque nadie las use (estimado, sin verificar: ~USD 10 al mes por instancia mínima); es el \"apagado\" de esas instancias en staging (workflow `Costos staging`). Apagadas, los servicios vuelven a mínimo 0 con CPU solo mientras atienden una petición. No tiene efecto si `crear_servicios = false`."
   type        = bool
   default     = true
 }
