@@ -184,6 +184,14 @@ class DesenlaceAsistenciaResponse(BaseModel):
     motivo: str | None
 
 
+class UbicarRequest(BaseModel):
+    """HU-M06 (v0.50, B9). En el cuerpo: la dirección no va en la URL ni en el log de acceso."""
+
+    place_id: str | None = None
+    texto: str | None = None
+    idioma: str = "es"
+
+
 class SolicitudKycRequest(BaseModel):
     id_verificacion: str
     cliente_id: str
@@ -904,17 +912,16 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         (v0.50): en el idioma de la app (`es`/`en`)."""
         return {"sugerencias": lugares.autocompletar(texto, pais, idioma)}
 
-    @app.get("/lugares/ubicar", tags=["lugares"])
-    def lugares_ubicar(
-        place_id: str | None = None, texto: str | None = None, idioma: str = "es"
-    ) -> dict:
+    @app.post("/lugares/ubicar", tags=["lugares"])
+    def lugares_ubicar(body: UbicarRequest) -> dict:
         """HU-M06 (v0.50, B9): coordenadas de la dirección que escribió el cliente sin GPS. Con
         `place_id`, Place Details; sin él, Geocoding con el texto (solo Colombia). Siempre 200:
         `encontrada: false` con `DIRECCION_NO_ENCONTRADA` o, si Google no responde o el circuito
         está abierto, `SERVICIO_NO_DISPONIBLE` (regla 4). La dirección no se registra."""
-        idioma = idioma if idioma in ("es", "en") else "es"
-        place_id = (place_id or "").strip()[:300] or None
-        texto = (texto or "").strip()[:200] or None
+        # POST con cuerpo (no query string): la dirección no queda en el log de acceso (regla 6).
+        idioma = body.idioma if body.idioma in ("es", "en") else "es"
+        place_id = (body.place_id or "").strip()[:300] or None
+        texto = (body.texto or "").strip()[:200] or None
         if not place_id and not texto:
             return no_encontrada()
         cache = app.state.cache_lugares

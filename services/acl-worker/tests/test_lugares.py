@@ -136,8 +136,8 @@ def test_cache_por_idioma_sin_guardar_el_texto_ni_los_no_encontrados():
 
 def test_endpoint_ubicar_sin_llave_y_sin_datos():
     with TestClient(app) as c:
-        r = c.get("/lugares/ubicar", params={"texto": "Cra 45 # 22-18", "idioma": "en"})
+        r = c.post("/lugares/ubicar", json={"texto": "Cra 45 # 22-18", "idioma": "en"})
         assert r.status_code == 200 and r.json()["encontrada"] is True
-        r = c.get("/lugares/ubicar")
+        r = c.post("/lugares/ubicar", json={})
         assert r.json()["codigo"] == "DIRECCION_NO_ENCONTRADA"
         assert "lugares" in c.get("/circuitos").json()

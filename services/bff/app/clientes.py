@@ -981,12 +981,8 @@ class ClienteAclHttp:
         return list(respuesta.json()["sugerencias"])
 
     async def ubicar_direccion(self, place_id: str | None, texto: str | None, idioma: str) -> dict:
-        params = {
-            "idioma": idioma,
-            **({"place_id": place_id} if place_id else {}),
-            **({"texto": texto} if texto else {}),
-        }
-        respuesta = await _pedir(self._cliente, "GET", "/lugares/ubicar", params=params)
+        cuerpo = {"idioma": idioma, "place_id": place_id, "texto": texto}
+        respuesta = await _pedir(self._cliente, "POST", "/lugares/ubicar", cuerpo)
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return dict(respuesta.json())
