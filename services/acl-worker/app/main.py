@@ -445,12 +445,12 @@ def _construir_servicio_eventos_parametricos(
     # `AdaptadorIdentidadDidit` con Didit vs. `stub-kyc`).
     autenticacion_clima = (
         None
-        if config.clima_url.startswith("https://api.open-meteo.com")
+        if "api.open-meteo.com" in config.clima_url
         else autenticacion_para(config.autenticacion_servicios, "stub-eventos-parametricos")
     )
     autenticacion_vuelo = (
         None
-        if config.vuelos_url.startswith("https://api.aviationstack.com")
+        if "api.aviationstack.com" in config.vuelos_url
         else autenticacion_para(config.autenticacion_servicios, "stub-eventos-parametricos")
     )
     adaptador_clima = AdaptadorClima(
