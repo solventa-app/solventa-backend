@@ -13,7 +13,14 @@ les agrega una cobertura paramétrica:
   la sonda de recuperación del circuito del ACL Worker (que no consulta una celda fija: construye
   la sintética con cualquier punto, así que no hay colisión real; se eligió a propósito un punto
   distinto al de ejemplo del contrato, `4.61,-74.08`, para no confundir en los logs), con
-  `variable=PRECIPITACION_MM` y `umbral=50` (mm).
+  `variable=VIENTO_KMH` y `umbral=1` (km/h: el viento máximo en 24 h siempre lo supera, así la
+  demo dispara siempre).
+
+Demo en staging (`SEMILLA_CLIENTE_ID=<usuario de AUTH>`): en vez de lo anterior crea 2 pólizas
+de ese cliente para que el push le llegue a su teléfono: VUELO (`SEMILLA_VUELO`, por defecto
+`AV9340`) con `umbral_retraso_min=0` y una cobertura por cada día desde hoy durante `SEMILLA_DIAS`
+(90), para que el Cloud Scheduler que consulta `fecha: "hoy"` siempre encuentre póliza; y CLIMA
+igual a la de arriba.
 
 Es idempotente: los ids de propuesta son fijos y, si la póliza ya tiene coberturas, no se
 duplican (`RepositorioCoberturasParametricas.de_poliza`)."""
@@ -21,7 +28,8 @@ duplican (`RepositorioCoberturasParametricas.de_poliza`)."""
 import logging
 import os
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from app.application.cifrado import cifrador_desde_entorno
 from app.application.repositorio_coberturas_parametricas import RepositorioCoberturasParametricas
@@ -130,12 +138,74 @@ def sembrar(
             VIGENCIA_HASTA,
             latitud=4.62,
             longitud=-74.09,
-            variable="PRECIPITACION_MM",
-            umbral="50",
+            variable="VIENTO_KMH",
+            umbral="1",
             ventana_horas=24,
         )
     creadas.append({"poliza_id": poliza_clima, "tipo": "CLIMA", "celda": "4.62,-74.09"})
 
+    return creadas
+
+
+def sembrar_demo_staging(
+    repositorio: RepositorioPropuestasPostgres,
+    coberturas: RepositorioCoberturasParametricas,
+    cliente_id: str,
+    numero_vuelo: str,
+    dias: int,
+) -> list[dict]:
+    creadas = []
+    sufijo = cliente_id[:12]
+    poliza_vuelo = _sembrar_poliza(
+        repositorio,
+        {
+            "propuesta_id": f"demo-m04-vuelo-{sufijo}",
+            "oferta_id": f"demo-m04-vuelo-oferta-{sufijo}",
+            "cliente_id": cliente_id,
+            "prima": {"valor": "45000", "moneda": "COP"},
+            "cobertura": {"valor": "500000", "moneda": "COP"},
+        },
+    )
+    if not coberturas.de_poliza(poliza_vuelo):
+        hoy = datetime.now(ZoneInfo("America/Bogota")).date()
+        for i in range(dias):
+            coberturas.crear_vuelo(
+                poliza_vuelo,
+                "500000",
+                "COP",
+                VIGENCIA_DESDE,
+                VIGENCIA_HASTA,
+                numero_vuelo=numero_vuelo,
+                fecha_salida=hoy + timedelta(days=i),
+                aeropuerto_origen="BOG",
+                umbral_retraso_min=0,
+            )
+    creadas.append({"poliza_id": poliza_vuelo, "tipo": "VUELO", "numero_vuelo": numero_vuelo})
+
+    poliza_clima = _sembrar_poliza(
+        repositorio,
+        {
+            "propuesta_id": f"demo-m04-clima-{sufijo}",
+            "oferta_id": f"demo-m04-clima-oferta-{sufijo}",
+            "cliente_id": cliente_id,
+            "prima": {"valor": "38000", "moneda": "COP"},
+            "cobertura": {"valor": "400000", "moneda": "COP"},
+        },
+    )
+    if not coberturas.de_poliza(poliza_clima):
+        coberturas.crear_clima(
+            poliza_clima,
+            "400000",
+            "COP",
+            VIGENCIA_DESDE,
+            VIGENCIA_HASTA,
+            latitud=4.62,
+            longitud=-74.09,
+            variable="VIENTO_KMH",
+            umbral="1",
+            ventana_horas=24,
+        )
+    creadas.append({"poliza_id": poliza_clima, "tipo": "CLIMA", "celda": "4.62,-74.09"})
     return creadas
 
 
@@ -149,7 +219,17 @@ def main() -> int:
     try:
         repositorio = RepositorioPropuestasPostgres(pool, cifrador_desde_entorno())
         coberturas = RepositorioCoberturasParametricas(pool)
-        creadas = sembrar(repositorio, coberturas)
+        cliente_id = os.environ.get("SEMILLA_CLIENTE_ID", "").strip()
+        if cliente_id:
+            creadas = sembrar_demo_staging(
+                repositorio,
+                coberturas,
+                cliente_id,
+                os.environ.get("SEMILLA_VUELO", "AV9340").strip(),
+                int(os.environ.get("SEMILLA_DIAS", "90")),
+            )
+        else:
+            creadas = sembrar(repositorio, coberturas)
     finally:
         pool.close()
     log.info("Pólizas paramétricas de demostración listas: %d", len(creadas))

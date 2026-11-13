@@ -156,7 +156,7 @@
     "url_env": "ENVIAR_PUSH_URL",
     "llama": ["auth"],
     "disparador_externo": true,
-    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "SNS_MODO": "stub" },
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "SNS_MODO": "real", "SNS_REGION": "us-east-1", "AWS_ROLE_ARN": "arn:aws:iam::058264236278:role/solventa-enviar-push" },
     "secretos": { "SNS_PLATFORM_APPLICATION_ARN": "sns-platform-application-arn-push" }
   },
   {
