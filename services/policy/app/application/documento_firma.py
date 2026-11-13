@@ -11,6 +11,12 @@ from typing import Any
 
 VERSION_DOCUMENTO = "v1"
 FORMA_COBRO = "con la cuota de tu crédito"
+# KAN-290: la póliza de auto no se cobra con la cuota de un crédito: es recurrente con tarjeta.
+FORMA_COBRO_AUTO = "con tu tarjeta, de forma recurrente"
+NOMBRE_SEGURO = {
+    "VIDA_DEUDOR": "Seguro de vida para tu crédito hipotecario",
+    "AUTO": "Seguro de automóviles todo riesgo",
+}
 
 
 class DocumentoNoGenerable(Exception):
@@ -22,17 +28,19 @@ def construir_documento(propuesta: dict[str, Any]) -> dict[str, Any]:
     if not meses:
         raise DocumentoNoGenerable("la propuesta no trae el plazo")
     prima = propuesta["prima"]
+    producto = propuesta.get("producto") or "VIDA_DEUDOR"
+    forma_cobro = FORMA_COBRO_AUTO if producto == "AUTO" else FORMA_COBRO
     return {
         "version": VERSION_DOCUMENTO,
         "propuesta_id": propuesta["id"],
         "resumen": (
-            f"Seguro de vida para tu crédito hipotecario: prima de {prima['valor']} "
-            f"{prima['moneda']} al mes durante {meses} meses, cobrada {FORMA_COBRO}. "
-            "Al firmar autorizas ese cobro recurrente."
+            f"{NOMBRE_SEGURO.get(producto, NOMBRE_SEGURO['VIDA_DEUDOR'])}: prima de "
+            f"{prima['valor']} {prima['moneda']} al mes durante {meses} meses, cobrada "
+            f"{forma_cobro}. Al firmar autorizas ese cobro recurrente."
         ),
         "monto_mensual": {"valor": prima["valor"], "moneda": prima["moneda"]},
         "meses": meses,
-        "forma_cobro": FORMA_COBRO,
+        "forma_cobro": forma_cobro,
         "cobertura": propuesta["cobertura"],
     }
 
