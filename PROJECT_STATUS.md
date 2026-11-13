@@ -71,10 +71,14 @@ Contrato en **v0.45** (la v0.42 es la póliza de auto, KAN-290, [`plan-poliza-au
 
 ## Pendiente
 
-**Fuera de alcance por decisión (2026-11-10)** ([`alcance-faltante`](docs/alcance-faltante.md)): backend del siniestro
-paramétrico (M04), ciclo de vida de la póliza (renovar, modificar, cancelar, reportes al regulador y ACORD), notificaciones
-push, billetera offline (M03) y escaneo de documentos. **No se revisan ni se desarrollan**; el foco es garantizar lo
-construido (póliza de auto KAN-290 y revisión QA).
+**Fuera de alcance por decisión (2026-11-10)** ([`alcance-faltante`](docs/alcance-faltante.md)): ciclo de vida de la
+póliza (renovar, modificar, cancelar, reportes al regulador y ACORD), billetera offline (M03) y escaneo de documentos.
+**No se revisan ni se desarrollan**; el foco es garantizar lo construido (póliza de auto KAN-290 y revisión QA).
+
+**Entró después de esa decisión (KAN-259, HU-M04, 2026-11-11):** el backend del siniestro paramétrico y las notificaciones
+push ([ADR-11](docs/adr/ADR-11-enviar-push-sns.md)). Hecho en código y en local (`SNS_MODO=stub`, EC016 medido en local
+en [`EC016-2026-11-11`](docs/evidencias/EC016-2026-11-11.md)). **Falta staging:** aplicar `infra/push.tf` (tema
+`notificaciones-push` y su suscripción), el rol de AWS (OIDC de GCP) y la Platform Application de SNS para FCM.
 
 **Staging** (validación con infraestructura aplazada a una fase posterior; por ahora solo código)
 - Medir EC003/EC004/EC005/EC007/EC008-EC012/EC017 y FC-10 (los guiones k6 de FC-10 están sin correr).
