@@ -9,6 +9,8 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import redis
 import rq
@@ -130,7 +132,8 @@ class ConsultaVehiculoRequest(BaseModel):
 
 class ConsultaEventoParametricoRequest(BaseModel):
     """KAN-259 Fase 3. Exactamente uno de los dos bloques de campos, según `tipo`: CLIMA necesita
-    `clave`, `latitud`, `longitud` y `variable`; VUELO necesita `numero_vuelo` y `fecha`. Lo llama
+    `clave`, `latitud`, `longitud` y `variable`; VUELO necesita `numero_vuelo` y `fecha` (`"hoy"` =
+    la fecha de hoy en Bogotá). Lo llama
     un Cloud Scheduler (fase de infra posterior): nunca un usuario esperando una respuesta."""
 
     tipo: str  # "CLIMA" | "VUELO"
@@ -442,12 +445,12 @@ def _construir_servicio_eventos_parametricos(
     # `AdaptadorIdentidadDidit` con Didit vs. `stub-kyc`).
     autenticacion_clima = (
         None
-        if config.clima_url.startswith("https://api.open-meteo.com")
+        if "api.open-meteo.com" in config.clima_url
         else autenticacion_para(config.autenticacion_servicios, "stub-eventos-parametricos")
     )
     autenticacion_vuelo = (
         None
-        if config.vuelos_url.startswith("https://api.aviationstack.com")
+        if "api.aviationstack.com" in config.vuelos_url
         else autenticacion_para(config.autenticacion_servicios, "stub-eventos-parametricos")
     )
     adaptador_clima = AdaptadorClima(
@@ -828,7 +831,14 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         elif body.tipo == "VUELO":
             if body.numero_vuelo is None or body.fecha is None:
                 raise HTTPException(status_code=422, detail="VUELO necesita numero_vuelo y fecha")
-            consulta_vuelo = ConsultaVuelo(numero_vuelo=body.numero_vuelo, fecha=body.fecha)
+            # "hoy": el Cloud Scheduler de demostración no puede calcular la fecha, así que la
+            # resuelve el ACL (hora de Bogotá). Cualquier otra fecha pasa tal cual.
+            fecha = (
+                datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
+                if body.fecha.strip().lower() == "hoy"
+                else body.fecha
+            )
+            consulta_vuelo = ConsultaVuelo(numero_vuelo=body.numero_vuelo, fecha=fecha)
             evento, motivo = app.state.servicio_eventos_parametricos.consultar_vuelo(consulta_vuelo)
         else:
             raise HTTPException(status_code=422, detail=f"tipo desconocido: {body.tipo}")

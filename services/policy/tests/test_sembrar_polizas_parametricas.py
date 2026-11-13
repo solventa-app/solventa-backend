@@ -31,3 +31,15 @@ def test_las_polizas_quedan_emitidas():
     sembrar(repo, coberturas)
     propuesta = repo.obtener("demo-m04-vuelo-prop-01")
     assert propuesta["estado"] == "EMITIDA"
+
+
+def test_demo_staging_crea_un_vuelo_diario_y_clima_para_el_cliente():
+    from app.sembrar_polizas_parametricas import sembrar_demo_staging
+
+    repo = RepositorioPropuestasFalso()
+    coberturas = RepositorioCoberturasParametricasFalso()
+    creadas = sembrar_demo_staging(repo, coberturas, "usuario-felipe-1234", "AV19", 5)
+    assert [c["tipo"] for c in creadas] == ["VUELO", "CLIMA"]
+    assert len(coberturas._coberturas) == 6  # noqa: SLF001 (5 días de vuelo + 1 de clima)
+    assert sembrar_demo_staging(repo, coberturas, "usuario-felipe-1234", "AV19", 5) == creadas
+    assert len(coberturas._coberturas) == 6  # noqa: SLF001

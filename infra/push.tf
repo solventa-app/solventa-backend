@@ -25,7 +25,7 @@
 #      para poder reenviar los mensajes agotados; sin esos dos permisos Pub/Sub no puede completar el
 #      reenvío y los mensajes quedan atascados en la suscripción original.
 #
-#   3. Dos `google_cloud_scheduler_job` DE DEMOSTRACIÓN (sección G del plan) que llaman cada 15 minutos
+#   3. Dos `google_cloud_scheduler_job` DE DEMOSTRACIÓN (sección G del plan) que llaman cada 8 horas (≈90 consultas/mes: cabe en el plan gratis de AviationStack; clima 1 min después para que los dos pushes no lleguen juntos)
 #      a `POST /eventos-parametricos/_consultar` del ACL Worker, uno con el vuelo `AV9340` y otro con la
 #      celda de clima de Bogotá, EXACTAMENTE los datos fijos de `sembrar_polizas_parametricas` de
 #      POLICY. Esto NO es una enumeración real de pólizas vigentes: hoy el ACL Worker no tiene ningún
@@ -56,19 +56,19 @@ locals {
   # Datos fijos de la semilla `python -m app.sembrar_polizas_parametricas` de POLICY (ver
   # services/policy/app/sembrar_polizas_parametricas.py): el vuelo AV9340 (fecha_salida fija
   # 2026-11-11, la que usa la semilla) y la celda de clima de Bogotá (4.62,-74.09), variable
-  # PRECIPITACION_MM. El esquema del cuerpo es `ConsultaEventoParametricoRequest` de
+  # VIENTO_KMH (umbral 1 km/h en la semilla: se cumple siempre, para la demo). El esquema del cuerpo es `ConsultaEventoParametricoRequest` de
   # services/acl-worker/app/main.py.
   cuerpo_demo_vuelo_parametrico = jsonencode({
     tipo         = "VUELO"
-    numero_vuelo = "AV9340"
-    fecha        = "2026-11-11"
+    numero_vuelo = var.vuelo_demo_parametrico
+    fecha        = "hoy" # el ACL la resuelve a la fecha de hoy en Bogotá
   })
   cuerpo_demo_clima_parametrico = jsonencode({
     tipo     = "CLIMA"
     clave    = "4.62,-74.09"
     latitud  = 4.62
     longitud = -74.09
-    variable = "PRECIPITACION_MM"
+    variable = "VIENTO_KMH"
   })
 }
 
@@ -244,8 +244,8 @@ resource "google_cloud_scheduler_job" "consulta_demo_vuelo_parametrico" {
   project     = var.project_id
   region      = var.region
   name        = "consulta-demo-vuelo-parametrico"
-  description = "DEMOSTRACIÓN (no enumera pólizas reales, ver push.tf): consulta cada 15 min el vuelo AV9340 de la semilla de POLICY contra el ACL Worker."
-  schedule    = "*/15 * * * *"
+  description = "DEMOSTRACIÓN (no enumera pólizas reales, ver push.tf): consulta cada 8 h el vuelo AV9340 de la semilla de POLICY contra el ACL Worker."
+  schedule    = "0 */8 * * *"
   time_zone   = "America/Bogota"
 
   attempt_deadline = "60s"
@@ -273,8 +273,8 @@ resource "google_cloud_scheduler_job" "consulta_demo_clima_parametrico" {
   project     = var.project_id
   region      = var.region
   name        = "consulta-demo-clima-parametrico"
-  description = "DEMOSTRACIÓN (no enumera pólizas reales, ver push.tf): consulta cada 15 min la celda de clima de Bogotá (4.62,-74.09) de la semilla de POLICY contra el ACL Worker."
-  schedule    = "*/15 * * * *"
+  description = "DEMOSTRACIÓN (no enumera pólizas reales, ver push.tf): consulta cada 8 h (1 min después del vuelo) la celda de clima de Bogotá (4.62,-74.09) de la semilla de POLICY contra el ACL Worker."
+  schedule    = "1 */8 * * *"
   time_zone   = "America/Bogota"
 
   attempt_deadline = "60s"

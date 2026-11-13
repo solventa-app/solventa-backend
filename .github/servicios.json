@@ -156,7 +156,7 @@
     "url_env": "ENVIAR_PUSH_URL",
     "llama": ["auth"],
     "disparador_externo": true,
-    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "SNS_MODO": "stub" },
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "SNS_MODO": "real", "SNS_REGION": "us-east-1", "AWS_ROLE_ARN": "arn:aws:iam::058264236278:role/solventa-enviar-push" },
     "secretos": { "SNS_PLATFORM_APPLICATION_ARN": "sns-platform-application-arn-push" }
   },
   {
@@ -167,14 +167,14 @@
     "url_env": "ACL_URL",
     "llama": ["stub-open-finance", "stub-open-data", "stub-vehiculos", "stub-eventos-parametricos", "stub-prestadores", "stub-pasarela", "stub-firma", "stub-kyc", "stub-notificaciones", "consolidador-fuentes"],
     "disparador_externo": true,
-    "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "NOTIFICACIONES_PROVEEDOR": "resend", "IDENTIDAD_URL": "https://verification.didit.me", "CORREO_REMITENTE": "Solventa <avisos@solventa.globalspark.io>", "PLACES_PROVEEDOR": "google" },
+    "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "NOTIFICACIONES_PROVEEDOR": "resend", "IDENTIDAD_URL": "https://verification.didit.me", "CORREO_REMITENTE": "Solventa <avisos@solventa.globalspark.io>", "PLACES_PROVEEDOR": "google", "CLIMA_URL": "https://api.open-meteo.com", "VUELOS_URL": "http://api.aviationstack.com" },
     "secretos": {
       "REDIS_URL": "redis-url-acl",
       "COLA_RECONCILIACION_REDIS_URL": "redis-url-cola-reconciliacion",
       "DIDIT_API_KEY": "didit-api-key",
       "RESEND_API_KEY": "resend-api-key",
       "IDENTIDAD_LLAVE_CACHE": "clave-cache-identidad",
-      "GOOGLE_PLACES_API_KEY": "google-places-api-key"
+      "GOOGLE_PLACES_API_KEY": "google-places-api-key", "AVIATIONSTACK_API_KEY": "aviationstack-llave"
     }
   },
   {
