@@ -44,6 +44,7 @@ from app.application.clientes import (
 )
 from app.application.configuracion import Configuracion
 from app.application.repositorio import RepositorioSiniestrosMongo
+from app.application.rutas import RepositorioAuditoriaRutas, ServicioRutas
 from app.application.servicio_parametricos import ServicioParametricos
 from app.application.servicio_siniestros import (
     DependenciaNoDisponible,
@@ -150,6 +151,15 @@ class SolicitudAsistenciaRequest(BaseModel):
     origen_ubicacion: Literal["GPS", "DIRECCION"] | None = None
 
 
+class RutasRequest(BaseModel):
+    """HU-M06 (v0.51, B8): lo arma el BFF con el CLIENTE del token. Los destacados van primero."""
+
+    cliente_id: str = Field(min_length=1)
+    latitud: float = Field(ge=-90, le=90)
+    longitud: float = Field(ge=-180, le=180)
+    prestador_ids: list[str] = Field(max_length=10)
+
+
 class CancelarAsistenciaRequest(BaseModel):
     cliente_id: str = Field(min_length=1)
 
@@ -180,10 +190,11 @@ def create_app(
     reiniciar: Callable[[], int] | None = None,
     catalogo=None,
     asistencias: ServicioAsistencias | None = None,
+    rutas: ServicioRutas | None = None,
     parametricos: ServicioParametricos | None = None,
 ) -> FastAPI:
-    """`servicio`, `reiniciar`, `catalogo`, `asistencias` y `parametricos` permiten inyectar dobles
-    de prueba sin levantar MongoDB (ver `tests/fakes.py`)."""
+    """`servicio`, `reiniciar`, `catalogo`, `asistencias`, `rutas` y `parametricos` permiten
+    inyectar dobles de prueba sin levantar MongoDB (ver `tests/fakes.py`)."""
     config = config or Configuracion.desde_entorno()
 
     @asynccontextmanager
@@ -195,6 +206,7 @@ def create_app(
         app.state.reiniciar = reiniciar
         app.state.catalogo = catalogo
         app.state.asistencias = asistencias
+        app.state.rutas = rutas
         app.state.parametricos = parametricos
         if servicio is not None:
             app.state.servicio = servicio
@@ -213,14 +225,19 @@ def create_app(
                     cliente_mongo, config.mongo_db, config.lectura_max_ms
                 )
             modo = config.autenticacion_servicios
+            acl = ClienteRedPrestadores(
+                config.acl_url,
+                config.servicios_timeout_segundos,
+                autenticacion_para(modo, "acl-worker"),
+            )
+            repo_asistencias = RepositorioAsistenciasMongo(cliente_mongo, cifrador, config.mongo_db)
             if app.state.asistencias is None:
-                app.state.asistencias = ServicioAsistencias(
-                    RepositorioAsistenciasMongo(cliente_mongo, cifrador, config.mongo_db),
-                    ClienteRedPrestadores(
-                        config.acl_url,
-                        config.servicios_timeout_segundos,
-                        autenticacion_para(modo, "acl-worker"),
-                    ),
+                app.state.asistencias = ServicioAsistencias(repo_asistencias, acl)
+            if app.state.rutas is None:
+                app.state.rutas = ServicioRutas(
+                    repo_asistencias.prestador,
+                    acl,
+                    RepositorioAuditoriaRutas(cliente_mongo, cifrador, config.mongo_db),
                 )
             policy = ClientePolicy(
                 config.policy_url,
@@ -335,6 +352,16 @@ def create_app(
         """HU-M06 (KAN-265): idempotente por `id_solicitud`; reenviar una NO_CONFIRMADA
         reintenta."""
         return _asistencia(lambda: app.state.asistencias.solicitar(body.model_dump(mode="json")))
+
+    @app.post("/rutas", tags=["asistencia"])
+    def rutas_prestadores(body: RutasRequest) -> dict:
+        """HU-M06 (v0.51, B8): tiempos y rutas de los prestadores hacia el cliente, con su
+        registro en `auditoria_rutas`. Siempre 200: sin rutas si el proveedor falla."""
+        return {
+            "rutas": app.state.rutas.consultar(
+                body.cliente_id, body.latitud, body.longitud, body.prestador_ids
+            )
+        }
 
     @app.post("/asistencias/{asistencia_id}/cancelar", tags=["asistencia"])
     def cancelar_asistencia(asistencia_id: str, body: CancelarAsistenciaRequest) -> dict:

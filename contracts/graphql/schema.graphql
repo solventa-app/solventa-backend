@@ -1245,6 +1245,17 @@ type Prestador {
   fotoUrl: String # foto de la sede; null = la app muestra el placeholder del tipo
 }
 
+# v0.51 (HU-M06, B8): tiempo y ruta de un prestador hasta el cliente, por el ACL (Mapbox Matrix y Directions; simulado
+# en local). Para pintar en la app las rutas tipo semáforo. Cada consulta queda en `auditoria_rutas` (CLAIMS) con la
+# ubicación y la dirección aproximada cifradas, 90 días.
+type RutaPrestador {
+  prestadorId: ID!
+  distanciaMetros: Int!
+  duracionSegundos: Int!
+  geometria: String # polyline6, del prestador al cliente; solo los 3 primeros de prestadorIds
+  estimado: Boolean! # true = simulado (línea recta), no tráfico real
+}
+
 type CatalogoPrestadores {
   version: String! # versión vigente en el backend (AAAA-MM-DD.n)
   vigente: Boolean! # true si versionLocal ya es la vigente: entonces prestadores viene vacía
@@ -1392,6 +1403,9 @@ type Query {
   # v0.50 (HU-M06, B9): coordenadas de la dirección escrita, por el ACL (Place Details con `placeId` de
   # `autocompletarDireccion`, o Geocoding con `texto`; solo Colombia). Solo CLIENTE. La dirección no se registra.
   ubicarDireccion(placeId: String = null, texto: String = null): UbicacionDireccion!
+  # v0.51 (HU-M06, B8): solo CLIENTE; hasta 10 prestadores, los destacados primero. Si el proveedor falla, lista vacía
+  # (la app usa tiempos aproximados): nunca un error.
+  rutasPrestadores(latitud: Float!, longitud: Float!, prestadorIds: [ID!]!): [RutaPrestador!]!
 }
 
 type Mutation {

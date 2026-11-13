@@ -269,3 +269,28 @@ def test_con_origen_direccion_la_direccion_es_obligatoria_y_no_llama_a_claims():
     r = _pedir(claims, SOLICITAR, {"e": _entrada(origenUbicacion="DIRECCION", direccion=" ")})
     assert r["data"]["solicitarAsistencia"]["codigo"] == "DATOS_INVALIDOS"
     assert all(n != "solicitar_asistencia" for n, *_ in claims.llamadas)
+
+
+# ---------- v0.51 (HU-M06, B8): rutas de los prestadores ----------
+
+RUTAS = """query($la: Float!, $lo: Float!, $ids: [ID!]!) {
+  rutasPrestadores(latitud: $la, longitud: $lo, prestadorIds: $ids) {
+    prestadorId distanciaMetros duracionSegundos geometria estimado } }"""
+
+
+def test_rutas_con_el_cliente_del_token_y_geometria_de_los_primeros():
+    claims = ClaimsFalso()
+    ids = ["p1", "p2", "p3", "p4"]
+    r = _pedir(claims, RUTAS, {"la": 4.67, "lo": -74.04, "ids": ids})["data"]["rutasPrestadores"]
+    assert [x["prestadorId"] for x in r] == ids
+    assert [x["geometria"] is not None for x in r] == [True, True, True, False]
+    assert ("rutas", "cli-1", ids) in claims.llamadas
+
+
+def test_rutas_si_claims_falla_lista_vacia_y_solo_el_cliente():
+    claims = ClaimsFalso()
+    claims.error = ErrorServicio("HTTP 503")
+    r = _pedir(claims, RUTAS, {"la": 4.67, "lo": -74.04, "ids": ["p1"]})
+    assert r["data"]["rutasPrestadores"] == []
+    r = _pedir(ClaimsFalso(), RUTAS, {"la": 4.67, "lo": -74.04, "ids": ["p1"]}, rol="ASESOR")
+    assert r["errors"][0]["message"] == MENSAJE_SIN_PERMISO

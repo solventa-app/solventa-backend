@@ -41,6 +41,11 @@ class PuertoLugares(Protocol):
         """Lanza si el proveedor no responde (lo cuenta el Circuit Breaker del endpoint)."""
         ...
 
+    def inversa(self, latitud: float, longitud: float) -> str | None:
+        """HU-M06 (v0.51, B8): dirección aproximada en español de un punto, para la auditoría de
+        rutas. `None` si no hay. Lanza si el proveedor no responde."""
+        ...
+
 
 def _idioma(idioma: str | None) -> str:
     return idioma if idioma in IDIOMAS else "es"
@@ -100,6 +105,9 @@ class AdaptadorLugaresStub:
         lat = self.CENTRO[0] + ((semilla % 200) - 100) / 20000
         lon = self.CENTRO[1] + (((semilla // 200) % 200) - 100) / 20000
         return encontrada(round(lat, 6), round(lon, 6), texto)
+
+    def inversa(self, latitud: float, longitud: float) -> str | None:
+        return f"Cerca de {latitud:.3f}, {longitud:.3f} (simulada)"
 
     def validar(self, place_id: str) -> dict[str, Any]:
         partes = place_id.split(":", 2)
@@ -202,6 +210,21 @@ class AdaptadorLugaresGoogle:
         except (KeyError, TypeError, ValueError):
             return no_encontrada()
 
+    def inversa(self, latitud: float, longitud: float) -> str | None:
+        """Geocoding inverso, siempre en español (soporte y auditoría la leen igual)."""
+        r = self._cliente.get(
+            f"{_URL}/geocode/json",
+            params={
+                "latlng": f"{latitud},{longitud}",
+                "key": self._llave,
+                "language": "es",
+                "result_type": "street_address|route|neighborhood",
+            },
+        )
+        r.raise_for_status()
+        resultados = r.json().get("results") or []
+        return resultados[0].get("formatted_address") if resultados else None
+
 
 class AdaptadorLugaresSinLlave:
     """`PLACES_PROVEEDOR=google` sin una llave real (el secreto aún tiene su valor marcador): nunca
@@ -217,6 +240,9 @@ class AdaptadorLugaresSinLlave:
 
     def ubicar(self, place_id: str | None, texto: str | None, idioma: str) -> dict[str, Any]:
         return no_encontrada(SERVICIO_NO_DISPONIBLE)
+
+    def inversa(self, latitud: float, longitud: float) -> str | None:
+        return None
 
 
 # Valor que Terraform deja en un secreto hasta que se carga el real (infra/servicios.tf).
@@ -257,6 +283,24 @@ class CacheLugares:
         except Exception:
             return None
         return json.loads(valor) if valor else None
+
+    def _clave_inversa(self, latitud: float, longitud: float) -> str:
+        # Celda de ~100 m (B8): no se paga una llamada por cada apertura del mapa.
+        celda = f"{round(latitud / 0.0009)}:{round(longitud / 0.0009)}"
+        return f"lugares:inversa:{hashlib.sha256(celda.encode()).hexdigest()}"
+
+    def obtener_inversa(self, latitud: float, longitud: float) -> str | None:
+        try:
+            valor = self._almacen.get(self._clave_inversa(latitud, longitud))
+        except Exception:
+            return None
+        return valor.decode() if isinstance(valor, bytes) else valor
+
+    def guardar_inversa(self, latitud: float, longitud: float, direccion: str) -> None:
+        try:
+            self._almacen.set(self._clave_inversa(latitud, longitud), direccion, ex=self._ttl)
+        except Exception:
+            LOG.warning("Redis no guardó la dirección aproximada en caché")
 
     def guardar(self, place_id: str | None, texto: str | None, idioma: str, r: dict) -> None:
         if not r.get("encontrada"):
