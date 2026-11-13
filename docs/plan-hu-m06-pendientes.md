@@ -52,6 +52,7 @@ Revisión del 2026-11-12 contra `develop` (mobile `8dac02f`, backend `fb3b4c6`).
 | A31 | Con la app abierta y la pestaña «Mis asistencias» visible, al llegar se cancela la notificación del sistema y se muestra «X llegó · Ver». En otra pantalla de la app sí puede salir la del sistema | El reloj de 1 s solo corre con la pestaña visible (4.3) |
 | A32 | «Mis asistencias» muestra el estado vacío también si solo hay canceladas (no se listan) | Propuesta del plan (4.1) |
 | A33 | La barra inferior ahora toma los textos del catálogo (ES/EN); antes estaban fijos en español en el sistema de diseño | Regla de l10n del repo |
+| A34 | `.github/servicios.json` del `acl-worker` recupera `MAPAS_PROVEEDOR: mapbox` y el secreto `MAPBOX_TOKEN: mapbox-token`, junto a lo de KAN-259 (#618: `CLIMA_URL`, `VUELOS_URL`, `aviationstack-llave`) | Al integrar develop en #614 y #615 desde GitHub, el conflicto se resolvió con solo el lado de develop y staging quedaba con rutas simuladas. Antes de desplegar, cargar el valor de `mapbox-token` (Anexo B) |
 | A18 | Los pines de Mapbox no son accesibles con TalkBack (son anotaciones nativas): la lista de la hoja tiene los mismos prestadores y acciones. En el mapa falso sí tienen etiqueta | Limitación del SDK |
 
 ### Avance por fase
