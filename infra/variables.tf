@@ -317,3 +317,9 @@ variable "crear_push" {
   default     = false
 }
 
+
+variable "vuelo_demo_parametrico" {
+  description = "Vuelo (IATA) que consulta cada 8 h el Cloud Scheduler de demostración de KAN-259, con `fecha = \"hoy\"`. Debe coincidir con `SEMILLA_VUELO` de la semilla paramétrica de POLICY."
+  type        = string
+  default     = "AV9340"
+}
