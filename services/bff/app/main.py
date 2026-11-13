@@ -59,6 +59,12 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 configurar_trazas("bff", instrumentos=("httpx",))
 
 CANALES = ("web", "app", "movil")
+# Ruta aparte del canal web para el flujo de suscripción (firma, pago y emisión). Sirve el mismo
+# esquema y el mismo contexto que `web`, pero el gateway le da un plazo propio (5 s): esas
+# operaciones tardan de 1,5 a 3,5 s (imagen de la firma, ACL, contrato cifrado, KMS) y a los
+# 700 ms el gateway devolvía 504 con la firma ya registrada. El resto del canal web conserva el
+# corte duro de 700 ms (HA-LAT-004).
+RUTA_SUSCRIPCION = "web-suscripcion"
 
 logger_socios = logging.getLogger("bff.socios")
 # Tareas de registro de consumo en vuelo: se guardan para que no las recoja el recolector.
@@ -221,6 +227,11 @@ def create_app(
             GraphQLRouter(schema, context_getter=contexto_para(canal)),
             prefix=f"/v1/graphql/{canal}",
         )
+
+    app.include_router(
+        GraphQLRouter(schema, context_getter=contexto_para("web")),
+        prefix=f"/v1/graphql/{RUTA_SUSCRIPCION}",
+    )
 
     # ---------- API de socios (HU-W07) ----------
     app.include_router(construir_router())
