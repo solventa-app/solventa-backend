@@ -106,7 +106,7 @@ resource "google_secret_manager_secret_version" "mongo_uri_rating" {
 }
 
 # CLAIMS (HU-W04) es el escritor único de su propia base `claims` en el mismo cluster: su usuario solo tiene
-# `readWrite` sobre esa base, nunca sobre `risk` (regla 1: nadie lee ni escribe la base de otro). La URL no lleva
+# `readWrite` y `dbAdmin` sobre esa base, nunca sobre `risk` (regla 1: nadie lee ni escribe la base de otro). La URL no lleva
 # readPreference: claims la fija en el código (secundaria para la bandeja y el detalle, W04-2).
 resource "random_password" "mongo_atlas_claims" {
   count   = var.crear_mongo_atlas ? 1 : 0
@@ -123,6 +123,14 @@ resource "mongodbatlas_database_user" "claims" {
 
   roles {
     role_name     = "readWrite"
+    database_name = "claims"
+  }
+
+  # Las migraciones de CLAIMS (`collMod` para fijar el `$jsonSchema` de colecciones que ya existen, p. ej. la 0007 de
+  # prestadores y asistencias) lo exigen: sin él Atlas responde «user is not allowed to do action [collMod]» (código
+  # 8000) y el paso `migrar (claims)` del despliegue cae. `dbAdmin` es solo de la base `claims`, no da acceso a `risk`.
+  roles {
+    role_name     = "dbAdmin"
     database_name = "claims"
   }
 }
