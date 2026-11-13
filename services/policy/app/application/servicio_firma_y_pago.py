@@ -45,6 +45,7 @@ from app.application.cliente_payments import (
 )
 from app.application.cliente_under import PuertoUnder, UnderNoDisponible
 from app.application.documento_firma import (
+    NOMBRE_SEGURO,
     VERSION_DOCUMENTO,
     DocumentoNoGenerable,
     construir_documento,
@@ -568,7 +569,9 @@ class ServicioFirmaYPago:
                 propuesta["cliente_id"],
                 prima["valor"],
                 prima["moneda"],
-                "Seguro de vida para tu crédito hipotecario",
+                NOMBRE_SEGURO.get(
+                    propuesta.get("producto") or "VIDA_DEUDOR", NOMBRE_SEGURO["VIDA_DEUDOR"]
+                ),
                 url_retorno,
                 idioma,
             )
