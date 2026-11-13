@@ -199,7 +199,14 @@ class PuertoAcl(Protocol):
     async def tasas_cambio(self) -> dict[str, str]: ...
 
     # T19: Places detrás del ACL. Si falla, el BFF degrada a «sin verificar».
-    async def autocompletar_direccion(self, texto: str, pais: str | None) -> list[dict]: ...
+    async def autocompletar_direccion(
+        self, texto: str, pais: str | None, idioma: str = "es"
+    ) -> list[dict]: ...
+
+    # HU-M06 (v0.50, B9)
+    async def ubicar_direccion(
+        self, place_id: str | None, texto: str | None, idioma: str
+    ) -> dict: ...
 
     async def validar_direccion(self, place_id: str) -> dict: ...
 
@@ -279,6 +286,9 @@ class PuertoPolicy(Protocol):
     async def documento_firma(self, propuesta_id: str) -> dict | None: ...
 
     async def obtener_poliza(self, poliza_id: str) -> dict | None: ...
+
+    # KAN-259 Fase 5 (HU-M04): la cobertura paramétrica vigente de una póliza puntual.
+    async def coberturas_parametricas_de_poliza(self, poliza_id: str) -> list[dict]: ...
 
     async def generar_documento(self, poliza_id: str, asegurado: str | None) -> bytes | None: ...
 
@@ -431,6 +441,9 @@ class PuertoClaims(Protocol):
     async def reportar(self, reporte: dict) -> dict: ...
 
     async def de_cliente(self, cliente_id: str) -> list[dict]: ...
+
+    # KAN-259 Fase 5 (HU-M04): los siniestros paramétricos ya liquidados de estas pólizas.
+    async def parametricos_de_polizas(self, poliza_ids: list[str]) -> list[dict]: ...
 
     async def solicitar_asistencia(self, solicitud: dict) -> dict: ...
 
@@ -964,12 +977,21 @@ class ClienteAclHttp:
         self._tasas_vencen = ahora + TTL_TASAS_SEGUNDOS
         return self._tasas
 
-    async def autocompletar_direccion(self, texto: str, pais: str | None) -> list[dict]:
-        params = {"texto": texto, **({"pais": pais} if pais else {})}
+    async def autocompletar_direccion(
+        self, texto: str, pais: str | None, idioma: str = "es"
+    ) -> list[dict]:
+        params = {"texto": texto, "idioma": idioma, **({"pais": pais} if pais else {})}
         respuesta = await _pedir(self._cliente, "GET", "/lugares/autocompletar", params=params)
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return list(respuesta.json()["sugerencias"])
+
+    async def ubicar_direccion(self, place_id: str | None, texto: str | None, idioma: str) -> dict:
+        cuerpo = {"idioma": idioma, "place_id": place_id, "texto": texto}
+        respuesta = await _pedir(self._cliente, "POST", "/lugares/ubicar", cuerpo)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return dict(respuesta.json())
 
     async def validar_direccion(self, place_id: str) -> dict:
         respuesta = await _pedir(
@@ -1225,6 +1247,19 @@ class ClientePolicyHttp:
 
     async def obtener_poliza(self, poliza_id: str) -> dict | None:
         return _json_o_none(await _pedir(self._cliente, "GET", f"/polizas/{poliza_id}"))
+
+    async def coberturas_parametricas_de_poliza(self, poliza_id: str) -> list[dict]:
+        """KAN-259 Fase 5 (HU-M04): la(s) cobertura(s) paramétrica(s) de una póliza puntual, para
+        `miCoberturaParametrica` en el BFF. Vacía si la póliza no tiene ninguna."""
+        respuesta = await _pedir(
+            self._cliente,
+            "GET",
+            "/interno/coberturas-parametricas",
+            params={"poliza_id": poliza_id},
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
 
     async def generar_documento(self, poliza_id: str, asegurado: str | None) -> bytes | None:
         """El PDF de la póliza, o `None` si no existe. El nombre del asegurado va en el CUERPO:
@@ -1709,6 +1744,21 @@ class ClienteClaimsHttp:
 
     async def de_cliente(self, cliente_id: str) -> list[dict]:
         respuesta = await _pedir(self._cliente, "GET", f"/clientes/{cliente_id}/siniestros")
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def parametricos_de_polizas(self, poliza_ids: list[str]) -> list[dict]:
+        """KAN-259 Fase 5: `?poliza_id=a&poliza_id=b` (httpx repite el parámetro por cada
+        elemento de la lista)."""
+        if not poliza_ids:
+            return []
+        respuesta = await _pedir(
+            self._cliente,
+            "GET",
+            "/siniestros/parametricos",
+            params={"poliza_id": poliza_ids},
+        )
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()

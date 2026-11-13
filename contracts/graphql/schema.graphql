@@ -1054,6 +1054,46 @@ type SiniestroReportado {
 # identidad verificada o servicio caído con reintento).
 union ResultadoReporteSiniestro = SiniestroReportado | ErrorSiniestro
 
+# ---------- Indemnización y cobertura paramétrica (v0.48, KAN-259, HU-M04 Fase 5) ----------
+# Lo que la app móvil mostrará en la Fase 6 (fuera de este contrato) al tocar el push de una indemnización
+# paramétrica (vuelo o clima) ya liquidada automáticamente por CLAIMS (ver evento `evento.parametrico.recibido`).
+
+enum TipoEventoParametrico {
+  VUELO_RETRASO
+  VUELO_CANCELADO
+  # Las 3 variables de clima (precipitación, viento, temperatura) colapsan en un solo tipo por ahora.
+  CLIMA
+}
+
+enum EstadoIndemnizacion {
+  EN_PROCESO
+  # PAYMENTS todavía no dispersa de verdad (toda orden queda PENDIENTE_DISPERSION): este valor no se produce hoy.
+  PAGADA
+}
+
+type Indemnizacion {
+  id: ID!
+  tipo: TipoEventoParametrico!
+  referenciaEvento: String! # el vuelo (AV9340) o la celda ("lat,lon": sin reverse-geocoding)
+  detalleEvento: String! # cuánto superó el umbral: "+180min", "62 mm", "Cancelado"
+  fechaEvento: DateTime!
+  pagadoEn: DateTime!
+  monto: Monto!
+  estado: EstadoIndemnizacion!
+  # Nunca un número de cuenta real (regla #6): PAYMENTS solo guarda un método genérico de transferencia.
+  metodoTransferencia: String
+  polizaAnterior: Boolean! # la cobertura ya no estaba vigente al momento del evento
+}
+
+type ResumenCobertura {
+  producto: String!
+  numeroPoliza: String!
+  vigente: Boolean!
+  vigenteHasta: DateTime!
+  tope: Monto! # el monto fijo de la cobertura paramétrica: no hay un tope acumulado distinto hoy
+  movimientos: [Indemnizacion!]!
+}
+
 input UbicacionReporteInput {
   descripcion: String!
   ciudad: String!
@@ -1186,6 +1226,7 @@ type DireccionValidada {
 enum TipoPrestador {
   MEDICO
   MECANICO
+  GRUA # v0.49
 }
 
 type Prestador {
@@ -1196,6 +1237,12 @@ type Prestador {
   latitud: Float! # WGS84
   longitud: Float!
   activo: Boolean! # false = dado de baja; la app lo descarta
+  # v0.49 (detalle del prestador en la app, HU-M06): el color del pin dice si es aliado Solventa.
+  aliado: Boolean!
+  especialidad: String! # «Urgencias», «Grúa liviana»; vacío si el catálogo aún no la tiene
+  direccion: String! # de la sede; vacía si el catálogo aún no la tiene
+  horario: String # «Abierto 24 h»; null si no se publica
+  fotoUrl: String # foto de la sede; null = la app muestra el placeholder del tipo
 }
 
 type CatalogoPrestadores {
@@ -1230,9 +1277,32 @@ input SolicitudAsistenciaInput {
   prestadorId: ID!
   tipoAsistencia: TipoPrestador!
   descripcion: String = null # opcional, hasta 500 caracteres
-  direccion: String = null # la que el cliente confirmó o corrigió, hasta 200 caracteres
-  latitud: Float! # WGS84, del GPS del teléfono
+  direccion: String = null # la que el cliente confirmó o corrigió, hasta 200 caracteres; obligatoria con DIRECCION
+  latitud: Float! # WGS84, del GPS del teléfono o de la dirección ubicada (`ubicarDireccion`)
   longitud: Float!
+  # v0.50 (HU-M06, B4): de dónde salió la ubicación. Se guarda con la asistencia y en la auditoría.
+  origenUbicacion: OrigenUbicacion! = GPS
+}
+
+# v0.50 (HU-M06, B4 y B9): sin permiso de ubicación o con el GPS apagado, el cliente escribe su dirección; la app la
+# convierte en coordenadas con `ubicarDireccion` y el mapa funciona igual que con GPS.
+enum OrigenUbicacion {
+  GPS
+  DIRECCION
+}
+
+# El backend no devuelve textos para mostrar: la app pone el mensaje en el idioma del usuario.
+enum CodigoUbicacion {
+  DIRECCION_NO_ENCONTRADA # ni Places ni Geocoding la encontraron (o no es de Colombia)
+  SERVICIO_NO_DISPONIBLE # Google no respondió o el circuito del ACL está abierto: reintentar
+}
+
+type UbicacionDireccion {
+  encontrada: Boolean!
+  latitud: Float # WGS84; solo si encontrada
+  longitud: Float
+  direccion: String # normalizada por Google, en el idioma de la app (`Accept-Language`)
+  codigo: CodigoUbicacion # solo si no encontrada
 }
 
 # v0.41 (CA-M06-02): sin permiso de ubicación o con el GPS apagado, el cliente escribe adónde debe llegar el prestador.
@@ -1312,6 +1382,16 @@ type Query {
   # ---------- v0.36 (HU-M06) ----------
   # Sesión de CLIENTE (SIN_SESION si no hay). versionLocal null o distinta de la vigente: la lista completa.
   catalogoPrestadores(versionLocal: String = null): CatalogoPrestadores!
+  # ---------- v0.48 (KAN-259, HU-M04 Fase 5) ----------
+  # Sesión de CLIENTE: el detalle de una indemnización paramétrica. null si no existe, no es paramétrica o la
+  # póliza no es del cliente del token (nunca filtra el expediente de otro cliente).
+  indemnizacion(id: ID!): Indemnizacion
+  # Sesión de CLIENTE: su cobertura paramétrica vigente, con las indemnizaciones ya liquidadas. null si no tiene
+  # ninguna póliza paramétrica.
+  miCoberturaParametrica: ResumenCobertura
+  # v0.50 (HU-M06, B9): coordenadas de la dirección escrita, por el ACL (Place Details con `placeId` de
+  # `autocompletarDireccion`, o Geocoding con `texto`; solo Colombia). Solo CLIENTE. La dirección no se registra.
+  ubicarDireccion(placeId: String = null, texto: String = null): UbicacionDireccion!
 }
 
 type Mutation {
@@ -1457,6 +1537,7 @@ type Mutation {
   solicitarAsistencia(entrada: SolicitudAsistenciaInput!): ResultadoAsistencia!
   # v0.41 (HU-M06, CA-M06-02): lo mismo sin ubicación, con la dirección a mano. Sin dirección: DATOS_INVALIDOS.
   solicitarAsistenciaConDireccion(entrada: SolicitudAsistenciaDireccionInput!): ResultadoAsistencia!
+    @deprecated(reason: "v0.50: usar solicitarAsistencia con las coordenadas de ubicarDireccion y origenUbicacion DIRECCION")
   # Idempotente: cancelar dos veces devuelve la misma asistencia CANCELADA.
   cancelarAsistencia(id: ID!): ResultadoAsistencia!
 }

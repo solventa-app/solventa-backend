@@ -26,9 +26,12 @@ log = logging.getLogger("migraciones.catalogos")
 
 ARCHIVO = Path(__file__).resolve().parent / "datos" / "prestadores.json"
 CONTROL = "prestadores"
-TIPOS = {"MEDICO", "MECANICO"}
+TIPOS = {"MEDICO", "MECANICO", "GRUA"}  # v0.49: GRUA
 VERSION = re.compile(r"^(\d{4}-\d{2}-\d{2})\.(\d+)$")
 CAMPOS = ("nombre", "tipo", "ciudad", "latitud", "longitud", "activo")
+# v0.49: lo que muestra el detalle del prestador. Obligatorios en el archivo; `horario` y
+# `foto_url` pueden ser null (la app muestra el placeholder del tipo sin foto).
+CAMPOS_DETALLE = ("aliado", "especialidad", "direccion", "horario", "foto_url")
 
 
 class ErrorCatalogo(Exception):
@@ -50,7 +53,7 @@ def leer(ruta: Path = ARCHIVO) -> tuple[str, list[dict]]:
     prestadores = datos.get("prestadores", [])
     vistos: set[str] = set()
     for p in prestadores:
-        faltan = {"id", *CAMPOS} - set(p)
+        faltan = {"id", *CAMPOS, *CAMPOS_DETALLE} - set(p)
         if faltan:
             raise ErrorCatalogo(f"prestador {p.get('id')!r} sin {sorted(faltan)}")
         if p["id"] in vistos:
@@ -87,7 +90,9 @@ def sincronizar_prestadores(db, ruta: Path = ARCHIVO, ahora: datetime | None = N
 
     for p in prestadores:
         db["prestadores"].update_one(
-            {"_id": p["id"]}, {"$set": {campo: p[campo] for campo in CAMPOS}}, upsert=True
+            {"_id": p["id"]},
+            {"$set": {campo: p[campo] for campo in (*CAMPOS, *CAMPOS_DETALLE)}},
+            upsert=True,
         )
     db["catalogos"].update_one(
         {"_id": CONTROL},

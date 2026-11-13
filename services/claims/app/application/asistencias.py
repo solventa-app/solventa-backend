@@ -7,31 +7,30 @@ solicitud se escribe en la **primaria** (escritor único: CLAIMS) y se lee de el
   asistencia. Si la primera quedó NO_CONFIRMADA, reenviar vuelve a intentar confirmarla.
 - La ubicación del cliente (adónde debe llegar el prestador) y su descripción son datos personales:
   se guardan cifradas por campo con el id de la asistencia como dueño y nunca van a los logs.
-- Mientras no haya prestadores reales, el desenlace se simula (`ASISTENCIA_SIMULACION`): con
-  `primero_falla` (por defecto) el primer intento queda NO_CONFIRMADA y el reintento se confirma,
-  para que la demo recorra ambos caminos del prototipo (M06-04b y M06-04a).
+- El desenlace lo decide la red de prestadores **detrás del ACL** (regla 2, contrato v0.49, B7 del
+  plan de HU-M06): CLAIMS ya no simula. Mientras no haya prestadores reales, `stubs/prestadores`
+  confirma o no (modo `primero_falla`: el primer intento queda NO_CONFIRMADA y el reintento se
+  confirma) y calcula los minutos. Si el ACL no responde o su circuito está abierto, la asistencia
+  queda NO_CONFIRMADA (regla 4): la app ya sabe reintentar con el mismo `idSolicitud`.
 """
 
 import json
-import math
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Protocol
 
 from pymongo import MongoClient
 
+from app.application.catalogo_prestadores import prestador_desde_documento
 from app.application.cifrado import CifradorCampos
 
-# Mismas reglas que la app (lib/features/assistance/domain/cercania.dart): 20 km/h + 2 min.
-VELOCIDAD_KMH = 20
-ALISTAMIENTO_MIN = 2
-RADIO_TIERRA_KM = 6371
+logger = logging.getLogger("claims.asistencias")
+
 MAX_DESCRIPCION = 500
 MAX_DIRECCION = 200
 
-SIMULACION_PRIMERO_FALLA = "primero_falla"
-SIMULACION_CONFIRMA = "confirma"
-SIMULACIONES = {SIMULACION_PRIMERO_FALLA, SIMULACION_CONFIRMA}
+MOTIVO_SIN_RESPUESTA = "PRESTADOR_SIN_RESPUESTA"
 
 MENSAJE_PRESTADOR_NO_DISPONIBLE = (
     "Este prestador ya no está disponible. Elige otro prestador cercano."
@@ -52,19 +51,12 @@ class ErrorAsistencia(Exception):
         self.codigo = codigo
 
 
-def distancia_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Distancia en línea recta (Haversine)."""
-    d_lat = math.radians(lat2 - lat1)
-    d_lon = math.radians(lon2 - lon1)
-    h = (
-        math.sin(d_lat / 2) ** 2
-        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(d_lon / 2) ** 2
-    )
-    return 2 * RADIO_TIERRA_KM * math.asin(math.sqrt(h))
+class RedPrestadores(Protocol):
+    """La red de prestadores, vista desde CLAIMS: el ACL Worker (`POST /prestadores/asistencias`).
+    Devuelve `estado` (`CONFIRMADA` o `NO_CONFIRMADA`), `minutos_estimados` y `motivo`. Lanza si
+    no responde."""
 
-
-def minutos_estimados(km: float) -> int:
-    return math.ceil(km / VELOCIDAD_KMH * 60) + ALISTAMIENTO_MIN
+    def solicitar(self, pedido: dict) -> dict: ...
 
 
 class RepositorioAsistencias(Protocol):
@@ -88,17 +80,7 @@ class RepositorioAsistenciasMongo:
 
     def prestador(self, prestador_id: str) -> dict | None:
         doc = self._prestadores.find_one({"_id": prestador_id})
-        if doc is None:
-            return None
-        return {
-            "id": doc["_id"],
-            "nombre": doc["nombre"],
-            "tipo": doc["tipo"],
-            "ciudad": doc["ciudad"],
-            "latitud": float(doc["latitud"]),
-            "longitud": float(doc["longitud"]),
-            "activo": doc["activo"],
-        }
+        return None if doc is None else prestador_desde_documento(doc)
 
     def obtener(self, asistencia_id: str) -> dict | None:
         doc = self._asistencias.find_one({"_id": asistencia_id})
@@ -152,26 +134,42 @@ class ServicioAsistencias:
     def __init__(
         self,
         repositorio: RepositorioAsistencias,
-        simulacion: str = SIMULACION_PRIMERO_FALLA,
+        red: RedPrestadores,
         reloj: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
-        if simulacion not in SIMULACIONES:
-            raise ValueError(f"ASISTENCIA_SIMULACION inválida: {simulacion}")
         self._repo = repositorio
-        self._simulacion = simulacion
+        self._red = red
         self._reloj = reloj
 
     def _desenlace(self, asistencia: dict, intento: int) -> dict:
-        """Simulado hasta que existan prestadores reales: CONFIRMADA con el tiempo de llegada
-        desde la ubicación del cliente, o NO_CONFIRMADA porque el prestador no respondió."""
-        if self._simulacion == SIMULACION_PRIMERO_FALLA and intento == 1:
-            return {"estado": "NO_CONFIRMADA", "motivo": "PRESTADOR_SIN_RESPUESTA"}
+        """Lo decide la red de prestadores por el ACL. Si no responde, NO_CONFIRMADA (regla 4).
+        La ubicación viaja al prestador (es adónde debe llegar), nunca a los logs."""
         p, u = asistencia["prestador"], asistencia["ubicacion"]
-        if u["latitud"] is None or u["longitud"] is None:
-            # Dirección a mano (CA-M06-02): sin coordenadas no hay cómo estimar la llegada.
-            return {"estado": "CONFIRMADA", "motivo": None, "minutos_estimados": None}
-        km = distancia_km(u["latitud"], u["longitud"], p["latitud"], p["longitud"])
-        return {"estado": "CONFIRMADA", "motivo": None, "minutos_estimados": minutos_estimados(km)}
+        pedido = {
+            "asistencia_id": asistencia["id"],
+            "intento": intento,
+            "tipo_asistencia": asistencia["tipo_asistencia"],
+            "prestador_id": p["id"],
+            "prestador_latitud": p["latitud"],
+            "prestador_longitud": p["longitud"],
+            "latitud": u["latitud"],
+            "longitud": u["longitud"],
+        }
+        try:
+            respuesta = self._red.solicitar(pedido)
+        except Exception as error:
+            logger.warning("la red de prestadores no respondió error=%s", type(error).__name__)
+            return {"estado": "NO_CONFIRMADA", "motivo": MOTIVO_SIN_RESPUESTA}
+        if respuesta.get("estado") != "CONFIRMADA":
+            return {
+                "estado": "NO_CONFIRMADA",
+                "motivo": respuesta.get("motivo") or MOTIVO_SIN_RESPUESTA,
+            }
+        return {
+            "estado": "CONFIRMADA",
+            "motivo": None,
+            "minutos_estimados": respuesta.get("minutos_estimados"),
+        }
 
     def solicitar(self, solicitud: dict) -> dict:
         aid = solicitud["id_solicitud"]
@@ -198,7 +196,10 @@ class ServicioAsistencias:
         if direccion and len(direccion) > MAX_DIRECCION:
             raise ErrorAsistencia("DATOS_INVALIDOS", MENSAJE_DIRECCION_LARGA)
         latitud, longitud = solicitud.get("latitud"), solicitud.get("longitud")
-        if (latitud is None or longitud is None) and not direccion:
+        sin_coordenadas = latitud is None or longitud is None
+        # v0.50 (B4): de dónde salió la ubicación; se guarda con la asistencia (y en la auditoría).
+        origen = solicitud.get("origen_ubicacion") or ("DIRECCION" if sin_coordenadas else "GPS")
+        if (sin_coordenadas or origen == "DIRECCION") and not direccion:
             raise ErrorAsistencia("DATOS_INVALIDOS", MENSAJE_DIRECCION_REQUERIDA)
         prestador = self._repo.prestador(solicitud["prestador_id"])
         if prestador is None or not prestador["activo"]:
@@ -217,6 +218,7 @@ class ServicioAsistencias:
                 "latitud": latitud,
                 "longitud": longitud,
                 "direccion": direccion,
+                "origen": origen,
             },
             "intentos": 1,
             "solicitada_en": ahora,

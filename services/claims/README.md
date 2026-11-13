@@ -57,6 +57,34 @@ por campo con AES-GCM (regla 6) y nunca van a los logs.
 | POST | `/asistencias/{id}/cancelar` | HU-M06 (KAN-266): `{cliente_id}`. Idempotente; 404 `NO_ENCONTRADA` si no existe o es de otro cliente |
 | POST | `/_demo/reiniciar` | Solo con `DEMO_REINICIAR=true` (local): vuelve a la semilla. No toca las órdenes de PAYMENTS |
 | POST | `/_demo/siniestros/{id}/vencer?minutos=2` | Solo con `DEMO_REINICIAR=true` (local): el plazo del dictamen de un caso PENDIENTE vence en `minutos` (0 a 1440; 409 si no está pendiente). Sirve para ver el contador llegar a cero y la aprobación automática |
+| POST | `/eventos/parametricos` | KAN-259 (HU-M04, Fase 4): consume `evento.parametrico.recibido` (lo publica el ACL Worker al consultar clima o vuelos). Ver «Siniestros paramétricos» abajo |
+
+## Siniestros paramétricos (KAN-259, HU-M04, Fase 4)
+
+`POST /eventos/parametricos` recibe `evento.parametrico.recibido` (el evento directo o el sobre push de Pub/Sub,
+`{"message": {"data": "<base64>"}}`, igual que `enviar-push`), lo valida contra su esquema (copia sincronizada en
+`app/eventos/` con `scripts/sincronizar_evento_parametrico_claims.py`) y cruza su `clave` y `valor` contra las
+coberturas paramétricas **vigentes** de POLICY (`GET /interno/coberturas-parametricas`, CLAIMS nunca escribe ahí:
+regla #1).
+
+- VUELO: califica si el vuelo se **canceló** o el retraso ≥ `umbral_retraso_min` de la cobertura.
+- CLIMA: califica si el valor medido ≥ `umbral` de la cobertura (misma celda y `variable`).
+- El siniestro paramétrico **no pasa por `reportar()`**: nace ya `APROBADO`, con el mismo orden que `aprobar()` —
+  primero la orden de pago en PAYMENTS (`POST /indemnizaciones`, idempotente), luego el siniestro y su resolución en
+  una sola transacción de MongoDB (W04-9: si publicar el evento falla después, nada se revierte).
+- **Idempotente por `(eventoId, polizaId)`:** el `_id` del siniestro es `uuid5` determinista de esos dos valores
+  (`servicio_parametricos.siniestro_id_determinista`); una reentrega del mismo evento no duplica el pago ni el caso.
+- Al aprobar publica `siniestro.aprobado` (actor `SISTEMA`) y `notificacion.push-solicitada` (plantilla
+  `indemnizacion-liquidada`, ruta `/m04-02/{id}`, catálogo `contracts/plantillas-push.json`) para que `enviar-push`
+  avise al cliente. El `usuarioId` del push es quien firmó la póliza (o, si no firmó, quien la aceptó); si POLICY no
+  responde al pedirlo, el siniestro y el pago ya quedaron hechos y solo se omite el push (se registra en el log).
+- Respuestas: `400` si el evento no decodifica o no cumple el esquema (Pub/Sub no reintenta); `200` si se procesó,
+  haya creado un siniestro o no (un evento sin pólizas que califiquen, o bajo el umbral, no es un error); `500` si
+  algo interno falla (p. ej. POLICY o PAYMENTS no responden), para que Pub/Sub reintente con su backoff — correcto
+  aquí porque es un consumidor asíncrono, no el camino síncrono de un usuario (regla #4 no aplica igual que en el
+  BFF).
+- Pendiente: Cloud Tasks real entre el ACL Worker y este endpoint (hoy se llama directo y síncrono, como `aprobar()`
+  hace con PAYMENTS), Terraform del tema/suscripción y verificarlo en staging (fuera de esta fase).
 
 **Errores:** un error de negocio es `409 {"detail": mensaje}` (caso inexistente o ya resuelto, perito no disponible,
 texto de más de 500 caracteres) y una dependencia caída (POLICY o PAYMENTS) es `503 {"detail": mensaje}`; en los dos
@@ -72,7 +100,7 @@ peticiones simultáneas (verificado: 8 aprobaciones a la vez dejan una resoluci�
 | `MONGO_DB` | `claims` | Base |
 | `LECTURA_MAX_MS` | `500` | Tope de cada lectura en la réplica |
 | `CIFRADO_CLAVE` / `KMS_KEY_NAME` / `CIFRADO_CLAVE_ENVUELTA` | clave local de desarrollo | Igual que RISK (D-04) |
-| `ASISTENCIA_SIMULACION` | `primero_falla` | HU-M06, mientras no haya prestadores reales: `primero_falla` (el primer intento queda NO_CONFIRMADA y el reintento se confirma, para la demo de M06-04b y M06-04a) o `confirma` |
+| `ACL_URL` | `http://localhost:8005` | HU-M06 (v0.49): la red de prestadores está detrás del ACL Worker (`POST /prestadores/asistencias`); el desenlace simulado vive en `stubs/prestadores` (`PRESTADORES_SIMULACION`) |
 
 ## Correr
 
@@ -85,8 +113,8 @@ cd services/claims && python -m pytest
 
 ## Pendiente
 
-- HU-M06: el desenlace de la asistencia es simulado (`ASISTENCIA_SIMULACION`) hasta que haya prestadores reales que
-  acepten o rechacen; falta la verificación en staging.
+- HU-M06: el desenlace de la asistencia lo simula `stubs/prestadores` detrás del ACL (v0.49) hasta que haya
+  prestadores reales que acepten o rechacen; falta la verificación en staging.
 
 - Los plazos en días hábiles no descuentan festivos (falta un calendario oficial).
 - El radicado de los siniestros nuevos llega con HU-M04, cuando el móvil los cree; hoy los crea la semilla

@@ -614,10 +614,29 @@ class AclFalso:
             "degradado": False,
         }
 
-    async def autocompletar_direccion(self, texto: str, pais: str | None) -> list[dict]:
+    async def autocompletar_direccion(
+        self, texto: str, pais: str | None, idioma: str = "es"
+    ) -> list[dict]:
+        self.idiomas_lugares = [*getattr(self, "idiomas_lugares", []), idioma]
         if "lugares" in self.fallan:
             raise ErrorServicio("timeout")
         return [{"place_id": f"stub:{pais or 'CO'}:{texto}", "descripcion": texto}]
+
+    async def ubicar_direccion(self, place_id: str | None, texto: str | None, idioma: str) -> dict:
+        """HU-M06 (v0.50): como el stub del ACL; «noexiste» no se encuentra."""
+        self.idiomas_lugares = [*getattr(self, "idiomas_lugares", []), idioma]
+        if "lugares" in self.fallan:
+            raise ErrorServicio("timeout")
+        valor = (place_id or "").split(":", 2)[-1] if place_id else (texto or "")
+        if "noexiste" in valor:
+            return {"encontrada": False, "codigo": "DIRECCION_NO_ENCONTRADA"}
+        return {
+            "encontrada": True,
+            "latitud": 4.6767,
+            "longitud": -74.0483,
+            "direccion": valor,
+            "codigo": None,
+        }
 
     async def validar_direccion(self, place_id: str) -> dict:
         if "lugares" in self.fallan:
@@ -906,6 +925,8 @@ class PolicyFalso:
         self.firmas: dict[str, dict] = {}
         self.firmas_pedidas: list[tuple[str, bool, str, str]] = []
         self.polizas: dict[str, dict] = {}
+        # KAN-259 Fase 5: poliza_id -> lista de coberturas paramétricas (vacía si no se fijó).
+        self.coberturas_parametricas: dict[str, list[dict]] = {}
         self.documentos_pedidos: list[tuple[str, str | None]] = []
         self.error_documento: Exception | None = None
         self.reconciliaciones: list[str] = []
@@ -1153,6 +1174,13 @@ class PolicyFalso:
             raise self.error
         return self.polizas.get(poliza_id)
 
+    async def coberturas_parametricas_de_poliza(self, poliza_id: str) -> list[dict]:
+        """KAN-259 Fase 5: `self.coberturas_parametricas[poliza_id]`, vacía si no se fijó."""
+        if self.error is not None:
+            raise self.error
+        self.pedidos.append(("coberturas_parametricas", poliza_id))
+        return self.coberturas_parametricas.get(poliza_id, [])
+
     async def generar_documento(self, poliza_id: str, asegurado: str | None) -> bytes | None:
         self.documentos_pedidos.append((poliza_id, asegurado))
         if self.error_documento is not None:
@@ -1377,10 +1405,18 @@ class OnboardingFalso:
 
 PRESTADORES_DE_PRUEBA = [
     {"id": "prs-bog-001", "nombre": "Clínica Norte", "tipo": "MEDICO", "ciudad": "Bogotá",
-     "latitud": 4.6859, "longitud": -74.0524, "activo": True},
+     "latitud": 4.6859, "longitud": -74.0524, "activo": True, "aliado": True,
+     "especialidad": "Urgencias", "direccion": "Cl. 93 # 14-20, Bogotá D.C.",
+     "horario": "Abierto 24 h", "foto_url": None},
+    # Sin los campos de la v0.49: un CLAIMS anterior. El BFF les pone su valor por defecto.
     {"id": "prs-bog-002", "nombre": "Taller AutoAyuda", "tipo": "MECANICO", "ciudad": "Bogotá",
      "latitud": 4.6835, "longitud": -74.0322, "activo": False},
     {"id": "prs-bog-099", "nombre": "Grúas del Norte", "tipo": "GRUA", "ciudad": "Bogotá",
+     "latitud": 4.70, "longitud": -74.05, "activo": True, "aliado": False,
+     "especialidad": "Grúa liviana", "direccion": "Cl. 100 # 19-61", "horario": None,
+     "foto_url": "https://example.test/grua.webp"},
+    # Un tipo que este BFF aún no conoce: se omite.
+    {"id": "prs-bog-098", "nombre": "Bomberos", "tipo": "BOMBEROS", "ciudad": "Bogotá",
      "latitud": 4.70, "longitud": -74.05, "activo": True},
 ]  # fmt: skip
 
@@ -1411,6 +1447,16 @@ class ClaimsFalso:
     async def obtener(self, siniestro_id: str) -> dict | None:
         self._revisar("obtener", siniestro_id)
         return self.siniestros.get(siniestro_id)
+
+    async def parametricos_de_polizas(self, poliza_ids: list[str]) -> list[dict]:
+        """KAN-259 Fase 5: los siniestros paramétricos (`origen == "PARAMETRICO"`) de esas
+        pólizas, del más reciente al más antiguo."""
+        self._revisar("parametricos_de_polizas", tuple(poliza_ids))
+        return [
+            s
+            for s in self.siniestros.values()
+            if s.get("origen") == "PARAMETRICO" and s["poliza_id"] in poliza_ids
+        ]
 
     async def catalogo_prestadores(self, version_local: str | None) -> dict:
         self._revisar("catalogo_prestadores", version_local)

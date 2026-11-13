@@ -572,6 +572,35 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.50 — 2026-11-12
+
+- HU-M06 (KAN-36), fase 3 del plan de pendientes (B4 y B9): sin permiso de ubicación o con el GPS apagado, el cliente
+  escribe su dirección y el mapa funciona igual que con GPS.
+  - `ubicarDireccion(placeId, texto): UbicacionDireccion!` (solo CLIENTE): coordenadas por el ACL con Place Details
+    (`placeId` de `autocompletarDireccion`) o Geocoding (`texto`, solo Colombia), con Circuit Breaker propio
+    (`lugares`), sonda sintética y caché en Redis por idioma (24 h, la llave es un hash). Responde códigos
+    (`DIRECCION_NO_ENCONTRADA`, `SERVICIO_NO_DISPONIBLE`), nunca textos para el usuario.
+  - `SolicitudAsistenciaInput.origenUbicacion: OrigenUbicacion! = GPS` (`GPS` o `DIRECCION`); con `DIRECCION` la
+    dirección es obligatoria. CLAIMS la guarda con la asistencia (`ubicacion.origen`).
+  - `solicitarAsistenciaConDireccion` queda `@deprecated` (sigue funcionando hasta que la app deje de usarla).
+  - El BFF reenvía el idioma de la app (`Accept-Language`) al ACL: `autocompletarDireccion` y `ubicarDireccion`
+    responden en `es` o `en`.
+- Solo cambios aditivos. Afecta al frontend: el móvil (flujo de ubicación 2.0 y M06-02 sin el campo de texto libre).
+
+## v0.49 — 2026-11-12
+
+- HU-M06 (KAN-36), fase 1 del plan de pendientes: catálogo de prestadores con el detalle y la grúa. `TipoPrestador`
+  gana `GRUA` y `Prestador` gana `aliado`, `especialidad`, `direccion`, `horario` y `fotoUrl` (nulos los dos últimos).
+  La versión del catálogo sube a `2026-11-12.1` (17 prestadores: 5 grúas, aliados y no aliados), así que las apps lo
+  vuelven a descargar. CLAIMS `0007` amplía el validador de `prestadores`. Solo cambios aditivos; la app descarta los
+  tipos que no conoce.
+- Sin cambio en GraphQL pero sí de comportamiento: el desenlace de `solicitarAsistencia` ya no lo simula CLAIMS. Lo
+  decide la red de prestadores **detrás del ACL** (regla 2): `POST /prestadores/asistencias` en el ACL Worker, con su
+  Circuit Breaker, contra el nuevo `stubs/prestadores` (puerto 8109). Si el ACL no responde o el circuito está abierto,
+  la asistencia queda `NO_CONFIRMADA` (`PRESTADOR_SIN_RESPUESTA`) y la app reintenta. `ASISTENCIA_SIMULACION` de
+  CLAIMS se retira; el modo vive en `PRESTADORES_SIMULACION` del stub.
+- Afecta al frontend: el móvil (detalle del prestador, color por aliado e ícono de grúa).
+
 ## v0.45 — 2026-11-11
 
 - KAN-259 (notificaciones push, HU-M04): base de dispositivos de push y sesión única por cliente en la app (D3).
@@ -586,7 +615,7 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   el token de FCM y `actualizarPreferenciaPush` desde el interruptor del perfil). Pendiente: la función `enviar-push`
   que de verdad manda el mensaje (fuera de este contrato, no toca GraphQL).
 
-## v0.46 — 2026-11-12
+## Hotfix en `main` — 2026-11-12 (también numerado v0.46; no cambia el esquema, la v0.46 de KAN-259 está abajo)
 
 - KAN-26 (hotfix, HU-W03): ruta GraphQL **`/v1/graphql/web-suscripcion`**, el mismo esquema y el mismo contexto que
   `/v1/graphql/web`, con un plazo propio de **5 s** en el gateway (el resto del canal web conserva los 700 ms).
@@ -598,3 +627,48 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   `verificarCodigo`, `emitirPropuesta`, `reenviarEnlaceFirma`, `solicitarSubidaFirma`, `firmarPorEnlace`, `iniciarPago`
   y `confirmarPago`, y sus consultas), que hasta ahora iba por `/v1/graphql/web`. Hay que integrarla **después** de que
   el backend esté desplegado: la ruta no existe antes.
+
+## v0.46 — 2026-11-11
+
+- KAN-259 (notificaciones push, HU-M04, Fase 2): evento nuevo `notificacion.push-solicitada` (v1,
+  `contracts/events/`) que dispara el envío real por SNS/FCM — lo publica quien resuelve que hay que avisar a un
+  cliente (hoy nadie en producto; pensado para RISK/CLAIMS en fases siguientes) y lo consume el servicio nuevo
+  `enviar-push`. `datos` lleva `idempotencia`, `usuarioId`, `plantilla` (clave del catálogo nuevo
+  `contracts/plantillas-push.json`, nunca texto libre) y, opcionales, `variables`, `ruta`, `ttlSegundos` y
+  `silenciosa`. API REST nueva `openapi/push-v1.json` (`POST /v1/push`, D10: solo cuentas de servicio internas) para
+  quien prefiere no publicar en Pub/Sub directamente. No toca el esquema GraphQL.
+- Afecta al frontend: no (contrato entre servicios; el móvil ya recibe el push sin saber de este contrato).
+
+## v0.47 — 2026-11-11
+
+- KAN-259 (notificaciones push, HU-M04, Fase 3): evento nuevo `evento.parametrico.recibido` (v1,
+  `contracts/events/`), la ingesta que precede al push de indemnización liquidada. El ACL Worker lo publica al
+  consultar Open-Meteo (clima, sin llave) o AviationStack (vuelos, con llave `AVIATIONSTACK_API_KEY`) a través de
+  dos adaptadores nuevos (`app/adapters/clima.py`, `app/adapters/vuelos.py`), cada uno con su propio Circuit Breaker,
+  timeout duro de 700 ms y degradación sin publicar nada si el proveedor falla (regla #4; no hay un 5xx que
+  propagar, porque nadie del camino del usuario espera esta respuesta). `datos` lleva `tipo` (`VUELO`|`CLIMA`),
+  `clave` (vuelo+fecha o celda geográfica, nunca un cliente ni una póliza), `valor`, `medidoEn` y `fuente`, más
+  `cancelado` (solo VUELO) o `variable` (solo CLIMA). Endpoint nuevo `POST /eventos-parametricos/_consultar` en el
+  ACL Worker (lo llamará un Cloud Scheduler en una fase de infra posterior, fuera de esta tarea) y servicio nuevo
+  `stub-eventos-parametricos` que imita las dos APIs reales en local/CI. Nadie consume este evento todavía (CLAIMS lo
+  hará en la Fase 4 del plan de push, fuera de este contrato): es solo el productor, igual que la Fase 2 dejó
+  `notificacion.push-solicitada` publicado sin que nada lo disparara aún en producto.
+- Afecta al frontend: no (contrato entre servicios; sin consumidor todavía).
+
+## v0.48 — 2026-11-11
+
+- KAN-259 (notificaciones push, HU-M04, Fase 5): el BFF expone por GraphQL lo que la app móvil va a necesitar en su
+  Fase 6 para las pantallas M04-03 (detalle) y M04-04 (cobertura) al tocar el push `indemnizacion-liquidada`. Tipos
+  nuevos `Indemnizacion` y `ResumenCobertura`, enums `TipoEventoParametrico` (`VUELO_RETRASO`, `VUELO_CANCELADO`,
+  `CLIMA`; las 3 variables climáticas colapsan en un solo tipo) y `EstadoIndemnizacion` (`EN_PROCESO`, `PAGADA`: hoy
+  PAYMENTS no dispersa de verdad, así que solo se produce `EN_PROCESO`). Queries nuevas, ambas solo CLIENTE:
+  `indemnizacion(id: ID!): Indemnizacion` (null si no existe, no es paramétrica o la póliza no es del cliente del
+  token) y `miCoberturaParametrica: ResumenCobertura` (sin argumento, resuelve de la póliza paramétrica vigente del
+  cliente; null si no tiene ninguna). Simplificaciones documentadas en `CLAUDE.md` (sub-entrada "Fase 5" de KAN-259):
+  `metodoTransferencia` en vez de un número de cuenta (regla #6, nunca existió ese dato), sin "saldo de prima" (no
+  existe ningún ajuste en el backend) y `referenciaEvento` de clima como `"lat,lon"` (sin reverse-geocoding). CLAIMS
+  guarda ahora `evento_valor`, `evento_umbral`, `evento_variable` y `vigencia_hasta_cobertura` en el siniestro
+  paramétrico (cambio aditivo al documento Mongo, sin migración nueva) y suma `GET /siniestros/parametricos`; POLICY
+  suma el filtro `poliza_id` a `GET /interno/coberturas-parametricas`. Solo cambios aditivos.
+- Afecta al frontend: en teoría sí (son las queries que la Fase 6, fuera de este contrato, va a consumir), pero la
+  app móvil no las llama todavía.

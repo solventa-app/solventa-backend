@@ -307,3 +307,19 @@ variable "almacenamiento_origenes_cors" {
   default     = ["http://localhost:3000", "http://localhost:5173"]
 }
 
+# --------------------------------------------------------------------------------------------------
+# Notificaciones push e ingesta paramétrica (KAN-259, HU-M04, Fase 7 del plan) — push.tf
+# --------------------------------------------------------------------------------------------------
+
+variable "crear_push" {
+  description = "Crea los dos temas de Pub/Sub de KAN-259 (`notificaciones-push` con su suscripción hacia `enviar-push`, y `eventos-parametricos` con DLQ hacia `claims`) y dos Cloud Scheduler de demostración que disparan `POST /eventos-parametricos/_consultar` del ACL Worker para los datos fijos de la semilla de POLICY (vuelo `AV9340` y la celda de clima de Bogotá). Capa gratuita de Pub/Sub y Cloud Scheduler. Apagada a propósito: faltan pasos manuales (Firebase/FCM, la llave real de AviationStack en `aviationstack-llave`, y el rol de federación GCP->AWS de `enviar-push`) antes de que el envío real a FCM funcione; sin esos pasos, `enviar-push` sigue en `SNS_MODO=stub`."
+  type        = bool
+  default     = false
+}
+
+
+variable "vuelo_demo_parametrico" {
+  description = "Vuelo (IATA) que consulta cada 8 h el Cloud Scheduler de demostración de KAN-259, con `fecha = \"hoy\"`. Debe coincidir con `SEMILLA_VUELO` de la semilla paramétrica de POLICY."
+  type        = string
+  default     = "AV9340"
+}

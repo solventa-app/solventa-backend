@@ -12,6 +12,25 @@ from pymongo.read_preferences import SecondaryPreferred
 CONTROL = "prestadores"
 
 
+def prestador_desde_documento(doc: dict) -> dict:
+    """Un prestador como lo ven el BFF y la app. Los campos de la v0.49 tienen un valor por
+    defecto para los documentos que todavía no los tienen (antes de sincronizar el catálogo)."""
+    return {
+        "id": doc["_id"],
+        "nombre": doc["nombre"],
+        "tipo": doc["tipo"],
+        "ciudad": doc["ciudad"],
+        "latitud": float(doc["latitud"]),
+        "longitud": float(doc["longitud"]),
+        "activo": doc["activo"],
+        "aliado": bool(doc.get("aliado", False)),
+        "especialidad": doc.get("especialidad") or "",
+        "direccion": doc.get("direccion") or "",
+        "horario": doc.get("horario"),
+        "foto_url": doc.get("foto_url"),
+    }
+
+
 class CatalogoNoDisponible(Exception):
     """Todavía no hay catálogo cargado (no se corrieron las migraciones)."""
 
@@ -33,18 +52,7 @@ class LectorCatalogoPrestadores:
 
     def prestadores(self) -> list[dict]:
         cursor = self._prestadores.find({}).sort("_id", 1).max_time_ms(self._lectura_max_ms)
-        return [
-            {
-                "id": doc["_id"],
-                "nombre": doc["nombre"],
-                "tipo": doc["tipo"],
-                "ciudad": doc["ciudad"],
-                "latitud": float(doc["latitud"]),
-                "longitud": float(doc["longitud"]),
-                "activo": doc["activo"],
-            }
-            for doc in cursor
-        ]
+        return [prestador_desde_documento(doc) for doc in cursor]
 
 
 def consultar(lector, version_local: str | None) -> dict:

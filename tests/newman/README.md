@@ -94,6 +94,11 @@ Requiere el stack completo: los socios demo los crea `crear-socios-demo` al leva
 están en el entorno (`socio1_*`, `socio2_*`). Se puede repetir: la carpeta 5 cotiza hasta agotar, aunque ya esté
 agotado de una corrida anterior.
 
+**Necesita Prometheus (perfil `observabilidad`).** En el compose el BFF lee las métricas de `prometheus:9090`
+(`METRICAS_FUENTE: prometheus`). Sin él, `GET /v1/estado` y `estadoSistema` (7.4, 8.3 y 8.4) esperan la conexión y el gateway
+corta a los 700 ms con `upstream request timeout`, a veces sí y a veces no. Levántalo con
+`docker compose --profile servicios --profile observabilidad up -d` (o solo `... --profile observabilidad up -d prometheus`).
+
 ```bash
 npx --yes newman@6.2.2 run tests/newman/socios-w07.postman_collection.json \
   -e tests/newman/solventa-local.postman_environment.json
@@ -147,7 +152,8 @@ Catálogo maestro de prestadores y asistencia en sitio por el gateway (KAN-263 a
 | Carpeta | Qué verifica |
 |---|---|
 | 0. Preparación | Sesión de BACKOFFICE, alta de un CLIENTE (alias al azar) y su sesión en el canal `app` |
-| 1. Catálogo versionado | Sin versión: los 12 de la semilla, tipos y coordenadas; con la vigente: `vigente` y lista vacía; con una vieja: completa; `/v1/graphql/app` igual |
+| 4. Dirección escrita y ubicada (v0.50) | `ubicarDireccion` encontrada (en inglés) y no encontrada con su código; solicitar con `origenUbicacion: DIRECCION`, reintento con tiempo de llegada; sin dirección, `DATOS_INVALIDOS`; sin sesión |
+| 1. Catálogo versionado | Sin versión: los 17 de la semilla (v0.49: con grúas, aliados y el detalle), tipos y coordenadas; con la vigente: `vigente` y lista vacía; con una vieja: completa; `/v1/graphql/app` igual |
 | 2. Autorización | Sin sesión: `SIN_SESION`; un BACKOFFICE no lo usa |
 | 3. Asistencia en sitio | Solicitar, reenviar y cancelar (idempotentes), tipo no atendido, prestador inexistente y la dirección a mano sin ubicación (v0.41) |
 

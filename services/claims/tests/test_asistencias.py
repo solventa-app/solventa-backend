@@ -7,12 +7,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.application.asistencias import (
-    SIMULACION_CONFIRMA,
     ErrorAsistencia,
     RepositorioAsistenciasMongo,
     ServicioAsistencias,
-    distancia_km,
-    minutos_estimados,
 )
 from app.application.cifrado import CIFRADO_CLAVE_LOCAL, CifradorAesGcm
 from app.application.configuracion import Configuracion
@@ -62,17 +59,52 @@ def _solicitud(**cambios) -> dict:
     }
 
 
-def _servicio(repo=None, simulacion="primero_falla"):
-    return ServicioAsistencias(repo or RepoAsistenciasFalso(), simulacion, reloj=lambda: AHORA)
+class RedFalsa:
+    """Hace de ACL + `stubs/prestadores`: `primero_falla` no confirma el primer intento; con
+    coordenadas confirma en 6 min, sin ellas sin tiempo. `caida` lanza como un ACL caído."""
+
+    def __init__(self, simulacion="primero_falla"):
+        self.simulacion = simulacion
+        self.pedidos: list[dict] = []
+
+    def solicitar(self, pedido):
+        self.pedidos.append(pedido)
+        if self.simulacion == "caida":
+            raise ConnectionError("ACL no responde")
+        if self.simulacion == "primero_falla" and pedido["intento"] == 1:
+            return {"estado": "NO_CONFIRMADA", "motivo": "PRESTADOR_SIN_RESPUESTA"}
+        minutos = 6 if pedido["latitud"] is not None else None
+        return {"estado": "CONFIRMADA", "minutos_estimados": minutos, "motivo": None}
+
+
+def _servicio(repo=None, simulacion="primero_falla", red=None):
+    return ServicioAsistencias(
+        repo or RepoAsistenciasFalso(), red or RedFalsa(simulacion), reloj=lambda: AHORA
+    )
 
 
 # ---------- Reglas ----------
 
 
-def test_el_tiempo_estimado_usa_las_mismas_reglas_de_la_app():
-    km = distancia_km(4.6760, -74.0480, 4.6859, -74.0524)
-    assert round(km, 2) == 1.2
-    assert minutos_estimados(km) == 6  # ceil(1.2 km a 20 km/h = 3,6 min) + 2
+def test_el_desenlace_lo_decide_la_red_por_el_acl_sin_el_cliente_ni_la_descripcion():
+    red = RedFalsa("confirma")
+    _servicio(red=red).solicitar(_solicitud())
+    (pedido,) = red.pedidos
+    assert pedido == {
+        "asistencia_id": ID, "intento": 1, "tipo_asistencia": "MEDICO",
+        "prestador_id": "prs-bog-001", "prestador_latitud": 4.6859, "prestador_longitud": -74.0524,
+        "latitud": 4.6760, "longitud": -74.0480,
+    }  # fmt: skip
+
+
+def test_si_el_acl_no_responde_queda_no_confirmada_y_se_puede_reintentar():
+    repo = RepoAsistenciasFalso()
+    caida = _servicio(repo, red=RedFalsa("caida")).solicitar(_solicitud())
+    assert caida["estado"] == "NO_CONFIRMADA"
+    assert caida["motivo"] == "PRESTADOR_SIN_RESPUESTA"
+    reintento = _servicio(repo, simulacion="confirma").solicitar(_solicitud())
+    assert reintento["estado"] == "CONFIRMADA"
+    assert repo.asistencias[ID]["intentos"] == 2
 
 
 def test_el_primer_intento_no_se_confirma_y_el_reintento_si():
@@ -109,6 +141,7 @@ def test_con_la_direccion_a_mano_se_confirma_sin_tiempo_estimado():
     assert reintento["minutos_estimados"] is None
     assert repo.asistencias[ID]["ubicacion"] == {
         "latitud": None, "longitud": None, "direccion": "Cra 45 # 22-18",
+        "origen": "DIRECCION",
     }  # fmt: skip
 
 
@@ -122,7 +155,7 @@ def test_sin_ubicacion_la_direccion_es_obligatoria(direccion):
 
 
 def test_reenviar_una_confirmada_la_devuelve_sin_cambios():
-    servicio = _servicio(simulacion=SIMULACION_CONFIRMA)
+    servicio = _servicio(simulacion="confirma")
     primera = servicio.solicitar(_solicitud())
     assert primera["estado"] == "CONFIRMADA"
     assert servicio.solicitar(_solicitud(descripcion="otra cosa")) == primera
@@ -164,7 +197,7 @@ def test_el_mismo_id_de_otro_cliente_no_se_le_entrega():
 
 
 def test_cancelar_es_idempotente():
-    servicio = _servicio(simulacion=SIMULACION_CONFIRMA)
+    servicio = _servicio(simulacion="confirma")
     servicio.solicitar(_solicitud())
     cancelada = servicio.cancelar(ID, "cli-1")
     assert cancelada["estado"] == "CANCELADA"
@@ -181,11 +214,6 @@ def test_cancelar_una_ajena_o_inexistente_es_no_encontrada(aid, cliente):
     with pytest.raises(ErrorAsistencia) as error:
         servicio.cancelar(aid, cliente)
     assert error.value.codigo == "NO_ENCONTRADA"
-
-
-def test_simulacion_desconocida_no_arranca():
-    with pytest.raises(ValueError):
-        ServicioAsistencias(RepoAsistenciasFalso(), "siempre")
 
 
 # ---------- Repositorio Mongo: cifrado por campo ----------
@@ -227,7 +255,7 @@ def test_el_repositorio_guarda_la_ubicacion_y_la_descripcion_cifradas():
 
     leido = repo.obtener(ID)
     assert leido["ubicacion"] == {
-        "latitud": 4.676, "longitud": -74.048, "direccion": "Cra 45 # 22-18"
+        "latitud": 4.676, "longitud": -74.048, "direccion": "Cra 45 # 22-18", "origen": "GPS",
     }  # fmt: skip
     assert leido["descripcion"] == "Dolor en el pecho"
     assert leido["prestador"]["nombre"] == "Clínica Norte"
@@ -268,4 +296,28 @@ def test_http_errores_de_negocio_con_codigo():
         assert r.status_code == 404
         assert r.json()["codigo"] == "NO_ENCONTRADA"
         r = http.post("/asistencias", json=_solicitud(tipo_asistencia="GRUA"))
+        assert r.status_code == 409  # v0.49: GRUA existe, pero esta clínica no la atiende
+        assert r.json()["codigo"] == "TIPO_NO_ATENDIDO"
+        r = http.post("/asistencias", json=_solicitud(tipo_asistencia="BOMBEROS"))
         assert r.status_code == 422
+
+
+def test_v050_con_la_direccion_ubicada_hay_coordenadas_y_origen_direccion():
+    repo = RepoAsistenciasFalso()
+    red = RedFalsa("confirma")
+    r = _servicio(repo, red=red).solicitar(_solicitud(origen_ubicacion="DIRECCION"))
+    assert r["minutos_estimados"] == 6  # con coordenadas, hay tiempo de llegada
+    assert repo.asistencias[ID]["ubicacion"]["origen"] == "DIRECCION"
+    assert red.pedidos[0]["latitud"] == 4.6760
+
+
+def test_v050_con_origen_direccion_la_direccion_es_obligatoria():
+    with pytest.raises(ErrorAsistencia) as error:
+        _servicio().solicitar(_solicitud(origen_ubicacion="DIRECCION", direccion=""))
+    assert error.value.codigo == "DATOS_INVALIDOS"
+
+
+def test_con_gps_el_origen_es_gps_por_defecto():
+    repo = RepoAsistenciasFalso()
+    _servicio(repo).solicitar(_solicitud())
+    assert repo.asistencias[ID]["ubicacion"]["origen"] == "GPS"

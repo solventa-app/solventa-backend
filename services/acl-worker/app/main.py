@@ -9,6 +9,8 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import redis
 import rq
@@ -17,30 +19,43 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 
 from app.adapters.autenticacion_servicios import autenticacion_para
+from app.adapters.clima import AdaptadorClima
 from app.adapters.correo_resend import AdaptadorCorreoResend
 from app.adapters.firma import AdaptadorFirma
 from app.adapters.firma_alterna import AdaptadorFirmaAlterna
 from app.adapters.identidad_didit import AdaptadorIdentidadDidit
 from app.adapters.kyc import AdaptadorKyc
-from app.adapters.lugares import lugares_desde_entorno
+from app.adapters.lugares import (
+    SERVICIO_NO_DISPONIBLE,
+    CacheLugares,
+    lugares_desde_entorno,
+    no_encontrada,
+)
 from app.adapters.notificaciones import AdaptadorNotificaciones
 from app.adapters.open_data import AdaptadorOpenData
 from app.adapters.open_finance import AdaptadorOpenFinance
 from app.adapters.pasarela import AdaptadorPasarela
 from app.adapters.pasarela_alterna import AdaptadorPasarelaAlterna
+from app.adapters.prestadores import AdaptadorPrestadores
 from app.adapters.tasas_cambio import AdaptadorTasasReferencia
 from app.adapters.vehiculos import AdaptadorVehiculos
+from app.adapters.vuelos import AdaptadorVuelo
+from app.application.bus_eventos_parametricos import construir_bus_eventos_parametricos
 from app.application.cache import CacheFuentes
 from app.application.cache_identidad import CacheIdentidad
 from app.application.circuitos import (
+    NOMBRE_CIRCUITO_CLIMA,
     NOMBRE_CIRCUITO_FIRMA,
     NOMBRE_CIRCUITO_IDENTIDAD,
     NOMBRE_CIRCUITO_KYC,
+    NOMBRE_CIRCUITO_LUGARES,
     NOMBRE_CIRCUITO_NOTIFICACIONES,
     NOMBRE_CIRCUITO_OPEN_DATA,
     NOMBRE_CIRCUITO_OPEN_FINANCE,
     NOMBRE_CIRCUITO_PASARELA,
+    NOMBRE_CIRCUITO_PRESTADORES,
     NOMBRE_CIRCUITO_VEHICULOS,
+    NOMBRE_CIRCUITO_VUELO,
     construir_fabrica,
 )
 from app.application.cola_tareas import ColaReconciliacionCloudTasks
@@ -56,17 +71,22 @@ from app.application.reconciliacion import (
     MarcaDedupRedis,
     ProductorReconciliacion,
 )
+from app.application.servicio_eventos_parametricos import ServicioEventosParametricos
 from app.application.servicio_firma import ServicioFirma
 from app.application.servicio_fuentes import ServicioConsultaFuentes
 from app.application.servicio_identidad import DescargadorImagenes, ServicioIdentidad
 from app.application.servicio_kyc import ServicioKyc
 from app.application.servicio_notificaciones import ServicioNotificaciones
 from app.application.servicio_pagos import ServicioCobro
+from app.application.servicio_prestadores import ServicioPrestadores
 from app.application.sonda import SondaRecuperacion
 from app.domain.puertos import (
     Adjunto,
+    ConsultaClima,
     ConsultaFuente,
+    ConsultaVuelo,
     OrdenCobro,
+    PedidoAsistencia,
     SolicitudFirma,
     SolicitudKyc,
     SolicitudNotificacion,
@@ -108,6 +128,30 @@ class ConsultaVehiculoRequest(BaseModel):
     fuente: str
     finalidad: str = "cotizacion-auto"
     forzar_proveedor: bool = False
+
+
+class ConsultaEventoParametricoRequest(BaseModel):
+    """KAN-259 Fase 3. Exactamente uno de los dos bloques de campos, según `tipo`: CLIMA necesita
+    `clave`, `latitud`, `longitud` y `variable`; VUELO necesita `numero_vuelo` y `fecha` (`"hoy"` =
+    la fecha de hoy en Bogotá). Lo llama
+    un Cloud Scheduler (fase de infra posterior): nunca un usuario esperando una respuesta."""
+
+    tipo: str  # "CLIMA" | "VUELO"
+    clave: str | None = None
+    latitud: float | None = None
+    longitud: float | None = None
+    variable: str | None = None
+    numero_vuelo: str | None = None
+    fecha: str | None = None
+
+
+class EventoParametricoResponse(BaseModel):
+    """`publicado = False` no es un error: el proveedor no respondió (circuito abierto o
+    caído) o, en vuelos, no hay dato para ese vuelo+fecha todavía. Siempre 200 (regla #4)."""
+
+    publicado: bool
+    motivo: str | None = None
+    evento: dict | None = None
 
 
 class InvalidarCacheRequest(BaseModel):
@@ -153,6 +197,33 @@ class ResultadoFirmaResponse(BaseModel):
     referencia: str | None
     firmada_en: str | None
     motivo: str | None
+
+
+class PedidoAsistenciaRequest(BaseModel):
+    """HU-M06 (v0.49): lo arma CLAIMS. Del cliente solo viaja adónde debe llegar el prestador."""
+
+    asistencia_id: str = Field(min_length=1, max_length=64)
+    intento: int = Field(ge=1)
+    tipo_asistencia: str = Field(min_length=1, max_length=20)
+    prestador_id: str = Field(min_length=1, max_length=64)
+    prestador_latitud: float = Field(ge=-90, le=90)
+    prestador_longitud: float = Field(ge=-180, le=180)
+    latitud: float | None = Field(default=None, ge=-90, le=90)
+    longitud: float | None = Field(default=None, ge=-180, le=180)
+
+
+class DesenlaceAsistenciaResponse(BaseModel):
+    estado: str
+    minutos_estimados: int | None
+    motivo: str | None
+
+
+class UbicarRequest(BaseModel):
+    """HU-M06 (v0.50, B9). En el cuerpo: la dirección no va en la URL ni en el log de acceso."""
+
+    place_id: str | None = None
+    texto: str | None = None
+    idioma: str = "es"
 
 
 class SolicitudKycRequest(BaseModel):
@@ -362,6 +433,51 @@ def _construir_servicio_vehiculos(
     return {fuente: servicio for fuente in fuentes}, adaptador
 
 
+def _construir_servicio_eventos_parametricos(
+    config: Configuracion, fabrica
+) -> tuple[ServicioEventosParametricos, AdaptadorClima, AdaptadorVuelo]:
+    """KAN-259 Fase 3: clima y vuelos, cada uno con su propio circuito. En local y CI, las dos URLs
+    apuntan a `stub-eventos-parametricos` (mismo host, rutas distintas)."""
+    presupuesto_clima_s = config.presupuesto_proveedor_s("clima")
+    presupuesto_vuelo_s = config.presupuesto_proveedor_s("vuelo")
+    # Open-Meteo y AviationStack son APIs públicas reales, no un Cloud Run privado: el id_token de
+    # servicio a servicio solo aplica contra `stub-eventos-parametricos` (mismo patrón que
+    # `AdaptadorIdentidadDidit` con Didit vs. `stub-kyc`).
+    autenticacion_clima = (
+        None
+        if "api.open-meteo.com" in config.clima_url
+        else autenticacion_para(config.autenticacion_servicios, "stub-eventos-parametricos")
+    )
+    autenticacion_vuelo = (
+        None
+        if "api.aviationstack.com" in config.vuelos_url
+        else autenticacion_para(config.autenticacion_servicios, "stub-eventos-parametricos")
+    )
+    adaptador_clima = AdaptadorClima(
+        config.clima_url,
+        presupuesto_clima_s,
+        auth=autenticacion_clima,
+    )
+    adaptador_vuelo = AdaptadorVuelo(
+        config.vuelos_url,
+        config.aviationstack_api_key,
+        presupuesto_vuelo_s,
+        auth=autenticacion_vuelo,
+    )
+    bus_eventos = construir_bus_eventos_parametricos(config.pubsub_tema_eventos_parametricos)
+    servicio = ServicioEventosParametricos(
+        adaptador_clima,
+        adaptador_vuelo,
+        fabrica,
+        NOMBRE_CIRCUITO_CLIMA,
+        NOMBRE_CIRCUITO_VUELO,
+        presupuesto_clima_s,
+        presupuesto_vuelo_s,
+        bus_eventos,
+    )
+    return servicio, adaptador_clima, adaptador_vuelo
+
+
 def _validar_adjuntos(body: SolicitudNotificacionRequest, maximo_bytes: int) -> list[Adjunto]:
     """Los adjuntos ya validados, o un 422 cuyo mensaje nunca repite el contenido ni el correo."""
     if not body.adjuntos:
@@ -426,6 +542,9 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         servicios_vehiculo, adaptador_vehiculos = _construir_servicio_vehiculos(
             config, fabrica, cache_fuentes
         )
+        servicio_eventos_parametricos, adaptador_clima, adaptador_vuelo = (
+            _construir_servicio_eventos_parametricos(config, fabrica)
+        )
 
         presupuesto_pasarela_s = config.presupuesto_proveedor_s("pasarela")
         # EC031: cambiar de proveedor de pagos es elegir otro adaptador; nada más cambia.
@@ -464,6 +583,16 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             auth=autenticacion_para(config.autenticacion_servicios, "stub-kyc"),
         )
         servicio_kyc = ServicioKyc(adaptador_kyc, fabrica, NOMBRE_CIRCUITO_KYC, presupuesto_kyc_s)
+
+        presupuesto_prestadores_s = config.presupuesto_proveedor_s("prestadores")
+        adaptador_prestadores = AdaptadorPrestadores(
+            config.prestadores_url,
+            presupuesto_prestadores_s,
+            auth=autenticacion_para(config.autenticacion_servicios, "stub-prestadores"),
+        )
+        servicio_prestadores = ServicioPrestadores(
+            adaptador_prestadores, fabrica, NOMBRE_CIRCUITO_PRESTADORES, presupuesto_prestadores_s
+        )
 
         adaptador_identidad = AdaptadorIdentidadDidit(
             config.identidad_url,
@@ -527,9 +656,14 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 NOMBRE_CIRCUITO_OPEN_FINANCE: adaptador_open_finance.sondear,
                 NOMBRE_CIRCUITO_OPEN_DATA: adaptador_open_data.sondear,
                 NOMBRE_CIRCUITO_VEHICULOS: adaptador_vehiculos.sondear,
+                NOMBRE_CIRCUITO_CLIMA: adaptador_clima.sondear,
+                NOMBRE_CIRCUITO_VUELO: adaptador_vuelo.sondear,
                 NOMBRE_CIRCUITO_PASARELA: adaptador_pasarela.sondear,
                 NOMBRE_CIRCUITO_FIRMA: adaptador_firma.sondear,
                 NOMBRE_CIRCUITO_KYC: adaptador_kyc.sondear,
+                NOMBRE_CIRCUITO_PRESTADORES: adaptador_prestadores.sondear,
+                # Sonda sintética: un punto de referencia público, nunca una dirección de cliente.
+                NOMBRE_CIRCUITO_LUGARES: lambda: lugares.ubicar(None, "Parque de la 93", "es"),
                 NOMBRE_CIRCUITO_IDENTIDAD: adaptador_identidad.sondear,
                 NOMBRE_CIRCUITO_NOTIFICACIONES: adaptador_notificaciones.sondear,
             },
@@ -543,10 +677,13 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         app.state.fabrica_circuitos = fabrica
         app.state.servicios_por_fuente = servicios_por_fuente
         app.state.servicios_vehiculo = servicios_vehiculo
+        app.state.servicio_eventos_parametricos = servicio_eventos_parametricos
         app.state.cache_fuentes = cache_fuentes
         app.state.servicio_cobro = servicio_cobro
         app.state.servicio_firma = servicio_firma
         app.state.servicio_kyc = servicio_kyc
+        app.state.servicio_prestadores = servicio_prestadores
+        app.state.cache_lugares = CacheLugares(cache_redis)
         app.state.servicio_identidad = servicio_identidad
         app.state.servicio_notificaciones = servicio_notificaciones
 
@@ -558,9 +695,12 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 adaptador_open_finance.cerrar,
                 adaptador_open_data.cerrar,
                 adaptador_vehiculos.cerrar,
+                adaptador_clima.cerrar,
+                adaptador_vuelo.cerrar,
                 adaptador_pasarela.cerrar,
                 adaptador_firma.cerrar,
                 adaptador_kyc.cerrar,
+                adaptador_prestadores.cerrar,
                 adaptador_identidad.cerrar,
                 descargador_imagenes.cerrar,
                 adaptador_notificaciones.cerrar,
@@ -589,9 +729,13 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             NOMBRE_CIRCUITO_OPEN_FINANCE,
             NOMBRE_CIRCUITO_OPEN_DATA,
             NOMBRE_CIRCUITO_VEHICULOS,
+            NOMBRE_CIRCUITO_CLIMA,
+            NOMBRE_CIRCUITO_VUELO,
             NOMBRE_CIRCUITO_PASARELA,
             NOMBRE_CIRCUITO_FIRMA,
             NOMBRE_CIRCUITO_KYC,
+            NOMBRE_CIRCUITO_PRESTADORES,
+            NOMBRE_CIRCUITO_LUGARES,
             NOMBRE_CIRCUITO_IDENTIDAD,
             NOMBRE_CIRCUITO_NOTIFICACIONES,
         )
@@ -652,6 +796,53 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             de_cache=datos.de_cache,
             degradado=datos.degradado,
         )
+
+    @app.post(
+        "/eventos-parametricos/_consultar",
+        tags=["eventos-parametricos"],
+        response_model=EventoParametricoResponse,
+    )
+    def consultar_evento_parametrico(
+        body: ConsultaEventoParametricoRequest,
+    ) -> EventoParametricoResponse:
+        """KAN-259, Fase 3 (HU-M04): consulta Open-Meteo o AviationStack (o sus stubs) y, si hay
+        dato, publica `evento.parametrico.recibido`. La llama un Cloud Scheduler (fase de infra
+        posterior; hoy nadie la invoca en producción), nunca un usuario esperando: por eso siempre
+        responde 200, incluso sin publicar nada (regla #4)."""
+        if body.tipo == "CLIMA":
+            faltan_clima = (
+                body.clave is None
+                or body.latitud is None
+                or body.longitud is None
+                or body.variable is None
+            )
+            if faltan_clima:
+                raise HTTPException(
+                    status_code=422,
+                    detail="CLIMA necesita clave, latitud, longitud y variable",
+                )
+            consulta = ConsultaClima(
+                clave=body.clave,
+                latitud=body.latitud,
+                longitud=body.longitud,
+                variable=body.variable,
+            )
+            evento, motivo = app.state.servicio_eventos_parametricos.consultar_clima(consulta)
+        elif body.tipo == "VUELO":
+            if body.numero_vuelo is None or body.fecha is None:
+                raise HTTPException(status_code=422, detail="VUELO necesita numero_vuelo y fecha")
+            # "hoy": el Cloud Scheduler de demostración no puede calcular la fecha, así que la
+            # resuelve el ACL (hora de Bogotá). Cualquier otra fecha pasa tal cual.
+            fecha = (
+                datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
+                if body.fecha.strip().lower() == "hoy"
+                else body.fecha
+            )
+            consulta_vuelo = ConsultaVuelo(numero_vuelo=body.numero_vuelo, fecha=fecha)
+            evento, motivo = app.state.servicio_eventos_parametricos.consultar_vuelo(consulta_vuelo)
+        else:
+            raise HTTPException(status_code=422, detail=f"tipo desconocido: {body.tipo}")
+        return EventoParametricoResponse(publicado=evento is not None, motivo=motivo, evento=evento)
 
     @app.post(
         "/fuentes/invalidar-cache",
@@ -778,6 +969,19 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
             verificada_en=resultado.verificada_en,
         )
 
+    @app.post(
+        "/prestadores/asistencias", tags=["prestadores"], response_model=DesenlaceAsistenciaResponse
+    )
+    def solicitar_asistencia(body: PedidoAsistenciaRequest) -> DesenlaceAsistenciaResponse:
+        """HU-M06 (v0.49, B7): CLAIMS pide a la red de prestadores que atienda una asistencia.
+        Siempre 200: si el proveedor falla o el circuito está abierto, `NO_CONFIRMADA` (regla 4)."""
+        desenlace = app.state.servicio_prestadores.solicitar(PedidoAsistencia(**body.model_dump()))
+        return DesenlaceAsistenciaResponse(
+            estado=desenlace.estado,
+            minutos_estimados=desenlace.minutos_estimados,
+            motivo=desenlace.motivo,
+        )
+
     @app.post("/identidad/verificar", tags=["identidad"], response_model=ResultadoIdentidadResponse)
     def verificar_identidad(body: SolicitudIdentidadRequest) -> ResultadoIdentidadResponse:
         """Verificación de identidad del onboarding móvil (HU-M01): documento, prueba de vida y
@@ -837,9 +1041,37 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
         )
 
     @app.get("/lugares/autocompletar", tags=["lugares"])
-    def lugares_autocompletar(texto: str, pais: str | None = None) -> dict[str, list]:
-        """T19: sugerencias de dirección (Places, timeout 700 ms; sin llave, un stub)."""
-        return {"sugerencias": lugares.autocompletar(texto, pais)}
+    def lugares_autocompletar(
+        texto: str, pais: str | None = None, idioma: str | None = None
+    ) -> dict[str, list]:
+        """T19: sugerencias de dirección (Places, timeout 700 ms; sin llave, un stub). HU-M06
+        (v0.50): en el idioma de la app (`es`/`en`)."""
+        return {"sugerencias": lugares.autocompletar(texto, pais, idioma)}
+
+    @app.post("/lugares/ubicar", tags=["lugares"])
+    def lugares_ubicar(body: UbicarRequest) -> dict:
+        """HU-M06 (v0.50, B9): coordenadas de la dirección que escribió el cliente sin GPS. Con
+        `place_id`, Place Details; sin él, Geocoding con el texto (solo Colombia). Siempre 200:
+        `encontrada: false` con `DIRECCION_NO_ENCONTRADA` o, si Google no responde o el circuito
+        está abierto, `SERVICIO_NO_DISPONIBLE` (regla 4). La dirección no se registra."""
+        # POST con cuerpo (no query string): la dirección no queda en el log de acceso (regla 6).
+        idioma = body.idioma if body.idioma in ("es", "en") else "es"
+        place_id = (body.place_id or "").strip()[:300] or None
+        texto = (body.texto or "").strip()[:200] or None
+        if not place_id and not texto:
+            return no_encontrada()
+        cache = app.state.cache_lugares
+        guardado = cache.obtener(place_id, texto, idioma)
+        if guardado is not None:
+            return guardado
+        try:
+            with app.state.fabrica_circuitos.get_breaker(NOMBRE_CIRCUITO_LUGARES):
+                resultado = lugares.ubicar(place_id, texto, idioma)
+        except Exception as error:
+            logger.warning("Places no ubicó la dirección error=%s", type(error).__name__)
+            return no_encontrada(SERVICIO_NO_DISPONIBLE)
+        cache.guardar(place_id, texto, idioma, resultado)
+        return resultado
 
     @app.get("/lugares/validar", tags=["lugares"])
     def lugares_validar(place_id: str) -> dict:

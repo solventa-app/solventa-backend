@@ -19,6 +19,9 @@ CONFIG_SIN_PROVEEDORES = Configuracion(
     kyc_url="http://127.0.0.1:1",
     notificaciones_url="http://127.0.0.1:1",
     vehiculos_url="http://127.0.0.1:1",
+    prestadores_url="http://127.0.0.1:1",
+    clima_url="http://127.0.0.1:1",
+    vuelos_url="http://127.0.0.1:1",
     timeout_s=0.2,
     breaker_umbral_fallos=3,
     breaker_ttl_segundos=5,
@@ -188,3 +191,97 @@ def test_vehiculo_fuente_desconocida_responde_404() -> None:
     with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
         r = client.post("/vehiculos/consultar", json={**CONSULTA_VEHICULO, "fuente": "simit"})
         assert r.status_code == 404
+
+
+def test_asistencia_con_la_red_de_prestadores_caida_queda_no_confirmada_sin_5xx() -> None:
+    # HU-M06 (v0.49): PRESTADORES_URL apunta a un puerto sin servicio.
+    pedido = {
+        "asistencia_id": "a-1", "intento": 1, "tipo_asistencia": "GRUA",
+        "prestador_id": "prs-1", "prestador_latitud": 4.68, "prestador_longitud": -74.05,
+        "latitud": 4.67, "longitud": -74.04,
+    }  # fmt: skip
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post("/prestadores/asistencias", json=pedido)
+        assert "prestadores" in client.get("/circuitos").json()
+
+    assert r.status_code == 200
+    assert r.json() == {
+        "estado": "NO_CONFIRMADA",
+        "minutos_estimados": None,
+        "motivo": "PRESTADOR_SIN_RESPUESTA",
+    }
+
+
+# ---------- KAN-259 Fase 3: eventos paramétricos (clima y vuelos) ----------
+
+
+def test_evento_parametrico_clima_con_proveedor_caido_no_publica_sin_5xx() -> None:
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post(
+            "/eventos-parametricos/_consultar",
+            json={
+                "tipo": "CLIMA",
+                "clave": "4.61,-74.08",
+                "latitud": 4.61,
+                "longitud": -74.08,
+                "variable": "PRECIPITACION_MM",
+            },
+        )
+        assert r.status_code == 200
+        cuerpo = r.json()
+        assert cuerpo["publicado"] is False
+        assert cuerpo["motivo"] == "proveedor_no_disponible"
+        assert "clima" in client.get("/circuitos").json()
+
+
+def test_evento_parametrico_vuelo_con_proveedor_caido_no_publica_sin_5xx() -> None:
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post(
+            "/eventos-parametricos/_consultar",
+            json={"tipo": "VUELO", "numero_vuelo": "AV9340", "fecha": "2026-11-11"},
+        )
+        assert r.status_code == 200
+        cuerpo = r.json()
+        assert cuerpo["publicado"] is False
+        assert cuerpo["motivo"] == "proveedor_no_disponible"
+        assert "vuelo" in client.get("/circuitos").json()
+
+
+def test_evento_parametrico_clima_sin_campos_necesarios_es_422() -> None:
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post("/eventos-parametricos/_consultar", json={"tipo": "CLIMA"})
+        assert r.status_code == 422
+
+
+def test_evento_parametrico_vuelo_sin_campos_necesarios_es_422() -> None:
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post("/eventos-parametricos/_consultar", json={"tipo": "VUELO"})
+        assert r.status_code == 422
+
+
+def test_evento_parametrico_tipo_desconocido_es_422() -> None:
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        r = client.post("/eventos-parametricos/_consultar", json={"tipo": "SISMO"})
+        assert r.status_code == 422
+
+
+def test_evento_parametrico_vuelo_con_fecha_hoy_consulta_la_fecha_de_bogota() -> None:
+    """El Cloud Scheduler de demostración manda `fecha: "hoy"`; el ACL la resuelve en Bogotá."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    consultas = []
+
+    class ServicioFalso:
+        def consultar_vuelo(self, consulta):
+            consultas.append(consulta)
+            return None, "sin_dato"
+
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        client.app.state.servicio_eventos_parametricos = ServicioFalso()
+        r = client.post(
+            "/eventos-parametricos/_consultar",
+            json={"tipo": "VUELO", "numero_vuelo": "AV9340", "fecha": "hoy"},
+        )
+    assert r.status_code == 200
+    assert consultas[0].fecha == datetime.now(ZoneInfo("America/Bogota")).date().isoformat()

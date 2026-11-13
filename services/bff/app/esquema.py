@@ -1757,6 +1757,52 @@ ResultadoReporteSiniestro = Annotated[
 ]
 
 
+# ---------- Indemnización y cobertura paramétrica (v0.48, KAN-259 HU-M04 Fase 5) ----------
+# El móvil las consume en su Fase 6 (fuera de este repo); aquí solo se expone lo que CLAIMS y
+# POLICY ya guardan de verdad (ver `CLAUDE.md`, sub-entrada "Fase 5", para las simplificaciones).
+
+
+@strawberry.enum
+class TipoEventoParametrico(Enum):
+    VUELO_RETRASO = "VUELO_RETRASO"
+    VUELO_CANCELADO = "VUELO_CANCELADO"
+    # Las 3 variables de clima (precipitación, viento, temperatura) colapsan en un solo tipo: el
+    # móvil no distingue entre ellas todavía (ver `detalleEvento` para la magnitud exacta).
+    CLIMA = "CLIMA"
+
+
+@strawberry.enum
+class EstadoIndemnizacion(Enum):
+    EN_PROCESO = "EN_PROCESO"
+    PAGADA = "PAGADA"  # PAYMENTS no lo produce todavía: ver `_indemnizacion`
+
+
+@strawberry.type
+class Indemnizacion:
+    id: strawberry.ID
+    tipo: TipoEventoParametrico
+    referencia_evento: str  # el vuelo (AV9340) o la celda ("lat,lon")
+    detalle_evento: str  # cuánto superó el umbral: "+180min", "62 mm", "Cancelado"
+    fecha_evento: datetime
+    pagado_en: datetime
+    monto: Monto
+    estado: EstadoIndemnizacion
+    # Nunca un número de cuenta real (regla #6, D-01 de esta fase): PAYMENTS solo guarda un
+    # método genérico ("ACH Colombia Interbancario"), nunca el dato bancario del cliente.
+    metodo_transferencia: str | None
+    poliza_anterior: bool  # la cobertura ya no estaba vigente al momento del evento
+
+
+@strawberry.type
+class ResumenCobertura:
+    producto: str
+    numero_poliza: str
+    vigente: bool
+    vigente_hasta: datetime
+    tope: Monto  # el monto fijo de la cobertura: no hay un tope acumulado distinto (ver CLAUDE.md)
+    movimientos: list[Indemnizacion]
+
+
 @strawberry.input
 class UbicacionReporteInput:
     descripcion: str
@@ -1831,6 +1877,80 @@ def _resolucion_cliente(datos: dict | None) -> ResolucionCliente | None:
     )
 
 
+# ---------- Indemnización y cobertura paramétrica (v0.48, KAN-259 HU-M04 Fase 5) ----------
+
+UNIDAD_POR_VARIABLE_CLIMA = {
+    "PRECIPITACION_MM": "mm",
+    "VIENTO_KMH": "km/h",
+    "TEMP_MAX_C": "°C",
+}
+TEXTO_SOBRE_UMBRAL = "Sobre el umbral de la póliza"
+
+
+def _tipo_evento_parametrico(datos: dict) -> TipoEventoParametrico:
+    if datos["ubicacion"]["tipo"] == "VUELO":
+        return (
+            TipoEventoParametrico.VUELO_CANCELADO
+            if datos.get("evento_cancelado")
+            else TipoEventoParametrico.VUELO_RETRASO
+        )
+    return TipoEventoParametrico.CLIMA
+
+
+def _referencia_evento(datos: dict) -> str:
+    """El vuelo (`AV9340`) o la celda (`"lat,lon"`, sin reverse-geocoding: no hay ciudad guardada,
+    ver `CLAUDE.md`)."""
+    clave = datos["ubicacion"]["clave"]
+    return clave.split(":", 1)[0] if datos["ubicacion"]["tipo"] == "VUELO" else clave
+
+
+def _detalle_evento(datos: dict) -> str:
+    """Cuánto superó el umbral: compuesto en el BFF con el valor crudo y el umbral que guardó
+    CLAIMS al liquidar (ver `servicio_parametricos.py`, Fase 5)."""
+    if datos["ubicacion"]["tipo"] == "VUELO":
+        if datos.get("evento_cancelado"):
+            return "Cancelado"
+        valor = datos.get("evento_valor")
+        return f"+{int(valor)}min" if valor is not None else TEXTO_SOBRE_UMBRAL
+    valor = datos.get("evento_valor")
+    if valor is None:
+        return TEXTO_SOBRE_UMBRAL
+    unidad = UNIDAD_POR_VARIABLE_CLIMA.get(datos.get("evento_variable") or "", "")
+    return f"{valor} {unidad}".strip()
+
+
+def _poliza_anterior(datos: dict) -> bool:
+    """La cobertura ya no estaba vigente al momento del evento, comparada contra **hoy** (en el
+    momento de la consulta, decisión 8 de la tarea)."""
+    hasta = _fecha(datos.get("vigencia_hasta_cobertura"))
+    return hasta is not None and hasta < datetime.now(UTC)
+
+
+def _indemnizacion(datos: dict) -> Indemnizacion:
+    resolucion = datos.get("resolucion") or {}
+    monto = _monto_siniestro(resolucion.get("indemnizacion")) or _monto_siniestro(
+        datos["suma_reclamada"]
+    )
+    return Indemnizacion(
+        id=strawberry.ID(datos["id"]),
+        tipo=_tipo_evento_parametrico(datos),
+        referencia_evento=_referencia_evento(datos),
+        detalle_evento=_detalle_evento(datos),
+        fecha_evento=_fecha(datos["ocurrido_en"]),
+        pagado_en=_fecha(resolucion.get("resuelta_en")) or _fecha(datos["notificado_en"]),
+        monto=monto,
+        # PAYMENTS no dispersa todavía (toda orden queda PENDIENTE_DISPERSION): nunca "pagada"
+        # de verdad hoy (decisión 3 de la tarea).
+        estado=EstadoIndemnizacion.EN_PROCESO,
+        metodo_transferencia=resolucion.get("metodo_transferencia"),
+        poliza_anterior=_poliza_anterior(datos),
+    )
+
+
+def _es_siniestro_parametrico(datos: dict) -> bool:
+    return datos.get("origen") == "PARAMETRICO"
+
+
 def _id_reporte_valido(id_reporte: str) -> bool:
     try:
         return str(uuid.UUID(id_reporte)) == id_reporte.lower()
@@ -1839,6 +1959,25 @@ def _id_reporte_valido(id_reporte: str) -> bool:
 
 
 MENSAJE_SINIESTROS = "No pudimos consultar los siniestros. Intenta de nuevo."
+MENSAJE_INDEMNIZACION_NO_DISPONIBLE = "No pudimos consultar la indemnización. Intenta de nuevo."
+MENSAJE_COBERTURA_PARAMETRICA_NO_DISPONIBLE = "No pudimos consultar tu cobertura. Intenta de nuevo."
+PRODUCTO_POR_TIPO_COBERTURA = {
+    "VUELO": "Cobertura paramétrica de vuelo",
+    "CLIMA": "Cobertura paramétrica de clima",
+}
+
+
+async def _poliza_es_del_cliente(info: Info, poliza_id: str, usuario_id: str) -> bool:
+    """v0.48 (KAN-259, Fase 5): mismo criterio que `ServicioSiniestros._poliza_del_cliente` en
+    CLAIMS (es suya si la firmó o la aceptó). Decisión de diseño (ambigüedad no cubierta por la
+    tarea): el token del BFF solo trae `usuario.id`, sin `titular_id`, así que no se repite aquí
+    el chequeo adicional por documento que sí hace CLAIMS."""
+    try:
+        poliza = await _poliza_del_siniestro(info, poliza_id)
+    except ErrorPublico:
+        return False
+    return usuario_id in {poliza.get("firmante_id"), poliza.get("actor_usuario_id")}
+
 
 # ---------- Catálogo de prestadores (v0.36, HU-M06) ----------
 
@@ -1847,6 +1986,7 @@ MENSAJE_SINIESTROS = "No pudimos consultar los siniestros. Intenta de nuevo."
 class TipoPrestador(Enum):
     MEDICO = "MEDICO"
     MECANICO = "MECANICO"
+    GRUA = "GRUA"  # v0.49
 
 
 @strawberry.type
@@ -1858,6 +1998,12 @@ class Prestador:
     latitud: float
     longitud: float
     activo: bool
+    # v0.49: el detalle del prestador en la app.
+    aliado: bool
+    especialidad: str
+    direccion: str
+    horario: str | None
+    foto_url: str | None
 
 
 @strawberry.type
@@ -1871,24 +2017,30 @@ MENSAJE_PRESTADORES = "No pudimos consultar los prestadores. Intenta de nuevo."
 TIPOS_PRESTADOR = {t.value for t in TipoPrestador}
 
 
+def _prestador(p: dict) -> Prestador:
+    """Los campos de la v0.49 tienen un valor por defecto mientras CLAIMS no los mande."""
+    return Prestador(
+        id=strawberry.ID(p["id"]),
+        nombre=p["nombre"],
+        tipo=TipoPrestador(p["tipo"]),
+        ciudad=p["ciudad"],
+        latitud=float(p["latitud"]),
+        longitud=float(p["longitud"]),
+        activo=p["activo"],
+        aliado=bool(p.get("aliado", False)),
+        especialidad=p.get("especialidad") or "",
+        direccion=p.get("direccion") or "",
+        horario=p.get("horario"),
+        foto_url=p.get("foto_url"),
+    )
+
+
 def _catalogo_prestadores(datos: dict) -> CatalogoPrestadores:
     """Un tipo que este BFF aún no conoce se omite en vez de romper la respuesta entera."""
     return CatalogoPrestadores(
         version=datos["version"],
         vigente=datos["vigente"],
-        prestadores=[
-            Prestador(
-                id=strawberry.ID(p["id"]),
-                nombre=p["nombre"],
-                tipo=TipoPrestador(p["tipo"]),
-                ciudad=p["ciudad"],
-                latitud=float(p["latitud"]),
-                longitud=float(p["longitud"]),
-                activo=p["activo"],
-            )
-            for p in datos["prestadores"]
-            if p["tipo"] in TIPOS_PRESTADOR
-        ],
+        prestadores=[_prestador(p) for p in datos["prestadores"] if p["tipo"] in TIPOS_PRESTADOR],
     )
 
 
@@ -1915,6 +2067,31 @@ class CodigoErrorAsistencia(Enum):
     NO_ENCONTRADA = "NO_ENCONTRADA"
 
 
+@strawberry.enum
+class OrigenUbicacion(Enum):
+    """v0.50 (HU-M06, B4): GPS del teléfono o dirección escrita y ubicada (`ubicarDireccion`)."""
+
+    GPS = "GPS"
+    DIRECCION = "DIRECCION"
+
+
+@strawberry.enum
+class CodigoUbicacion(Enum):
+    DIRECCION_NO_ENCONTRADA = "DIRECCION_NO_ENCONTRADA"
+    SERVICIO_NO_DISPONIBLE = "SERVICIO_NO_DISPONIBLE"
+
+
+@strawberry.type
+class UbicacionDireccion:
+    """v0.50 (HU-M06, B9). Sin textos para el usuario: la app traduce el `codigo`."""
+
+    encontrada: bool
+    latitud: float | None
+    longitud: float | None
+    direccion: str | None
+    codigo: CodigoUbicacion | None
+
+
 @strawberry.input
 class SolicitudAsistenciaInput:
     # UUID generado por la app: es el id de la asistencia y su clave de idempotencia.
@@ -1925,6 +2102,7 @@ class SolicitudAsistenciaInput:
     longitud: float
     descripcion: str | None = None
     direccion: str | None = None
+    origen_ubicacion: OrigenUbicacion = OrigenUbicacion.GPS
 
 
 @strawberry.input
@@ -1961,6 +2139,7 @@ ResultadoAsistencia = Annotated[
 
 MENSAJE_ASISTENCIA_NO_DISPONIBLE = "No pudimos registrar la asistencia. Intenta de nuevo."
 MENSAJE_ID_SOLICITUD = "El identificador de la solicitud no es válido."
+MENSAJE_DIRECCION_REQUERIDA = "Escribe la dirección a la que debe llegar el prestador."
 CODIGOS_ASISTENCIA = {c.value for c in CodigoErrorAsistencia}
 
 
@@ -1970,15 +2149,7 @@ def _asistencia(datos: dict) -> Asistencia:
         id=strawberry.ID(datos["id"]),
         estado=EstadoAsistencia(datos["estado"]),
         tipo_asistencia=TipoPrestador(datos["tipo_asistencia"]),
-        prestador=Prestador(
-            id=strawberry.ID(p["id"]),
-            nombre=p["nombre"],
-            tipo=TipoPrestador(p["tipo"]),
-            ciudad=p["ciudad"],
-            latitud=float(p["latitud"]),
-            longitud=float(p["longitud"]),
-            activo=p["activo"],
-        ),
+        prestador=_prestador(p),
         minutos_estimados=datos.get("minutos_estimados"),
         motivo=MotivoNoConfirmada(datos["motivo"]) if datos.get("motivo") else None,
         solicitada_en=datetime.fromisoformat(datos["solicitada_en"]),
@@ -2564,6 +2735,65 @@ class Query:
         return [_siniestro_reportado(d) for d in datos]
 
     @strawberry.field
+    async def indemnizacion(self, info: Info, id: strawberry.ID) -> Indemnizacion | None:
+        """v0.48 (KAN-259, HU-M04 Fase 5): el detalle de una indemnización paramétrica ya
+        liquidada. `null` si no existe, no es paramétrica o la póliza no es del CLIENTE del
+        token (nunca se filtra el expediente de otro cliente, mismo criterio que
+        `ServicioSiniestros._poliza_del_cliente` en CLAIMS)."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        try:
+            datos = await _claims(info).obtener(str(id))
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_INDEMNIZACION_NO_DISPONIBLE) from error
+        if datos is None or not _es_siniestro_parametrico(datos):
+            return None
+        if not await _poliza_es_del_cliente(info, datos["poliza_id"], usuario.id):
+            return None
+        return _indemnizacion(datos)
+
+    @strawberry.field
+    async def mi_cobertura_parametrica(self, info: Info) -> ResumenCobertura | None:
+        """v0.48 (KAN-259, HU-M04 Fase 5): la cobertura paramétrica vigente del CLIENTE del
+        token, con sus indemnizaciones ya liquidadas. `null` si no tiene ninguna póliza
+        paramétrica (decisión de diseño: con más de una, se queda con la primera que POLICY
+        devuelva con coberturas; no se espera más de una en este sprint)."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        servicio = _firma_pago(info)
+        try:
+            emitidas = await servicio.listar_propuestas(usuario, "EMITIDA", 1, 50)
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_COBERTURA_PARAMETRICA_NO_DISPONIBLE) from error
+        polizas = [p["poliza"] for p in emitidas["propuestas"] if p.get("poliza")]
+        if not polizas:
+            return None
+        policy = info.context["clientes"].policy
+        try:
+            coberturas_por_poliza = await asyncio.gather(
+                *(policy.coberturas_parametricas_de_poliza(p["id"]) for p in polizas)
+            )
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_COBERTURA_PARAMETRICA_NO_DISPONIBLE) from error
+        cobertura = poliza = None
+        for p, lista in zip(polizas, coberturas_por_poliza, strict=True):
+            if lista:
+                cobertura, poliza = lista[0], p
+                break
+        if cobertura is None:
+            return None
+        try:
+            siniestros = await _claims(info).parametricos_de_polizas([cobertura["poliza_id"]])
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_COBERTURA_PARAMETRICA_NO_DISPONIBLE) from error
+        return ResumenCobertura(
+            producto=PRODUCTO_POR_TIPO_COBERTURA.get(cobertura["tipo"], "Cobertura paramétrica"),
+            numero_poliza=poliza["numero"],
+            vigente=cobertura.get("estado") == "VIGENTE",
+            vigente_hasta=_fecha(cobertura["vigencia_hasta"]),
+            tope=_monto_siniestro(cobertura["monto_fijo"]),
+            movimientos=[_indemnizacion(s) for s in siniestros],
+        )
+
+    @strawberry.field
     async def catalogo_prestadores(
         self, info: Info, version_local: str | None = None
     ) -> CatalogoPrestadores:
@@ -2727,12 +2957,41 @@ class Query:
         lista vacía: nunca un error técnico."""
         exigir_rol(info, "CLIENTE", "ASESOR", "BACKOFFICE", "SOCIO")
         try:
-            lista = await info.context["clientes"].acl.autocompletar_direccion(texto[:200], pais)
+            lista = await info.context["clientes"].acl.autocompletar_direccion(
+                texto[:200], pais, info.context.get("idioma", "es")
+            )
         except ErrorServicio:
             return []
         return [
             SugerenciaDireccion(place_id=x["place_id"], descripcion=x["descripcion"]) for x in lista
         ]
+
+    @strawberry.field
+    async def ubicar_direccion(
+        self, info: Info, place_id: str | None = None, texto: str | None = None
+    ) -> UbicacionDireccion:
+        """v0.50 (HU-M06, B9): coordenadas de la dirección que escribió el CLIENTE sin GPS, por el
+        ACL, en el idioma de la app. Si el ACL no responde, `SERVICIO_NO_DISPONIBLE`: nunca un
+        error técnico. La dirección no se registra."""
+        exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        try:
+            r = await info.context["clientes"].acl.ubicar_direccion(
+                (place_id or "")[:300] or None,
+                (texto or "")[:200] or None,
+                info.context.get("idioma", "es"),
+            )
+        except ErrorServicio:
+            r = {"encontrada": False, "codigo": "SERVICIO_NO_DISPONIBLE"}
+        codigo = r.get("codigo")
+        return UbicacionDireccion(
+            encontrada=bool(r.get("encontrada")),
+            latitud=r.get("latitud"),
+            longitud=r.get("longitud"),
+            direccion=r.get("direccion"),
+            codigo=CodigoUbicacion(codigo)
+            if codigo in CodigoUbicacion._value2member_map_
+            else (None if r.get("encontrada") else CodigoUbicacion.SERVICIO_NO_DISPONIBLE),
+        )
 
     @strawberry.field
     async def validar_direccion(self, info: Info, place_id: str) -> DireccionValidada:
@@ -3951,10 +4210,23 @@ class Mutation:
             "direccion": entrada.direccion,
             "latitud": entrada.latitud,
             "longitud": entrada.longitud,
+            "origen_ubicacion": entrada.origen_ubicacion.value,
         }
+        if (
+            entrada.origen_ubicacion == OrigenUbicacion.DIRECCION
+            and not (entrada.direccion or "").strip()
+        ):
+            return ErrorAsistencia(
+                codigo=CodigoErrorAsistencia.DATOS_INVALIDOS, mensaje=MENSAJE_DIRECCION_REQUERIDA
+            )
         return await _accion_asistencia(lambda: _claims(info).solicitar_asistencia(solicitud))
 
-    @strawberry.mutation
+    @strawberry.mutation(
+        deprecation_reason=(
+            "v0.50: usar solicitarAsistencia con las coordenadas de ubicarDireccion y "
+            "origenUbicacion DIRECCION"
+        )
+    )
     async def solicitar_asistencia_con_direccion(
         self, info: Info, entrada: SolicitudAsistenciaDireccionInput
     ) -> ResultadoAsistencia:

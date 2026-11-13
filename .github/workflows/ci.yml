@@ -58,7 +58,12 @@ jobs:
               - 'services/*/app/fuentes.json'
               - 'services/*/app/tipos-archivo.json'
               - 'scripts/sincronizar_eventos_siniestros.py'
+              - 'scripts/sincronizar_evento_parametrico_claims.py'
               - 'services/claims/app/eventos/**'
+              - 'scripts/sincronizar_contrato_push.py'
+              - 'services/enviar-push/app/contrato/**'
+              - 'scripts/sincronizar_contrato_eventos_parametricos.py'
+              - 'services/acl-worker/app/evento.parametrico.recibido.schema.json'
               - 'scripts/sincronizar_socios.py'
               - 'services/bff/app/socios-v1.json'
               - 'services/bff/app/salud.json'
@@ -97,16 +102,19 @@ jobs:
             services/onboarding: ['services/onboarding/**']
             services/avisos: ['services/avisos/**']
             services/claims: ['services/claims/**']
+            services/enviar-push: ['services/enviar-push/**']
             services/under: ['services/under/**']
             services/acl-worker: ['services/acl-worker/**']
             services/consolidador-fuentes: ['services/consolidador-fuentes/**']
             stubs/open-finance: ['stubs/open-finance/**']
             stubs/open-data: ['stubs/open-data/**']
             stubs/vehiculos: ['stubs/vehiculos/**']
+            stubs/prestadores: ['stubs/prestadores/**']
             stubs/pasarela: ['stubs/pasarela/**']
             stubs/firma: ['stubs/firma/**']
             stubs/kyc: ['stubs/kyc/**']
             stubs/notificaciones: ['stubs/notificaciones/**']
+            stubs/eventos-parametricos: ['stubs/eventos-parametricos/**']
       - name: Matrices de servicios afectados
         id: matriz
         env:
@@ -321,8 +329,12 @@ jobs:
         run: python scripts/sincronizar_tipos_archivo.py --verificar
       - name: Las copias de los esquemas siniestro.* de claims siguen iguales al contrato
         run: python scripts/sincronizar_eventos_siniestros.py --verificar
+      - name: Las copias de los esquemas paramétricos (evento recibido y push) de claims siguen iguales
+        run: python scripts/sincronizar_evento_parametrico_claims.py --verificar
       - name: Las copias de los contratos de socios (OpenAPI y salud.json) del BFF siguen iguales
         run: python scripts/sincronizar_socios.py --verificar
+      - name: La copia del esquema de eventos paramétricos del ACL Worker sigue igual al contrato
+        run: python scripts/sincronizar_contrato_eventos_parametricos.py --verificar
 
   manifiesto:
     needs: cambios

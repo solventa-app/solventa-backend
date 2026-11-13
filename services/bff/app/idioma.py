@@ -20,6 +20,10 @@ from strawberry.extensions import SchemaExtension
 Idioma = Literal["es", "en"]
 
 EN: dict[str, str] = {
+    # HU-M06 (v0.50): asistencia con la dirección escrita y ubicada.
+    "Escribe la dirección a la que debe llegar el prestador.": (
+        "Enter the address the provider should go to."
+    ),
     # API de socios (HU-W07, contracts/openapi/socios-v1.json)
     "Credenciales inválidas.": ("Invalid credentials."),
     "Falta el token de acceso o no es válido.": ("The access token is missing or invalid."),
@@ -371,6 +375,13 @@ EN: dict[str, str] = {
     # Mesa de siniestros (HU-W04): mensajes del BFF y de CLAIMS, que llegan tal cual
     "No pudimos consultar los siniestros. Intenta de nuevo.": (
         "We couldn't load the claims. Please try again."
+    ),
+    # Indemnización y cobertura paramétrica (v0.48, KAN-259 HU-M04 Fase 5)
+    "No pudimos consultar la indemnización. Intenta de nuevo.": (
+        "We couldn't load the payout. Please try again."
+    ),
+    "No pudimos consultar tu cobertura. Intenta de nuevo.": (
+        "We couldn't load your coverage. Please try again."
     ),
     "No pudimos consultar los prestadores. Intenta de nuevo.": (
         "We couldn't load the providers. Please try again."

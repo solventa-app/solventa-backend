@@ -144,7 +144,7 @@
     "puerto": 8012,
     "url_env": "CLAIMS_URL",
     "migracion": ["python", "-m", "migrations"],
-    "llama": ["almacenamiento", "policy", "payments"],
+    "llama": ["almacenamiento", "policy", "payments", "acl-worker"],
     "entorno": { "MONGO_DB": "claims", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true" },
     "secretos": {
       "MONGO_URI": "mongo-uri-claims",
@@ -153,21 +153,31 @@
     }
   },
   {
+    "nombre": "enviar-push",
+    "ruta": "services/enviar-push",
+    "puerto": 8013,
+    "url_env": "ENVIAR_PUSH_URL",
+    "llama": ["auth"],
+    "disparador_externo": true,
+    "entorno": { "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "SNS_MODO": "real", "SNS_REGION": "us-east-1", "AWS_ROLE_ARN": "arn:aws:iam::058264236278:role/solventa-enviar-push" },
+    "secretos": { "SNS_PLATFORM_APPLICATION_ARN": "sns-platform-application-arn-push" }
+  },
+  {
     "nombre": "acl-worker",
     "ruta": "services/acl-worker",
     "instancia_fija": true,
     "puerto": 8005,
     "url_env": "ACL_URL",
-    "llama": ["stub-open-finance", "stub-open-data", "stub-vehiculos", "stub-pasarela", "stub-firma", "stub-kyc", "stub-notificaciones", "consolidador-fuentes"],
+    "llama": ["stub-open-finance", "stub-open-data", "stub-vehiculos", "stub-eventos-parametricos", "stub-prestadores", "stub-pasarela", "stub-firma", "stub-kyc", "stub-notificaciones", "consolidador-fuentes"],
     "disparador_externo": true,
-    "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "NOTIFICACIONES_PROVEEDOR": "resend", "IDENTIDAD_URL": "https://verification.didit.me", "CORREO_REMITENTE": "Solventa <avisos@solventa.globalspark.io>", "PLACES_PROVEEDOR": "google" },
+    "entorno": { "CACHE_SERVIR_EN_TTL": "true", "TIMEOUT_MS": "700", "AUTENTICACION_SERVICIOS": "id_token", "TRAZAS_GCP": "true", "NOTIFICACIONES_PROVEEDOR": "resend", "IDENTIDAD_URL": "https://verification.didit.me", "CORREO_REMITENTE": "Solventa <avisos@solventa.globalspark.io>", "PLACES_PROVEEDOR": "google", "CLIMA_URL": "https://api.open-meteo.com", "VUELOS_URL": "http://api.aviationstack.com" },
     "secretos": {
       "REDIS_URL": "redis-url-acl",
       "COLA_RECONCILIACION_REDIS_URL": "redis-url-cola-reconciliacion",
       "DIDIT_API_KEY": "didit-api-key",
       "RESEND_API_KEY": "resend-api-key",
       "IDENTIDAD_LLAVE_CACHE": "clave-cache-identidad",
-      "GOOGLE_PLACES_API_KEY": "google-places-api-key"
+      "GOOGLE_PLACES_API_KEY": "google-places-api-key", "AVIATIONSTACK_API_KEY": "aviationstack-llave"
     }
   },
   {
@@ -202,6 +212,22 @@
     "instancia_fija": true,
     "puerto": 8107,
     "url_env": "VEHICULOS_URL",
+    "entorno": { "TRAZAS_GCP": "true" }
+  },
+  {
+    "nombre": "stub-eventos-parametricos",
+    "ruta": "stubs/eventos-parametricos",
+    "instancia_fija": true,
+    "puerto": 8108,
+    "url_env": "VUELOS_URL",
+    "entorno": { "TRAZAS_GCP": "true" }
+  },
+  {
+    "nombre": "stub-prestadores",
+    "ruta": "stubs/prestadores",
+    "instancia_fija": true,
+    "puerto": 8109,
+    "url_env": "PRESTADORES_URL",
     "entorno": { "TRAZAS_GCP": "true" }
   },
   {

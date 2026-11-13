@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solventa.example/events/evento.parametrico.recibido/v1",
+  "title": "evento.parametrico.recibido",
+  "description": "KAN-259, T-M04-5, Fase 3: una medición normalizada de una fuente paramétrica externa (clima o vuelos), lista para que CLAIMS la cruce contra las coberturas paramétricas vigentes (fase 4, fuera de este contrato). Lo publica el ACL Worker al consultar Open-Meteo o AviationStack (o, en local/CI, `stubs/eventos-parametricos`). Sin datos personales: `clave` identifica una celda geográfica o un vuelo+fecha, nunca un cliente ni una póliza.",
+  "type": "object",
+  "required": [
+    "eventId",
+    "tipo",
+    "version",
+    "ocurridoEn",
+    "datos"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tipo": {
+      "const": "evento.parametrico.recibido"
+    },
+    "version": {
+      "const": 1
+    },
+    "ocurridoEn": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "datos": {
+      "type": "object",
+      "required": [
+        "tipo",
+        "clave",
+        "valor",
+        "medidoEn",
+        "fuente"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": {
+          "enum": ["VUELO", "CLIMA"],
+          "description": "Qué fuente paramétrica originó la medición."
+        },
+        "clave": {
+          "type": "string",
+          "description": "VUELO: `<numeroVuelo>:<fecha>` (p. ej. `AV9340:2026-11-11`). CLIMA: el id de la celda geográfica de ~10 km que agrupa pólizas cercanas (p. ej. `4.61,-74.08`).",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "valor": {
+          "type": "number",
+          "description": "VUELO: minutos de retraso en la salida (0 si no hay retraso informado; ver también `cancelado`). CLIMA: el valor medido de `variable`, en la unidad propia de esa variable."
+        },
+        "medidoEn": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Cuándo el proveedor tomó o calculó la medición (no cuándo se publicó el evento)."
+        },
+        "fuente": {
+          "enum": ["aviationstack", "open-meteo"]
+        },
+        "variable": {
+          "enum": ["PRECIPITACION_MM", "VIENTO_KMH", "TEMP_MAX_C"],
+          "description": "Solo CLIMA: qué variable mide `valor`."
+        },
+        "cancelado": {
+          "type": "boolean",
+          "description": "Solo VUELO: true si el vuelo se canceló (paga la cobertura aunque el retraso sea 0)."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "tipo": { "const": "VUELO" } },
+            "required": ["tipo"]
+          },
+          "then": {
+            "required": ["cancelado"],
+            "not": { "required": ["variable"] }
+          }
+        },
+        {
+          "if": {
+            "properties": { "tipo": { "const": "CLIMA" } },
+            "required": ["tipo"]
+          },
+          "then": {
+            "required": ["variable"],
+            "not": { "required": ["cancelado"] }
+          }
+        }
+      ]
+    }
+  }
+}

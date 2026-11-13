@@ -64,8 +64,10 @@ def validar() -> list[str]:
             )
         # Un servicio `dummy` (sustituto temporal) lo consume el front: no lo llama otro servicio.
         # Sigue sin poder ser `publico`; en staging lo invoca el API Gateway (gateway.tf).
+        # `consolidador-fuentes` y `enviar-push` los entrega una suscripción push de Pub/Sub, no
+        # una llamada síncrona de otro servicio (`disparador_externo`).
         if (
-            nombre not in ("bff", "consolidador-fuentes")
+            nombre not in ("bff", "consolidador-fuentes", "enviar-push")
             and not s.get("dummy")
             # `ingreso_directo`: lo abre el navegador (stream SSE de `avisos`), no otro servicio.
             and not s.get("ingreso_directo")
