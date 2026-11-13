@@ -1,0 +1,187 @@
+{
+  "version": "1",
+  "pais": "CO",
+  "descripcion": "Ciudades de Colombia que ofrece la app móvil al reportar un siniestro (lista desplegable). El nombre es el texto canónico que viaja en `ReporteSiniestroInput.ubicacion.ciudad`; las ciudades de los prestadores de `claims` (`services/claims/migrations/datos/prestadores.json`) salen de aquí. La app ofrece además «Otra ciudad» con texto libre. Las copias viven en cada cliente (móvil: `lib/features/claims/domain/ciudades.dart`).",
+  "ciudades": [
+    {
+      "id": "bogota",
+      "nombre": "Bogotá",
+      "departamento": "Bogotá D.C."
+    },
+    {
+      "id": "medellin",
+      "nombre": "Medellín",
+      "departamento": "Antioquia"
+    },
+    {
+      "id": "cali",
+      "nombre": "Cali",
+      "departamento": "Valle del Cauca"
+    },
+    {
+      "id": "barranquilla",
+      "nombre": "Barranquilla",
+      "departamento": "Atlántico"
+    },
+    {
+      "id": "cartagena",
+      "nombre": "Cartagena",
+      "departamento": "Bolívar"
+    },
+    {
+      "id": "cucuta",
+      "nombre": "Cúcuta",
+      "departamento": "Norte de Santander"
+    },
+    {
+      "id": "bucaramanga",
+      "nombre": "Bucaramanga",
+      "departamento": "Santander"
+    },
+    {
+      "id": "pereira",
+      "nombre": "Pereira",
+      "departamento": "Risaralda"
+    },
+    {
+      "id": "santa-marta",
+      "nombre": "Santa Marta",
+      "departamento": "Magdalena"
+    },
+    {
+      "id": "ibague",
+      "nombre": "Ibagué",
+      "departamento": "Tolima"
+    },
+    {
+      "id": "manizales",
+      "nombre": "Manizales",
+      "departamento": "Caldas"
+    },
+    {
+      "id": "villavicencio",
+      "nombre": "Villavicencio",
+      "departamento": "Meta"
+    },
+    {
+      "id": "pasto",
+      "nombre": "Pasto",
+      "departamento": "Nariño"
+    },
+    {
+      "id": "monteria",
+      "nombre": "Montería",
+      "departamento": "Córdoba"
+    },
+    {
+      "id": "neiva",
+      "nombre": "Neiva",
+      "departamento": "Huila"
+    },
+    {
+      "id": "armenia",
+      "nombre": "Armenia",
+      "departamento": "Quindío"
+    },
+    {
+      "id": "valledupar",
+      "nombre": "Valledupar",
+      "departamento": "Cesar"
+    },
+    {
+      "id": "popayan",
+      "nombre": "Popayán",
+      "departamento": "Cauca"
+    },
+    {
+      "id": "sincelejo",
+      "nombre": "Sincelejo",
+      "departamento": "Sucre"
+    },
+    {
+      "id": "tunja",
+      "nombre": "Tunja",
+      "departamento": "Boyacá"
+    },
+    {
+      "id": "riohacha",
+      "nombre": "Riohacha",
+      "departamento": "La Guajira"
+    },
+    {
+      "id": "florencia",
+      "nombre": "Florencia",
+      "departamento": "Caquetá"
+    },
+    {
+      "id": "yopal",
+      "nombre": "Yopal",
+      "departamento": "Casanare"
+    },
+    {
+      "id": "quibdo",
+      "nombre": "Quibdó",
+      "departamento": "Chocó"
+    },
+    {
+      "id": "soacha",
+      "nombre": "Soacha",
+      "departamento": "Cundinamarca"
+    },
+    {
+      "id": "bello",
+      "nombre": "Bello",
+      "departamento": "Antioquia"
+    },
+    {
+      "id": "itagui",
+      "nombre": "Itagüí",
+      "departamento": "Antioquia"
+    },
+    {
+      "id": "envigado",
+      "nombre": "Envigado",
+      "departamento": "Antioquia"
+    },
+    {
+      "id": "soledad",
+      "nombre": "Soledad",
+      "departamento": "Atlántico"
+    },
+    {
+      "id": "palmira",
+      "nombre": "Palmira",
+      "departamento": "Valle del Cauca"
+    },
+    {
+      "id": "buenaventura",
+      "nombre": "Buenaventura",
+      "departamento": "Valle del Cauca"
+    },
+    {
+      "id": "floridablanca",
+      "nombre": "Floridablanca",
+      "departamento": "Santander"
+    },
+    {
+      "id": "dosquebradas",
+      "nombre": "Dosquebradas",
+      "departamento": "Risaralda"
+    },
+    {
+      "id": "tulua",
+      "nombre": "Tuluá",
+      "departamento": "Valle del Cauca"
+    },
+    {
+      "id": "barrancabermeja",
+      "nombre": "Barrancabermeja",
+      "departamento": "Santander"
+    },
+    {
+      "id": "sogamoso",
+      "nombre": "Sogamoso",
+      "departamento": "Boyacá"
+    }
+  ]
+}
