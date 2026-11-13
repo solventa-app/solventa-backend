@@ -263,3 +263,25 @@ def test_evento_parametrico_tipo_desconocido_es_422() -> None:
     with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
         r = client.post("/eventos-parametricos/_consultar", json={"tipo": "SISMO"})
         assert r.status_code == 422
+
+
+def test_evento_parametrico_vuelo_con_fecha_hoy_consulta_la_fecha_de_bogota() -> None:
+    """El Cloud Scheduler de demostración manda `fecha: "hoy"`; el ACL la resuelve en Bogotá."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    consultas = []
+
+    class ServicioFalso:
+        def consultar_vuelo(self, consulta):
+            consultas.append(consulta)
+            return None, "sin_dato"
+
+    with TestClient(create_app(CONFIG_SIN_PROVEEDORES)) as client:
+        client.app.state.servicio_eventos_parametricos = ServicioFalso()
+        r = client.post(
+            "/eventos-parametricos/_consultar",
+            json={"tipo": "VUELO", "numero_vuelo": "AV9340", "fecha": "hoy"},
+        )
+    assert r.status_code == 200
+    assert consultas[0].fecha == datetime.now(ZoneInfo("America/Bogota")).date().isoformat()

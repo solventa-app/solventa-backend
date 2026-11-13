@@ -55,3 +55,6 @@ crear_almacenamiento = true
 url_front = "https://solventa-frontend-pink.vercel.app"
 # Mismo origen para las URLs firmadas del bucket (CORS del navegador; la app Android sube sin CORS).
 almacenamiento_origenes_cors = ["https://solventa-frontend-pink.vercel.app"]
+
+# KAN-259: push de HU-M04 (temas de Pub/Sub, DLQ y los 2 Cloud Scheduler de demostración cada 8 h). Capa gratuita.
+crear_push = true
