@@ -1270,6 +1270,7 @@ enum EstadoAsistencia {
   CONFIRMADA # el prestador va en camino (`minutosEstimados`)
   NO_CONFIRMADA # no se pudo confirmar (`motivo`); reenviar con el mismo idSolicitud reintenta
   CANCELADA
+  LLEGO # v0.52: CONFIRMADA cuya llegadaEstimada ya pasó; se deriva al leer (misAsistencias, asistencia)
 }
 
 enum MotivoNoConfirmada {
@@ -1334,6 +1335,19 @@ type Asistencia {
   motivo: MotivoNoConfirmada # solo NO_CONFIRMADA
   solicitadaEn: DateTime!
   canceladaEn: DateTime
+  # v0.52 (HU-M06, B5): para la cuenta regresiva de «Mis asistencias» y la notificación de llegada.
+  confirmadaEn: DateTime # solo CONFIRMADA o LLEGO
+  llegadaEstimada: DateTime # confirmadaEn + minutosEstimados; null sin tiempo estimado
+  # v0.52 (B6): solo en misAsistencias y asistencia(id), y solo al cliente dueño: lo que pidió y adónde.
+  descripcion: String
+  ubicacion: UbicacionAsistencia
+}
+
+type UbicacionAsistencia {
+  latitud: Float
+  longitud: Float
+  direccion: String
+  origen: OrigenUbicacion!
 }
 
 type ErrorAsistencia {
@@ -1406,6 +1420,10 @@ type Query {
   # v0.51 (HU-M06, B8): solo CLIENTE; hasta 10 prestadores, los destacados primero. Si el proveedor falla, lista vacía
   # (la app usa tiempos aproximados): nunca un error.
   rutasPrestadores(latitud: Float!, longitud: Float!, prestadorIds: [ID!]!): [RutaPrestador!]!
+  # v0.52 (HU-M06, B6): las asistencias del CLIENTE de los últimos 30 días, más recientes primero (máximo 50).
+  misAsistencias: [Asistencia!]!
+  # v0.52 (B6): una asistencia del CLIENTE (al tocar la notificación de llegada). Ajena o inexistente: NO_ENCONTRADA.
+  asistencia(id: ID!): ResultadoAsistencia!
 }
 
 type Mutation {

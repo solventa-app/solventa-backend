@@ -572,6 +572,20 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.52 — 2026-11-12
+
+- HU-M06 (KAN-36), fase 5 del plan de pendientes (B5 y B6): «Mis asistencias» en la app.
+  - `Asistencia` gana `confirmadaEn` y `llegadaEstimada` (= confirmación + minutos) y, solo en las consultas de lectura y
+    para el cliente dueño, `descripcion` y `ubicacion` (`UbicacionAsistencia`: latitud, longitud, dirección y origen;
+    la app la usa para el aviso «Te alejaste»).
+  - `EstadoAsistencia` gana `LLEGO`: una CONFIRMADA cuya llegada ya pasó se **lee** como LLEGO (no se guarda ni hay
+    job). Con prestadores reales, el prestador marcará la llegada.
+  - `misAsistencias: [Asistencia!]!` (las del CLIENTE de los últimos 30 días, más recientes primero, máximo 50) y
+    `asistencia(id): ResultadoAsistencia!` (ajena o inexistente: `NO_ENCONTRADA`). CLAIMS `0009` agrega el índice
+    `ix_cliente_solicitada`.
+- Solo cambios aditivos (`LLEGO` solo aparece en las consultas nuevas). Afecta al frontend: el móvil (pestaña «Mis
+  asistencias» y la notificación de llegada).
+
 ## v0.51 — 2026-11-12
 
 - HU-M06 (KAN-36), fase 4 del plan de pendientes (B8): rutas tipo semáforo en el mapa.

@@ -17,7 +17,7 @@ solicitud se escribe en la **primaria** (escritor único: CLAIMS) y se lee de el
 import json
 import logging
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from pymongo import MongoClient
@@ -31,6 +31,8 @@ MAX_DESCRIPCION = 500
 MAX_DIRECCION = 200
 
 MOTIVO_SIN_RESPUESTA = "PRESTADOR_SIN_RESPUESTA"
+DIAS_MIS_ASISTENCIAS = 30
+MAX_MIS_ASISTENCIAS = 50
 
 MENSAJE_PRESTADOR_NO_DISPONIBLE = (
     "Este prestador ya no está disponible. Elige otro prestador cercano."
@@ -67,6 +69,8 @@ class RepositorioAsistencias(Protocol):
     def crear(self, asistencia: dict) -> None: ...
 
     def actualizar(self, asistencia_id: str, cambios: dict) -> None: ...
+
+    def de_cliente(self, cliente_id: str, desde: datetime) -> list[dict]: ...
 
 
 class RepositorioAsistenciasMongo:
@@ -114,6 +118,18 @@ class RepositorioAsistenciasMongo:
     def actualizar(self, asistencia_id: str, cambios: dict) -> None:
         self._asistencias.update_one({"_id": asistencia_id}, {"$set": cambios})
 
+    def de_cliente(self, cliente_id: str, desde: datetime) -> list[dict]:
+        """v0.52 (B6): las del cliente desde [desde], de la más reciente a la más vieja (índice
+        `ix_cliente_solicitada`, migración 0009)."""
+        cursor = (
+            self._asistencias.find(
+                {"cliente_id": cliente_id, "solicitada_en": {"$gte": desde}}, {"_id": 1}
+            )
+            .sort("solicitada_en", -1)
+            .limit(MAX_MIS_ASISTENCIAS)
+        )
+        return [a for doc in cursor if (a := self.obtener(doc["_id"])) is not None]
+
 
 def _publica(asistencia: dict) -> dict:
     """Lo que vuelve al BFF: sin la ubicación ni la descripción (las mandó el propio cliente y no
@@ -127,6 +143,42 @@ def _publica(asistencia: dict) -> dict:
         "motivo": asistencia.get("motivo"),
         "solicitada_en": asistencia["solicitada_en"],
         "cancelada_en": asistencia.get("cancelada_en"),
+        "confirmada_en": asistencia.get("confirmada_en"),
+        "llegada_estimada": asistencia.get("llegada_estimada"),
+    }
+
+
+def _al(fecha: datetime | None) -> datetime | None:
+    """Mongo devuelve fechas sin zona en algunos clientes: se tratan como UTC."""
+    if fecha is None:
+        return None
+    return fecha if fecha.tzinfo else fecha.replace(tzinfo=UTC)
+
+
+def estado_al_leer(asistencia: dict, ahora: datetime) -> str:
+    """v0.52 (B5): una CONFIRMADA cuya llegada ya pasó se lee como LLEGO. Se deriva al leer, sin
+    un job: app y backend dicen lo mismo. Con prestadores reales, el prestador marcará la
+    llegada."""
+    llegada = _al(asistencia.get("llegada_estimada"))
+    if asistencia["estado"] == "CONFIRMADA" and llegada is not None and llegada <= ahora:
+        return "LLEGO"
+    return asistencia["estado"]
+
+
+def _detalle(asistencia: dict, ahora: datetime) -> dict:
+    """Para «Mis asistencias» y su detalle (v0.52, B6): solo al cliente dueño, con lo que pidió
+    (descripción y adónde) para el detalle y el aviso «Te alejaste» (4.4b)."""
+    u = asistencia.get("ubicacion") or {}
+    return {
+        **_publica(asistencia),
+        "estado": estado_al_leer(asistencia, ahora),
+        "descripcion": asistencia.get("descripcion"),
+        "ubicacion": {
+            "latitud": u.get("latitud"),
+            "longitud": u.get("longitud"),
+            "direccion": u.get("direccion"),
+            "origen": u.get("origen") or ("GPS" if u.get("latitud") is not None else "DIRECCION"),
+        },
     }
 
 
@@ -165,10 +217,15 @@ class ServicioAsistencias:
                 "estado": "NO_CONFIRMADA",
                 "motivo": respuesta.get("motivo") or MOTIVO_SIN_RESPUESTA,
             }
+        minutos = respuesta.get("minutos_estimados")
+        ahora = self._reloj()
         return {
             "estado": "CONFIRMADA",
             "motivo": None,
-            "minutos_estimados": respuesta.get("minutos_estimados"),
+            "minutos_estimados": minutos,
+            # v0.52 (B5): la llegada que ve el cliente en «Mis asistencias».
+            "confirmada_en": ahora,
+            "llegada_estimada": ahora + timedelta(minutes=minutos) if minutos else None,
         }
 
     def solicitar(self, solicitud: dict) -> dict:
@@ -227,6 +284,19 @@ class ServicioAsistencias:
         asistencia.update(self._desenlace(asistencia, 1))
         self._repo.crear(asistencia)
         return _publica(asistencia)
+
+    def mis(self, cliente_id: str) -> list[dict]:
+        """v0.52 (B6): las del cliente de los últimos 30 días, más recientes primero."""
+        ahora = self._reloj()
+        desde = ahora - timedelta(days=DIAS_MIS_ASISTENCIAS)
+        return [_detalle(a, ahora) for a in self._repo.de_cliente(cliente_id, desde)]
+
+    def detalle(self, asistencia_id: str, cliente_id: str) -> dict:
+        """v0.52 (B6): una del cliente (al tocar la notificación). Ajena = no existe."""
+        asistencia = self._repo.obtener(asistencia_id)
+        if asistencia is None or asistencia["cliente_id"] != cliente_id:
+            raise ErrorAsistencia("NO_ENCONTRADA", MENSAJE_NO_ENCONTRADA)
+        return _detalle(asistencia, self._reloj())
 
     def cancelar(self, asistencia_id: str, cliente_id: str) -> dict:
         """Cancelar dos veces devuelve la misma asistencia cancelada. Una asistencia de otro
