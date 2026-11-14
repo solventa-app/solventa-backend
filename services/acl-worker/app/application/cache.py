@@ -1,6 +1,7 @@
 """Caché cache-aside del ACL Worker (HA-LAT-002, CA-W01-04): último valor
-bueno por fuente y cliente, usado SOLO para degradar cuando el proveedor
-real falla o el circuito está abierto.
+bueno por fuente y cliente. Se usa para degradar cuando el proveedor real
+falla o el circuito está abierto (`de_cache=True`) y, con `CACHE_SERVIR_EN_TTL`,
+para servir dentro del TTL sin llamar al proveedor (EC010), sin marcar `de_cache`.
 
 TTL por defecto de 5 minutos (`CACHE_TTL_SEGUNDOS`): además de acotar qué tan
 viejo puede ser un dato degradado, hace que la caché expire sola dentro de la

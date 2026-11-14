@@ -37,7 +37,9 @@ class DatosFuente:
     fuente: Fuente
     datos: dict[str, Any]
     capturado_en: datetime
-    de_cache: bool = False  # True si se degradó al último valor en caché (CA-W01-04, EC010)
+    # True solo si el proveedor falló y se degradó al último valor en caché (CA-W01-04). Lo servido
+    # desde la caché dentro del TTL (`CACHE_SERVIR_EN_TTL`, EC010) NO cuenta: no hubo falla.
+    de_cache: bool = False
     degradado: bool = False  # True si no hay dato real ni caché y se usa el valor por defecto
 
 

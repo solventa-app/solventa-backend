@@ -36,7 +36,9 @@ arquitectura #2): `acl-worker` sigue siendo el único punto de contacto con prov
   (`rq.Retry(interval=[...])`) solo se promueven de `rq:scheduled:...` a la cola real si algo
   llama a `RQScheduler.enqueue_scheduled_jobs()` — `work(with_scheduler=False)` no lo hace sola,
   así que el trabajador lo hace a mano en cada ciclo de inactividad.
-- `app/tareas.py` (`reconciliar_fuente`): la tarea que ejecuta `rq`. Si la respuesta del ACL
+- `app/tareas.py` (`reconciliar_fuente`): la tarea que ejecuta `rq`. Consulta al ACL Worker con
+  `forzar_proveedor=True`, para no confundir el valor que el ACL sirve de su caché dentro del TTL
+  con una recuperación del proveedor. Si la respuesta del ACL
   Worker vuelve fresca (`de_cache=False` y `degradado=False`), el job termina bien (la caché ya
   quedó al día porque `ServicioConsultaFuentes` la re-guarda en su propio camino de éxito). Si
   sigue degradada, o el ACL Worker no responde, lanza una excepción para que `rq` reintente con el
