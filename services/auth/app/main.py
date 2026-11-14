@@ -393,6 +393,19 @@ def create_app(
             pool = construir_pool(config.database_url)
         if almacen is None:
             app.state.consentimientos = AlmacenConsentimientosPostgres(pool)
+        # KAN-259: antes que las sesiones, porque el login de la app activa el push (D3).
+        if servicio_dispositivos_push is not None:
+            app.state.dispositivos_push = servicio_dispositivos_push
+        elif pool is not None:
+            # Lectura liviana de `usuarios.notificaciones_push`, sin pasar por `ServicioUsuarios`.
+            _usuarios_para_push = RepositorioUsuariosPostgres(pool)
+            app.state.dispositivos_push = ServicioDispositivosPush(
+                RepositorioDispositivosPushPostgres(pool),
+                construir_cifrador(config),
+                habilitado_push=lambda uid: bool(
+                    (_usuarios_para_push.obtener(uid) or {}).get("notificaciones_push", True)
+                ),
+            )
         if servicios_inyectados:
             app.state.usuarios = servicio_usuarios
             app.state.sesiones = servicio_sesiones
@@ -413,24 +426,13 @@ def create_app(
                 refresh_dias=config.refresh_vigencia_dias,
                 refresh_web_horas=config.refresh_web_horas,
                 refresh_gracia_segundos=config.refresh_gracia_segundos,
+                dispositivos_push=getattr(app.state, "dispositivos_push", None),
             )
         if servicio_dispositivos is not None:
             app.state.dispositivos = servicio_dispositivos
         elif pool is not None:
             app.state.dispositivos = ServicioDispositivos(
                 RepositorioDispositivosPostgres(pool), config.jwt_secreto
-            )
-        if servicio_dispositivos_push is not None:
-            app.state.dispositivos_push = servicio_dispositivos_push
-        elif pool is not None:
-            # Lectura liviana de `usuarios.notificaciones_push`, sin pasar por `ServicioUsuarios`.
-            _usuarios_para_push = RepositorioUsuariosPostgres(pool)
-            app.state.dispositivos_push = ServicioDispositivosPush(
-                RepositorioDispositivosPushPostgres(pool),
-                construir_cifrador(config),
-                habilitado_push=lambda uid: bool(
-                    (_usuarios_para_push.obtener(uid) or {}).get("notificaciones_push", True)
-                ),
             )
         # Con todo lo demás inyectado (pruebas) no hay pool: las de socios inyectan el suyo.
         if servicio_socios is None and pool is not None:
