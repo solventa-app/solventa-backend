@@ -645,6 +645,19 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   el token de FCM y `actualizarPreferenciaPush` desde el interruptor del perfil). Pendiente: la función `enviar-push`
   que de verdad manda el mensaje (fuera de este contrato, no toca GraphQL).
 
+## Hotfix en `main` — 2026-11-12 (también numerado v0.46; no cambia el esquema, la v0.46 de KAN-259 está abajo)
+
+- KAN-26 (hotfix, HU-W03): ruta GraphQL **`/v1/graphql/web-suscripcion`**, el mismo esquema y el mismo contexto que
+  `/v1/graphql/web`, con un plazo propio de **5 s** en el gateway (el resto del canal web conserva los 700 ms).
+  Motivo: firmar con imagen, pagar y emitir tardan de 1,5 a 3,5 s en staging (imagen de la firma, ACL, contrato cifrado
+  con KMS) y a los 700 ms el gateway devolvía 504 con la firma ya registrada. Además, `firmarPorEnlace` devuelve la misma
+  evidencia si la propuesta ya estaba firmada aunque el enlace haya vencido entre un intento y otro (antes decía
+  `ENLACE_VENCIDO`). Sin cambios en el esquema: solo una ruta nueva y un comportamiento más tolerante.
+- Afecta al frontend: la web manda por esa ruta todo el flujo de suscripción (`aceptarOferta`, `enviarCodigoVerificacion`,
+  `verificarCodigo`, `emitirPropuesta`, `reenviarEnlaceFirma`, `solicitarSubidaFirma`, `firmarPorEnlace`, `iniciarPago`
+  y `confirmarPago`, y sus consultas), que hasta ahora iba por `/v1/graphql/web`. Hay que integrarla **después** de que
+  el backend esté desplegado: la ruta no existe antes.
+
 ## v0.46 — 2026-11-11
 
 - KAN-259 (notificaciones push, HU-M04, Fase 2): evento nuevo `notificacion.push-solicitada` (v1,

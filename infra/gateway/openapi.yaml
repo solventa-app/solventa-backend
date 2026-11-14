@@ -1,7 +1,11 @@
 # Especificación OpenAPI 2.0 (Swagger) para Google Cloud API Gateway (HA-LAT-004: EC001, EC002, EC008).
-# El plazo duro de extremo a extremo es de 700 ms (deadline: 0.7), salvo el canal móvil (/graphql/app y
-# /v1/graphql/app): 2 s, porque crear la cuenta del onboarding (hash de la clave) tarda ~1 s y el corte a
-# los 700 ms dejaba la cuenta creada con un 504 que la app reintentaba.
+# El plazo duro de extremo a extremo es de 700 ms (deadline: 0.7), salvo dos excepciones que existen por el mismo
+# motivo: una escritura que tarda más de 700 ms dejaba el resultado hecho y un 504 que el cliente reintentaba.
+# - El canal móvil (/graphql/app y /v1/graphql/app): 2 s, porque crear la cuenta del onboarding (hash de la clave)
+#   tarda ~1 s.
+# - La ruta /v1/graphql/web-suscripcion: 5 s, para firmar, pagar y emitir desde la web (1,5 a 3,5 s medidos en
+#   staging: imagen de la firma, ACL, contrato cifrado con KMS). Es el mismo esquema y el mismo contexto que
+#   /v1/graphql/web, que conserva los 700 ms para el resto del canal.
 # En local se replica con Envoy (infra/gateway/envoy.yaml) y se valida en CI con scripts/validar_gateway.py.
 swagger: "2.0"
 info:
@@ -62,6 +66,16 @@ paths:
       x-google-backend:
         address: ${bff_url}/v1/graphql/web
         deadline: 0.7
+      responses:
+        "200":
+          description: Respuesta GraphQL
+  /v1/graphql/web-suscripcion:
+    post:
+      summary: Canal GraphQL Web, versión 1, solo para el flujo de suscripción (firma, pago y emisión), con plazo de 5 s
+      operationId: graphqlWebSuscripcionV1
+      x-google-backend:
+        address: ${bff_url}/v1/graphql/web-suscripcion
+        deadline: 5.0
       responses:
         "200":
           description: Respuesta GraphQL

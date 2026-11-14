@@ -136,6 +136,18 @@ resource "google_pubsub_subscription_iam_member" "enviar_push_consume" {
   member       = "serviceAccount:${google_service_account.runtime["enviar-push"].email}"
 }
 
+# La suscripción push firma su OIDC con la cuenta de `enviar-push`, así que esa cuenta necesita
+# `run.invoker` sobre su propio servicio (nadie la "llama" en `.github/servicios.json`, así que
+# `invocador_llamada` de servicios.tf no la crea). Sin esto, Pub/Sub recibe 403 y el push nunca sale.
+resource "google_cloud_run_v2_service_iam_member" "enviar_push_invoca_enviar_push" {
+  count    = local.push_activo ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.servicio["enviar-push"].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.runtime["enviar-push"].email}"
+}
+
 # --------------------------------------------------------------------------- eventos-parametricos (Fase 3, con DLQ)
 resource "google_pubsub_topic" "eventos_parametricos" {
   count      = var.crear_push ? 1 : 0
@@ -196,6 +208,17 @@ resource "google_pubsub_subscription_iam_member" "claims_consume_parametricos" {
   subscription = google_pubsub_subscription.claims_eventos_parametricos[0].name
   role         = "roles/pubsub.subscriber"
   member       = "serviceAccount:${google_service_account.runtime["claims"].email}"
+}
+
+# Igual que `enviar_push_invoca_enviar_push`: la suscripción push hacia CLAIMS firma con la cuenta
+# de CLAIMS, que necesita `run.invoker` sobre su propio servicio.
+resource "google_cloud_run_v2_service_iam_member" "claims_invoca_claims" {
+  count    = local.push_activo ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.servicio["claims"].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.runtime["claims"].email}"
 }
 
 # El agente de Pub/Sub necesita poder publicar en el tema DLQ y leer la suscripción original para
