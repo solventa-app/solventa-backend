@@ -269,3 +269,61 @@ def test_con_origen_direccion_la_direccion_es_obligatoria_y_no_llama_a_claims():
     r = _pedir(claims, SOLICITAR, {"e": _entrada(origenUbicacion="DIRECCION", direccion=" ")})
     assert r["data"]["solicitarAsistencia"]["codigo"] == "DATOS_INVALIDOS"
     assert all(n != "solicitar_asistencia" for n, *_ in claims.llamadas)
+
+
+# ---------- v0.51 (HU-M06, B8): rutas de los prestadores ----------
+
+RUTAS = """query($la: Float!, $lo: Float!, $ids: [ID!]!) {
+  rutasPrestadores(latitud: $la, longitud: $lo, prestadorIds: $ids) {
+    prestadorId distanciaMetros duracionSegundos geometria estimado } }"""
+
+
+def test_rutas_con_el_cliente_del_token_y_geometria_de_los_primeros():
+    claims = ClaimsFalso()
+    ids = ["p1", "p2", "p3", "p4"]
+    r = _pedir(claims, RUTAS, {"la": 4.67, "lo": -74.04, "ids": ids})["data"]["rutasPrestadores"]
+    assert [x["prestadorId"] for x in r] == ids
+    assert [x["geometria"] is not None for x in r] == [True, True, True, False]
+    assert ("rutas", "cli-1", ids) in claims.llamadas
+
+
+def test_rutas_si_claims_falla_lista_vacia_y_solo_el_cliente():
+    claims = ClaimsFalso()
+    claims.error = ErrorServicio("HTTP 503")
+    r = _pedir(claims, RUTAS, {"la": 4.67, "lo": -74.04, "ids": ["p1"]})
+    assert r["data"]["rutasPrestadores"] == []
+    r = _pedir(ClaimsFalso(), RUTAS, {"la": 4.67, "lo": -74.04, "ids": ["p1"]}, rol="ASESOR")
+    assert r["errors"][0]["message"] == MENSAJE_SIN_PERMISO
+
+
+# ---------- v0.52 (HU-M06, B5 y B6): «Mis asistencias» ----------
+
+MIS = """{ misAsistencias { id estado llegadaEstimada confirmadaEn descripcion
+  ubicacion { latitud longitud direccion origen } prestador { id } } }"""
+UNA = f"""query($id: ID!) {{ asistencia(id: $id) {{ {CAMPOS} }} }}"""
+
+
+def test_mis_asistencias_del_cliente_con_la_llegada_y_lo_que_pidio():
+    claims = ClaimsFalso()
+    _pedir(claims, SOLICITAR, {"e": _entrada()})
+    _pedir(claims, SOLICITAR, {"e": _entrada()})  # el reintento la confirma
+    (a,) = _pedir(claims, MIS, {})["data"]["misAsistencias"]
+    assert a["estado"] == "CONFIRMADA"
+    assert a["llegadaEstimada"].startswith("2026-11-07T15:06")
+    assert a["descripcion"] == "Dolor en el pecho"
+    assert a["ubicacion"]["origen"] == "GPS"
+    assert ("mis_asistencias", "cli-1") in claims.llamadas
+
+
+def test_una_asistencia_y_la_ajena_es_no_encontrada():
+    claims = ClaimsFalso()
+    _pedir(claims, SOLICITAR, {"e": _entrada()})
+    r = _pedir(claims, UNA, {"id": ID.upper()})["data"]["asistencia"]
+    assert r["id"] == ID
+    r = _pedir(claims, UNA, {"id": "no-existe"})["data"]["asistencia"]
+    assert r["codigo"] == "NO_ENCONTRADA"
+
+
+def test_mis_asistencias_solo_el_cliente():
+    r = _pedir(ClaimsFalso(), MIS, {}, rol="ASESOR")
+    assert r["errors"][0]["message"] == MENSAJE_SIN_PERMISO

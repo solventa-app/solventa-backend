@@ -572,6 +572,36 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.52 — 2026-11-12
+
+- HU-M06 (KAN-36), fase 5 del plan de pendientes (B5 y B6): «Mis asistencias» en la app.
+  - `Asistencia` gana `confirmadaEn` y `llegadaEstimada` (= confirmación + minutos) y, solo en las consultas de lectura y
+    para el cliente dueño, `descripcion` y `ubicacion` (`UbicacionAsistencia`: latitud, longitud, dirección y origen;
+    la app la usa para el aviso «Te alejaste»).
+  - `EstadoAsistencia` gana `LLEGO`: una CONFIRMADA cuya llegada ya pasó se **lee** como LLEGO (no se guarda ni hay
+    job). Con prestadores reales, el prestador marcará la llegada.
+  - `misAsistencias: [Asistencia!]!` (las del CLIENTE de los últimos 30 días, más recientes primero, máximo 50) y
+    `asistencia(id): ResultadoAsistencia!` (ajena o inexistente: `NO_ENCONTRADA`). CLAIMS `0009` agrega el índice
+    `ix_cliente_solicitada`.
+- Solo cambios aditivos (`LLEGO` solo aparece en las consultas nuevas). Afecta al frontend: el móvil (pestaña «Mis
+  asistencias» y la notificación de llegada).
+
+## v0.51 — 2026-11-12
+
+- HU-M06 (KAN-36), fase 4 del plan de pendientes (B8): rutas tipo semáforo en el mapa.
+  - `rutasPrestadores(latitud, longitud, prestadorIds): [RutaPrestador!]!` (solo CLIENTE, hasta 10, los destacados
+    primero): `distanciaMetros`, `duracionSegundos`, `geometria` (polyline6, solo los 3 primeros) y `estimado`.
+    Si el proveedor falla, lista vacía (la app usa tiempos aproximados), nunca un error.
+  - Va BFF → CLAIMS (`POST /rutas`) → ACL (`POST /mapas/rutas`): Mapbox Matrix (`driving-traffic`) y Directions con
+    el token secreto `mapbox-token`, o simulado en local (`MAPAS_PROVEEDOR=simulado`, línea recta). Circuito propio
+    (`mapas`), sonda sintética y caché en Redis por celda de ~200 m durante 2 min.
+  - Auditoría: CLAIMS `0008` crea `auditoria_rutas` (fecha, cliente, prestadores, proveedor, resultado, latencia; la
+    ubicación exacta y la dirección aproximada **cifradas**; TTL de 90 días). La dirección sale de la Geocoding
+    inversa de Google en español por el ACL (`GET /lugares/inversa`, caché por celda de ~100 m).
+- Cambio de privacidad: la ubicación del cliente sale al backend y a Mapbox al abrir el mapa (antes no salía del
+  teléfono hasta pedir la asistencia). Hay que actualizar el aviso de privacidad.
+- Solo cambios aditivos. Afecta al frontend: el móvil (rutas tipo semáforo, M15).
+
 ## v0.50 — 2026-11-12
 
 - HU-M06 (KAN-36), fase 3 del plan de pendientes (B4 y B9): sin permiso de ubicación o con el GPS apagado, el cliente

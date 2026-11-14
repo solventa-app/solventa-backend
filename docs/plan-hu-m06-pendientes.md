@@ -20,36 +20,62 @@ Revisión del 2026-11-12 contra `develop` (mobile `8dac02f`, backend `fb3b4c6`).
 
 | # | Ajuste | Motivo |
 |---|---|---|
-| A1 | Una versión de contrato por fase: **v0.49** catálogo y grúa, **v0.50** dirección ubicada, **v0.51** rutas, **v0.52** «Mis asistencias» | El contrato iba en v0.45 y el PR #589 del backend (KAN-259, push de HU-M04) ya reserva v0.46 a v0.48 |
+| A1 | Una versión de contrato por fase: **v0.49** catálogo y grúa, **v0.50** dirección ubicada, **v0.51** rutas, **v0.52** «Mis asistencias» | El contrato iba en v0.45 y el PR #589 del backend (KAN-259, push de HU-M04) ya reserva v0.49 a v0.48 |
 | A2 | La notificación local de llegada **convive con FCM** (`firebase_messaging` ya está en el `pubspec.yaml`, KAN-259) en un canal propio «Asistencias» | El plan la elegía porque FCM «faltaba»; ya no es así |
 | A3 | Antes de tocar el CI de mobile se confirma si Gradle necesita token de descargas de Mapbox para **compilar** (Emuladores, MobSF y CD compilan un APK aunque usen el mapa falso) | El plan solo lo consideraba para ejecutar |
 | A4 | La app envía `Accept-Language` en el cliente GraphQL | 2.0 lo necesita y hoy no se envía |
 | A5 | **Resuelto:** CLAIMS llama directo al ACL Worker, como ya lo hacen PAYMENTS, POLICY y UNDER (`llama` en `.github/servicios.json`) | Se verificó en el código |
 | A6 | La ubicación sale del teléfono al abrir el mapa (rutas por el backend) y `auditoria_rutas` la guarda 90 días cifrada: actualizar el aviso de privacidad y `docs/hu-m06-backend.md` §1 de mobile | Contradice la decisión anterior de que no saliera del teléfono |
 | A7 | Claves de texto `misAsistenciasEnCamino` y `misAsistenciasYaLlegaron` en vez de `homeEnCamino` y `homeYaLlegaron` | Ya no está en Inicio |
-| A8 | Volver a pasar MobSF y revisar R8 por Mapbox y los permisos nuevos | Cambian el APK y sus permisos |
+| A8 | Volver a pasar MobSF y revisar R8 por Mapbox y los permisos nuevos. **R8 compila** (APK release de dev en el devcontainer); el APK pesa 147 MB por las librerías nativas de Mapbox de todas las ABI: usar `--split-per-abi` o el AAB en el CD. Con AGP 9 y `android.builtInKotlin=false`, `android/build.gradle.kts` aplica el plugin de Kotlin solo al módulo de Mapbox | Cambian el APK y sus permisos |
 | A9 | En la máquina de desarrollo solo se corre lo que cabe en contenedores (análisis, unitarias, widget, goldens, pytest, ruff, migraciones contra Mongo y Newman con el compose). **Emuladores, Mapbox real, teléfono real y staging quedan pendientes** para una prueba posterior | Regla del equipo |
 | A10 | `stub-prestadores` usa el puerto **8109** | El 8107 que proponía el plan ya es de `stub-vehiculos` y el 8108 lo toma `stub-eventos-parametricos` en el PR #589 |
 | A11 | `fotoUrl` queda **null** en toda la semilla: ALMACENAMIENTO no sirve archivos públicos, así que no hay de dónde salir una foto de sede. La app usa el placeholder del tipo y está lista para la foto (se prueba con el fake) | B3 pedía fotos en algunos |
-| A19 | La dirección se guarda en la asistencia tal como la devolvió Google en el idioma de la app; la versión en español para soporte y auditoría (2.0) se agrega con `auditoria_rutas` (fase 4) | Evita una segunda llamada a Google en cada solicitud |
-| A20 | `origenUbicacion` es `OrigenUbicacion! = GPS` (no nulo con valor por defecto): así una app anterior a la v0.50 sigue funcionando sin mandarlo | Strawberry lo expone así y el contrato debe ser idéntico |
 | A12 | Los minutos de llegada simulados se calculan en `stubs/prestadores` (Haversine, 20 km/h + 2 min) y `PRESTADORES_MINUTOS_FIJOS` vive allí | CLAIMS ya no simula (B7) |
+| A13 | **A3 resuelto:** compilar no pide token de descargas. El plugin agrega el Maven de releases de Mapbox sin credenciales (solo las *snapshots* las piden); se verificó con `flutter build apk --release` en el devcontainer. Solo hace falta el token público en ejecución | Se verificó en el `build.gradle` del plugin y al compilar |
+| A14 | `mapbox_maps_flutter` **3.34.2**, para que las cuatro piezas del plugin (fachada, móvil, web e interfaz) vayan en la misma versión (con 3.33.1 se mezclaban con 3.34.2) | La 3.34.0 fue retirada |
+| A15 | Los placeholders de la foto (2.2, S2, 4.4) **se dibujan** (`SolPhotoBanner`: degradado y el ícono del tipo) en vez de `assets/prestadores/*.webp` de banco | No hay fotos con licencia en el repo; cuando existan, basta con `fotoUrl` o con agregar los assets |
+| A16 | Sin token de Mapbox: con `API_ENV=mock` (Emuladores, Test Lab y la demo) se usa un **mapa falso** dibujado en Flutter; fuera de mock, la lista sin mapa (como CA-M06-04). Las pruebas y los goldens usan siempre el mapa falso | La vista nativa no se pinta en `flutter test` |
+| A17 | «Más prestadores en tu ciudad» son todos los del radio de 50 km (M16), no se filtra por el nombre de la ciudad | El radio ya separa las ciudades del catálogo |
+| A19 | La dirección se guarda en la asistencia tal como la devolvió Google en el idioma de la app; la versión en español para soporte y auditoría (2.0) se agrega con `auditoria_rutas` (fase 4) | Evita una segunda llamada a Google en cada solicitud |
+| A20 | `origenUbicacion` es `OrigenUbicacion! = GPS` (no nulo con valor por defecto): una app anterior a la v0.50 sigue funcionando sin mandarlo | Strawberry lo expone así y el contrato debe ser idéntico |
+| A21 | La pantalla de explicación (paso 1 del boceto) sale solo si la app nunca pidió el permiso: Android no distingue «nunca pedido» de «negado una vez», así que la app lo recuerda en `SharedPreferences` | Limitación de la API de permisos |
+| A22 | En Mapbox el pin del cliente no lleva la etiqueta «Dirección escrita» (la anotación es una imagen sin texto); la dice el aviso «Usando: …» de arriba. En el mapa falso sí la lleva | Evita dibujar un pin con texto por idioma |
+| A23 | S4 (dirección legible con GPS) queda fuera: con GPS, M06-02 muestra «Ubicación detectada automáticamente» con las coordenadas | Era opcional en el plan |
+| A24 | Las rutas simuladas (local y CI) van **dentro del ACL** (`MAPAS_PROVEEDOR=simulado`), no en un `stub-mapas` aparte | Mismo resultado y un contenedor menos |
+| A25 | En `auditoria_rutas` la **dirección aproximada también va cifrada** | También es un dato personal (regla 6) |
+| A26 | Aún no hay una consulta de `auditoria_rutas` para roles de auditoría; la colección existe con TTL de 90 días | No hay rol de auditoría hoy |
+| A27 | **Hallazgo:** dirección o coordenadas en la query string quedan en el log de acceso del ACL. `/lugares/ubicar` y `/lugares/inversa` van por `POST`. **Preexistente:** `/lugares/autocompletar` y `/lugares/validar` (T19) tienen el mismo problema | Regla 6 |
+| A28 | M15: con rutas, **todos** los prestadores que trae la respuesta (hasta 10) muestran el tiempo de la ruta, sin «~»; sin rutas (falla o circuito abierto), los destacados también llevan «~». Solo los 3 destacados tienen línea | El plan marcaba «~» para los que no son destacados; con la Matrix ya hay tiempo real |
+| A29 | B6: `misAsistencias` y `asistencia(id)` traen, solo al dueño, la descripción y la ubicación de la solicitud (para el detalle y «Te alejaste»), con tope de 50 | Sin la ubicación no hay con qué comparar; guardarla en el teléfono sería otro dato personal en disco |
+| A30 | La notificación local se programa con `inexactAllowWhileIdle` y un instante absoluto (UTC), sin `flutter_timezone` ni alarmas exactas; el permiso de Android 13+ se pide una vez por ejecución de la app al enviar la primera solicitud, con la línea «Te avisaremos cuando llegue el prestador.» en M06-02 | Menos permisos; puede llegar un par de minutos tarde (aceptado en 4.5) |
+| A31 | Con la app abierta y la pestaña «Mis asistencias» visible, al llegar se cancela la notificación del sistema y se muestra «X llegó · Ver». En otra pantalla de la app sí puede salir la del sistema | El reloj de 1 s solo corre con la pestaña visible (4.3) |
+| A32 | «Mis asistencias» muestra el estado vacío también si solo hay canceladas (no se listan) | Propuesta del plan (4.1) |
+| A33 | La barra inferior ahora toma los textos del catálogo (ES/EN); antes estaban fijos en español en el sistema de diseño | Regla de l10n del repo |
+| A34 | `.github/servicios.json` del `acl-worker` recupera `MAPAS_PROVEEDOR: mapbox` y el secreto `MAPBOX_TOKEN: mapbox-token`, junto a lo de KAN-259 (#618: `CLIMA_URL`, `VUELOS_URL`, `aviationstack-llave`) | Al integrar develop en #614 y #615 desde GitHub, el conflicto se resolvió con solo el lado de develop y staging quedaba con rutas simuladas. Antes de desplegar, cargar el valor de `mapbox-token` (Anexo B) |
+| A18 | Los pines de Mapbox no son accesibles con TalkBack (son anotaciones nativas): la lista de la hoja tiene los mismos prestadores y acciones. En el mapa falso sí tienen etiqueta | Limitación del SDK |
 
 ### Avance por fase
 
 | Fase | Backend | Mobile |
 |---|---|---|
-| 1 · Catálogo con detalle, grúa y prestadores detrás del ACL (B1, B2, B3, B7) | `feat/KAN-36-prestadores-aliados-gruas` (v0.49, CLAIMS `0007`) | pendiente |
-| 2 · Mapbox, pines, detalle, hoja arrastrable (M0–M14) | — | pendiente |
-| 3 · Dirección ubicada (B4, B9, 2.0, S1) | `feat/KAN-36-ubicar-direccion` (v0.50, apilada sobre la fase 1) | pendiente |
-| 4 · Rutas y auditoría (B8, M15) | pendiente | pendiente |
-| 5 · «Mis asistencias» y notificación (B5, B6, 4.x) | pendiente | pendiente |
+| 1 · Catálogo con detalle, grúa y prestadores detrás del ACL (B1, B2, B3, B7) | PR #590 (v0.49, CLAIMS `0007`) | PR #83 (mobile) |
+| 2 · Mapbox, pines, detalle, hoja arrastrable (M0–M14) | — | PR #84 (mobile) |
+| 3 · Dirección ubicada (B4, B9, 2.0, S1) | PR #591 (v0.50, apilado sobre #590) | PR #85 (mobile) |
+| 4 · Rutas y auditoría (B8, M15) | PR #614 (v0.51, CLAIMS `0008`) | PR #86 (mobile) |
+| 5 · «Mis asistencias» y notificación (B5, B6, 4.x) | PR #615 (v0.52, CLAIMS `0009`) | PR #89 (apilado sobre #86) |
 
 ### Pendiente de verificar fuera de esta máquina (A9)
 
 - Emuladores (`emuladores.yml`) con las pruebas de integración nuevas de M06.
-- Mapbox real (token público en la app y secreto en el ACL), estilos calles y satélite.
-- Teléfono real: permisos, GPS, «Cómo llegar», notificación con la app cerrada, «Te alejaste».
+- Mapbox real (token público en la app y secreto en el ACL), estilos calles y satélite: tamaño de los pines (densidad
+  del PNG), que las anotaciones sobrevivan al cambio de estilo, encuadre inicial y límites, toque en el vacío y logo y
+  atribución visibles.
+- Teléfono real: permisos, GPS, «Cómo llegar», notificación con la app cerrada (y tras reiniciar el teléfono), el
+  diálogo de notificaciones de Android 13+, tocar la notificación sin sesión (biometría y luego el detalle) y «Te
+  alejaste» con la ubicación del emulador (Extended controls → Location).
+- Las 3 pruebas de `integration_test/asistencia_en_sitio_test.dart` pasan en `flutter-tester` (sin emulador); falta
+  correrlas en Emuladores.
 - Staging (Anexo B.6) y `auditoria_rutas` en Mongo de staging.
 
 ---

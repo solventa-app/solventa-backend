@@ -100,7 +100,7 @@ peticiones simultáneas (verificado: 8 aprobaciones a la vez dejan una resoluci�
 | `MONGO_DB` | `claims` | Base |
 | `LECTURA_MAX_MS` | `500` | Tope de cada lectura en la réplica |
 | `CIFRADO_CLAVE` / `KMS_KEY_NAME` / `CIFRADO_CLAVE_ENVUELTA` | clave local de desarrollo | Igual que RISK (D-04) |
-| `ACL_URL` | `http://localhost:8005` | HU-M06 (v0.49): la red de prestadores está detrás del ACL Worker (`POST /prestadores/asistencias`); el desenlace simulado vive en `stubs/prestadores` (`PRESTADORES_SIMULACION`) |
+| `ACL_URL` | `http://localhost:8005` | HU-M06 (v0.49 y v0.51): la red de prestadores (`POST /prestadores/asistencias`), las rutas (`POST /mapas/rutas`) y la dirección aproximada para `auditoria_rutas` (`POST /lugares/inversa`) están detrás del ACL Worker; el desenlace simulado vive en `stubs/prestadores` (`PRESTADORES_SIMULACION`) |
 
 ## Correr
 

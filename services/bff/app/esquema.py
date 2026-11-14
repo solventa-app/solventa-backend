@@ -2007,6 +2007,17 @@ class Prestador:
 
 
 @strawberry.type
+class RutaPrestador:
+    """v0.51 (HU-M06, B8)."""
+
+    prestador_id: strawberry.ID
+    distancia_metros: int
+    duracion_segundos: int
+    geometria: str | None
+    estimado: bool
+
+
+@strawberry.type
 class CatalogoPrestadores:
     version: str
     vigente: bool
@@ -2052,6 +2063,7 @@ class EstadoAsistencia(Enum):
     CONFIRMADA = "CONFIRMADA"
     NO_CONFIRMADA = "NO_CONFIRMADA"
     CANCELADA = "CANCELADA"
+    LLEGO = "LLEGO"  # v0.52
 
 
 @strawberry.enum
@@ -2125,6 +2137,21 @@ class Asistencia:
     motivo: MotivoNoConfirmada | None
     solicitada_en: datetime
     cancelada_en: datetime | None
+    # v0.52 (B5 y B6)
+    confirmada_en: datetime | None = None
+    llegada_estimada: datetime | None = None
+    descripcion: str | None = None
+    ubicacion: "UbicacionAsistencia | None" = None
+
+
+@strawberry.type
+class UbicacionAsistencia:
+    """v0.52 (B6): adónde pidió el cliente la asistencia (solo para él)."""
+
+    latitud: float | None
+    longitud: float | None
+    direccion: str | None
+    origen: OrigenUbicacion
 
 
 @strawberry.type
@@ -2154,6 +2181,19 @@ def _asistencia(datos: dict) -> Asistencia:
         motivo=MotivoNoConfirmada(datos["motivo"]) if datos.get("motivo") else None,
         solicitada_en=datetime.fromisoformat(datos["solicitada_en"]),
         cancelada_en=_fecha(datos.get("cancelada_en")),
+        confirmada_en=_fecha(datos.get("confirmada_en")),
+        llegada_estimada=_fecha(datos.get("llegada_estimada")),
+        descripcion=datos.get("descripcion"),
+        ubicacion=(
+            UbicacionAsistencia(
+                latitud=u.get("latitud"),
+                longitud=u.get("longitud"),
+                direccion=u.get("direccion"),
+                origen=OrigenUbicacion(u.get("origen") or "GPS"),
+            )
+            if (u := datos.get("ubicacion"))
+            else None
+        ),
     )
 
 
@@ -2965,6 +3005,50 @@ class Query:
         return [
             SugerenciaDireccion(place_id=x["place_id"], descripcion=x["descripcion"]) for x in lista
         ]
+
+    @strawberry.field
+    async def rutas_prestadores(
+        self, info: Info, latitud: float, longitud: float, prestador_ids: list[strawberry.ID]
+    ) -> list[RutaPrestador]:
+        """v0.51 (HU-M06, B8): rutas de los prestadores hacia el CLIENTE por CLAIMS (que audita) y
+        el ACL. Si algo falla, lista vacía: nunca un error técnico. La ubicación no se registra."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        if not (-90 <= latitud <= 90 and -180 <= longitud <= 180):
+            return []
+        ids = [str(i) for i in prestador_ids][:10]
+        try:
+            rutas = await _claims(info).rutas(usuario.id, latitud, longitud, ids)
+        except ErrorServicio:
+            return []
+        return [
+            RutaPrestador(
+                prestador_id=strawberry.ID(r["prestador_id"]),
+                distancia_metros=int(r["distancia_metros"]),
+                duracion_segundos=int(r["duracion_segundos"]),
+                geometria=r.get("geometria"),
+                estimado=bool(r.get("estimado")),
+            )
+            for r in rutas
+        ]
+
+    @strawberry.field
+    async def mis_asistencias(self, info: Info) -> list[Asistencia]:
+        """v0.52 (HU-M06, B6): las del CLIENTE del token, de los últimos 30 días. Si CLAIMS no
+        responde, el error genérico de servicio (la app reintenta al volver a la pestaña)."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        try:
+            datos = await _claims(info).mis_asistencias(usuario.id)
+        except ErrorServicio as error:
+            raise GraphQLError(MENSAJE_ASISTENCIA_NO_DISPONIBLE) from error
+        return [_asistencia(a) for a in datos]
+
+    @strawberry.field
+    async def asistencia(self, info: Info, id: strawberry.ID) -> ResultadoAsistencia:
+        """v0.52 (B6): una asistencia del CLIENTE (al tocar la notificación de llegada)."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        return await _accion_asistencia(
+            lambda: _claims(info).asistencia(str(id).lower(), usuario.id)
+        )
 
     @strawberry.field
     async def ubicar_direccion(

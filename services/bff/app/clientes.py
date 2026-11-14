@@ -449,6 +449,16 @@ class PuertoClaims(Protocol):
 
     async def cancelar_asistencia(self, asistencia_id: str, cliente_id: str) -> dict: ...
 
+    # HU-M06 (v0.52, B6)
+    async def mis_asistencias(self, cliente_id: str) -> list[dict]: ...
+
+    async def asistencia(self, asistencia_id: str, cliente_id: str) -> dict: ...
+
+    # HU-M06 (v0.51, B8)
+    async def rutas(
+        self, cliente_id: str, latitud: float, longitud: float, prestador_ids: list[str]
+    ) -> list[dict]: ...
+
 
 class PuertoSocios(Protocol):
     """Socios de distribución en AUTH (HU-W07). Todos lanzan `ErrorServicio` si AUTH no responde."""
@@ -1741,6 +1751,39 @@ class ClienteClaimsHttp:
         return await self._asistencia(
             f"/asistencias/{asistencia_id}/cancelar", {"cliente_id": cliente_id}
         )
+
+    async def mis_asistencias(self, cliente_id: str) -> list[dict]:
+        respuesta = await _pedir(self._cliente, "GET", f"/clientes/{cliente_id}/asistencias")
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return list(respuesta.json())
+
+    async def asistencia(self, asistencia_id: str, cliente_id: str) -> dict:
+        try:
+            respuesta = await self._cliente.get(
+                f"/asistencias/{asistencia_id}", params={"cliente_id": cliente_id}
+            )
+        except httpx.HTTPError as error:
+            raise ErrorServicio(type(error).__name__) from error
+        if respuesta.status_code == 404:
+            raise AsistenciaRechazada("NO_ENCONTRADA", "No encontramos esa asistencia.")
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()
+
+    async def rutas(
+        self, cliente_id: str, latitud: float, longitud: float, prestador_ids: list[str]
+    ) -> list[dict]:
+        cuerpo = {
+            "cliente_id": cliente_id,
+            "latitud": latitud,
+            "longitud": longitud,
+            "prestador_ids": prestador_ids,
+        }
+        respuesta = await _pedir(self._cliente, "POST", "/rutas", cuerpo)
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return list(respuesta.json()["rutas"])
 
     async def de_cliente(self, cliente_id: str) -> list[dict]:
         respuesta = await _pedir(self._cliente, "GET", f"/clientes/{cliente_id}/siniestros")

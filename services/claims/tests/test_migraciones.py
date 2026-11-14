@@ -48,12 +48,14 @@ def test_descubre_las_migraciones_en_orden():
         "0005_prestadores",
         "0006_asistencias",
         "0007_prestadores_detalle",
+        "0008_auditoria_rutas",
+        "0009_asistencias_cliente",
     ]
 
 
 def test_segunda_ejecucion_no_reaplica():
     db = FakeDb()
-    assert len(aplicar_pendientes(db)) == 7
+    assert len(aplicar_pendientes(db)) == 9
     assert aplicar_pendientes(db) == []
     assert set(db[COLECCION].docs) == {
         "0001_base",
@@ -63,6 +65,8 @@ def test_segunda_ejecucion_no_reaplica():
         "0005_prestadores",
         "0006_asistencias",
         "0007_prestadores_detalle",
+        "0008_auditoria_rutas",
+        "0009_asistencias_cliente",
     }
 
 

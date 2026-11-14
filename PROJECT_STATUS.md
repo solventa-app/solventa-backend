@@ -54,7 +54,7 @@ Todo esto está en código y verificado **en local**; nada tiene medición de st
 | HU-M06 / KAN-263, KAN-264, KAN-265, KAN-266 | Dirección a mano sin ubicación (`solicitarAsistenciaConDireccion`, v0.41). Catálogo maestro de prestadores en `claims` (`catalogoPrestadores`, v0.36); solicitar y cancelar asistencia (`solicitarAsistencia`, `cancelarAsistencia`, v0.40). v0.49: detalle del prestador, tipo `GRUA` y desenlace por la red de prestadores detrás del ACL (`stubs/prestadores`, puerto 8109). Resto del plan: [`docs/plan-hu-m06-pendientes.md`](docs/plan-hu-m06-pendientes.md) | [`services/claims/README.md`](services/claims/README.md) |
 | KAN-250 | Almacenamiento de archivos | [ADR-10](docs/adr/ADR-10-almacenamiento-de-archivos.md) |
 
-Contrato en **v0.45** (la v0.42 es la póliza de auto, KAN-290, [`plan-poliza-auto`](docs/plan-poliza-auto.md); la v0.45, el historial de fuentes del asesor, [`plan-revision-qa-2026-11-10`](docs/plan-revision-qa-2026-11-10.md) T5; la v0.49, el catálogo de prestadores con detalle y grúa, HU-M06 fase 1); la v0.50, la dirección escrita y ubicada de M06; la siguiente libre es **v0.51** (la v0.46 a v0.48 las reserva el PR #589, KAN-259). Últimas migraciones: AUTH `0014`, POLICY `0010`, PAYMENTS `0010`, RISK `0006`, CLAIMS `0007`.
+Contrato en **v0.45** (la v0.42 es la póliza de auto, KAN-290, [`plan-poliza-auto`](docs/plan-poliza-auto.md); la v0.45, el historial de fuentes del asesor, [`plan-revision-qa-2026-11-10`](docs/plan-revision-qa-2026-11-10.md) T5; la v0.49, el catálogo de prestadores con detalle y grúa, HU-M06 fase 1); la v0.50, la dirección escrita y ubicada de M06; la v0.51, las rutas de los prestadores con su auditoría; la v0.52, «Mis asistencias»; la siguiente libre es **v0.53** (la v0.46 a v0.48 las reserva el PR #589, KAN-259). Últimas migraciones: AUTH `0014`, POLICY `0010`, PAYMENTS `0010`, RISK `0006`, CLAIMS `0009`.
 
 ## Estado actual
 
@@ -71,10 +71,14 @@ Contrato en **v0.45** (la v0.42 es la póliza de auto, KAN-290, [`plan-poliza-au
 
 ## Pendiente
 
-**Fuera de alcance por decisión (2026-11-10)** ([`alcance-faltante`](docs/alcance-faltante.md)): backend del siniestro
-paramétrico (M04), ciclo de vida de la póliza (renovar, modificar, cancelar, reportes al regulador y ACORD), notificaciones
-push, billetera offline (M03) y escaneo de documentos. **No se revisan ni se desarrollan**; el foco es garantizar lo
-construido (póliza de auto KAN-290 y revisión QA).
+**Fuera de alcance por decisión (2026-11-10)** ([`alcance-faltante`](docs/alcance-faltante.md)): ciclo de vida de la
+póliza (renovar, modificar, cancelar, reportes al regulador y ACORD), billetera offline (M03) y escaneo de documentos.
+**No se revisan ni se desarrollan**; el foco es garantizar lo construido (póliza de auto KAN-290 y revisión QA).
+
+**Entró después de esa decisión (KAN-259, HU-M04, 2026-11-11):** el backend del siniestro paramétrico y las notificaciones
+push ([ADR-11](docs/adr/ADR-11-enviar-push-sns.md)). Hecho en código y en local (`SNS_MODO=stub`, EC016 medido en local
+en [`EC016-2026-11-11`](docs/evidencias/EC016-2026-11-11.md)). **Falta staging:** aplicar `infra/push.tf` (tema
+`notificaciones-push` y su suscripción), el rol de AWS (OIDC de GCP) y la Platform Application de SNS para FCM.
 
 **Staging** (validación con infraestructura aplazada a una fase posterior; por ahora solo código)
 - Medir EC003/EC004/EC005/EC007/EC008-EC012/EC017 y FC-10 (los guiones k6 de FC-10 están sin correr).
