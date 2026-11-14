@@ -31,25 +31,25 @@ class PuertoEnviadorPush(Protocol):
     def enviar(self, destino: dict[str, Any], mensaje: dict[str, Any]) -> None: ...
 
 
+# Canal de Android de importancia alta que crea la app (`push_service.dart`, `canalPush`).
+CANAL_ANDROID = "avisos_push"
+
+
 def _payload_gcm(mensaje: dict[str, Any]) -> dict[str, Any]:
-    """Mismo payload GCM del zip (`proceso.js`): `notification` para el banner, `data` para la
-    ruta y el id de correlación; `tag`/`collapse_key` para que una reentrega reemplace, no
-    duplique (idempotencia por `idempotencia`, ver el evento)."""
+    """Mensaje en formato FCM HTTP v1 (`fcmV1Message`), el que espera una aplicación de plataforma
+    de SNS con autenticación por token (FCM v1): `notification` para el banner, `data` para la
+    ruta y el id de correlación; `collapse_key`/`tag` para que una reentrega reemplace, no
+    duplique (idempotencia por `idempotencia`, ver el evento), y el canal de la app."""
     datos: dict[str, Any] = {"ruta": mensaje.get("ruta") or "", "eventId": mensaje["evento_id"]}
-    cuerpo: dict[str, Any] = {
-        "data": datos,
-        "android": {
-            "ttl": f"{mensaje.get('ttl_segundos', 86400)}s",
-            "priority": "high",
-            "collapse_key": mensaje["idempotencia"],
-        },
+    android: dict[str, Any] = {
+        "ttl": f"{mensaje.get('ttl_segundos', 86400)}s",
+        "priority": "HIGH",
+        "collapse_key": mensaje["idempotencia"],
     }
+    cuerpo: dict[str, Any] = {"data": datos, "android": android}
     if not mensaje.get("silenciosa"):
-        cuerpo["notification"] = {
-            "title": mensaje["titulo"],
-            "body": mensaje["cuerpo"],
-            "tag": mensaje["idempotencia"],
-        }
+        cuerpo["notification"] = {"title": mensaje["titulo"], "body": mensaje["cuerpo"]}
+        android["notification"] = {"channel_id": CANAL_ANDROID, "tag": mensaje["idempotencia"]}
     return cuerpo
 
 
@@ -184,7 +184,10 @@ class EnviadorSnsBoto3:
                 TargetArn=arn,
                 MessageStructure="json",
                 Message=json.dumps(
-                    {"default": mensaje.get("cuerpo") or "push", "GCM": json.dumps(cuerpo)}
+                    {
+                        "default": mensaje.get("cuerpo") or "push",
+                        "GCM": json.dumps({"fcmV1Message": {"message": cuerpo}}),
+                    }
                 ),
             )
         except Exception as error:
