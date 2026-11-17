@@ -125,7 +125,7 @@ servicios siguen con su bucle (`DISPARADOR=bucle`), que en Cloud Run no es fiabl
 | Reapertura de pólizas con el pago rechazado o pendiente que se recuperó (W03-14, CA-W03-06) | Cloud Scheduler `reconciliacion-cobros-policy`, cada `reconciliacion_cobros_cron` (15 min por defecto); además el BFF avisa a POLICY tras cada `reintentarCobro` del back-office | `POST /reconciliacion/cobros` de POLICY |
 | Reconciliación de fuentes degradadas (W01) | El ACL Worker encola una tarea en la cola `reconciliacion-fuentes` en vez del job de `rq`; la cola reintenta (5 intentos, 10 a 300 s) mientras el consolidador responda 503 | `POST /reconciliar` del consolidador (token OIDC de la cuenta del ACL Worker) |
 
-Con `crear_tareas = true` hay **tres** trabajos de Scheduler en la cuenta (`sonda-acl`, `risk-reproceso-nocturno` del batch y `reconciliacion-cobros-policy`), que es justo el tope de la capa gratuita que documenta `crear_tareas` (3 por cuenta de facturación; no se verificó contra la factura). Si esa cuenta tiene trabajos de otros proyectos, el cuarto ya cobra centavos al mes.
+Con `crear_tareas = true` hay **tres** trabajos de Scheduler en la cuenta (`sonda-acl`, `risk-reproceso-nocturno` del batch y `reconciliacion-cobros-policy`), que es justo el tope de la capa gratuita que documenta `crear_tareas` (3 por cuenta de facturación; no se verificó contra la factura). Desde el 2026-11-17 la cuenta es exclusiva de Solventa; un cuarto trabajo ya cobra centavos al mes.
 
 Límites que conviene saber: el estado de los circuitos vive en la memoria de cada instancia, así que la sonda revisa los de
 la instancia que recibe la llamada; y una tarea de reconciliación que agota sus 5 intentos se descarta (no hay un registro de
@@ -650,6 +650,16 @@ key ring de KMS (no se puede borrar) ni los secretos si ya cargaste valores real
 
 - Resuelto el 2026-10-17: el proyecto de staging es `solventa-511815` y su cuenta de facturación ya está vinculada y en uso
   (`billing_account_id` llega por `TF_VAR_billing_account_id`, no por el repositorio).
+- **Cambio de cuenta de facturación (2026-11-17):** el proyecto pasó de «Mi cuenta de facturación» (compartida con otros
+  proyectos del equipo) a «Solventa Billing Account» (exclusiva, también en COP, así que `presupuesto_moneda` no cambia).
+  El presupuesto no se mueve con el proyecto, y como `billing_account_id` fuerza reemplazo en `google_billing_budget` y en
+  `google_billing_account_iam_member.terraform_lee_presupuesto`, el plan trae destrucciones que `scripts/revisar_plan.py`
+  bloquea. Se hizo a mano, en este orden: (1) `terraform state rm` de ambos recursos; (2) `apply` acotado con `-target` y
+  `-var billing_account_id=<nueva>` para crearlos en la cuenta nueva; (3) `gcloud billing projects link`; (4) actualizar la
+  variable `GCP_BILLING_ACCOUNT_ID` de GitHub y el `terraform.tfvars` local. La API de presupuestos respondió 400 mientras el
+  proyecto seguía en la cuenta vieja, así que el paso 3 va **antes** del `apply` del presupuesto (unos minutos sin freno de
+  gasto). Un `terraform.tfvars` local con `billing_account_id` gana sobre `TF_VAR_*`: edítalo o pasa `-var`. El presupuesto y el
+  `billing.viewer` viejos quedan huérfanos en la cuenta anterior y se pueden borrar allí.
 - La **cuenta/organización de MongoDB Atlas** y sus API keys, si se activa `crear_mongo_atlas` — hoy
   no existen.
 - Confirmar que `repositorio_github` (`solventa-app/solventa-backend`) sigue siendo el `origin`
