@@ -9,11 +9,16 @@ from fastapi.testclient import TestClient
 from migrations import catalogos
 from migrations.catalogos import ErrorCatalogo, huella, leer, sincronizar_prestadores
 
-from app.application.catalogo_prestadores import CatalogoNoDisponible, consultar
+from app.application.catalogo_prestadores import (
+    CatalogoNoDisponible,
+    consultar,
+    prestador_desde_documento,
+)
 from app.main import create_app
 
 migracion = importlib.import_module("migrations.versiones.0005_prestadores")
 migracion_detalle = importlib.import_module("migrations.versiones.0007_prestadores_detalle")
+migracion_codigos = importlib.import_module("migrations.versiones.0010_prestadores_codigos")
 AHORA = datetime(2026, 11, 4, 12, tzinfo=UTC)
 
 
@@ -37,16 +42,27 @@ class Db:
         return self.colecciones.setdefault(nombre, Coleccion())
 
 
+ABIERTO_24H = {
+    "abierto_24h": True,
+    "dia_desde": None,
+    "dia_hasta": None,
+    "abre": None,
+    "cierra": None,
+}
+LUN_A_SAB = {"abierto_24h": False, "dia_desde": "LUNES", "dia_hasta": "SABADO", "abre": "07:00",
+             "cierra": "19:00"}  # fmt: skip
+
+
 def _archivo(tmp_path, version="2026-11-04.1", **cambios):
     prestadores = [
         {"id": "prs-bog-001", "nombre": "Clínica Norte", "tipo": "MEDICO", "ciudad": "Bogotá",
          "latitud": 4.6859, "longitud": -74.0524, "activo": True, "aliado": True,
          "especialidad": "Urgencias", "direccion": "Cl. 93 # 14-20", "horario": "Abierto 24 h",
-         "foto_url": None},
+         "foto_url": None, "codigo_especialidad": "URGENCIAS", "horario_atencion": ABIERTO_24H},
         {"id": "prs-bog-002", "nombre": "Taller AutoAyuda", "tipo": "MECANICO", "ciudad": "Bogotá",
          "latitud": 4.6835, "longitud": -74.0322, "activo": True, "aliado": False,
          "especialidad": "Mecánica general", "direccion": "Cra. 11 # 94-35", "horario": None,
-         "foto_url": None},
+         "foto_url": None, "codigo_especialidad": "MECANICA_GENERAL", "horario_atencion": None},
     ]  # fmt: skip
     prestadores[0].update(cambios)
     ruta = tmp_path / "prestadores.json"
@@ -59,11 +75,16 @@ def _archivo(tmp_path, version="2026-11-04.1", **cambios):
 
 def test_el_catalogo_del_repo_es_valido():
     version, prestadores = leer()
-    assert version == "2026-11-12.1"
+    assert version == "2026-11-18.1"
     assert len(prestadores) == 17
     assert {p["tipo"] for p in prestadores} == {"MEDICO", "MECANICO", "GRUA"}
     # v0.49: hay aliados y no aliados para probar los dos colores en la app.
     assert {p["aliado"] for p in prestadores} == {True, False}
+    # v0.53: todos con código de especialidad; hay abiertos 24 h, con días y horas, y sin horario.
+    assert {p["codigo_especialidad"] for p in prestadores} == catalogos.ESPECIALIDADES
+    horarios = [p["horario_atencion"] for p in prestadores]
+    assert None in horarios
+    assert {h["abierto_24h"] for h in horarios if h} == {True, False}
 
 
 @pytest.mark.parametrize(
@@ -71,6 +92,12 @@ def test_el_catalogo_del_repo_es_valido():
     [
         ({"version": "4-nov"}, "versión inválida"),
         ({"tipo": "BOMBEROS"}, "tipo desconocido"),
+        ({"codigo_especialidad": "Urgencias"}, "especialidad desconocida"),
+        ({"horario_atencion": {"abierto_24h": True}}, "debe tener"),
+        ({"horario_atencion": {**ABIERTO_24H, "abre": "07:00"}}, "sin días ni horas"),
+        ({"horario_atencion": {**LUN_A_SAB, "dia_hasta": "SAB"}}, "día desconocido"),
+        ({"horario_atencion": {**LUN_A_SAB, "cierra": "7:00 p. m."}}, "HH:MM"),
+        ({"horario_atencion": {**LUN_A_SAB, "abierto_24h": "no"}}, "true o false"),
     ],
 )
 def test_rechaza_un_archivo_invalido(tmp_path, cambio, mensaje):
@@ -180,6 +207,43 @@ def test_la_0007_agrega_grua_y_el_detalle_sin_volverlos_obligatorios():
     assert set(esquema["properties"]["tipo"]["enum"]) == catalogos.TIPOS
     assert set(catalogos.CAMPOS_DETALLE) <= set(esquema["properties"])
     assert not set(catalogos.CAMPOS_DETALLE) & set(esquema["required"])
+
+
+def test_la_0010_agrega_los_codigos_sin_volverlos_obligatorios():
+    class DbMigracion:
+        def __init__(self):
+            self.comandos = []
+
+        def list_collection_names(self):
+            return ["prestadores"]
+
+        def command(self, *args, **kwargs):
+            self.comandos.append((args, kwargs))
+
+    db = DbMigracion()
+    migracion_codigos.aplicar(db)
+    ((args, kwargs),) = db.comandos
+    assert args == ("collMod", "prestadores")
+    esquema = kwargs["validator"]["$jsonSchema"]
+    propiedades = esquema["properties"]
+    assert set(propiedades["codigo_especialidad"]["enum"]) == catalogos.ESPECIALIDADES
+    assert set(
+        propiedades["horario_atencion"]["properties"]["dia_desde"]["enum"]
+    ) == catalogos.DIAS | {None}
+    # Lo de la 0007 sigue igual.
+    assert set(catalogos.CAMPOS_DETALLE) <= set(propiedades)
+    assert not set(catalogos.CAMPOS_CODIGOS) & set(esquema["required"])
+
+
+def test_el_lector_deja_null_los_codigos_de_un_documento_viejo():
+    doc = {"_id": "prs-x", "nombre": "X", "tipo": "MEDICO", "ciudad": "Bogotá", "latitud": 4.6,
+           "longitud": -74.0, "activo": True}  # fmt: skip
+    p = prestador_desde_documento(doc)
+    assert (p["codigo_especialidad"], p["horario_atencion"]) == (None, None)
+    p = prestador_desde_documento(
+        {**doc, "codigo_especialidad": "URGENCIAS", "horario_atencion": LUN_A_SAB}
+    )
+    assert (p["codigo_especialidad"], p["horario_atencion"]) == ("URGENCIAS", LUN_A_SAB)
 
 
 # ---------- Consulta versionada ----------

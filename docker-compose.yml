@@ -565,6 +565,10 @@ services:
       # MAPBOX_TOKEN en el .env (ignorado por git).
       MAPAS_PROVEEDOR: ${MAPAS_PROVEEDOR:-simulado}
       MAPBOX_TOKEN: ${MAPBOX_TOKEN:-}
+      # T19 y HU-M06 (v0.50): direcciones con el stub por defecto. Para Google real: GOOGLE_PLACES_API_KEY en el
+      # .env (ignorado por git); con la llave se usa Google aunque PLACES_PROVEEDOR quede vacío.
+      PLACES_PROVEEDOR: ${PLACES_PROVEEDOR:-}
+      GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY:-}
       # KAN-259 Fase 3 (HU-M04): mismo host, rutas distintas (igual que los proveedores reales).
       CLIMA_URL: http://stub-eventos-parametricos:8108
       VUELOS_URL: http://stub-eventos-parametricos:8108

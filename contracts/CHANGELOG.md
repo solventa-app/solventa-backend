@@ -572,6 +572,18 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.53 — 2026-11-18
+
+- HU-M06 (KAN-36): la especialidad y el horario del prestador llegan como datos y la app los muestra en su idioma
+  (antes eran texto en español y en inglés se veían igual).
+  - `Prestador` gana `codigoEspecialidad: EspecialidadPrestador` (enum nuevo: `URGENCIAS`, `MEDICINA_GENERAL`,
+    `MECANICA_GENERAL`, `LLANTAS_Y_FRENOS`, `GRUA_LIVIANA`, `GRUA_Y_CARRO_TALLER`) y `horarioAtencion: HorarioAtencion`
+    (tipo nuevo: `abierto24h`, `diaDesde`/`diaHasta` con el enum nuevo `DiaSemana`, `abre`/`cierra` en «HH:MM»).
+  - `especialidad` y `horario` quedan `@deprecated` y siguen llegando en español para las versiones de la app que ya
+    están instaladas. El catálogo pasa a la versión `2026-11-18.1`, así que la app lo descarga de nuevo.
+  - CLAIMS `0010` agrega los campos nuevos al validador de `prestadores`.
+- Solo cambios aditivos. Afecta al frontend: el móvil (detalle del prestador en ES/EN).
+
 ## v0.52 — 2026-11-12
 
 - HU-M06 (KAN-36), fase 5 del plan de pendientes (B5 y B6): «Mis asistencias» en la app.

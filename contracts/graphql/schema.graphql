@@ -1239,10 +1239,44 @@ type Prestador {
   activo: Boolean! # false = dado de baja; la app lo descarta
   # v0.49 (detalle del prestador en la app, HU-M06): el color del pin dice si es aliado Solventa.
   aliado: Boolean!
-  especialidad: String! # «Urgencias», «Grúa liviana»; vacío si el catálogo aún no la tiene
+  especialidad: String!
+    @deprecated(reason: "v0.53: usar codigoEspecialidad; la app lo traduce a su idioma") # texto en español
   direccion: String! # de la sede; vacía si el catálogo aún no la tiene
-  horario: String # «Abierto 24 h»; null si no se publica
+  horario: String @deprecated(reason: "v0.53: usar horarioAtencion; la app lo traduce a su idioma") # texto en español
   fotoUrl: String # foto de la sede; null = la app muestra el placeholder del tipo
+  # v0.53 (HU-M06): datos en vez de texto en español, para que la app los muestre en su idioma (ES/EN).
+  codigoEspecialidad: EspecialidadPrestador # null si el catálogo aún no la tiene o es un código que el BFF no conoce
+  horarioAtencion: HorarioAtencion # null si no se publica
+}
+
+# v0.53 (HU-M06). La app traduce cada código con su catálogo de textos. Agregar uno es aditivo: la app muestra el tipo
+# del prestador si no lo conoce.
+enum EspecialidadPrestador {
+  URGENCIAS
+  MEDICINA_GENERAL
+  MECANICA_GENERAL
+  LLANTAS_Y_FRENOS
+  GRUA_LIVIANA
+  GRUA_Y_CARRO_TALLER
+}
+
+enum DiaSemana {
+  LUNES
+  MARTES
+  MIERCOLES
+  JUEVES
+  VIERNES
+  SABADO
+  DOMINGO
+}
+
+# v0.53 (HU-M06). Horario de la sede, hora local de la sede. Con `abierto24h` el resto viene null.
+type HorarioAtencion {
+  abierto24h: Boolean!
+  diaDesde: DiaSemana # p. ej. LUNES
+  diaHasta: DiaSemana # p. ej. SABADO (incluido)
+  abre: String # «07:00», 24 h
+  cierra: String # «19:00», 24 h
 }
 
 # v0.51 (HU-M06, B8): tiempo y ruta de un prestador hasta el cliente, por el ACL (Mapbox Matrix y Directions; simulado
