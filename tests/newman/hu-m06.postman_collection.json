@@ -186,7 +186,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query($v: String) { catalogoPrestadores(versionLocal: $v) { version vigente prestadores { id nombre tipo ciudad latitud longitud activo aliado especialidad direccion horario fotoUrl } } }\",\n  \"variables\": {}\n}"
+              "raw": "{\n  \"query\": \"query($v: String) { catalogoPrestadores(versionLocal: $v) { version vigente prestadores { id nombre tipo ciudad latitud longitud activo aliado especialidad direccion horario fotoUrl codigoEspecialidad horarioAtencion { abierto24h diaDesde diaHasta abre cierra } } } }\",\n  \"variables\": {}\n}"
             },
             "auth": {
               "type": "bearer",
@@ -218,6 +218,7 @@
                   "pm.test('8 en Bogotá', () => pm.expect(c.prestadores.filter(p => p.ciudad === 'Bogotá').length).to.eql(8));",
                   "pm.test('Aliados y no aliados (v0.49)', () => pm.expect([...new Set(c.prestadores.map(p => p.aliado))].sort()).to.eql([false, true]));",
                   "pm.test('Cada uno con especialidad y dirección', () => pm.expect(c.prestadores.every(p => p.especialidad && p.direccion)).to.be.true);",
+                  "pm.test('v0.53: cada uno con código de especialidad y horario como datos', () => { pm.expect(c.prestadores.every(p => !!p.codigoEspecialidad)).to.be.true; const h = c.prestadores.map(p => p.horarioAtencion).filter(x => x); pm.expect(h.some(x => x.abierto24h)).to.be.true; pm.expect(h.some(x => !x.abierto24h && x.diaDesde && /^\\d{2}:\\d{2}$/.test(x.abre))).to.be.true; });",
                   "const norte = c.prestadores.find(p => p.id === 'prs-bog-001');",
                   "pm.test('Coordenadas como número', () => pm.expect([norte.latitud, norte.longitud]).to.eql([4.6859, -74.0524]));"
                 ]

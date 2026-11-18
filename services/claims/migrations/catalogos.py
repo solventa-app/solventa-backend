@@ -32,6 +32,20 @@ CAMPOS = ("nombre", "tipo", "ciudad", "latitud", "longitud", "activo")
 # v0.49: lo que muestra el detalle del prestador. Obligatorios en el archivo; `horario` y
 # `foto_url` pueden ser null (la app muestra el placeholder del tipo sin foto).
 CAMPOS_DETALLE = ("aliado", "especialidad", "direccion", "horario", "foto_url")
+# v0.53: la especialidad y el horario como datos, para que la app los traduzca. `especialidad` y
+# `horario` (texto en español) se mantienen para las versiones de la app ya instaladas.
+CAMPOS_CODIGOS = ("codigo_especialidad", "horario_atencion")
+ESPECIALIDADES = {
+    "URGENCIAS",
+    "MEDICINA_GENERAL",
+    "MECANICA_GENERAL",
+    "LLANTAS_Y_FRENOS",
+    "GRUA_LIVIANA",
+    "GRUA_Y_CARRO_TALLER",
+}
+DIAS = {"LUNES", "MARTES", "MIERCOLES", "JUEVES", "VIERNES", "SABADO", "DOMINGO"}
+HORA = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+CAMPOS_HORARIO = {"abierto_24h", "dia_desde", "dia_hasta", "abre", "cierra"}
 
 
 class ErrorCatalogo(Exception):
@@ -45,6 +59,27 @@ def _orden(version: str) -> tuple[str, int]:
     return coincidencia.group(1), int(coincidencia.group(2))
 
 
+def _validar_horario(id_prestador: str, horario: dict | None) -> None:
+    """Null (no se publica), abierto 24 h (el resto null) o días y horas completos."""
+    if horario is None:
+        return
+    if not isinstance(horario, dict) or set(horario) != CAMPOS_HORARIO:
+        raise ErrorCatalogo(
+            f"prestador {id_prestador!r}: horario_atencion debe tener {sorted(CAMPOS_HORARIO)}"
+        )
+    resto = [horario[c] for c in ("dia_desde", "dia_hasta", "abre", "cierra")]
+    if horario["abierto_24h"] is True:
+        if any(v is not None for v in resto):
+            raise ErrorCatalogo(f"prestador {id_prestador!r}: abierto 24 h sin días ni horas")
+        return
+    if horario["abierto_24h"] is not False:
+        raise ErrorCatalogo(f"prestador {id_prestador!r}: abierto_24h debe ser true o false")
+    if horario["dia_desde"] not in DIAS or horario["dia_hasta"] not in DIAS:
+        raise ErrorCatalogo(f"prestador {id_prestador!r}: día desconocido en horario_atencion")
+    if not all(isinstance(h, str) and HORA.match(h) for h in (horario["abre"], horario["cierra"])):
+        raise ErrorCatalogo(f"prestador {id_prestador!r}: abre y cierra en formato HH:MM")
+
+
 def leer(ruta: Path = ARCHIVO) -> tuple[str, list[dict]]:
     """Lee y valida el archivo. Devuelve la versión y los prestadores."""
     datos = json.loads(ruta.read_text(encoding="utf-8"))
@@ -53,13 +88,18 @@ def leer(ruta: Path = ARCHIVO) -> tuple[str, list[dict]]:
     prestadores = datos.get("prestadores", [])
     vistos: set[str] = set()
     for p in prestadores:
-        faltan = {"id", *CAMPOS, *CAMPOS_DETALLE} - set(p)
+        faltan = {"id", *CAMPOS, *CAMPOS_DETALLE, *CAMPOS_CODIGOS} - set(p)
         if faltan:
             raise ErrorCatalogo(f"prestador {p.get('id')!r} sin {sorted(faltan)}")
         if p["id"] in vistos:
             raise ErrorCatalogo(f"prestador repetido {p['id']!r}")
         if p["tipo"] not in TIPOS:
             raise ErrorCatalogo(f"prestador {p['id']!r} con tipo desconocido {p['tipo']!r}")
+        if p["codigo_especialidad"] not in ESPECIALIDADES:
+            raise ErrorCatalogo(
+                f"prestador {p['id']!r} con especialidad desconocida {p['codigo_especialidad']!r}"
+            )
+        _validar_horario(p["id"], p["horario_atencion"])
         vistos.add(p["id"])
     return version, prestadores
 
@@ -91,7 +131,7 @@ def sincronizar_prestadores(db, ruta: Path = ARCHIVO, ahora: datetime | None = N
     for p in prestadores:
         db["prestadores"].update_one(
             {"_id": p["id"]},
-            {"$set": {campo: p[campo] for campo in (*CAMPOS, *CAMPOS_DETALLE)}},
+            {"$set": {campo: p[campo] for campo in (*CAMPOS, *CAMPOS_DETALLE, *CAMPOS_CODIGOS)}},
             upsert=True,
         )
     db["catalogos"].update_one(

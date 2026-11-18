@@ -58,6 +58,28 @@ def codificar_polyline6(puntos: list[tuple[float, float]]) -> str:
     return "".join(resultado)
 
 
+def decodificar_polyline6(texto: str) -> list[tuple[float, float]]:
+    """Inverso de `codificar_polyline6`: (latitud, longitud) con precisión 1e6."""
+    puntos: list[tuple[float, float]] = []
+    indice, lat, lon = 0, 0, 0
+    while indice < len(texto):
+        valores = []
+        for _ in range(2):
+            resultado, desplazamiento = 0, 0
+            while True:
+                b = ord(texto[indice]) - 63
+                indice += 1
+                resultado |= (b & 0x1F) << desplazamiento
+                desplazamiento += 5
+                if b < 0x20:
+                    break
+            valores.append(~(resultado >> 1) if resultado & 1 else resultado >> 1)
+        lat += valores[0]
+        lon += valores[1]
+        puntos.append((lat / 1e6, lon / 1e6))
+    return puntos
+
+
 def distancia_km(a: tuple[float, float], b: tuple[float, float]) -> float:
     d_lat = math.radians(b[0] - a[0])
     d_lon = math.radians(b[1] - a[1])
@@ -182,7 +204,12 @@ def mapas_desde_entorno() -> PuertoMapas:
 
 class CacheMapas:
     """Caché de rutas en Redis por celda de ~200 m y 2 min (B8): abrir el mapa dos veces desde
-    el mismo lugar no paga dos veces a Mapbox. La llave es un hash (nunca las coordenadas)."""
+    el mismo lugar no paga dos veces a Mapbox. La llave es un hash (nunca las coordenadas).
+
+    Privacidad (regla 6): la geometría termina en la ubicación de quien consultó. Se guarda **sin
+    su último punto** y, al leerla, se completa con el origen de quien consulta ahora; así otro
+    cliente de la misma celda nunca recibe una línea que termina donde estaba el primero, y
+    Redis no guarda la ubicación exacta."""
 
     CELDA_GRADOS = 0.0018  # ~200 m en latitud
     PREFIJO = "mapas:rutas"
@@ -196,15 +223,31 @@ class CacheMapas:
         valor = json.dumps([celda, sorted(ids), sorted(geometria)])
         return f"{self.PREFIJO}:{hashlib.sha256(valor.encode()).hexdigest()}"
 
+    @staticmethod
+    def _cambiar_geometria(rutas: list[dict], cambio) -> list[dict]:
+        return [
+            {**r, "geometria": cambio(decodificar_polyline6(r["geometria"]))}
+            if r.get("geometria")
+            else r
+            for r in rutas
+        ]
+
     def obtener(self, origen, ids, geometria) -> list[dict] | None:
         try:
             valor = self._almacen.get(self._clave(origen, ids, geometria))
         except Exception:
             return None
-        return json.loads(valor) if valor else None
+        if not valor:
+            return None
+        return self._cambiar_geometria(
+            json.loads(valor), lambda puntos: codificar_polyline6([*puntos, origen])
+        )
 
     def guardar(self, origen, ids, geometria, rutas: list[dict]) -> None:
+        sin_origen = self._cambiar_geometria(rutas, lambda puntos: codificar_polyline6(puntos[:-1]))
         try:
-            self._almacen.set(self._clave(origen, ids, geometria), json.dumps(rutas), ex=self._ttl)
+            self._almacen.set(
+                self._clave(origen, ids, geometria), json.dumps(sin_origen), ex=self._ttl
+            )
         except Exception:
             LOG.warning("Redis no guardó las rutas en caché")

@@ -28,6 +28,9 @@ def prestador_desde_documento(doc: dict) -> dict:
         "direccion": doc.get("direccion") or "",
         "horario": doc.get("horario"),
         "foto_url": doc.get("foto_url"),
+        # v0.53: null hasta que `migrations.catalogos` los complete.
+        "codigo_especialidad": doc.get("codigo_especialidad"),
+        "horario_atencion": doc.get("horario_atencion"),
     }
 
 
