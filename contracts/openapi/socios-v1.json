@@ -3,7 +3,7 @@
   "info": {
     "title": "Solventa · API de socios de distribución",
     "version": "1.0.0",
-    "description": "API exclusiva para socios que revenden la póliza de Vida Hipotecario (HU-W07, KAN-30). Contrato v0.54 (`contracts/CHANGELOG.md`). Reglas: montos como texto decimal; errores con `ErrorPublico` en es o en; nunca un 5xx crudo; un socio solo ve lo que vendió (404 si no es suyo)."
+    "description": "API exclusiva para socios que revenden la póliza de Vida Hipotecario (HU-W07, KAN-30). Contrato v0.55 (`contracts/CHANGELOG.md`). Reglas: montos como texto decimal; errores con `ErrorPublico` en es o en; nunca un 5xx crudo; un socio solo ve lo que vendió (404 si no es suyo)."
   },
   "servers": [
     {
@@ -1073,7 +1073,7 @@
             "$ref": "#/components/responses/NoDisponible"
           }
         },
-        "description": "Del entorno del token. Sin fechas: los últimos 30 días.",
+        "description": "Del entorno del token. Sin fechas: los últimos 30 días. Desde v0.55: los días son los de Colombia (`America/Bogota`), el rango va hasta 366 días (si no, 422) y no cuentan las consultas de la cuenta (`/v1/consumo`, `/v1/estado`, `/v1/ventas` y `/v1/credenciales`), que el portal lee al abrirse. Un 422 por un cuerpo inválido sí cuenta (con un token válido).",
         "parameters": [
           {
             "name": "desde",
@@ -2233,7 +2233,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ConsumoApi"
-            }
+            },
+            "description": "Una fila por API (el primer tramo de la ruta). Desde v0.55, `cotizaciones-auto` suma en la fila `cotizaciones`, la misma bolsa del presupuesto: sus `llamadas - errores` son las cotizaciones que descontaron presupuesto. Una respuesta repetida por `Idempotency-Key` no cuenta."
           },
           "diario": {
             "type": "array",
@@ -2253,7 +2254,8 @@
                 "fecha",
                 "llamadas"
               ]
-            }
+            },
+            "description": "Desde v0.55, un elemento por cada día de `desde` a `hasta` (en orden y con 0 si no hubo llamadas), en días de Colombia."
           }
         },
         "required": [

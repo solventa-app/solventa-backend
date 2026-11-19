@@ -572,6 +572,23 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.55 — 2026-11-19
+
+- HU-W07 (KAN-30), `GET /v1/consumo`: las estadísticas cuadran con el presupuesto y con lo que el socio hizo.
+  - **Días de Colombia** (`America/Bogota`): antes se agrupaba por día UTC y lo de después de las 19:00 caía en el día
+    siguiente. `hasta` por defecto también es el día de Colombia.
+  - **`diario` trae todos los días** del rango, con 0 los que no tuvieron llamadas (el gráfico no los salta). El rango
+    va hasta 366 días; más largo responde 422 `DATOS_INVALIDOS`.
+  - **`porApi`: `cotizaciones-auto` suma en `cotizaciones`**, la misma bolsa del presupuesto. Así, `llamadas - errores`
+    de esa fila son las cotizaciones que descontaron presupuesto.
+  - **No cuentan las consultas de la cuenta** (`/v1/consumo`, `/v1/estado`, `/v1/ventas` y `/v1/credenciales`, con la
+    rotación): el portal las lee al abrirse, así que mirar las estadísticas las subía.
+  - **Sí cuenta un 422 por cuerpo inválido** con un token válido (FastAPI lo rechazaba antes de identificar al socio).
+- Sin cambio de contrato pero sí de comportamiento: si una cotización **lanza** (no solo si responde un error), la unidad
+  de presupuesto vuelve. Si no se puede devolver, queda en la métrica `bff_socios_devolucion_fallida_total`.
+- Solo cambios aditivos en la forma. Afecta al frontend: el panel del socio muestra días en 0 y una sola fila de
+  cotizaciones; no requiere cambios de código.
+
 ## v0.54 — 2026-11-19
 
 - HU-W07 (KAN-30), API de socios: `POST /v1/cotizaciones` y `POST /v1/cotizaciones-auto` aceptan la cabecera

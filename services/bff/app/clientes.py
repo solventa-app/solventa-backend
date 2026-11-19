@@ -640,6 +640,9 @@ class ClienteSociosHttp:
             f"/socios/{socio_id}/consumo",
             params={k: v for k, v in params.items() if v is not None},
         )
+        if respuesta.status_code in (400, 422):
+            # Fechas al revés o un rango de más de 366 días: es del socio, no una caída.
+            raise SolicitudInvalida(_cuerpo_o_vacio(respuesta).get("detail", "Rango inválido."))
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()

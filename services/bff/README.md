@@ -74,6 +74,11 @@ rutas explícitas, nunca como un `Mount("/v1")`.
 - **Consumo:** un middleware registra cada llamada del socio en AUTH (API, resultado y latencia) **antes** de
   responder, con un tope de 150 ms (KAN-30: la tarea suelta tras la respuesta se perdía en Cloud Run). Lo que no se
   pudo registrar suma en `bff_socios_consumo_perdido_total`.
+  No cuentan las consultas de la cuenta (`consumo`, `estado`, `ventas`, `credenciales`), que el portal lee al abrirse;
+  un 422 por cuerpo inválido sí cuenta. AUTH agrupa por días de Colombia y suma `cotizaciones-auto` en `cotizaciones`
+  (v0.55).
+- **Presupuesto:** si una cotización no se hizo (error o excepción), la unidad vuelve; si AUTH no la acepta, suma en
+  `bff_socios_devolucion_fallida_total`.
 - **Idempotency-Key (v0.54):** en `POST /v1/cotizaciones` y `/v1/cotizaciones-auto`, un reintento con la misma llave
   devuelve la respuesta guardada en Redis (24 h) con `Idempotent-Replayed: true`, sin descontar presupuesto ni contarse
   en el consumo (`app/socios/idempotencia.py`).

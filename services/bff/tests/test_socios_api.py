@@ -16,10 +16,11 @@ from fakes import (
 )
 from fastapi.testclient import TestClient
 
-from app.clientes import ErrorServicio
+from app.clientes import ErrorServicio, SolicitudInvalida
 from app.configuracion import Configuracion
 from app.identificadores import cliente_id_desde_documento
 from app.main import CONSUMO_PERDIDO, create_app
+from app.socios.api import DEVOLUCION_FALLIDA
 
 DOCUMENTO = "1012345678"
 COTIZACION = {
@@ -357,6 +358,85 @@ def test_si_el_consumo_no_se_registra_la_llamada_sigue_y_queda_en_la_metrica(e) 
 
     assert respuesta.status_code == 200
     assert CONSUMO_PERDIDO._value.get() == antes + 1
+
+
+def test_un_cuerpo_invalido_cuenta_en_el_consumo_del_socio(e) -> None:
+    """KAN-30: FastAPI valida el cuerpo antes de la ruta, así que el 422 no se contaba."""
+    with e.cliente() as client:
+        respuesta = client.post("/v1/cotizaciones", json={"plazoMeses": 1}, headers=e.cabeceras())
+
+    _es_error_publico(respuesta, 422, "DATOS_INVALIDOS")
+    assert e.socios.consumos == [("socio-1", "PRODUCCION", "cotizaciones", "ERROR_CLIENTE")]
+
+
+def test_un_cuerpo_invalido_sin_token_valido_sigue_siendo_422_y_no_cuenta(e) -> None:
+    with e.cliente() as client:
+        respuesta = client.post(
+            "/v1/cotizaciones", json={}, headers={"Authorization": "Bearer no-es-un-jwt"}
+        )
+
+    _es_error_publico(respuesta, 422, "DATOS_INVALIDOS")
+    assert e.socios.consumos == []
+
+
+def test_las_consultas_de_la_cuenta_no_cuentan_en_el_consumo(e) -> None:
+    """KAN-30: el portal las lee al abrirse; si contaran, mirar el consumo lo subiría."""
+    with e.cliente() as client:
+        for ruta in ("/v1/consumo", "/v1/estado", "/v1/ventas", "/v1/credenciales"):
+            assert client.get(ruta, headers=e.cabeceras()).status_code == 200, ruta
+        client.post("/v1/credenciales/PRUEBAS/rotar", headers=e.cabeceras())
+        client.post(
+            "/v1/conversiones",
+            json={"moneda": "USD", "montos": [{"valor": "1000", "moneda": "COP"}]},
+            headers=e.cabeceras(),
+        )
+
+    assert [c[2] for c in e.socios.consumos] == ["conversiones"]
+
+
+def test_si_la_cotizacion_lanza_la_unidad_vuelve_al_presupuesto(e) -> None:
+    """KAN-30: antes una excepción se volvía 503 y la unidad quedaba gastada."""
+
+    async def explota(*_):
+        raise RuntimeError("bug")
+
+    with e.cliente() as client:
+        client.app.state.servicio_oferta.solicitar = explota
+        respuesta = client.post("/v1/cotizaciones", json=COTIZACION, headers=e.cabeceras())
+
+    _es_error_publico(respuesta, 503, "SERVICIO_NO_DISPONIBLE")
+    assert e.socios.devoluciones == [("socio-1", "PRODUCCION")]
+    assert e.socios.consumidas[("socio-1", "PRODUCCION")] == 0
+
+
+def test_si_no_se_puede_devolver_la_unidad_queda_en_la_metrica(e) -> None:
+    async def explota(*_):
+        raise RuntimeError("bug")
+
+    async def no_devuelve(*_):
+        raise ErrorServicio("AUTH caído")
+
+    antes = DEVOLUCION_FALLIDA._value.get()
+    with e.cliente() as client:
+        client.app.state.servicio_oferta.solicitar = explota
+        e.socios.devolver = no_devuelve
+        respuesta = client.post("/v1/cotizaciones", json=COTIZACION, headers=e.cabeceras())
+
+    _es_error_publico(respuesta, 503, "SERVICIO_NO_DISPONIBLE")
+    assert DEVOLUCION_FALLIDA._value.get() == antes + 1
+
+
+def test_un_rango_de_consumo_invalido_es_422_y_no_503(e) -> None:
+    async def rechaza(*_):
+        raise SolicitudInvalida("El rango va hasta 366 días.")
+
+    e.socios.consumo = rechaza
+    with e.cliente() as client:
+        respuesta = client.get(
+            "/v1/consumo?desde=2025-01-01&hasta=2026-11-19", headers=e.cabeceras()
+        )
+
+    _es_error_publico(respuesta, 422, "DATOS_INVALIDOS")
 
 
 # ---------- Idempotency-Key (v0.54) ----------
