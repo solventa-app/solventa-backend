@@ -57,10 +57,13 @@ def test_dato_fresco_no_lanza(monkeypatch: pytest.MonkeyPatch) -> None:
 
     url, cuerpo_enviado, _ = llamadas[0]
     assert url == f"{tareas.ACL_URL}/fuentes/consultar"
+    # Fuerza al proveedor: sin esto, dentro del TTL el ACL serviría su caché y el job daría por
+    # recuperado un proveedor que sigue caído.
     assert cuerpo_enviado == {
         "cliente_id": "cliente-1",
         "consentimiento_id": "consent-1",
         "fuente": "cuentas-bancarias",
+        "forzar_proveedor": True,
     }
 
 

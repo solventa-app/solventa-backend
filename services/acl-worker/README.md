@@ -50,6 +50,11 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
   (`PRESUPUESTO_CON_CACHE_MS`, 300 ms por defecto) para cumplir **EC010 ≤ 500 ms**, o sirve
   directamente desde caché dentro del TTL si `CACHE_SERVIR_EN_TTL=true` (salvo `forzar_proveedor=True`).
   Si no hay nada en caché, devuelve un valor mínimo con `degradado=True`. Nunca se propaga un 5xx crudo.
+  **`de_cache=True` significa «el proveedor falló y se sirve el último valor bueno»** (con eso RATING y
+  RISK vuelven la oferta `PRELIMINAR`, CA-W01-04). Lo servido dentro del TTL sale con `de_cache=False`:
+  no hubo falla, y marcarlo volvía preliminar toda cotización repetida del mismo cliente en 5 minutos.
+  El job de reconciliación del Consolidador consulta con `forzar_proveedor=True` para no tomar ese valor
+  cacheado por una recuperación del proveedor.
 - **Invalidación activa de caché al revocar consentimiento (CA-W01-08):** `POST /fuentes/invalidar-cache`
   con `{"cliente_id": "..."}` en el cuerpo borra de inmediato las claves cacheadas de todas las fuentes
   configuradas para ese titular, además del TTL pasivo de 5 minutos.
