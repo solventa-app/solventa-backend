@@ -3,7 +3,7 @@
   "info": {
     "title": "Solventa · API de socios de distribución",
     "version": "1.0.0",
-    "description": "API exclusiva para socios que revenden la póliza de Vida Hipotecario (HU-W07, KAN-30). Contrato v0.22 (`contracts/CHANGELOG.md`). Reglas: montos como texto decimal; errores con `ErrorPublico` en es o en; nunca un 5xx crudo; un socio solo ve lo que vendió (404 si no es suyo)."
+    "description": "API exclusiva para socios que revenden la póliza de Vida Hipotecario (HU-W07, KAN-30). Contrato v0.54 (`contracts/CHANGELOG.md`). Reglas: montos como texto decimal; errores con `ErrorPublico` en es o en; nunca un 5xx crudo; un socio solo ve lo que vendió (404 si no es suyo)."
   },
   "servers": [
     {
@@ -314,6 +314,17 @@
                   "$ref": "#/components/schemas/Cotizacion"
                 }
               }
+            },
+            "headers": {
+              "Idempotent-Replayed": {
+                "description": "`true` cuando es la respuesta guardada de una `Idempotency-Key` ya usada (v0.54).",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "true"
+                  ]
+                }
+              }
             }
           },
           "401": {
@@ -323,7 +334,7 @@
             "$ref": "#/components/responses/NoDisponible"
           },
           "422": {
-            "description": "Datos inválidos (`DATOS_INVALIDOS`).",
+            "description": "Datos inválidos (`DATOS_INVALIDOS`), o la `Idempotency-Key` ya se usó con otro cuerpo (`IDEMPOTENCIA_EN_CONFLICTO`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -333,11 +344,18 @@
             }
           },
           "409": {
-            "description": "Sin consentimiento vigente (`CONSENTIMIENTO_NO_VIGENTE`).",
+            "description": "Sin consentimiento vigente (`CONSENTIMIENTO_NO_VIGENTE`), o la misma `Idempotency-Key` sigue en curso (`SOLICITUD_EN_CURSO`, con `Retry-After`).",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
                 }
               }
             }
@@ -364,6 +382,9 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/AcceptLanguage"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
         "requestBody": {
@@ -394,6 +415,17 @@
                   "$ref": "#/components/schemas/Cotizacion"
                 }
               }
+            },
+            "headers": {
+              "Idempotent-Replayed": {
+                "description": "`true` cuando es la respuesta guardada de una `Idempotency-Key` ya usada (v0.54).",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "true"
+                  ]
+                }
+              }
             }
           },
           "401": {
@@ -403,7 +435,7 @@
             "$ref": "#/components/responses/NoDisponible"
           },
           "422": {
-            "description": "Datos inválidos (`DATOS_INVALIDOS`) o vehículo no asegurable (`VEHICULO_NO_ASEGURABLE`, `VEHICULO_NO_ENCONTRADO`).",
+            "description": "Datos inválidos (`DATOS_INVALIDOS`) o vehículo no asegurable (`VEHICULO_NO_ASEGURABLE`, `VEHICULO_NO_ENCONTRADO`), o la `Idempotency-Key` ya se usó con otro cuerpo (`IDEMPOTENCIA_EN_CONFLICTO`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -413,11 +445,18 @@
             }
           },
           "409": {
-            "description": "Sin consentimiento vigente (`CONSENTIMIENTO_NO_VIGENTE`).",
+            "description": "Sin consentimiento vigente (`CONSENTIMIENTO_NO_VIGENTE`), o la misma `Idempotency-Key` sigue en curso (`SOLICITUD_EN_CURSO`, con `Retry-After`).",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
                 }
               }
             }
@@ -444,6 +483,9 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/AcceptLanguage"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
         "requestBody": {
@@ -1271,6 +1313,17 @@
           ],
           "default": "es"
         }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "description": "Opcional (v0.54). Un valor único por cotización (p. ej. un UUID), de 1 a 255 caracteres visibles. Si el socio reintenta con la misma clave (p. ej. tras un 504 del gateway), recibe la misma respuesta con `Idempotent-Replayed: true`, sin descontar presupuesto ni contar otra llamada en el consumo. Vale 24 horas, por socio, entorno y operación. Mientras la primera sigue en curso responde 409 `SOLICITUD_EN_CURSO`; con otro cuerpo, 422 `IDEMPOTENCIA_EN_CONFLICTO`. Si la cotización falla, la clave se libera y se puede reintentar con ella.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        }
       }
     },
     "responses": {
@@ -1325,7 +1378,9 @@
               "INTENTOS_AGOTADOS",
               "PROPUESTA_NO_VALIDA",
               "PRESUPUESTO_AGOTADO",
-              "SERVICIO_NO_DISPONIBLE"
+              "SERVICIO_NO_DISPONIBLE",
+              "SOLICITUD_EN_CURSO",
+              "IDEMPOTENCIA_EN_CONFLICTO"
             ]
           },
           "mensaje": {

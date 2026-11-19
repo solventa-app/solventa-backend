@@ -23,7 +23,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.clientes import CredencialesSocioInvalidas, ErrorServicio, PresupuestoAgotado
@@ -52,6 +52,7 @@ from app.socios.errores import (
     no_disponible,
     no_encontrado,
 )
+from app.socios.idempotencia import CABECERA_REPETIDA, Repetida, ejecutar_idempotente
 
 logger = logging.getLogger("bff.socios")
 
@@ -311,6 +312,25 @@ def construir_router() -> APIRouter:
             raise no_disponible()
         return prueba
 
+    async def _idempotente(
+        request: Request, socio: SocioActual, api: str, body: BaseModel, operacion: Any
+    ) -> Any:
+        """`Idempotency-Key` (v0.54): un reintento tras un 504 del gateway recibe la misma
+        respuesta sin reservar presupuesto ni contarse otra vez en el consumo."""
+        resultado = await ejecutar_idempotente(
+            request,
+            getattr(request.app.state, "idempotencia_socios", None),
+            socio.id,
+            socio.entorno,
+            api,
+            body.model_dump(mode="json"),
+            operacion,
+        )
+        if isinstance(resultado, Repetida):
+            request.state.consumo_omitido = True
+            return JSONResponse(resultado.cuerpo, headers={CABECERA_REPETIDA: "true"})
+        return resultado
+
     # ---------- Acceso (públicas) ----------
 
     @router.post("/v1/token")
@@ -400,8 +420,13 @@ def construir_router() -> APIRouter:
     # ---------- Cotización ----------
 
     @router.post("/v1/cotizaciones")
-    async def cotizar(body: SolicitudCotizacion, request: Request) -> dict:
+    async def cotizar(body: SolicitudCotizacion, request: Request) -> Any:
         socio = await socio_de(request)
+        return await _idempotente(
+            request, socio, "cotizaciones", body, lambda: _cotizar(body, request, socio)
+        )
+
+    async def _cotizar(body: SolicitudCotizacion, request: Request, socio: SocioActual) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).cotizar(
                 socio, body.consentimiento_id, body.documento_identidad
@@ -446,11 +471,18 @@ def construir_router() -> APIRouter:
         return {"oferta": oferta_rest(resultado), "presupuestoRestante": restantes}
 
     @router.post("/v1/cotizaciones-auto")
-    async def cotizar_auto(body: SolicitudCotizacionAuto, request: Request) -> dict:
+    async def cotizar_auto(body: SolicitudCotizacionAuto, request: Request) -> Any:
         """v0.42 (KAN-290): como `/v1/cotizaciones`, para la póliza de auto. Descuenta
         presupuesto solo si la cotización se hizo: un dato inválido o un vehículo que no se oferta
         lo devuelve."""
         socio = await socio_de(request)
+        return await _idempotente(
+            request, socio, "cotizaciones-auto", body, lambda: _cotizar_auto(body, request, socio)
+        )
+
+    async def _cotizar_auto(
+        body: SolicitudCotizacionAuto, request: Request, socio: SocioActual
+    ) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).cotizar_auto(
                 socio, body.consentimiento_id, body.documento_identidad, body.placa
