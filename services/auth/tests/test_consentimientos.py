@@ -84,11 +84,12 @@ def test_registrar_sin_actor_lo_deja_vacio() -> None:
 
 
 def test_fila_sin_actor_y_sin_revocar() -> None:
-    from datetime import UTC, datetime
+    from datetime import UTC, datetime, timedelta
 
     from app.consentimientos import _desde_fila
 
-    otorgado = datetime(2026, 10, 17, 12, 0, tzinfo=UTC)
+    # Relativo a hoy: con una fecha fija el consentimiento vence a los 30 días.
+    otorgado = (datetime.now(UTC) - timedelta(days=1)).replace(microsecond=0)
     c = _desde_fila(
         {
             "id": "c-1",
@@ -101,7 +102,7 @@ def test_fila_sin_actor_y_sin_revocar() -> None:
         }
     )
 
-    assert c.otorgado_en == "2026-10-17T12:00:00+00:00"
+    assert c.otorgado_en == otorgado.isoformat()
     assert c.actor is None
     assert c.vigente is True
 
