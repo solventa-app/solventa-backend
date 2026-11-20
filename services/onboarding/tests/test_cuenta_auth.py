@@ -1,6 +1,11 @@
 """El resultado del onboarding llega a la cuenta de AUTH (HU-M01, contrato v0.20)."""
 
-from fakes import Pila
+from datetime import timedelta
+
+import pytest
+from fakes import AHORA, APROBADA, Pila
+
+from app.application.servicio_onboarding import ErrorOnboarding
 
 
 def _ligada(pila: Pila, usuario_id: str = "u-1") -> dict:
@@ -91,3 +96,42 @@ def test_t20_la_cuenta_se_cierra_con_el_tipo_y_el_pais_de_la_sesion() -> None:
     assert pila.cuentas.tipos == [("CE", "CO")]
     assert cerrada["titular_id"] == titular_id_desde_documento("1000000001", CLAVE_HMAC, "CO", "CE")
     assert cerrada["titular_id"] != titular_id_desde_documento("1000000001", CLAVE_HMAC)
+
+
+def _rechazada_sin_intentos(pila: Pila, usuario_id: str = "u-1") -> dict:
+    sesion = _ligada(pila, usuario_id)
+    pila.repo.sesiones[sesion["id"]]["intento"] = 3
+    pila.servicio.enviar(pila.repo.obtener(sesion["id"]))
+    return pila.servicio.verificar(sesion["id"])
+
+
+def test_kan31_tras_agotar_intentos_un_recorrido_nuevo_se_aprueba() -> None:
+    """Agotar los 3 intentos no bloquea la cuenta: el recorrido nuevo llega a AUTH aprobado."""
+    pila = Pila({"estado": "rechazada", "motivo": "rostro_no_coincide"})
+    _rechazada_sin_intentos(pila)
+    pila.identidad.respuesta = APROBADA
+    nueva = _ligada(pila)
+    pila.servicio.enviar(nueva)
+    assert pila.servicio.verificar(nueva["id"])["estado"] == "VERIFICADA"
+    assert [ll[1] for ll in pila.cuentas.llamadas] == [False, True]
+    assert pila.servicio.de_usuario("u-1")["id"] == nueva["id"]
+
+
+def test_kan31_tope_de_recorridos_rechazados_por_dia() -> None:
+    pila = Pila({"estado": "rechazada", "motivo": "rostro_no_coincide"})
+    for _ in range(3):
+        _rechazada_sin_intentos(pila)
+    with pytest.raises(ErrorOnboarding) as error:
+        _ligada(pila)
+    assert (error.value.codigo, error.value.estado_http) == ("RECORRIDOS_AGOTADOS", 429)
+    # Otra cuenta no se ve afectada.
+    assert _ligada(pila, "u-2")["usuario_id"] == "u-2"
+
+
+def test_kan31_el_tope_se_libera_a_las_24_horas() -> None:
+    pila = Pila({"estado": "rechazada", "motivo": "rostro_no_coincide"})
+    pila.repo.ahora = AHORA - timedelta(hours=25)
+    for _ in range(3):
+        _rechazada_sin_intentos(pila)
+    pila.repo.ahora = AHORA
+    assert _ligada(pila)["usuario_id"] == "u-1"
