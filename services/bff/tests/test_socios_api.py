@@ -20,7 +20,10 @@ from app.clientes import ErrorServicio, SolicitudInvalida
 from app.configuracion import Configuracion
 from app.identificadores import cliente_id_desde_documento
 from app.main import CONSUMO_PERDIDO, create_app
+from app.socios import scopes
 from app.socios.api import DEVOLUCION_FALLIDA
+from app.socios.autenticacion import SocioActual
+from app.socios.modo_prueba import ModoPrueba
 
 DOCUMENTO = "1012345678"
 COTIZACION = {
@@ -137,7 +140,17 @@ def test_sin_token_de_socio_valido_es_401(e, cabecera) -> None:
 
 
 @pytest.mark.parametrize(
-    "cambios", [{"aud": "otra"}, {"iss": "otro"}, {"rol": "ASESOR"}, {"exp": 1}]
+    "cambios",
+    [
+        {"aud": "otra"},
+        {"iss": "otro"},
+        {"rol": "ASESOR"},
+        {"exp": 1},
+        # HA-SEG-004: sin el claim `scopes` o mal formado no es un token de AUTH.
+        {"scopes": None},
+        {"scopes": "cotizaciones"},
+        {"scopes": [1, 2]},
+    ],
 )
 def test_un_token_con_otros_claims_es_401(e, cambios) -> None:
     with e.cliente() as client:
@@ -154,6 +167,130 @@ def test_el_jwks_se_guarda_y_se_lee_de_x_forwarded_authorization(e) -> None:
             assert client.get("/v1/consumo", headers=cabecera).status_code == 200
 
     assert e.socios.pedidos_jwks == 1
+
+
+# ---------- Scopes del token (HA-SEG-004, EC025) ----------
+
+PUBLICAS = {"/v1/token", "/v1/.well-known/jwks.json", "/v1/openapi.json", "/v1/docs"}
+# La tabla de `socios-v1.json` («Scopes»): (método, ruta) → scope que exige.
+SCOPE_DE_RUTA = {
+    ("POST", "/v1/consentimientos"): scopes.COTIZACIONES,
+    ("POST", "/v1/consentimientos/{consentimiento_id}/revocar"): scopes.COTIZACIONES,
+    ("POST", "/v1/cotizaciones"): scopes.COTIZACIONES,
+    ("POST", "/v1/cotizaciones-auto"): scopes.COTIZACIONES,
+    ("POST", "/v1/conversiones"): scopes.COTIZACIONES,
+    ("POST", "/v1/propuestas"): scopes.PROPUESTAS,
+    ("GET", "/v1/propuestas/{propuesta_id}"): scopes.PROPUESTAS,
+    ("POST", "/v1/propuestas/{propuesta_id}/codigo"): scopes.PROPUESTAS,
+    ("POST", "/v1/propuestas/{propuesta_id}/codigo/verificar"): scopes.PROPUESTAS,
+    ("POST", "/v1/propuestas/{propuesta_id}/emitir"): scopes.PROPUESTAS,
+    ("POST", "/v1/propuestas/{propuesta_id}/reenviar-enlace"): scopes.PROPUESTAS,
+    ("GET", "/v1/polizas/{poliza_id}"): scopes.POLIZAS,
+    ("GET", "/v1/polizas/{poliza_id}/documento"): scopes.POLIZAS,
+    ("GET", "/v1/estado"): scopes.CUENTA,
+    ("GET", "/v1/consumo"): scopes.CUENTA,
+    ("GET", "/v1/ventas"): scopes.CUENTA,
+    ("GET", "/v1/credenciales"): scopes.CUENTA,
+    ("POST", "/v1/credenciales/{entorno}/rotar"): scopes.CUENTA,
+}
+MENSAJE_SIN_PERMISO = "El token no tiene permiso para esta operación."
+
+
+def _rutas_v1_con_token() -> set[tuple[str, str]]:
+    # Del esquema que FastAPI arma con todas las rutas del BFF (los routers incluidos no se ven
+    # en `app.routes`), no del contrato: así aparece también una ruta que nadie documentó.
+    app = create_app(config=Configuracion.desde_entorno(), clientes=clientes_falsos())
+    return {
+        (metodo.upper(), ruta)
+        for ruta, operaciones in app.openapi()["paths"].items()
+        if ruta.startswith("/v1/") and not ruta.startswith("/v1/graphql") and ruta not in PUBLICAS
+        for metodo in operaciones
+    }
+
+
+def _url(ruta: str) -> str:
+    return ruta.replace("{entorno}", "PRUEBAS").replace("{", "x-").replace("}", "")
+
+
+def _con_scopes(e: Entorno, *lista: str) -> dict:
+    return {"Authorization": f"Bearer {e.socios.token(scopes=list(lista))}"}
+
+
+def test_cada_ruta_v1_con_token_declara_su_scope(e) -> None:
+    """EC025 (100 % de las llamadas): toda ruta `/v1` con token, incluida una que se agregue
+    mañana, responde 403 a un token sin scopes, y está en la tabla del contrato."""
+    rutas = _rutas_v1_con_token()
+    assert rutas == set(SCOPE_DE_RUTA), "una ruta /v1 nueva necesita su scope (y su fila aquí)"
+    with e.cliente() as client:
+        for metodo, ruta in sorted(rutas):
+            respuesta = client.request(metodo, _url(ruta), headers=_con_scopes(e))
+            _es_error_publico(respuesta, 403, "PROHIBIDO")
+
+
+@pytest.mark.parametrize(("metodo", "ruta"), sorted(SCOPE_DE_RUTA))
+def test_sin_el_scope_de_la_ruta_es_403(e, metodo, ruta) -> None:
+    otros = sorted(scopes.TODOS - {SCOPE_DE_RUTA[(metodo, ruta)]})
+    with e.cliente() as client:
+        es = client.request(metodo, _url(ruta), headers=_con_scopes(e, *otros))
+        en = client.request(
+            metodo, _url(ruta), headers={**_con_scopes(e, *otros), "Accept-Language": "en"}
+        )
+
+    assert _es_error_publico(es, 403, "PROHIBIDO")["mensaje"] == MENSAJE_SIN_PERMISO
+    assert _es_error_publico(en, 403, "PROHIBIDO")["mensaje"] == (
+        "The token is not allowed to perform this operation."
+    )
+
+
+@pytest.mark.parametrize(("metodo", "ruta"), sorted(SCOPE_DE_RUTA))
+def test_con_el_scope_de_la_ruta_pasa(e, metodo, ruta) -> None:
+    with e.cliente() as client:
+        respuesta = client.request(
+            metodo, _url(ruta), headers=_con_scopes(e, SCOPE_DE_RUTA[(metodo, ruta)])
+        )
+
+    # La respuesta de siempre (200, 404 o 422 sin cuerpo), nunca el 403 del scope.
+    assert respuesta.status_code != 403, respuesta.text
+
+
+def test_un_403_por_scope_no_gasta_presupuesto(e) -> None:
+    sin_cotizar = _con_scopes(e, scopes.PROPUESTAS, scopes.POLIZAS, scopes.CUENTA)
+    with e.cliente() as client:
+        respuesta = client.post("/v1/cotizaciones", json=COTIZACION, headers=sin_cotizar)
+
+    _es_error_publico(respuesta, 403, "PROHIBIDO")
+    assert e.socios.consumidas == {}
+
+
+def test_un_403_por_scope_no_entra_al_modo_prueba(e, monkeypatch) -> None:
+    llamadas = []
+
+    async def cotizar(*args, **kwargs):
+        llamadas.append(args)
+        raise AssertionError("no debía llegar al modo prueba")
+
+    monkeypatch.setattr(ModoPrueba, "cotizar", cotizar)
+    token = e.socios.token(entorno="PRUEBAS", scopes=[scopes.CUENTA])
+    with e.cliente() as client:
+        respuesta = client.post(
+            "/v1/cotizaciones", json=COTIZACION, headers={"Authorization": f"Bearer {token}"}
+        )
+
+    _es_error_publico(respuesta, 403, "PROHIBIDO")
+    assert llamadas == [] and e.socios.consumidas == {}
+
+
+def test_el_403_queda_en_el_consumo(e) -> None:
+    with e.cliente() as client:
+        client.post("/v1/cotizaciones", json=COTIZACION, headers=_con_scopes(e, scopes.CUENTA))
+
+    assert e.socios.consumos == [("socio-1", "PRODUCCION", "cotizaciones", "ERROR_CLIENTE")]
+
+
+def test_como_usuario_conserva_los_scopes() -> None:
+    socio = SocioActual("s", "PRODUCCION", frozenset({"propuestas", "cotizaciones"}))
+
+    assert socio.como_usuario().scopes == ("cotizaciones", "propuestas")
 
 
 # ---------- Consentimiento y cotización ----------
@@ -369,13 +506,21 @@ def test_un_cuerpo_invalido_cuenta_en_el_consumo_del_socio(e) -> None:
     assert e.socios.consumos == [("socio-1", "PRODUCCION", "cotizaciones", "ERROR_CLIENTE")]
 
 
-def test_un_cuerpo_invalido_sin_token_valido_sigue_siendo_422_y_no_cuenta(e) -> None:
+def test_un_cuerpo_invalido_sin_token_valido_es_401_y_no_cuenta(e) -> None:
+    """HA-SEG-004: el token y su scope se revisan antes que el cuerpo (dependencia de FastAPI)."""
     with e.cliente() as client:
         respuesta = client.post(
             "/v1/cotizaciones", json={}, headers={"Authorization": "Bearer no-es-un-jwt"}
         )
+        malformado = client.post(
+            "/v1/cotizaciones",
+            content=b"{no es json",
+            headers={"Authorization": "Bearer no-es-un-jwt", "Content-Type": "application/json"},
+        )
 
-    _es_error_publico(respuesta, 422, "DATOS_INVALIDOS")
+    _es_error_publico(respuesta, 401, "TOKEN_INVALIDO")
+    # Un JSON que ni se puede leer se rechaza antes de las dependencias: sigue siendo 422.
+    _es_error_publico(malformado, 422, "DATOS_INVALIDOS")
     assert e.socios.consumos == []
 
 

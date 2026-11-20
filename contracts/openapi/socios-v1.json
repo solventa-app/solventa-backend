@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Solventa · API de socios de distribución",
-    "version": "1.0.0",
-    "description": "API exclusiva para socios que revenden la póliza de Vida Hipotecario (HU-W07, KAN-30). Contrato v0.55 (`contracts/CHANGELOG.md`). Reglas: montos como texto decimal; errores con `ErrorPublico` en es o en; nunca un 5xx crudo; un socio solo ve lo que vendió (404 si no es suyo)."
+    "version": "1.1.0",
+    "description": "API exclusiva para socios que revenden la póliza de Vida Hipotecario (HU-W07, KAN-30). Contrato v0.57 (`contracts/CHANGELOG.md`). Reglas: montos como texto decimal; errores con `ErrorPublico` en es o en; nunca un 5xx crudo; un socio solo ve lo que vendió (404 si no es suyo).\n\n## Scopes (HA-SEG-004, EC025)\n\nEl token de `POST /v1/token` trae el claim `scopes`. Cada operación con token exige uno y responde **403 `PROHIBIDO`** si falta (antes de descontar presupuesto o de cualquier otra cosa). Un token sin el claim, o con un valor que no es una lista de textos, es **401 `TOKEN_INVALIDO`**. Hoy todos los socios reciben los cuatro.\n\n| Scope | Operaciones |\n|---|---|\n| `cotizaciones` | `POST /v1/consentimientos`, `POST /v1/consentimientos/{consentimientoId}/revocar`, `POST /v1/cotizaciones`, `POST /v1/cotizaciones-auto`, `POST /v1/conversiones` |\n| `propuestas` | `POST /v1/propuestas`, `GET /v1/propuestas/{propuestaId}`, `POST /v1/propuestas/{propuestaId}/codigo`, `POST /v1/propuestas/{propuestaId}/codigo/verificar`, `POST /v1/propuestas/{propuestaId}/emitir`, `POST /v1/propuestas/{propuestaId}/reenviar-enlace` |\n| `polizas` | `GET /v1/polizas/{polizaId}`, `GET /v1/polizas/{polizaId}/documento` |\n| `cuenta` | `GET /v1/estado`, `GET /v1/consumo`, `GET /v1/ventas`, `GET /v1/credenciales`, `POST /v1/credenciales/{entorno}/rotar` |\n| — (públicas) | `POST /v1/token`, `GET /v1/.well-known/jwks.json`, `GET /v1/openapi.json`, `GET /v1/docs` |"
   },
   "servers": [
     {
@@ -215,6 +215,9 @@
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
           },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
           },
@@ -244,7 +247,14 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": [
+              "cotizaciones"
+            ]
+          }
+        ]
       }
     },
     "/v1/consentimientos/{consentimientoId}/revocar": {
@@ -267,6 +277,9 @@
           },
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
@@ -294,6 +307,13 @@
           },
           {
             "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "cotizaciones"
+            ]
           }
         ]
       }
@@ -329,6 +349,9 @@
           },
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
@@ -396,7 +419,14 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": [
+              "cotizaciones"
+            ]
+          }
+        ]
       }
     },
     "/v1/cotizaciones-auto": {
@@ -430,6 +460,9 @@
           },
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
@@ -497,7 +530,14 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": [
+              "cotizaciones"
+            ]
+          }
+        ]
       }
     },
     "/v1/propuestas": {
@@ -520,6 +560,9 @@
           },
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
@@ -570,7 +613,14 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": [
+              "propuestas"
+            ]
+          }
+        ]
       }
     },
     "/v1/propuestas/{propuestaId}": {
@@ -593,6 +643,9 @@
           },
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
@@ -621,6 +674,13 @@
           {
             "$ref": "#/components/parameters/AcceptLanguage"
           }
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "propuestas"
+            ]
+          }
         ]
       }
     },
@@ -644,6 +704,9 @@
           },
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
@@ -702,7 +765,14 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": [
+              "propuestas"
+            ]
+          }
+        ]
       }
     },
     "/v1/propuestas/{propuestaId}/codigo/verificar": {
@@ -725,6 +795,9 @@
           },
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
@@ -782,7 +855,14 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": [
+              "propuestas"
+            ]
+          }
+        ]
       }
     },
     "/v1/propuestas/{propuestaId}/emitir": {
@@ -805,6 +885,9 @@
           },
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
@@ -843,6 +926,13 @@
           {
             "$ref": "#/components/parameters/AcceptLanguage"
           }
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "propuestas"
+            ]
+          }
         ]
       }
     },
@@ -866,6 +956,9 @@
           },
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
@@ -903,6 +996,13 @@
           {
             "$ref": "#/components/parameters/AcceptLanguage"
           }
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "propuestas"
+            ]
+          }
         ]
       }
     },
@@ -926,6 +1026,9 @@
           },
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
@@ -952,6 +1055,13 @@
           },
           {
             "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "polizas"
+            ]
           }
         ]
       }
@@ -978,6 +1088,9 @@
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
           },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
           },
@@ -1004,6 +1117,13 @@
           {
             "$ref": "#/components/parameters/AcceptLanguage"
           }
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "polizas"
+            ]
+          }
         ]
       }
     },
@@ -1028,6 +1148,9 @@
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
           },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
           }
@@ -1044,6 +1167,13 @@
           },
           {
             "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "cuenta"
+            ]
           }
         ]
       }
@@ -1068,6 +1198,9 @@
           },
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
@@ -1096,6 +1229,13 @@
           {
             "$ref": "#/components/parameters/AcceptLanguage"
           }
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "cuenta"
+            ]
+          }
         ]
       }
     },
@@ -1119,6 +1259,9 @@
           },
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
@@ -1146,6 +1289,13 @@
           },
           {
             "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "cuenta"
+            ]
           }
         ]
       }
@@ -1182,6 +1332,9 @@
           "401": {
             "$ref": "#/components/responses/NoAutenticado"
           },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
           "422": {
             "description": "Datos inválidos (`DATOS_INVALIDOS`).",
             "content": {
@@ -1195,7 +1348,14 @@
           "503": {
             "$ref": "#/components/responses/NoDisponible"
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": [
+              "cotizaciones"
+            ]
+          }
+        ]
       }
     },
     "/v1/credenciales": {
@@ -1223,7 +1383,7 @@
             "$ref": "#/components/responses/NoDisponible"
           },
           "403": {
-            "description": "Solo con un token de PRODUCCION (`PROHIBIDO`).",
+            "description": "Sin el scope `cuenta` del token, o solo con un token de PRODUCCION (`PROHIBIDO`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -1236,6 +1396,13 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "cuenta"
+            ]
           }
         ]
       }
@@ -1265,7 +1432,7 @@
             "$ref": "#/components/responses/NoDisponible"
           },
           "403": {
-            "description": "Solo con un token de PRODUCCION (`PROHIBIDO`).",
+            "description": "Sin el scope `cuenta` del token, o solo con un token de PRODUCCION (`PROHIBIDO`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -1288,6 +1455,13 @@
           {
             "$ref": "#/components/parameters/AcceptLanguage"
           }
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "cuenta"
+            ]
+          }
         ]
       }
     }
@@ -1297,7 +1471,8 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "JWT"
+        "bearerFormat": "JWT",
+        "description": "JWT ES256 de `POST /v1/token`. Los scopes que pide cada operación van en su `security` (OpenAPI 3.1 los admite en un esquema `http bearer`)."
       }
     },
     "parameters": {
@@ -1346,6 +1521,16 @@
             }
           }
         },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorPublico"
+            }
+          }
+        }
+      },
+      "SinPermiso": {
+        "description": "El token es válido pero no trae el scope de esta operación (`PROHIBIDO`). Sale antes de descontar presupuesto, entrar al modo prueba o llamar a otro servicio, y cuenta en `/v1/consumo` como error.",
         "content": {
           "application/json": {
             "schema": {

@@ -1704,7 +1704,9 @@ class SociosFalso:
         ahora = int(datetime.now(UTC).timestamp())
         claims = {
             "iss": self.EMISOR, "aud": self.AUDIENCIA, "sub": socio_id, "rol": "SOCIO",
-            "entorno": entorno, "iat": ahora, "exp": ahora + 900, **cambios,
+            "entorno": entorno, "iat": ahora, "exp": ahora + 900,
+            # Los mismos 4 de AUTH (`SCOPES_SOCIO`); con `**cambios` se quitan o se cambian.
+            "scopes": ["cotizaciones", "propuestas", "polizas", "cuenta"], **cambios,
         }  # fmt: skip
         return jwt.encode(claims, self._clave, algorithm="ES256", headers={"kid": "kid-prueba"})
 
