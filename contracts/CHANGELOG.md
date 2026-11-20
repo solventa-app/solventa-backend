@@ -572,6 +572,20 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.57 — 2026-11-20
+
+- HU-M01 (KAN-131): una falla técnica del proveedor de identidad ya no deja la verificación en `EN_REVISION` sin salida.
+  - El ACL separa «la foto no sirve» (4xx de entrada de Didit → rechazo `ILEGIBLE`, que gasta intento) de «Didit falló»
+    (429, 5xx, timeout o circuito abierto) y de «la cuenta de Didit está mal» (401/402/403). El circuito de identidad tiene
+    umbral y TTL propios y solo cuenta las fallas reales.
+  - ONBOARDING reintenta en segundo plano las fallas técnicas (la sesión sigue `EN_VERIFICACION`). Si siguen, la sesión
+    cierra en `RECHAZADA` con `motivo` `PROVEEDOR_NO_DISPONIBLE` o `IMAGEN_NO_DISPONIBLE`: **no gasta intento**
+    (`intentosRestantes` no baja y reintentar repite el mismo `intento`), no rechaza la cuenta en AUTH y no cuenta para el
+    tope de `RECORRIDOS_AGOTADOS`.
+  - `EN_REVISION` ya no se produce por fallas del proveedor (el valor sigue en el enum).
+- Sin cambios de forma: solo cambia con qué `estado` llegan dos motivos que ya existían. Afecta al frontend: el móvil
+  muestra un texto propio para esos dos motivos en la tarjeta «rechazada» y en M01-07c.
+
 ## v0.56 — 2026-11-20
 
 - HU-M01 (KAN-31): reintentar la verificación de identidad después de agotar los intentos.

@@ -20,7 +20,8 @@ Didit. El caso lo decide un marcador de texto dentro de la imagen de prueba (`CA
 opcional, `NUMERO=<cédula>`); sin marcador, todo sale aprobado con datos ficticios, como el
 sandbox de Didit. Casos: `ilegible` y `vencido` (anverso), `menor` (anverso, aprobado pero con
 fecha de nacimiento de un menor: la edad la decide ONBOARDING), `suplantacion` y
-`rostro-distinto` (fotograma del rostro). Ver el README.
+`rostro-distinto` (fotograma del rostro) y `sin-rostro` (fotograma del rostro: la prueba de vida
+responde 422 como Didit cuando no detecta una cara, KAN-131). Ver el README.
 
 Expone además `GET /v1/estado`, que **sí obedece el modo simulado** (a diferencia de `/health`): lo
 usa la sonda de recuperación del circuito del ACL Worker, que no debe crear una verificación de
@@ -238,6 +239,8 @@ def create_app() -> FastAPI:
         partes = await _didit(request, modo, x_modo_simulado, x_api_key)
         if "user_image" not in partes:
             raise HTTPException(status_code=400, detail="user_image is required")
+        if _marcadores(partes["user_image"]).get("CASO") == "sin-rostro":
+            raise HTTPException(status_code=422, detail="No face detected in user_image")
         ataque = _marcadores(partes["user_image"]).get("CASO") == "suplantacion"
         bloque = {
             "status": "Declined" if ataque else "Approved",
