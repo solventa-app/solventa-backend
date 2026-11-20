@@ -112,6 +112,31 @@ paths:
       responses:
         "200":
           description: OK
+  # v0.59 (HA-MOD-003): /v2 convive con /v1 (ADR-13).
+  /v2/openapi.json:
+    get:
+      summary: "Contrato de /v2"
+      operationId: openapiV2
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v2/cotizaciones:
+    post:
+      summary: "Cotiza con el precio unificado (descuenta presupuesto)"
+      operationId: cotizarV2
+      security:
+        - socios_jwt: []
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
   /v1/cotizaciones-auto:
     post:
       summary: "Cotiza la póliza de auto (descuenta presupuesto)"

@@ -22,6 +22,8 @@ OPENAPI = RAIZ / "infra" / "gateway" / "openapi.yaml"
 ENVOY = RAIZ / "infra" / "gateway" / "envoy.yaml"
 OPENAPI_SOCIOS = RAIZ / "infra" / "gateway" / "openapi-socios.yaml"
 CONTRATO_SOCIOS = RAIZ / "contracts" / "openapi" / "socios-v1.json"
+# v0.59 (HA-MOD-003): /v2 convive con /v1; sus rutas también pasan por el gateway.
+CONTRATOS_SOCIOS = (CONTRATO_SOCIOS, RAIZ / "contracts" / "openapi" / "socios-v2.json")
 
 PLAZO_SEGUNDOS = 0.7
 # El canal móvil tiene 2 s: crear la cuenta del onboarding (hash de la clave) tarda ~1 s.
@@ -118,14 +120,14 @@ def extraer_envoy(texto: str) -> dict[tuple[str, str], float]:
 
 
 def es_de_socios(ruta: str) -> bool:
-    return ruta.startswith("/v1/") and not ruta.startswith("/v1/graphql")
+    return ruta.startswith(("/v1/", "/v2/")) and not ruta.startswith("/v1/graphql")
 
 
 def rutas_del_contrato_de_socios() -> set[tuple[str, str]]:
-    contrato = json.loads(CONTRATO_SOCIOS.read_text(encoding="utf-8"))
     return {
         (metodo.upper(), re.sub(r"\{[^}]+\}", PARAMETRO, camino))
-        for camino, operaciones in contrato["paths"].items()
+        for archivo in CONTRATOS_SOCIOS
+        for camino, operaciones in json.loads(archivo.read_text(encoding="utf-8"))["paths"].items()
         for metodo in operaciones
     }
 

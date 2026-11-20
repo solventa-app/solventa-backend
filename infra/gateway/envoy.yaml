@@ -190,6 +190,25 @@ static_resources:
                           route:
                             cluster: bff_cluster
                             timeout: 0.7s
+                        # v0.59 (HA-MOD-003): /v2 convive con /v1 (ADR-13).
+                        - match:
+                            path: "/v2/openapi.json"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "GET"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
+                        - match:
+                            path: "/v2/cotizaciones"
+                            headers:
+                              - name: ":method"
+                                string_match:
+                                  exact: "POST"
+                          route:
+                            cluster: bff_cluster
+                            timeout: 0.7s
                         - match:
                             path: "/v1/cotizaciones-auto"
                             headers:
@@ -371,6 +390,9 @@ static_resources:
                         - match: { path: "/v1/docs" }
                         - match: { prefix: "/v1/graphql/" }
                         - match: { prefix: "/v1/" }
+                          requires: { provider_name: socios }
+                        - match: { path: "/v2/openapi.json" }
+                        - match: { prefix: "/v2/" }
                           requires: { provider_name: socios }
                   - name: envoy.filters.http.router
                     typed_config:

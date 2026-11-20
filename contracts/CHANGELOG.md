@@ -572,6 +572,21 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.59 — 2026-11-20
+
+- HU-W07 (KAN-69), HA-MOD-003 / EC033: **primera versión nueva de la API de socios, `/v2`, que convive con `/v1`**
+  (política en [ADR-13](../docs/adr/ADR-13-versionado-api-socios.md)). Contrato nuevo `openapi/socios-v2.json`
+  (**2.0.0**), servido en `GET /v2/openapi.json`.
+  - `POST /v2/cotizaciones`: mismo cuerpo, errores, scope (`cotizaciones`), presupuesto y modo prueba que
+    `POST /v1/cotizaciones`. Lo único que cambia (y por eso es otra versión): la oferta trae **un solo `precio`** en
+    lugar de `prima` y `rangoPrima`: `{"tipo":"EXACTO","valor","moneda"}` (COMPLETA) o
+    `{"tipo":"RANGO","minima","maxima","moneda"}` (PRELIMINAR).
+  - Cuenta en `/v1/consumo` como `cotizaciones`, igual que /v1. La `Idempotency-Key` de /v2 va aparte de la de /v1.
+  - El gateway (Envoy y `openapi-socios.yaml`) suma las dos rutas con el mismo corte de 0,7 s; el token se valida en
+    el borde igual que en /v1.
+- `/v1` no cambia ni se anuncia su retiro. Afecta al frontend: no (el portal usa /v1; la guía de integración puede
+  mencionar /v2 cuando se publique).
+
 ## v0.57 — 2026-11-20
 
 - HU-W07 (KAN-30, KAN-217), HA-SEG-004 / EC025: **el BFF valida los scopes del token del socio en cada llamada `/v1`**.
