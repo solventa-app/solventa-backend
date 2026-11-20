@@ -211,7 +211,7 @@ class RepositorioUsuariosMemoria:
         pais=None,
     ):
         fila = self.filas.get(usuario_id)
-        if fila is None or fila["estado"] not in ("PENDIENTE_VERIFICACION", estado):
+        if fila is None or fila["estado"] not in ("PENDIENTE_VERIFICACION", "RECHAZADA", estado):
             return None
         fila["estado"] = estado
         for campo, valor in (

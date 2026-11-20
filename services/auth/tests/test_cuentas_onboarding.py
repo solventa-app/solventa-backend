@@ -95,11 +95,25 @@ def test_verificar_activa_la_cuenta_con_el_nombre_cifrado() -> None:
     assert _scopes(sesiones.iniciar_sesion(CORREO, CLAVE, "web")) == ["consentimiento", "oferta"]
 
 
-def test_rechazar_y_no_reabrir() -> None:
+def test_rechazada_sigue_sin_verificar() -> None:
     _, _, usuarios, sesiones, cuenta = _preparar()
     assert usuarios.cerrar_verificacion(cuenta["id"], False)["estado"] == "RECHAZADA"
-    assert usuarios.cerrar_verificacion(cuenta["id"], True, "X Y") is None
     assert _scopes(sesiones.iniciar_sesion(CORREO, CLAVE, "app")) == ["verificacion-pendiente"]
+
+
+def test_rechazada_se_activa_con_un_recorrido_nuevo_aprobado() -> None:
+    """KAN-31: agotar los intentos de un recorrido no deja la cuenta bloqueada para siempre."""
+    _, _, usuarios, sesiones, cuenta = _preparar()
+    usuarios.cerrar_verificacion(cuenta["id"], False)
+    activa = usuarios.cerrar_verificacion(cuenta["id"], True, "ANA MARIA PRUEBA")
+    assert activa["estado"] == "ACTIVO"
+    assert _scopes(sesiones.iniciar_sesion(CORREO, CLAVE, "app")) != ["verificacion-pendiente"]
+
+
+def test_activa_no_baja_a_rechazada() -> None:
+    _, _, usuarios, _, cuenta = _preparar()
+    usuarios.cerrar_verificacion(cuenta["id"], True, "ANA MARIA PRUEBA")
+    assert usuarios.cerrar_verificacion(cuenta["id"], False) is None
 
 
 def test_cerrar_una_cuenta_que_no_es_del_onboarding_no_aplica() -> None:

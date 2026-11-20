@@ -4,6 +4,7 @@ Capa simple (regla 3). ONBOARDING es el **único escritor** de su base (regla 1)
 estado son condicionales (`UPDATE ... WHERE estado = ...`): si dos tareas de verificación corren a
 la vez, solo una cierra la sesión. El pool va en `autocommit` (una sentencia = una transacción)."""
 
+from datetime import datetime
 from typing import Any
 
 import psycopg
@@ -69,6 +70,29 @@ class RepositorioPostgres:
                 """,
                 {"u": usuario_id},
             ).fetchone()
+
+    def abiertas_de_usuario(self, usuario_id: str, excepto: str) -> list[dict[str, Any]]:
+        """Las otras sesiones INICIADO de la cuenta (KAN-31: se invalidan al ligar una nueva)."""
+        with self._pool.connection() as conexion:
+            return conexion.execute(
+                f"""
+                SELECT {_COLUMNAS} FROM sesiones_onboarding
+                WHERE usuario_id = %(u)s AND estado = 'INICIADO' AND id <> %(x)s
+                """,
+                {"u": usuario_id, "x": excepto},
+            ).fetchall()
+
+    def contar_rechazadas_desde(self, usuario_id: str, desde: datetime) -> int:
+        """Sesiones RECHAZADAS de la cuenta creadas desde `desde` (tope diario, KAN-31)."""
+        with self._pool.connection() as conexion:
+            fila = conexion.execute(
+                """
+                SELECT count(*) AS total FROM sesiones_onboarding
+                WHERE usuario_id = %(u)s AND estado = 'RECHAZADA' AND creado_en >= %(d)s
+                """,
+                {"u": usuario_id, "d": desde},
+            ).fetchone()
+            return int(fila["total"]) if fila else 0
 
     def actualizar(
         self, sesion_id: str, cambios: dict[str, Any], estados: tuple[str, ...]

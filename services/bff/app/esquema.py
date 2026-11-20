@@ -1477,6 +1477,7 @@ MENSAJES_ONBOARDING = {
     "ESTADO_INVALIDO": "Este paso ya no aplica a tu verificación.",
     "PIEZAS_INCOMPLETAS": "Faltan fotos o el video. Complétalos e intenta de nuevo.",
     "SIN_INTENTOS": "Ya no quedan intentos de verificación.",
+    "RECORRIDOS_AGOTADOS": "Hoy ya no puedes intentar la verificación otra vez. Vuelve mañana.",
     "SESION_CON_CUENTA": "Esta verificación ya tiene una cuenta.",
     "CORREO_YA_REGISTRADO": "Ya existe una cuenta con ese correo.",
     "DATO_INVALIDO": "Revisa los datos e intenta de nuevo.",

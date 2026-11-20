@@ -35,6 +35,7 @@ class Configuracion:
     edad_minima: int = 18
     max_intentos: int = 3
     vigencia_token_s: int = 1800
+    max_rechazadas_dia: int = 3
     timeout_s: float = 20.0
     # "bucle" (hilo de este proceso, local y CI) o "externo" (Cloud Tasks).
     disparador: str = "bucle"
@@ -76,6 +77,7 @@ class Configuracion:
             edad_minima=_entero_positivo("EDAD_MINIMA", "18"),
             max_intentos=_entero_positivo("MAX_INTENTOS", "3"),
             vigencia_token_s=_entero_positivo("TOKEN_VIGENCIA_SEGUNDOS", "1800"),
+            max_rechazadas_dia=_entero_positivo("MAX_RECHAZADAS_DIA", "3"),
             timeout_s=float(os.getenv("TIMEOUT_SEGUNDOS", "20")),
             disparador=disparador,
             gcp_proyecto=os.getenv("GCP_PROYECTO", ""),
