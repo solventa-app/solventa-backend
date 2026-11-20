@@ -16,11 +16,13 @@ les agrega una cobertura paramétrica:
   `variable=VIENTO_KMH` y `umbral=1` (km/h: el viento máximo en 24 h siempre lo supera, así la
   demo dispara siempre).
 
-Demo en staging (`SEMILLA_CLIENTE_ID=<usuario de AUTH>`): en vez de lo anterior crea 2 pólizas
-de ese cliente para que el push le llegue a su teléfono: VUELO (`SEMILLA_VUELO`, por defecto
-`AV9340`) con `umbral_retraso_min=0` y una cobertura por cada día desde hoy durante `SEMILLA_DIAS`
-(90), para que el Cloud Scheduler que consulta `fecha: "hoy"` siempre encuentre póliza; y CLIMA
-igual a la de arriba.
+Demo en staging (`SEMILLA_CLIENTE_ID=<usuario de AUTH>` y `SEMILLA_TITULAR_ID=<titular_id>`, el
+que devuelve `GET /usuarios/{id}/identidad` de AUTH): en vez de lo anterior crea 2 pólizas de ese
+cliente, con el titular como `cliente_id` (así le salen en `miCoberturaParametrica`) y el usuario
+como quien la aceptó (así CLAIMS le manda el push y el BFF le muestra `indemnizacion`): VUELO
+(`SEMILLA_VUELO`, por defecto `AV9340`) con `umbral_retraso_min=0` y una cobertura por cada día
+desde hoy durante `SEMILLA_DIAS` (90), para que el Cloud Scheduler que consulta `fecha: "hoy"`
+siempre encuentre póliza; y CLIMA igual a la de arriba.
 
 Es idempotente: los ids de propuesta son fijos y, si la póliza ya tiene coberturas, no se
 duplican (`RepositorioCoberturasParametricas.de_poliza`)."""
@@ -81,6 +83,9 @@ def _sembrar_poliza(repositorio: RepositorioPropuestasPostgres, propuesta: dict)
             "plazo_meses": _meses(VIGENCIA_DESDE, VIGENCIA_HASTA),
             "nivel_riesgo": "BAJO",
             "producto": "VIDA_DEUDOR",
+            # El dueño en AUTH: sin él CLAIMS no sabe a quién mandarle el push y el BFF no le
+            # muestra `indemnizacion` al cliente.
+            "actor_usuario_id": propuesta.get("actor_usuario_id"),
         },
     )
     poliza, _ = repositorio.emitir_poliza(
@@ -150,18 +155,20 @@ def sembrar(
 def sembrar_demo_staging(
     repositorio: RepositorioPropuestasPostgres,
     coberturas: RepositorioCoberturasParametricas,
-    cliente_id: str,
+    usuario_id: str,
+    titular_id: str,
     numero_vuelo: str,
     dias: int,
 ) -> list[dict]:
     creadas = []
-    sufijo = cliente_id[:12]
+    sufijo = usuario_id[:12]
     poliza_vuelo = _sembrar_poliza(
         repositorio,
         {
             "propuesta_id": f"demo-m04-vuelo-{sufijo}",
             "oferta_id": f"demo-m04-vuelo-oferta-{sufijo}",
-            "cliente_id": cliente_id,
+            "cliente_id": titular_id,
+            "actor_usuario_id": usuario_id,
             "prima": {"valor": "45000", "moneda": "COP"},
             "cobertura": {"valor": "500000", "moneda": "COP"},
         },
@@ -187,7 +194,8 @@ def sembrar_demo_staging(
         {
             "propuesta_id": f"demo-m04-clima-{sufijo}",
             "oferta_id": f"demo-m04-clima-oferta-{sufijo}",
-            "cliente_id": cliente_id,
+            "cliente_id": titular_id,
+            "actor_usuario_id": usuario_id,
             "prima": {"valor": "38000", "moneda": "COP"},
             "cobertura": {"valor": "400000", "moneda": "COP"},
         },
@@ -219,12 +227,13 @@ def main() -> int:
     try:
         repositorio = RepositorioPropuestasPostgres(pool, cifrador_desde_entorno())
         coberturas = RepositorioCoberturasParametricas(pool)
-        cliente_id = os.environ.get("SEMILLA_CLIENTE_ID", "").strip()
-        if cliente_id:
+        usuario_id = os.environ.get("SEMILLA_CLIENTE_ID", "").strip()
+        if usuario_id:
             creadas = sembrar_demo_staging(
                 repositorio,
                 coberturas,
-                cliente_id,
+                usuario_id,
+                os.environ.get("SEMILLA_TITULAR_ID", "").strip() or usuario_id,
                 os.environ.get("SEMILLA_VUELO", "AV9340").strip(),
                 int(os.environ.get("SEMILLA_DIAS", "90")),
             )
