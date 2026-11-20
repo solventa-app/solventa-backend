@@ -572,6 +572,22 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.54 — 2026-11-19
+
+- HU-W07 (KAN-30), API de socios: `POST /v1/cotizaciones` y `POST /v1/cotizaciones-auto` aceptan la cabecera
+  opcional `Idempotency-Key`. El gateway corta a los 700 ms, pero el BFF terminaba la cotización: el socio veía un
+  504, reintentaba y se descontaban **dos** unidades de presupuesto y se contaban dos llamadas.
+  - Con la misma clave, el reintento recibe la respuesta guardada con `Idempotent-Replayed: true`, sin descontar
+    presupuesto ni contarse en `/v1/consumo`. La clave vale 24 h, por socio, entorno y operación.
+  - Códigos nuevos de `ErrorPublico`: `SOLICITUD_EN_CURSO` (409, con `Retry-After`: la primera sigue en curso) e
+    `IDEMPOTENCIA_EN_CONFLICTO` (422: la clave ya se usó con otro cuerpo).
+  - Si la cotización falla, la clave se libera y el socio puede reintentar con ella.
+- Sin cambio de contrato pero sí de comportamiento: cada llamada del socio se registra en el consumo **antes** de
+  responder (antes era una tarea suelta que Cloud Run podía no correr). Si AUTH tarda más de 150 ms, la llamada no se
+  cuenta y queda en la métrica `bff_socios_consumo_perdido_total`.
+- Solo cambios aditivos: sin la cabecera todo sigue igual. Afecta al frontend: no (el portal no cotiza); los socios
+  pueden empezar a enviarla.
+
 ## v0.53 — 2026-11-18
 
 - HU-M06 (KAN-36): la especialidad y el horario del prestador llegan como datos y la app los muestra en su idioma

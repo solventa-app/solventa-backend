@@ -71,7 +71,12 @@ rutas explícitas, nunca como un `Mount("/v1")`.
   consentimiento sea del socio; si la cotización falla por nosotros, la devuelve. Agotado: 429 con `Retry-After`.
 - **Errores:** siempre `ErrorPublico` (`codigo`, `mensaje` en es o en, `puedeReintentar`), también los 422 de FastAPI.
   Una falla inesperada es 503 con `Retry-After`, nunca un 5xx crudo. `app/socios/errores.py`.
-- **Consumo:** un middleware registra cada llamada del socio en AUTH (API, resultado y latencia) después de responder.
+- **Consumo:** un middleware registra cada llamada del socio en AUTH (API, resultado y latencia) **antes** de
+  responder, con un tope de 150 ms (KAN-30: la tarea suelta tras la respuesta se perdía en Cloud Run). Lo que no se
+  pudo registrar suma en `bff_socios_consumo_perdido_total`.
+- **Idempotency-Key (v0.54):** en `POST /v1/cotizaciones` y `/v1/cotizaciones-auto`, un reintento con la misma llave
+  devuelve la respuesta guardada en Redis (24 h) con `Idempotent-Replayed: true`, sin descontar presupuesto ni contarse
+  en el consumo (`app/socios/idempotencia.py`).
 - **Modo prueba** (`app/socios/modo_prueba.py`): con un token de PRUEBAS, datos simulados por documento de prueba,
   código `000000` y avance solo hasta EMITIDA, sin llamar a las fuentes, a RATING, a POLICY ni a los stubs. Estado en
   Redis (24 h) o en memoria.
