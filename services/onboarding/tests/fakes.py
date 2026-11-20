@@ -73,6 +73,13 @@ class RepositorioFalso:
         filas = [s for s in self.sesiones.values() if s["usuario_id"] == usuario_id]
         return copy.deepcopy(max(filas, key=lambda s: s["creado_en"])) if filas else None
 
+    def abiertas_de_usuario(self, usuario_id: str, excepto: str) -> list[dict[str, Any]]:
+        return [
+            dict(s)
+            for s in self.sesiones.values()
+            if s["usuario_id"] == usuario_id and s["estado"] == "INICIADO" and s["id"] != excepto
+        ]
+
     def contar_rechazadas_desde(self, usuario_id: str, desde: datetime) -> int:
         return sum(
             1

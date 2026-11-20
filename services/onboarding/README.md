@@ -31,7 +31,7 @@ PostgreSQL + Alembic, puerto **8010**. Plan: `plan-almacenamiento-y-hu-m01.md` (
 | Proveedor caído o circuito abierto | EN_REVISION | `PROVEEDOR_NO_DISPONIBLE` |
 | Todo bien | VERIFICADA | — |
 
-Hasta `MAX_INTENTOS` (3) por sesión y hasta `MAX_RECHAZADAS_DIA` (3) sesiones rechazadas por cuenta en 24 h (KAN-31; al ligar otra responde `RECORRIDOS_AGOTADOS`). El `titular_id` es el HMAC del número de documento con `CLIENTE_ID_CLAVE`, el
+Hasta `MAX_INTENTOS` (3) por sesión y hasta `MAX_RECHAZADAS_DIA` (3) sesiones rechazadas por cuenta en 24 h (KAN-31; al ligar otra responde `RECORRIDOS_AGOTADOS`). Ligar un recorrido nuevo a la cuenta deja sin piezas a sus otros recorridos `INICIADO` (evento `INVALIDADA`): cada aceptación del consentimiento empieza limpia. El `titular_id` es el HMAC del número de documento con `CLIENTE_ID_CLAVE`, el
 mismo algoritmo y clave de AUTH y el BFF: así se ligan las pólizas previas. Su índice único parcial
 (`estado = 'VERIFICADA'`) cierra la carrera entre dos sesiones con el mismo documento. Los datos leídos del documento se
 guardan cifrados (AES-GCM, sesión como dato asociado) y solo de las sesiones VERIFICADAS.

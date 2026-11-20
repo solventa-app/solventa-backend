@@ -5,7 +5,7 @@ from datetime import timedelta
 import pytest
 from fakes import AHORA, APROBADA, Pila
 
-from app.application.servicio_onboarding import ErrorOnboarding
+from app.application.servicio_onboarding import COLUMNAS_PIEZAS, ErrorOnboarding
 
 
 def _ligada(pila: Pila, usuario_id: str = "u-1") -> dict:
@@ -135,3 +135,25 @@ def test_kan31_el_tope_se_libera_a_las_24_horas() -> None:
         _rechazada_sin_intentos(pila)
     pila.repo.ahora = AHORA
     assert _ligada(pila)["usuario_id"] == "u-1"
+
+
+def test_kan31_ligar_un_recorrido_nuevo_invalida_las_piezas_de_los_abiertos() -> None:
+    """Aceptar el consentimiento de nuevo empieza limpio: el recorrido abierto anterior de la cuenta
+    pierde sus piezas (empiezan a vencer) y el nuevo conserva las suyas. Otra cuenta no se toca."""
+    pila = Pila(APROBADA)
+    vieja = _ligada(pila)
+    piezas_viejas = [vieja[c] for c in COLUMNAS_PIEZAS]
+    ajena = _ligada(pila, "u-2")
+    nueva = _ligada(pila)
+
+    vieja_ahora = pila.repo.obtener(vieja["id"])
+    assert all(vieja_ahora[c] is None for c in COLUMNAS_PIEZAS)
+    assert vieja_ahora["estado"] == "INICIADO"
+    assert set(piezas_viejas) <= set(pila.storage.retenidos)
+    assert (vieja["id"], "INVALIDADA") in [(s, t) for s, t, _ in pila.repo.eventos]
+    assert all(pila.repo.obtener(nueva["id"])[c] for c in COLUMNAS_PIEZAS)
+    assert all(pila.repo.obtener(ajena["id"])[c] for c in COLUMNAS_PIEZAS)
+    # La vieja ya no se puede enviar a verificar con fotos que no existen.
+    with pytest.raises(ErrorOnboarding) as error:
+        pila.servicio.enviar(vieja_ahora)
+    assert error.value.codigo == "PIEZAS_INCOMPLETAS"

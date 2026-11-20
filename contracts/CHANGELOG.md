@@ -579,6 +579,9 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
     y un recorrido nuevo aprobado no activaba la cuenta). Una cuenta `ACTIVO` nunca baja a `RECHAZADA`.
   - ONBOARDING: tope de 3 recorridos `RECHAZADA` por cuenta en 24 h (`MAX_RECHAZADAS_DIA`). Al ligar otro,
     `iniciarOnboarding` responde `ErrorOnboarding` con el código nuevo `RECORRIDOS_AGOTADOS`.
+  - ONBOARDING: ligar un recorrido nuevo a la cuenta **invalida los otros recorridos abiertos** (`INICIADO`) de esa
+    cuenta: pierden sus cuatro piezas, que empiezan a vencer con su retención, y queda el evento `INVALIDADA`. Ninguna
+    foto vieja se vuelve a usar.
 - Solo cambios aditivos (un código nuevo de `ErrorOnboarding`). Afecta al frontend: el móvil (abre un recorrido nuevo
   al aceptar el consentimiento y muestra el mensaje del código nuevo).
 

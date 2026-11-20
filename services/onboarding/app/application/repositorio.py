@@ -71,6 +71,17 @@ class RepositorioPostgres:
                 {"u": usuario_id},
             ).fetchone()
 
+    def abiertas_de_usuario(self, usuario_id: str, excepto: str) -> list[dict[str, Any]]:
+        """Las otras sesiones INICIADO de la cuenta (KAN-31: se invalidan al ligar una nueva)."""
+        with self._pool.connection() as conexion:
+            return conexion.execute(
+                f"""
+                SELECT {_COLUMNAS} FROM sesiones_onboarding
+                WHERE usuario_id = %(u)s AND estado = 'INICIADO' AND id <> %(x)s
+                """,
+                {"u": usuario_id, "x": excepto},
+            ).fetchall()
+
     def contar_rechazadas_desde(self, usuario_id: str, desde: datetime) -> int:
         """Sesiones RECHAZADAS de la cuenta creadas desde `desde` (tope diario, KAN-31)."""
         with self._pool.connection() as conexion:
