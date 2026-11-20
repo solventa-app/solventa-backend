@@ -1,7 +1,7 @@
 """Pruebas del batch nocturno `risk-reproceso` (Bloque 9, HA-ESC-004, EC017)."""
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fakes import AlmacenClaveValorFalso
@@ -74,6 +74,12 @@ class DbBatchFalsa:
         return self.coleccion
 
 
+# Relativo a hoy: con una fecha fija el perfil pasa los 30 días sin vencimiento y el batch lo salta
+# (W01-A5), así que la prueba dejaba de pasar sola con el calendario.
+CREADO_EN = datetime.now(UTC) - timedelta(days=1)
+VIGENCIA_ESPERADA = (CREADO_EN + timedelta(days=30)).date().isoformat()
+
+
 def _crear_documento_perfil(
     idx: int,
     *,
@@ -102,7 +108,7 @@ def _crear_documento_perfil(
         "perfil_version": 1,
         "fuentes": cifrar_fuentes_perfil(fuentes, cifrador),
         "version_reglas": version_reglas,
-        "creado_en": datetime(2026, 10, 18, 0, 0, tzinfo=UTC),
+        "creado_en": CREADO_EN,
     }
 
 
@@ -132,7 +138,7 @@ def test_reproceso_por_lotes_actualiza_mongo_y_cache_redis() -> None:
         assert doc["version_reglas"] == "v1"
         assert doc["score_total"] > 0
         assert doc["nivel_riesgo"] in ("BAJO", "MEDIO", "ALTO")
-        assert doc["fecha_vigencia"].startswith("2026-11-17")
+        assert doc["fecha_vigencia"].startswith(VIGENCIA_ESPERADA)
         # Sigue cifrado en reposo en MongoDB
         assert doc["fuentes"][0]["datos"] == {}
         assert "datos_cifrados" in doc["fuentes"][0]
