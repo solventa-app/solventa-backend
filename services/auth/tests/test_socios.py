@@ -1,6 +1,7 @@
 """Socios de distribución (HU-W07): tokens ES256, credenciales, presupuesto, consumo y la CLI."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import jwt
 import pytest
@@ -29,6 +30,9 @@ CREDENCIALES = {
     "PRODUCCION": ("sol_prod_demo1", "Clave-produccion-demo-1"),
     "PRUEBAS": ("sol_test_demo1", "clave-pruebas-demo-1"),
 }
+
+
+BOGOTA = ZoneInfo("America/Bogota")
 
 
 class Reloj:
@@ -157,7 +161,7 @@ def test_el_consumo_agrupa_por_api_y_por_dia(servicio, reloj) -> None:
     servicio.registrar_consumo("socio-demo-1", "PRODUCCION", "propuestas", "OK", 50)
     servicio.registrar_consumo("socio-demo-1", "PRUEBAS", "propuestas", "OK", 10)
     servicio.reservar("socio-demo-1", "PRODUCCION", "cotizaciones")
-    hoy = datetime.now(UTC).date()
+    hoy = datetime.now(BOGOTA).date()
 
     consumo = servicio.consumo("socio-demo-1", "PRODUCCION", hoy, hoy)
 
@@ -167,6 +171,50 @@ def test_el_consumo_agrupa_por_api_y_por_dia(servicio, reloj) -> None:
         {"api": "propuestas", "llamadas": 1, "errores": 0, "latencia_media_ms": 50},
     ]
     assert consumo["diario"] == [{"fecha": hoy, "llamadas": 3}]
+
+
+def test_las_cotizaciones_de_auto_suman_en_la_fila_de_cotizaciones(servicio) -> None:
+    """KAN-30: las dos cotizaciones gastan la misma bolsa; contadas aparte nunca cuadraban con
+    `presupuesto.consumidas`."""
+    servicio.registrar_consumo("socio-demo-1", "PRODUCCION", "cotizaciones", "OK", 100)
+    servicio.registrar_consumo("socio-demo-1", "PRODUCCION", "cotizaciones-auto", "OK", 400)
+    servicio.registrar_consumo("socio-demo-1", "PRODUCCION", "cotizaciones-auto", "ERROR", 400)
+    hoy = datetime.now(BOGOTA).date()
+
+    consumo = servicio.consumo("socio-demo-1", "PRODUCCION", hoy, hoy)
+
+    assert consumo["por_api"] == [
+        {"api": "cotizaciones", "llamadas": 3, "errores": 1, "latencia_media_ms": 300}
+    ]
+
+
+def test_el_diario_trae_todos_los_dias_del_rango(servicio) -> None:
+    servicio.registrar_consumo("socio-demo-1", "PRODUCCION", "propuestas", "OK", 10)
+    hoy = datetime.now(BOGOTA).date()
+
+    diario = servicio.consumo("socio-demo-1", "PRODUCCION", hoy - timedelta(days=2), hoy)["diario"]
+
+    assert diario == [
+        {"fecha": hoy - timedelta(days=2), "llamadas": 0},
+        {"fecha": hoy - timedelta(days=1), "llamadas": 0},
+        {"fecha": hoy, "llamadas": 1},
+    ]
+
+
+def test_sin_fechas_son_los_ultimos_30_dias_de_colombia(servicio, reloj) -> None:
+    # 01:30 UTC del 20 de noviembre son las 20:30 del 19 en Bogotá.
+    reloj.ahora = datetime(2026, 11, 20, 1, 30, tzinfo=UTC)
+
+    consumo = servicio.consumo("socio-demo-1", "PRODUCCION", None, None)
+
+    assert consumo["hasta"] == date(2026, 11, 19)
+    assert consumo["desde"] == date(2026, 10, 21)
+    assert len(consumo["diario"]) == 30
+
+
+def test_un_rango_de_mas_de_un_anio_es_invalido(servicio) -> None:
+    with pytest.raises(DatoSocioInvalido):
+        servicio.consumo("socio-demo-1", "PRODUCCION", date(2025, 1, 1), date(2026, 6, 1))
 
 
 def test_guardar_es_idempotente_y_no_duplica_credenciales(servicio) -> None:

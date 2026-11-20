@@ -3,6 +3,7 @@
 import hashlib
 import uuid
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from argon2 import PasswordHasher
 
@@ -380,7 +381,8 @@ class RepositorioSociosMemoria:
                 "api": api,
                 "resultado": resultado,
                 "latencia_ms": latencia_ms,
-                "fecha": datetime.now(UTC).date(),
+                # El día de Colombia, como `AT TIME ZONE` en PostgreSQL (ZONA_CONSUMO).
+                "fecha": datetime.now(ZoneInfo("America/Bogota")).date(),
             }
         )
 

@@ -50,7 +50,7 @@ from app.servicio_oferta import ServicioOferta
 from app.servicio_restablecimiento import ServicioRestablecimiento
 from app.servicio_suscripcion import MENSAJE_DOCUMENTO_NO_DISPONIBLE, ServicioSuscripcion
 from app.sesiones_revocadas import SesionesRevocadasMemoria, SesionesRevocadasRedis
-from app.socios.api import api_de, construir_router, es_ruta_de_socios
+from app.socios.api import api_de, construir_router, cuenta_en_el_consumo, es_ruta_de_socios
 from app.socios.autenticacion import VerificadorTokensSocio
 from app.socios.errores import ErrorApiSocio, datos_invalidos, no_disponible, respuesta_de_error
 from app.socios.idempotencia import AlmacenIdempotenciaMemoria, AlmacenIdempotenciaRedis
@@ -261,6 +261,15 @@ def create_app(
         # En la API de socios, un cuerpo inválido es `ErrorPublico` (DATOS_INVALIDOS), no el
         # detalle de FastAPI; el resto del BFF responde como siempre.
         if es_ruta_de_socios(request.url.path):
+            # El cuerpo se valida antes de la ruta, así que el socio aún no está identificado:
+            # se identifica aquí para que el 422 cuente en su consumo (KAN-30). Sin un token
+            # válido no hay a quién contarlo y la respuesta sigue siendo el 422.
+            verificador = getattr(app.state, "verificador_socios", None)
+            if verificador is not None and getattr(request.state, "socio", None) is None:
+                try:
+                    request.state.socio = await verificador.verificar(request.headers)
+                except Exception:  # noqa: BLE001
+                    pass
             idioma = idioma_de(request.headers.get("accept-language"))
             return respuesta_de_error(datos_invalidos(), idioma)
         return await request_validation_exception_handler(request, error)
@@ -287,11 +296,12 @@ def create_app(
         clientes_app = getattr(app.state, "clientes", None)
         socios = getattr(clientes_app, "socios", None)
         repetida = getattr(request.state, "consumo_omitido", False)
-        if socio is not None and socios is not None and not repetida:
+        api = api_de(request.url.path)
+        if socio is not None and socios is not None and not repetida and cuenta_en_el_consumo(api):
             codigo = respuesta.status_code
             resultado = "OK" if codigo < 400 else ("ERROR" if codigo >= 500 else "ERROR_CLIENTE")
             latencia = int((time.perf_counter() - inicio) * 1000)
-            await _registrar_consumo(socios, socio, api_de(request.url.path), resultado, latencia)
+            await _registrar_consumo(socios, socio, api, resultado, latencia)
         return respuesta
 
     @app.get("/polizas/{poliza_id}/documento", tags=["polizas"], response_class=Response)

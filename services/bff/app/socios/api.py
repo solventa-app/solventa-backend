@@ -16,6 +16,7 @@ token se loguean."""
 import asyncio
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
 from functools import cache
 from pathlib import Path
@@ -24,9 +25,15 @@ from typing import Any, Literal
 from fastapi import APIRouter, Request
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse, Response
+from prometheus_client import Counter
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.clientes import CredencialesSocioInvalidas, ErrorServicio, PresupuestoAgotado
+from app.clientes import (
+    CredencialesSocioInvalidas,
+    ErrorServicio,
+    PresupuestoAgotado,
+    SolicitudInvalida,
+)
 from app.esquema import estado_visible, ramo_de
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.idioma import idioma_de, traducir
@@ -55,6 +62,12 @@ from app.socios.errores import (
 from app.socios.idempotencia import CABECERA_REPETIDA, Repetida, ejecutar_idempotente
 
 logger = logging.getLogger("bff.socios")
+# Las consultas de la cuenta no se cuentan en el consumo (`credenciales` incluye la rotación).
+APIS_SIN_CONSUMO = frozenset({"consumo", "estado", "ventas", "credenciales"})
+DEVOLUCION_FALLIDA = Counter(
+    "bff_socios_devolucion_fallida_total",
+    "Cotizaciones que no se hicieron y cuya unidad de presupuesto no se pudo devolver.",
+)
 
 CONTRATO = Path(__file__).resolve().parent.parent / "socios-v1.json"
 CANAL_SOCIOS = "API"
@@ -312,6 +325,31 @@ def construir_router() -> APIRouter:
             raise no_disponible()
         return prueba
 
+    async def _con_presupuesto(
+        request: Request, socio: SocioActual, cotizar: Callable[[], Awaitable[Any]]
+    ) -> tuple[Any, int]:
+        """Reserva una unidad, cotiza y la devuelve si la cotización no se hizo (W07-9): tanto si
+        responde `ErrorOfertaDatos` como si **lanza** o se cancela (KAN-30: antes una excepción
+        se volvía 503 y la unidad quedaba gastada)."""
+        socios = estado(request).clientes.socios
+        try:
+            restantes = await socios.reservar(socio.id, socio.entorno)
+        except PresupuestoAgotado as error:
+            raise ErrorApiSocio(
+                429, "PRESUPUESTO_AGOTADO", MENSAJE_PRESUPUESTO_AGOTADO, False, None,
+                SEGUNDOS_PRESUPUESTO,
+            ) from error  # fmt: skip
+        except ErrorServicio as error:
+            raise no_disponible() from error
+        try:
+            resultado = await cotizar()
+        except BaseException:
+            await _devolver(socios, socio)
+            raise
+        if isinstance(resultado, ErrorOfertaDatos):
+            await _devolver(socios, socio)
+        return resultado, restantes
+
     async def _idempotente(
         request: Request, socio: SocioActual, api: str, body: BaseModel, operacion: Any
     ) -> Any:
@@ -440,29 +478,18 @@ def construir_router() -> APIRouter:
         consentimiento = await _consentimiento_del_socio(request, socio, body.consentimiento_id)
         if not consentimiento.get("vigente"):
             raise ErrorApiSocio(409, "CONSENTIMIENTO_NO_VIGENTE", MENSAJE_SIN_CONSENTIMIENTO)
-        socios = estado(request).clientes.socios
-        try:
-            restantes = await socios.reservar(socio.id, socio.entorno)
-        except PresupuestoAgotado as error:
-            raise ErrorApiSocio(
-                429, "PRESUPUESTO_AGOTADO", MENSAJE_PRESUPUESTO_AGOTADO, False, None,
-                SEGUNDOS_PRESUPUESTO,
-            ) from error  # fmt: skip
-        except ErrorServicio as error:
-            raise no_disponible() from error
-        resultado = await estado(request).servicio_oferta.solicitar(
-            body.consentimiento_id,
-            body.documento_identidad,
-            body.valor_credito,
-            body.plazo_meses,
-            body.direccion_inmueble,
+        resultado, restantes = await _con_presupuesto(
+            request,
+            socio,
+            lambda: estado(request).servicio_oferta.solicitar(
+                body.consentimiento_id,
+                body.documento_identidad,
+                body.valor_credito,
+                body.plazo_meses,
+                body.direccion_inmueble,
+            ),
         )
         if isinstance(resultado, ErrorOfertaDatos):
-            # La cotización no se hizo: la unidad vuelve al presupuesto (W07-9).
-            try:
-                await socios.devolver(socio.id, socio.entorno)
-            except ErrorServicio:
-                logger.warning("no se pudo devolver una cotización socio=%s", id_opaco(socio.id))
             if resultado.motivo == "CONSENTIMIENTO_NO_VIGENTE":
                 raise ErrorApiSocio(409, "CONSENTIMIENTO_NO_VIGENTE", resultado.mensaje)
             if not resultado.puede_reintentar:
@@ -490,30 +517,20 @@ def construir_router() -> APIRouter:
         consentimiento = await _consentimiento_del_socio(request, socio, body.consentimiento_id)
         if not consentimiento.get("vigente"):
             raise ErrorApiSocio(409, "CONSENTIMIENTO_NO_VIGENTE", MENSAJE_SIN_CONSENTIMIENTO)
-        socios = estado(request).clientes.socios
-        try:
-            restantes = await socios.reservar(socio.id, socio.entorno)
-        except PresupuestoAgotado as error:
-            raise ErrorApiSocio(
-                429, "PRESUPUESTO_AGOTADO", MENSAJE_PRESUPUESTO_AGOTADO, False, None,
-                SEGUNDOS_PRESUPUESTO,
-            ) from error  # fmt: skip
-        except ErrorServicio as error:
-            raise no_disponible() from error
-        resultado = await estado(request).servicio_oferta.solicitar_auto(
-            body.consentimiento_id,
-            body.documento_identidad,
-            body.placa,
-            body.kilometraje_anual,
-            body.ciudad_circulacion,
-            body.uso,
-            body.deducible,
+        resultado, restantes = await _con_presupuesto(
+            request,
+            socio,
+            lambda: estado(request).servicio_oferta.solicitar_auto(
+                body.consentimiento_id,
+                body.documento_identidad,
+                body.placa,
+                body.kilometraje_anual,
+                body.ciudad_circulacion,
+                body.uso,
+                body.deducible,
+            ),
         )
         if isinstance(resultado, ErrorOfertaDatos):
-            try:
-                await socios.devolver(socio.id, socio.entorno)
-            except ErrorServicio:
-                logger.warning("no se pudo devolver una cotización socio=%s", id_opaco(socio.id))
             if resultado.motivo == "CONSENTIMIENTO_NO_VIGENTE":
                 raise ErrorApiSocio(409, "CONSENTIMIENTO_NO_VIGENTE", resultado.mensaje)
             if resultado.motivo in ("VEHICULO_NO_ENCONTRADO", "VEHICULO_NO_ASEGURABLE"):
@@ -706,6 +723,8 @@ def construir_router() -> APIRouter:
             datos = await estado(request).clientes.socios.consumo(
                 socio.id, socio.entorno, _fecha_opcional(desde), _fecha_opcional(hasta)
             )
+        except SolicitudInvalida as error:
+            raise datos_invalidos() from error
         except ErrorServicio as error:
             raise no_disponible() from error
         return {
@@ -805,6 +824,14 @@ def construir_router() -> APIRouter:
     return router
 
 
+async def _devolver(socios: Any, socio: SocioActual) -> None:
+    try:
+        await socios.devolver(socio.id, socio.entorno)
+    except Exception:  # noqa: BLE001 - la respuesta al socio no cambia; queda en la métrica
+        DEVOLUCION_FALLIDA.inc()
+        logger.warning("no se pudo devolver una cotización socio=%s", id_opaco(socio.id))
+
+
 def _credencial(datos: dict) -> dict:
     return {
         "entorno": datos["entorno"],
@@ -816,6 +843,12 @@ def _credencial(datos: dict) -> dict:
 
 def es_ruta_de_socios(camino: str) -> bool:
     return camino.startswith("/v1/") and not camino.startswith("/v1/graphql")
+
+
+def cuenta_en_el_consumo(api: str) -> bool:
+    """Las consultas de la cuenta (las que lee el portal al abrirse) no son uso de la API: si
+    contaran, mirar las estadísticas las subiría (KAN-30, contrato v0.55)."""
+    return api not in APIS_SIN_CONSUMO
 
 
 def api_de(camino: str) -> str:
