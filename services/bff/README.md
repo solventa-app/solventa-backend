@@ -64,6 +64,11 @@ rutas explícitas, nunca como un `Mount("/v1")`.
 
 - **Token:** JWT ES256 de AUTH (`POST /v1/token`), validado con el JWKS de AUTH (10 min en caché; se vuelve a pedir si
   llega un `kid` desconocido). Lo lee de `X-Forwarded-Authorization` o `Authorization`. `app/socios/autenticacion.py`.
+- **Scopes (HA-SEG-004, EC025, contrato v0.57):** cada ruta `/v1` con token declara su scope con un tipo
+  (`SocioCotizaciones`, `SocioPropuestas`, `SocioPolizas` o `SocioCuenta` en `app/socios/api.py`; la lista en
+  `app/socios/scopes.py`). Es una dependencia de FastAPI, así que corre antes de validar el cuerpo: sin el scope, 403
+  `PROHIBIDO` sin gastar presupuesto ni llamar a nadie. Sin el claim `scopes`, 401. Una ruta `/v1` nueva sin scope hace
+  fallar `test_cada_ruta_v1_con_token_declara_su_scope`.
 - **El socio es un intermediario como el ASESOR** (`rol = SOCIO`): aceptar (con el contacto del titular y la tasa del
   socio, que POLICY congela), código, emitir y reenviar reutilizan `ServicioSuscripcion` y `ServicioFirmaPago`. Un
   socio solo ve lo que vendió (404 si no) y la URL del enlace nunca vuelve en la respuesta.

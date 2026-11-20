@@ -24,7 +24,7 @@ from app.socios import (
     PresupuestoAgotado,
     ServicioSocios,
 )
-from app.tokens_socio import AUDIENCIA, EMISOR, FirmadorTokensSocio
+from app.tokens_socio import AUDIENCIA, EMISOR, SCOPES_SOCIO, FirmadorTokensSocio
 
 CREDENCIALES = {
     "PRODUCCION": ("sol_prod_demo1", "Clave-produccion-demo-1"),
@@ -77,6 +77,16 @@ def test_el_token_es_es256_y_se_valida_con_el_jwks(servicio) -> None:
     assert claims["entorno"] == "PRODUCCION"
     assert jwt.get_unverified_header(sesion["token"])["kid"] == servicio.jwks()["keys"][0]["kid"]
     assert claims["exp"] - claims["iat"] == 15 * 60
+
+
+def test_el_token_trae_los_scopes_que_exige_el_bff(servicio) -> None:
+    """HA-SEG-004 (EC025): el BFF exige uno de estos en cada ruta `/v1` con token
+    (`services/bff/app/socios/scopes.py`, `TODOS`). Copiados aquí a propósito: los servicios no
+    comparten código, así que si uno cambia esta prueba obliga a cambiar el otro."""
+    sesion = servicio.emitir_token(*CREDENCIALES["PRODUCCION"])
+
+    assert _verificar(sesion["token"], servicio.jwks())["scopes"] == SCOPES_SOCIO
+    assert set(SCOPES_SOCIO) == {"cotizaciones", "propuestas", "polizas", "cuenta"}
 
 
 def test_la_clave_de_pruebas_da_un_token_de_pruebas(servicio) -> None:

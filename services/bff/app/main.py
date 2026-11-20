@@ -261,9 +261,10 @@ def create_app(
         # En la API de socios, un cuerpo inválido es `ErrorPublico` (DATOS_INVALIDOS), no el
         # detalle de FastAPI; el resto del BFF responde como siempre.
         if es_ruta_de_socios(request.url.path):
-            # El cuerpo se valida antes de la ruta, así que el socio aún no está identificado:
-            # se identifica aquí para que el 422 cuente en su consumo (KAN-30). Sin un token
-            # válido no hay a quién contarlo y la respuesta sigue siendo el 422.
+            # El token y su scope se revisan antes que el cuerpo (dependencia `requiere`), pero un
+            # JSON que ni se puede leer falla antes de las dependencias y el socio aún no está
+            # identificado: se identifica aquí para que el 422 cuente en su consumo (KAN-30). Sin
+            # un token válido no hay a quién contarlo y la respuesta sigue siendo el 422.
             verificador = getattr(app.state, "verificador_socios", None)
             if verificador is not None and getattr(request.state, "socio", None) is None:
                 try:

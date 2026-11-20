@@ -572,6 +572,21 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.57 — 2026-11-20
+
+- HU-W07 (KAN-30, KAN-217), HA-SEG-004 / EC025: **el BFF valida los scopes del token del socio en cada llamada `/v1`**.
+  AUTH ya los emitía (`cotizaciones`, `propuestas`, `polizas`, `cuenta`), pero nadie los revisaba.
+  - Cada operación con token declara su scope en `security` (`socios-v1.json` pasa a **1.1.0**, con la tabla en
+    `info.description`, sección «Scopes»). Un token válido sin ese scope recibe **403 `PROHIBIDO`** (respuesta nueva
+    `SinPermiso`), antes de descontar presupuesto, entrar al modo prueba o llamar a otro servicio; cuenta en
+    `/v1/consumo` como error.
+  - Un token sin el claim `scopes`, o con un valor que no es una lista de textos, es **401 `TOKEN_INVALIDO`**.
+  - El token y el scope se revisan **antes que el cuerpo**: un cuerpo inválido sin token válido ahora es 401 (antes
+    422). Un JSON que ni se puede leer sigue siendo 422.
+- Solo cambios aditivos (una respuesta nueva; `PROHIBIDO` ya estaba en `ErrorPublico`). Todos los socios siguen
+  recibiendo los cuatro scopes, así que el portal no cambia de comportamiento. Afecta al frontend: la web copia el
+  contrato (`contrato/socios-v1.json` y `apps/web/src/contrato/socios-v1.json`) y regenera sus tipos.
+
 ## v0.56 — 2026-11-20
 
 - HU-M01 (KAN-31): reintentar la verificación de identidad después de agotar los intentos.
