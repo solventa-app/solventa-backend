@@ -1,24 +1,20 @@
 """Antifraude mínimo de la API de socios (HA-SEG-004, KAN-66, contrato v0.60).
 
-Dos reglas por ventana fija en Redis, cada una con su suspensión temporal:
+**Regla `SONDEO`** (enumerar lo que no es suyo o probar operaciones sin permiso): `UMBRAL_SONDEO`
+respuestas 403 o 404 a la misma credencial (socio y entorno) en `VENTANA_SEGUNDOS`, contadas en una
+ventana fija en Redis, la suspenden `SUSPENSION_SEGUNDOS`. Mientras dure, toda llamada con su token
+responde 403 `CREDENCIAL_SUSPENDIDA` (con `Retry-After`) antes de revisar el scope o gastar
+presupuesto.
 
-- **`TOKEN_FALLIDO`** (fuerza bruta de la clave): `UMBRAL_TOKEN` intentos fallidos de
-  `POST /v1/token` con el mismo `clientId` en `VENTANA_SEGUNDOS` suspenden ese `clientId`
-  `SUSPENSION_SEGUNDOS`. Mientras dure, `POST /v1/token` responde 403 `CREDENCIAL_SUSPENDIDA`
-  **aunque la clave sea correcta**: así un atacante no puede seguir probando.
-- **`SONDEO`** (enumerar lo que no es suyo o probar operaciones sin permiso): `UMBRAL_SONDEO`
-  respuestas 403 o 404 a la misma credencial (socio y entorno) en `VENTANA_SEGUNDOS` la suspenden
-  `SUSPENSION_SEGUNDOS`. Mientras dure, toda llamada con su token responde 403
-  `CREDENCIAL_SUSPENDIDA` antes de revisar el scope o gastar presupuesto.
+La fuerza bruta sobre `POST /v1/token` no se repite aquí: AUTH ya bloquea la credencial tras 5
+fallos (`services/auth/app/socios.py`) y responde siempre el mismo error a propósito, para no
+revelar qué `clientId` existen ni cuáles están bloqueados.
 
 La suspensión es por entorno: sondear con el token de PRUEBAS no corta PRODUCCIÓN. Vence sola; no
 hay desbloqueo manual todavía. Cada suspensión deja un log de advertencia con el id del socio (no
-es un dato personal) y suma `bff_socios_anomalia_total{regla}`.
+es un dato personal) y suma `bff_socios_anomalia_total{regla}`. Si Redis no responde, la regla no
+se aplica (regla 4): mejor dejar pasar que bloquear a todos los socios."""
 
-Si Redis no responde, la regla no se aplica (regla 4): mejor dejar pasar que bloquear a todos los
-socios. Las claves no llevan datos personales: el `clientId` entra como huella SHA-256."""
-
-import hashlib
 import logging
 import time
 from typing import Any, Protocol
@@ -30,7 +26,6 @@ from app.socios.errores import ErrorApiSocio
 logger = logging.getLogger("bff.socios.antifraude")
 
 VENTANA_SEGUNDOS = 60
-UMBRAL_TOKEN = 10
 UMBRAL_SONDEO = 30
 SUSPENSION_SEGUNDOS = 15 * 60
 CODIGO = "CREDENCIAL_SUSPENDIDA"
@@ -106,10 +101,6 @@ class AlmacenContadoresRedis:
         await self._redis.aclose()
 
 
-def _huella(client_id: str) -> str:
-    return hashlib.sha256(client_id.encode()).hexdigest()[:32]
-
-
 def suspendida(restante: int) -> ErrorApiSocio:
     return ErrorApiSocio(403, CODIGO, MENSAJE_SUSPENDIDA, False, None, restante or None)
 
@@ -135,23 +126,6 @@ class Antifraude:
                 logger.warning("credencial de socio suspendida: regla=%s %s", regla, quien)
         except Exception:  # noqa: BLE001
             FALLAS_ALMACEN.inc()
-
-    # ---------- TOKEN_FALLIDO ----------
-
-    async def revisar_client_id(self, client_id: str) -> None:
-        restante = await self._restante(f"af:bloqueo:token:{_huella(client_id)}")
-        if restante:
-            raise suspendida(restante)
-
-    async def token_fallido(self, client_id: str) -> None:
-        huella = _huella(client_id)
-        await self._contar(
-            f"af:token:{huella}",
-            UMBRAL_TOKEN,
-            f"af:bloqueo:token:{huella}",
-            "TOKEN_FALLIDO",
-            f"client={huella[:8]}",
-        )
 
     # ---------- SONDEO ----------
 

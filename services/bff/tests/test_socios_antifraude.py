@@ -1,5 +1,5 @@
-"""Antifraude mínimo de la API de socios (v0.60, HA-SEG-004, KAN-66): fuerza bruta en el token y
-sondeo con 403/404, cada uno con su suspensión temporal de 15 minutos."""
+"""Antifraude mínimo de la API de socios (v0.60, HA-SEG-004, KAN-66): el sondeo con 403/404
+suspende la credencial 15 minutos."""
 
 import asyncio
 
@@ -9,7 +9,6 @@ from test_socios_api import COTIZACION, Entorno, _es_error_publico
 from app.socios import antifraude
 from app.socios.antifraude import (
     UMBRAL_SONDEO,
-    UMBRAL_TOKEN,
     AlmacenContadoresMemoria,
     Antifraude,
 )
@@ -27,49 +26,41 @@ def _almacen(client) -> AlmacenContadoresMemoria:
     return client.app.state.antifraude_socios._almacen
 
 
-def test_fuerza_bruta_suspende_el_client_id_aunque_la_clave_sea_correcta(e) -> None:
+def test_el_token_sigue_respondiendo_siempre_credenciales_invalidas(e) -> None:
+    """La fuerza bruta la frena AUTH sin revelar nada: el BFF no agrega otro error."""
     with e.cliente() as client:
-        fallidos = [client.post("/v1/token", json=MAL).status_code for _ in range(UMBRAL_TOKEN)]
-        con_la_buena = client.post("/v1/token", json=BIEN)
-        en_ingles = client.post("/v1/token", json=BIEN, headers={"Accept-Language": "en"})
-
-    assert fallidos == [401] * UMBRAL_TOKEN
-    cuerpo = _es_error_publico(con_la_buena, 403, "CREDENCIAL_SUSPENDIDA")
-    assert cuerpo["puedeReintentar"] is False
-    assert 0 < int(con_la_buena.headers["retry-after"]) <= 15 * 60
-    assert _es_error_publico(en_ingles, 403, "CREDENCIAL_SUSPENDIDA")["mensaje"].startswith(
-        "The credential was temporarily suspended"
-    )
-
-
-def test_menos_fallidos_que_el_umbral_no_suspende(e) -> None:
-    with e.cliente() as client:
-        for _ in range(UMBRAL_TOKEN - 1):
-            client.post("/v1/token", json=MAL)
+        codigos = {client.post("/v1/token", json=MAL).status_code for _ in range(40)}
         bien = client.post("/v1/token", json=BIEN)
 
-    assert bien.status_code == 200
-
-
-def test_la_suspension_del_token_es_por_client_id(e) -> None:
-    with e.cliente() as client:
-        for _ in range(UMBRAL_TOKEN):
-            client.post("/v1/token", json={"clientId": "otro-cliente", "clave": "x"})
-        bien = client.post("/v1/token", json=BIEN)
-
+    assert codigos == {401}
     assert bien.status_code == 200
 
 
 def test_la_suspension_vence_sola(e) -> None:
     with e.cliente() as client:
-        for _ in range(UMBRAL_TOKEN):
-            client.post("/v1/token", json=MAL)
+        for i in range(UMBRAL_SONDEO):
+            client.get(f"/v1/propuestas/x-{i}", headers=e.cabeceras())
+        suspendida = client.get("/v1/consumo", headers=e.cabeceras())
         almacen = _almacen(client)
         base = almacen.ahora()
         almacen.ahora = lambda: base + 15 * 60 + 1
-        bien = client.post("/v1/token", json=BIEN)
+        despues = client.get("/v1/consumo", headers=e.cabeceras())
 
-    assert bien.status_code == 200
+    cuerpo = _es_error_publico(suspendida, 403, "CREDENCIAL_SUSPENDIDA")
+    assert cuerpo["puedeReintentar"] is False
+    assert 0 < int(suspendida.headers["retry-after"]) <= 15 * 60
+    assert despues.status_code == 200
+
+
+def test_el_mensaje_va_en_ingles(e) -> None:
+    with e.cliente() as client:
+        for i in range(UMBRAL_SONDEO):
+            client.get(f"/v1/propuestas/x-{i}", headers=e.cabeceras())
+        en = client.get("/v1/consumo", headers={**e.cabeceras(), "Accept-Language": "en"})
+
+    assert _es_error_publico(en, 403, "CREDENCIAL_SUSPENDIDA")["mensaje"].startswith(
+        "The credential was temporarily suspended"
+    )
 
 
 def test_sondeo_con_404_suspende_la_credencial_de_ese_entorno(e) -> None:
@@ -129,19 +120,11 @@ def test_sin_redis_deja_pasar() -> None:
     antes = antifraude.FALLAS_ALMACEN._value.get()
 
     async def correr() -> None:
-        await af.revisar_client_id("c")
-        await af.token_fallido("c")
         await af.revisar_credencial("s", "PRODUCCION")
         await af.respuesta_rechazada("s", "PRODUCCION")
 
     asyncio.run(correr())
-    assert antifraude.FALLAS_ALMACEN._value.get() == antes + 4
-
-
-def test_la_clave_del_token_no_guarda_el_client_id() -> None:
-    almacen = AlmacenContadoresMemoria()
-    asyncio.run(Antifraude(almacen).token_fallido("sol_prod_1"))
-    assert all("sol_prod_1" not in clave for clave in almacen._contadores)
+    assert antifraude.FALLAS_ALMACEN._value.get() == antes + 2
 
 
 def test_cuenta_la_anomalia_una_vez() -> None:
