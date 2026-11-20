@@ -42,6 +42,8 @@ class RepositorioFalso:
         self.verificaciones: list[dict[str, Any]] = []
         self.eventos: list[tuple[str, str, str | None]] = []
         self._reloj = itertools.count()
+        # Fecha de creación que guarda `crear` (las pruebas la mueven para el tope diario).
+        self.ahora = AHORA
 
     def crear(self, sesion: dict[str, Any]) -> dict[str, Any]:
         fila = {
@@ -57,6 +59,7 @@ class RepositorioFalso:
             "motivo": None,
             "cuenta_notificada_en": None,
             "creado_en": next(self._reloj),
+            "creado_dt": self.ahora,
             **sesion,
         }
         self.sesiones[fila["id"]] = fila
@@ -69,6 +72,15 @@ class RepositorioFalso:
     def obtener_por_usuario(self, usuario_id: str) -> dict[str, Any] | None:
         filas = [s for s in self.sesiones.values() if s["usuario_id"] == usuario_id]
         return copy.deepcopy(max(filas, key=lambda s: s["creado_en"])) if filas else None
+
+    def contar_rechazadas_desde(self, usuario_id: str, desde: datetime) -> int:
+        return sum(
+            1
+            for s in self.sesiones.values()
+            if s["usuario_id"] == usuario_id
+            and s["estado"] == "RECHAZADA"
+            and s["creado_dt"] >= desde
+        )
 
     def actualizar(self, sesion_id, cambios, estados):
         fila = self.sesiones.get(sesion_id)

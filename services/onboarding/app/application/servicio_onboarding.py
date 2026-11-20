@@ -15,8 +15,10 @@ Capa simple (regla 3). El flujo:
    rechaza (solo sin intentos). Mejor esfuerzo: si AUTH no responde, se reintenta al ligar la cuenta
    o cuando la app consulta `miVerificacion`, hasta que quede `cuenta_notificada_en`.
 
-Hasta 3 intentos por sesión (P-7). Nada de datos personales en logs, eventos ni métricas: lo que
-leyó el proveedor se guarda cifrado por campo y solo en sesiones VERIFICADAS."""
+Hasta 3 intentos por sesión (P-7) y hasta 3 sesiones RECHAZADAS por cuenta en 24 h (KAN-31): la app
+abre un recorrido nuevo cada vez que se acepta el consentimiento, y el tope evita que eso regale
+intentos sin fin contra la prueba de vida. Nada de datos personales en logs, eventos ni métricas: lo
+que leyó el proveedor se guarda cifrado por campo y solo en sesiones VERIFICADAS."""
 
 import json
 import logging
@@ -74,6 +76,7 @@ class PuertoRepositorio(Protocol):
     def crear(self, sesion: dict[str, Any]) -> dict[str, Any]: ...
     def obtener(self, sesion_id: str) -> dict[str, Any] | None: ...
     def obtener_por_usuario(self, usuario_id: str) -> dict[str, Any] | None: ...
+    def contar_rechazadas_desde(self, usuario_id: str, desde: datetime) -> int: ...
     def actualizar(
         self, sesion_id: str, cambios: dict[str, Any], estados: tuple[str, ...]
     ) -> dict[str, Any] | None: ...
@@ -89,6 +92,8 @@ class Reglas:
     edad_minima: int = 18
     max_intentos: int = 3
     vigencia_token_s: int = 1800
+    # KAN-31: sesiones RECHAZADAS de una misma cuenta en 24 h antes de no dejar ligar otra.
+    max_rechazadas_dia: int = 3
 
 
 def _edad(nacimiento: date, hoy: date) -> int:
@@ -199,6 +204,9 @@ class ServicioOnboarding:
             return sesion
         if sesion["usuario_id"] is not None:
             raise ErrorOnboarding("SESION_CON_CUENTA", 409)
+        desde = self._reloj() - timedelta(hours=24)
+        if self._repo.contar_rechazadas_desde(usuario_id, desde) >= self._reglas.max_rechazadas_dia:
+            raise ErrorOnboarding("RECORRIDOS_AGOTADOS", 429)
         nueva = self._cambiar(
             sesion,
             {"usuario_id": usuario_id},

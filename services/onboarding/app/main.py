@@ -144,6 +144,7 @@ def create_app(
                     config.edad_minima,
                     config.max_intentos,
                     config.vigencia_token_s,
+                    config.max_rechazadas_dia,
                 ),
                 cuentas=cuentas,
             )

@@ -572,6 +572,16 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.56 — 2026-11-20
+
+- HU-M01 (KAN-31): reintentar la verificación de identidad después de agotar los intentos.
+  - AUTH: una cuenta `RECHAZADA` vuelve a `ACTIVO` si un recorrido nuevo se aprueba (antes `RECHAZADA` era definitivo
+    y un recorrido nuevo aprobado no activaba la cuenta). Una cuenta `ACTIVO` nunca baja a `RECHAZADA`.
+  - ONBOARDING: tope de 3 recorridos `RECHAZADA` por cuenta en 24 h (`MAX_RECHAZADAS_DIA`). Al ligar otro,
+    `iniciarOnboarding` responde `ErrorOnboarding` con el código nuevo `RECORRIDOS_AGOTADOS`.
+- Solo cambios aditivos (un código nuevo de `ErrorOnboarding`). Afecta al frontend: el móvil (abre un recorrido nuevo
+  al aceptar el consentimiento y muestra el mensaje del código nuevo).
+
 ## v0.55 — 2026-11-19
 
 - HU-W07 (KAN-30), `GET /v1/consumo`: las estadísticas cuadran con el presupuesto y con lo que el socio hizo.
