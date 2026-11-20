@@ -7,7 +7,12 @@ HS256 el gateway tendría que guardar el mismo secreto que firma los tokens de t
 La clave privada llega como `SOCIOS_CLAVE_FIRMA`: PKCS#8 en PEM o su DER en base64 (una línea, más
 cómoda en variables de entorno). En local hay una fija, como el resto de secretos locales
 (`configuracion.SOCIOS_CLAVE_FIRMA_LOCAL`); en Cloud Run sale de Secret Manager
-(`clave-firma-socios`). Nunca se loguea el token."""
+(`clave-firma-socios`). Nunca se loguea el token.
+
+**Rotación sin cortar a nadie (HA-SEG-004, ADR-14):** `SOCIOS_CLAVE_FIRMA_ANTERIOR` (opcional) es la
+clave con la que se firmaba antes. Solo se publica en el JWKS, nunca firma: los tokens que ya
+circulan (15 minutos) se siguen validando mientras los nuevos salen con la clave vigente. El BFF y
+el gateway vuelven a pedir el JWKS cuando llega un `kid` que no conocen."""
 
 import base64
 import hashlib
@@ -48,12 +53,18 @@ def _kid(jwk: dict[str, Any]) -> str:
     )
 
 
+def _jwk_publica(clave: ec.EllipticCurvePrivateKey) -> dict[str, Any]:
+    publica = jwt.algorithms.ECAlgorithm.to_jwk(clave.public_key(), as_dict=True)
+    return {**publica, "kid": _kid(publica), "alg": ALGORITMO_SOCIOS, "use": "sig"}
+
+
 class FirmadorTokensSocio:
     def __init__(
         self,
         clave_privada: str,
         reloj: Callable[[], datetime] = lambda: datetime.now(UTC),
         vigencia_minutos: int = VIGENCIA_MINUTOS,
+        clave_anterior: str | None = None,
     ) -> None:
         self._clave = cargar_clave_privada(clave_privada)
         self._reloj = reloj
@@ -61,9 +72,19 @@ class FirmadorTokensSocio:
         publica = jwt.algorithms.ECAlgorithm.to_jwk(self._clave.public_key(), as_dict=True)
         self._kid = _kid(publica)
         self._jwk = {**publica, "kid": self._kid, "alg": ALGORITMO_SOCIOS, "use": "sig"}
+        self._jwks = [self._jwk]
+        if clave_anterior:
+            anterior = _jwk_publica(cargar_clave_privada(clave_anterior))
+            if anterior["kid"] != self._kid:
+                self._jwks.append(anterior)
+
+    @property
+    def kid(self) -> str:
+        return self._kid
 
     def jwks(self) -> dict[str, list[dict[str, Any]]]:
-        return {"keys": [self._jwk]}
+        """La vigente primero; la anterior, si hay, después (solo para validar)."""
+        return {"keys": list(self._jwks)}
 
     def emitir(self, socio_id: str, entorno: str) -> dict[str, Any]:
         ahora = self._reloj()
