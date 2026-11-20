@@ -30,6 +30,9 @@ EN: dict[str, str] = {
     "Esta operación requiere un token de producción.": (
         "This operation requires a production token."
     ),
+    "El token no tiene permiso para esta operación.": (
+        "The token is not allowed to perform this operation."
+    ),
     "No existe o no pertenece a este socio.": (
         "It does not exist or does not belong to this partner."
     ),
