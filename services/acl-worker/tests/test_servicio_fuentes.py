@@ -212,8 +212,11 @@ def test_servir_cache_en_ttl_evita_llamar_al_proveedor_en_solicitud_repetida() -
     assert adaptador.llamadas == 1
 
     segunda = servicio.consultar(CONSULTA)
-    assert segunda.de_cache is True
+    # Dentro del TTL no hubo falla: es el mismo dato, no una degradación (CA-W01-04).
+    assert segunda.de_cache is False
+    assert segunda.degradado is False
     assert segunda.datos == {"saldo": 500}
+    assert segunda.capturado_en == primera.capturado_en
     assert adaptador.llamadas == 1  # no volvió a llamar al proveedor
     assert productor.llamadas == []  # no es un fallo: no encola reconciliación
 
@@ -221,6 +224,56 @@ def test_servir_cache_en_ttl_evita_llamar_al_proveedor_en_solicitud_repetida() -
     tercera = servicio.consultar(CONSULTA, forzar_proveedor=True)
     assert tercera.de_cache is False
     assert adaptador.llamadas == 2
+
+
+def test_consultas_repetidas_dentro_del_ttl_nunca_se_marcan_degradadas() -> None:
+    # Regresión: con `servir_cache_en_ttl` toda cotización repetida del mismo cliente dentro del
+    # TTL salía `de_cache=True`, y RATING la volvía PRELIMINAR (no se puede aceptar, D-11).
+    resultado = DatosFuente(
+        fuente="cuentas-bancarias", datos={"saldo": 500}, capturado_en=datetime.now(UTC)
+    )
+    adaptador = AdaptadorFalso(resultado=resultado)
+    servicio = ServicioConsultaFuentes(
+        adaptador,
+        construir_fabrica(umbral_fallos=10, ttl_segundos=10),
+        NOMBRE_CIRCUITO_OPEN_FINANCE,
+        CacheFuentes(AlmacenEnMemoria(), ttl_segundos=300),
+        presupuesto_s=0.7,
+        servir_cache_en_ttl=True,
+    )
+
+    respuestas = [servicio.consultar(CONSULTA) for _ in range(5)]
+
+    assert all(not r.de_cache and not r.degradado for r in respuestas)
+    assert adaptador.llamadas == 1
+
+
+def test_con_ttl_activo_una_falla_real_del_proveedor_si_degrada_a_de_cache() -> None:
+    resultado = DatosFuente(
+        fuente="cuentas-bancarias", datos={"saldo": 500}, capturado_en=datetime.now(UTC)
+    )
+    adaptador = AdaptadorFalso(resultado=resultado)
+    productor = ProductorReconciliacionFalso()
+    servicio = ServicioConsultaFuentes(
+        adaptador,
+        construir_fabrica(umbral_fallos=10, ttl_segundos=10),
+        NOMBRE_CIRCUITO_OPEN_FINANCE,
+        CacheFuentes(AlmacenEnMemoria(), ttl_segundos=300),
+        presupuesto_s=0.7,
+        productor_reconciliacion=productor,
+        servir_cache_en_ttl=True,
+    )
+    servicio.consultar(CONSULTA)  # llama y guarda
+
+    adaptador.resultado = None
+    adaptador.error = ConnectionError("caido")
+    degradada = servicio.consultar(CONSULTA, forzar_proveedor=True)
+
+    assert degradada.de_cache is True  # esta sí es una degradación: el proveedor falló
+    assert degradada.datos == {"saldo": 500}
+    assert productor.llamadas == [
+        (CONSULTA.fuente, CONSULTA.cliente_id, CONSULTA.consentimiento_id)
+    ]
 
 
 def test_con_cache_caliente_usa_presupuesto_reducido_para_ec010() -> None:

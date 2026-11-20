@@ -11,7 +11,10 @@ el lado productor y la nota de alcance en `docs/sprint-1.md`):
   terminó bien: `ServicioConsultaFuentes.consultar()` ya re-guarda la caché en
   su propio camino de éxito al atender esta misma llamada, así que la próxima
   consulta normal del usuario ya la hereda — este módulo no persiste nada
-  aparte.
+  aparte. La consulta va con `forzar_proveedor=True`: el job existe para saber
+  si el proveedor se recuperó, así que no puede darse por satisfecho con el
+  valor que el ACL Worker sirve de su caché dentro del TTL
+  (`CACHE_SERVIR_EN_TTL`), que ya no se marca `de_cache`.
 - Si sigue degradada (o el ACL Worker no responde), se lanza una excepción
   para que `rq` reintente con el backoff configurado por el productor;
   agotados los reintentos, `rq` mueve el job al `FailedJobRegistry`
@@ -86,6 +89,7 @@ def reconciliar_fuente(
             "cliente_id": cliente_id,
             "consentimiento_id": consentimiento_id,
             "fuente": fuente,
+            "forzar_proveedor": True,
         },
         timeout=TIMEOUT_S,
         auth=AUTH_HACIA_ACL,

@@ -88,7 +88,8 @@ def test_fila_sin_actor_y_sin_revocar() -> None:
 
     from app.consentimientos import _desde_fila
 
-    # Relativo a hoy: con una fecha fija el consentimiento vence a los 30 días.
+    # Relativo a hoy: con una fecha fija, la vigencia por defecto (30 días) vencía y la prueba
+    # empezaba a fallar sola.
     otorgado = (datetime.now(UTC) - timedelta(days=1)).replace(microsecond=0)
     c = _desde_fila(
         {
