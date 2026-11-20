@@ -28,6 +28,8 @@ from datetime import datetime
 from pathlib import Path
 
 from app.application.cifrado import cifrador_desde_entorno
+from app.application.clima_auto import incluir_clima
+from app.application.repositorio_coberturas_parametricas import RepositorioCoberturasParametricas
 from app.application.repositorio_propuestas import RepositorioPropuestasPostgres, construir_pool
 
 DATOS = Path(__file__).resolve().parent / "semilla_polizas_demo.json"
@@ -39,8 +41,11 @@ def _meses(desde: datetime, hasta: datetime) -> int:
     return (hasta.year - desde.year) * 12 + (hasta.month - desde.month)
 
 
-def sembrar(repositorio, polizas: list[dict]) -> list[dict]:
-    """Crea (o recupera) cada propuesta y su póliza. Devuelve `[{propuesta_id, poliza_id}]`."""
+def sembrar(repositorio, polizas: list[dict], coberturas=None) -> list[dict]:
+    """Crea (o recupera) cada propuesta y su póliza. Devuelve `[{propuesta_id, poliza_id}]`.
+
+    Con `coberturas` (el repositorio de coberturas paramétricas), la póliza de auto recibe su
+    cobertura de clima como en una emisión real (KAN-290); es idempotente."""
     creadas = []
     for p in polizas:
         desde = datetime.fromisoformat(p["vigencia_desde"])
@@ -64,6 +69,8 @@ def sembrar(repositorio, polizas: list[dict]) -> list[dict]:
         poliza, _ = repositorio.emitir_poliza(
             p["propuesta_id"], p["cliente_id"], desde, hasta, desde=("ACEPTADA",)
         )
+        if coberturas is not None:
+            incluir_clima(coberturas, p, poliza)
         creadas.append({"propuesta_id": p["propuesta_id"], "poliza_id": poliza["id"]})
     return creadas
 
@@ -145,7 +152,7 @@ def main() -> int:
             clave = os.environ.get("CLIENTE_ID_CLAVE", "solo-local-no-secreta")
             polizas.append(poliza_cliente_demo(documento, clave))
             polizas.append(poliza_auto_cliente_demo(documento, clave))
-        creadas = sembrar(repositorio, polizas)
+        creadas = sembrar(repositorio, polizas, RepositorioCoberturasParametricas(pool))
     finally:
         pool.close()
     log.info("Pólizas de demostración listas: %d", len(creadas))

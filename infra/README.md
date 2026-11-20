@@ -464,11 +464,12 @@ Pub/Sub y Cloud Scheduler:
   únicamente el ACL Worker (escritor único del evento); consume únicamente CLAIMS. El agente de servicio de Pub/Sub
   recibe `roles/pubsub.publisher` en el tema DLQ y `roles/pubsub.subscriber` en la suscripción original, como pide la
   [documentación oficial de `dead_letter_policy`](https://cloud.google.com/pubsub/docs/handling-failures#dead_letter_topic).
-- **Dos `google_cloud_scheduler_job` de demostración** (`consulta-demo-vuelo-parametrico` y
-  `consulta-demo-clima-parametrico`, cada 15 min) que llaman a `POST /eventos-parametricos/_consultar` del ACL Worker
-  con los dos datos fijos de la semilla `sembrar_polizas_parametricas` de POLICY (vuelo `AV9340`, celda de clima de
-  Bogotá `4.62,-74.09`). **No son una enumeración real de pólizas vigentes**: ese endpoint no existe todavía en ningún
-  servicio y construirlo es trabajo de código (otro día), no de infraestructura. Suman un cuarto y quinto trabajo de
+- **Dos `google_cloud_scheduler_job`** (`consulta-demo-vuelo-parametrico` y `consulta-demo-clima-parametrico`, cada
+  8 h). El de vuelo es de demostración: llama a `POST /eventos-parametricos/_consultar` del ACL Worker con el vuelo fijo
+  `AV9340` de la semilla `sembrar_polizas_parametricas`. El de clima llama a `POST /coberturas-parametricas/_consultar-clima`
+  de POLICY (KAN-290), que consulta al ACL Worker una vez por cada celda con coberturas de clima vigentes: la que trae toda
+  póliza de auto en su ciudad de circulación y la de la semilla. La cuenta `sched-parametricos-demo` invoca al ACL Worker
+  y a POLICY. Suman un cuarto y quinto trabajo de
   Scheduler junto con `sonda-acl`, `risk-reproceso-nocturno` y `reconciliacion-cobros-policy`: con `crear_tareas`,
   `crear_batch` y `crear_push` los tres encendidos, el equipo pasa el tope gratuito de 3 trabajos por cuenta de
   facturación y paga centavos al mes por los extra.

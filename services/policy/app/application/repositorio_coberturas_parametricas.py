@@ -179,6 +179,29 @@ class RepositorioCoberturasParametricas:
             )
             return [_fila(f) for f in cursor.fetchall()]
 
+    def celdas_clima_vigentes(self) -> list[dict[str, Any]]:
+        """Las celdas de clima distintas con al menos una cobertura vigente hoy, con su variable:
+        lo que hay que consultar al proveedor (una consulta por celda, no por póliza)."""
+        with self._pool.connection() as conexion, conexion.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                """
+                SELECT DISTINCT round(latitud, 2) AS latitud, round(longitud, 2) AS longitud,
+                       variable
+                FROM coberturas_parametricas
+                WHERE tipo = 'CLIMA' AND estado = 'VIGENTE'
+                  AND vigencia_desde <= now() AND vigencia_hasta >= now()
+                ORDER BY 1, 2, 3
+                """
+            )
+            return [
+                {
+                    "latitud": float(f["latitud"]),
+                    "longitud": float(f["longitud"]),
+                    "variable": f["variable"],
+                }
+                for f in cursor.fetchall()
+            ]
+
     def de_poliza(self, poliza_id: str) -> list[dict[str, Any]]:
         """Las coberturas de una póliza, para que la semilla sea idempotente (no duplica)."""
         with self._pool.connection() as conexion, conexion.cursor(row_factory=dict_row) as cursor:

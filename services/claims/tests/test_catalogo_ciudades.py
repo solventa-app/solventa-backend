@@ -42,3 +42,12 @@ def test_las_ciudades_de_los_prestadores_estan_en_el_catalogo() -> None:
     nombres = {c["nombre"] for c in CATALOGO["ciudades"]}
     faltan = {p["ciudad"] for p in items} - nombres
     assert not faltan, f"prestadores en ciudades fuera del catálogo: {sorted(faltan)}"
+
+
+def test_cada_ciudad_trae_su_celda_dentro_de_colombia() -> None:
+    """La celda de clima de la póliza de auto (POLICY) sale de estas coordenadas."""
+    for ciudad in CATALOGO["ciudades"]:
+        assert -4.3 <= ciudad["latitud"] <= 13.5, ciudad["id"]
+        assert -82 <= ciudad["longitud"] <= -66, ciudad["id"]
+        assert round(ciudad["latitud"], 2) == ciudad["latitud"]
+        assert round(ciudad["longitud"], 2) == ciudad["longitud"]

@@ -25,15 +25,13 @@
 #      para poder reenviar los mensajes agotados; sin esos dos permisos Pub/Sub no puede completar el
 #      reenvío y los mensajes quedan atascados en la suscripción original.
 #
-#   3. Dos `google_cloud_scheduler_job` DE DEMOSTRACIÓN (sección G del plan) que llaman cada 8 horas (≈90 consultas/mes: cabe en el plan gratis de AviationStack; clima 1 min después para que los dos pushes no lleguen juntos)
-#      a `POST /eventos-parametricos/_consultar` del ACL Worker, uno con el vuelo `AV9340` y otro con la
-#      celda de clima de Bogotá, EXACTAMENTE los datos fijos de `sembrar_polizas_parametricas` de
-#      POLICY. Esto NO es una enumeración real de pólizas vigentes: hoy el ACL Worker no tiene ningún
-#      endpoint que liste pólizas paramétricas activas (no se construyó en ninguna Fase anterior), así
-#      que no hay nada real que encolar todavía. Escalar esto a producción (consultar todas las pólizas
-#      vigentes, no dos valores fijos) es trabajo de CÓDIGO en otro servicio (p. ej. un endpoint nuevo en
-#      POLICY o en el ACL que enumere coberturas por vencer), no de infraestructura; este Terraform solo
-#      demuestra el cableado de Cloud Scheduler -> ACL Worker -> Pub/Sub -> CLAIMS de punta a punta.
+#   3. Dos `google_cloud_scheduler_job` (sección G del plan) que llaman cada 8 horas (≈90 consultas/mes:
+#      cabe en el plan gratis de AviationStack; clima 1 min después para que los dos pushes no lleguen
+#      juntos). El de VUELO sigue siendo DE DEMOSTRACIÓN: llama a `POST /eventos-parametricos/_consultar`
+#      del ACL Worker con el vuelo fijo `AV9340` de `sembrar_polizas_parametricas` (no hay producto de
+#      vuelo que se venda). El de CLIMA ya enumera de verdad (KAN-290): llama a
+#      `POST /coberturas-parametricas/_consultar-clima` de POLICY, que consulta al ACL Worker una vez por
+#      cada celda con coberturas vigentes (la cobertura de clima de toda póliza de auto y la semilla).
 #
 # Nota de diseño (sin confirmar con GCP real): igual que la suscripción `rating-perfil-actualizado` de
 # pubsub.tf, este archivo NO otorga explícitamente `roles/iam.serviceAccountTokenCreator` al agente de
@@ -55,20 +53,13 @@ locals {
 
   # Datos fijos de la semilla `python -m app.sembrar_polizas_parametricas` de POLICY (ver
   # services/policy/app/sembrar_polizas_parametricas.py): el vuelo AV9340 (fecha_salida fija
-  # 2026-11-11, la que usa la semilla) y la celda de clima de Bogotá (4.62,-74.09), variable
-  # VIENTO_KMH (umbral 1 km/h en la semilla: se cumple siempre, para la demo). El esquema del cuerpo es `ConsultaEventoParametricoRequest` de
-  # services/acl-worker/app/main.py.
+  # 2026-11-11, la que usa la semilla). El esquema del cuerpo es `ConsultaEventoParametricoRequest`
+  # de services/acl-worker/app/main.py. El clima ya no usa un dato fijo: POLICY consulta cada celda
+  # con coberturas vigentes (`POST /coberturas-parametricas/_consultar-clima`, KAN-290).
   cuerpo_demo_vuelo_parametrico = jsonencode({
     tipo         = "VUELO"
     numero_vuelo = var.vuelo_demo_parametrico
     fecha        = "hoy" # el ACL la resuelve a la fecha de hoy en Bogotá
-  })
-  cuerpo_demo_clima_parametrico = jsonencode({
-    tipo     = "CLIMA"
-    clave    = "4.62,-74.09"
-    latitud  = 4.62
-    longitud = -74.09
-    variable = "VIENTO_KMH"
   })
 }
 
@@ -240,10 +231,9 @@ resource "google_pubsub_subscription_iam_member" "pubsub_consume_original_parame
 }
 
 # --------------------------------------------------------------------------- Cloud Scheduler DE DEMOSTRACIÓN
-# Ver la nota larga de la cabecera: esto reemplaza, solo para la demo de punta a punta, la enumeración
-# real de "pólizas paramétricas vigentes" que el plan pide y que hoy NO existe en ningún servicio. Cada
-# trabajo llama directo a `POST /eventos-parametricos/_consultar` del ACL Worker con el dato fijo de la
-# semilla de POLICY. Reutiliza el patrón de tareas.tf / batch.tf (cuenta dedicada + oidc_token).
+# Ver la nota de la cabecera: el de vuelo es de demostración (dato fijo de la semilla); el de clima
+# llama a POLICY, que enumera las celdas vigentes. Reutiliza el patrón de tareas.tf / batch.tf (cuenta
+# dedicada + oidc_token).
 resource "google_service_account" "scheduler_parametricos" {
   count        = local.push_activo ? 1 : 0
   depends_on   = [google_project_service.apis]
@@ -290,17 +280,30 @@ resource "google_cloud_scheduler_job" "consulta_demo_vuelo_parametrico" {
   }
 }
 
+# KAN-290: toda póliza de auto lleva una cobertura de clima en la celda de su ciudad, así que este
+# trabajo ya no consulta una celda fija: llama a POLICY, que enumera las celdas de clima con
+# coberturas vigentes (incluida la de la semilla) y pide al ACL Worker una consulta por cada una.
+# Se conserva el nombre del recurso y del trabajo para que el cambio sea en sitio (sin destruir).
+resource "google_cloud_run_v2_service_iam_member" "scheduler_parametricos_invoca_policy" {
+  count    = local.push_activo ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.servicio["policy"].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.scheduler_parametricos[0].email}"
+}
+
 resource "google_cloud_scheduler_job" "consulta_demo_clima_parametrico" {
   count       = local.push_activo ? 1 : 0
   depends_on  = [google_project_service.push_apis]
   project     = var.project_id
   region      = var.region
   name        = "consulta-demo-clima-parametrico"
-  description = "DEMOSTRACIÓN (no enumera pólizas reales, ver push.tf): consulta cada 8 h (1 min después del vuelo) la celda de clima de Bogotá (4.62,-74.09) de la semilla de POLICY contra el ACL Worker."
+  description = "Cada 8 h (1 min después del vuelo) POLICY consulta el clima de cada celda con coberturas vigentes (las pólizas de auto y la semilla) contra el ACL Worker."
   schedule    = "1 */8 * * *"
   time_zone   = "America/Bogota"
 
-  attempt_deadline = "60s"
+  attempt_deadline = "180s"
 
   retry_config {
     retry_count = 0
@@ -308,13 +311,11 @@ resource "google_cloud_scheduler_job" "consulta_demo_clima_parametrico" {
 
   http_target {
     http_method = "POST"
-    uri         = "${local.url["acl-worker"]}/eventos-parametricos/_consultar"
-    headers     = { "Content-Type" = "application/json" }
-    body        = base64encode(local.cuerpo_demo_clima_parametrico)
+    uri         = "${local.url["policy"]}/coberturas-parametricas/_consultar-clima"
 
     oidc_token {
       service_account_email = google_service_account.scheduler_parametricos[0].email
-      audience              = local.url["acl-worker"]
+      audience              = local.url["policy"]
     }
   }
 }

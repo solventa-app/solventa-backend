@@ -172,3 +172,27 @@ def test_el_cliente_del_acl_no_escribe_el_contacto_en_los_logs(caplog) -> None:
         _cliente(lambda: httpx.Response(503)).notificar(aviso)
 
     assert CORREO not in caplog.text and "JVBERi0xLjQ" not in caplog.text
+
+
+def test_consultar_clima_manda_la_celda_y_dice_si_se_publico() -> None:
+    vistas: list[dict] = []
+    respuesta = httpx.Response(200, json={"publicado": True})
+
+    cliente = _cliente(lambda: respuesta, vistas)
+    publicado = cliente.consultar_clima(4.61, -74.08, "PRECIPITACION_MM")
+
+    assert publicado is True
+    assert vistas == [
+        {
+            "tipo": "CLIMA",
+            "clave": "4.61,-74.08",
+            "latitud": 4.61,
+            "longitud": -74.08,
+            "variable": "PRECIPITACION_MM",
+        }
+    ]
+
+
+def test_consultar_clima_con_el_acl_caido_no_lanza() -> None:
+    cliente = _cliente(lambda: httpx.Response(503))
+    assert cliente.consultar_clima(4.61, -74.08, "PRECIPITACION_MM") is False
