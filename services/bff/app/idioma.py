@@ -46,6 +46,10 @@ EN: dict[str, str] = {
     "El servicio no está disponible en este momento. Intenta de nuevo.": (
         "The service is not available right now. Please try again."
     ),
+    # Antifraude de socios (HA-SEG-004, v0.60)
+    "La credencial quedó suspendida temporalmente por actividad inusual. Intenta más tarde.": (
+        "The credential was temporarily suspended due to unusual activity. Try again later."
+    ),
     # Acceso biométrico del teléfono (KAN-26, contrato v0.44)
     "No pudimos verificar este teléfono. Ingresa con tu correo y contraseña.": (
         "We could not verify this phone. Sign in with your email and password."

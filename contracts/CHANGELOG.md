@@ -572,6 +572,20 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.60 — 2026-11-20
+
+- HU-W07 (KAN-66), HA-SEG-004: **antifraude mínimo de la API de socios en el BFF**. Una credencial con actividad
+  inusual queda suspendida 15 minutos y responde **403 `CREDENCIAL_SUSPENDIDA`** con `Retry-After`; vence sola.
+  - Fuerza bruta: 10 `POST /v1/token` fallidos con el mismo `clientId` en 60 s suspenden ese `clientId`, aunque
+    después llegue la clave correcta.
+  - Sondeo: 30 respuestas 403 o 404 al mismo token (socio y entorno) en 60 s suspenden toda llamada con token de
+    ese socio en ese entorno, antes de revisar el scope o gastar presupuesto. El otro entorno sigue.
+  - Contadores en Redis sin datos personales (el `clientId` va como huella); si Redis no responde, no se aplica
+    (regla 4). Métrica `bff_socios_anomalia_total{regla}`.
+- `socios-v1.json` pasa a **1.2.0**: `CREDENCIAL_SUSPENDIDA` en `ErrorPublico`, 403 en `POST /v1/token`, `Retry-After`
+  en `SinPermiso` y la sección «Antifraude» en `info.description`. Solo cambios aditivos. Afecta al frontend: la web
+  puede sincronizar su copia del contrato cuando quiera (el portal no usa el código nuevo).
+
 ## v0.57 — 2026-11-20
 
 - HU-W07 (KAN-30, KAN-217), HA-SEG-004 / EC025: **el BFF valida los scopes del token del socio en cada llamada `/v1`**.

@@ -309,6 +309,14 @@ async def socio_de(request: Request, scope: str) -> SocioActual:
     exigirlo para que el 403 también quede en el consumo (`main.py`) como ERROR_CLIENTE."""
     socio = await request.app.state.verificador_socios.verificar(request.headers)
     request.state.socio = socio
+    antifraude = getattr(request.app.state, "antifraude_socios", None)
+    if antifraude is not None:
+        try:
+            await antifraude.revisar_credencial(socio.id, socio.entorno)
+        except ErrorApiSocio:
+            # Para que el 403 de la suspensión no cuente como un sondeo más (main.py).
+            request.state.suspendida = True
+            raise
     socio.exigir(scope)
     return socio
 
@@ -400,9 +408,15 @@ def construir_router() -> APIRouter:
 
     @router.post("/v1/token")
     async def crear_token(body: SolicitudToken, request: Request) -> dict:
+        antifraude = getattr(estado(request), "antifraude_socios", None)
+        if antifraude is not None:
+            # v0.60 (HA-SEG-004): suspendido por fuerza bruta, ni siquiera se le pregunta a AUTH.
+            await antifraude.revisar_client_id(body.client_id)
         try:
             datos = await estado(request).clientes.socios.emitir_token(body.client_id, body.clave)
         except CredencialesSocioInvalidas as error:
+            if antifraude is not None:
+                await antifraude.token_fallido(body.client_id)
             raise ErrorApiSocio(
                 401, "CREDENCIALES_INVALIDAS", MENSAJE_CREDENCIALES_INVALIDAS
             ) from error
