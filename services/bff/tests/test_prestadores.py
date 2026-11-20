@@ -14,6 +14,7 @@ from app.main import create_app
 CATALOGO = """query($v: String) { catalogoPrestadores(versionLocal: $v) {
   version vigente prestadores {
     id nombre tipo ciudad latitud longitud activo aliado especialidad direccion horario fotoUrl
+    codigoEspecialidad horarioAtencion { abierto24h diaDesde diaHasta abre cierra }
   }
 } }"""
 
@@ -51,6 +52,17 @@ def test_sin_version_o_con_una_vieja_trae_el_catalogo(variables):
     assert grua["fotoUrl"] == "https://example.test/grua.webp"
     # Un CLAIMS anterior a la v0.49 no rompe la respuesta: valores por defecto.
     assert (taller["aliado"], taller["especialidad"], taller["direccion"]) == (False, "", "")
+    # v0.53: códigos que la app traduce; null para un CLAIMS anterior.
+    assert clinica["codigoEspecialidad"] == "URGENCIAS"
+    assert clinica["horarioAtencion"] == {
+        "abierto24h": True, "diaDesde": None, "diaHasta": None, "abre": None, "cierra": None
+    }  # fmt: skip
+    assert grua["codigoEspecialidad"] == "GRUA_LIVIANA"
+    assert grua["horarioAtencion"] == {
+        "abierto24h": False, "diaDesde": "LUNES", "diaHasta": "SABADO", "abre": "07:00",
+        "cierra": "19:00",
+    }  # fmt: skip
+    assert (taller["codigoEspecialidad"], taller["horarioAtencion"]) == (None, None)
     assert claims.llamadas == [("catalogo_prestadores", variables.get("v"))]
 
 

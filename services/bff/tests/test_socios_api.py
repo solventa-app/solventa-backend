@@ -16,10 +16,11 @@ from fakes import (
 )
 from fastapi.testclient import TestClient
 
-from app.clientes import ErrorServicio
+from app.clientes import ErrorServicio, SolicitudInvalida
 from app.configuracion import Configuracion
 from app.identificadores import cliente_id_desde_documento
-from app.main import create_app
+from app.main import CONSUMO_PERDIDO, create_app
+from app.socios.api import DEVOLUCION_FALLIDA
 
 DOCUMENTO = "1012345678"
 COTIZACION = {
@@ -336,14 +337,232 @@ def test_consumo_y_ventas(e) -> None:
     _es_error_publico(fecha_mala, 422, "DATOS_INVALIDOS")
 
 
-def test_cada_llamada_del_socio_queda_en_el_consumo(e) -> None:
+def test_cada_llamada_del_socio_queda_en_el_consumo_antes_de_responder(e) -> None:
+    """KAN-30: el registro se espera dentro de la petición. Antes era una tarea suelta tras la
+    respuesta, que en Cloud Run (`cpu_idle = true`) podía no correr nunca."""
     with e.cliente() as client:
         client.post("/v1/cotizaciones", json=COTIZACION, headers=e.cabeceras())
+        assert e.socios.consumos == [("socio-1", "PRODUCCION", "cotizaciones", "OK")]
         client.get("/v1/propuestas/no-existe", headers=e.cabeceras())
-        client.get("/health")  # le da al bucle la oportunidad de terminar los registros
+        assert e.socios.consumos[-1] == ("socio-1", "PRODUCCION", "propuestas", "ERROR_CLIENTE")
 
-    assert ("socio-1", "PRODUCCION", "cotizaciones", "OK") in e.socios.consumos
-    assert ("socio-1", "PRODUCCION", "propuestas", "ERROR_CLIENTE") in e.socios.consumos
+
+def test_si_el_consumo_no_se_registra_la_llamada_sigue_y_queda_en_la_metrica(e) -> None:
+    async def cae(*_):
+        raise ErrorServicio("AUTH caído")
+
+    e.socios.registrar_consumo = cae
+    antes = CONSUMO_PERDIDO._value.get()
+    with e.cliente() as client:
+        respuesta = client.post("/v1/cotizaciones", json=COTIZACION, headers=e.cabeceras())
+
+    assert respuesta.status_code == 200
+    assert CONSUMO_PERDIDO._value.get() == antes + 1
+
+
+def test_un_cuerpo_invalido_cuenta_en_el_consumo_del_socio(e) -> None:
+    """KAN-30: FastAPI valida el cuerpo antes de la ruta, así que el 422 no se contaba."""
+    with e.cliente() as client:
+        respuesta = client.post("/v1/cotizaciones", json={"plazoMeses": 1}, headers=e.cabeceras())
+
+    _es_error_publico(respuesta, 422, "DATOS_INVALIDOS")
+    assert e.socios.consumos == [("socio-1", "PRODUCCION", "cotizaciones", "ERROR_CLIENTE")]
+
+
+def test_un_cuerpo_invalido_sin_token_valido_sigue_siendo_422_y_no_cuenta(e) -> None:
+    with e.cliente() as client:
+        respuesta = client.post(
+            "/v1/cotizaciones", json={}, headers={"Authorization": "Bearer no-es-un-jwt"}
+        )
+
+    _es_error_publico(respuesta, 422, "DATOS_INVALIDOS")
+    assert e.socios.consumos == []
+
+
+def test_las_consultas_de_la_cuenta_no_cuentan_en_el_consumo(e) -> None:
+    """KAN-30: el portal las lee al abrirse; si contaran, mirar el consumo lo subiría."""
+    with e.cliente() as client:
+        for ruta in ("/v1/consumo", "/v1/estado", "/v1/ventas", "/v1/credenciales"):
+            assert client.get(ruta, headers=e.cabeceras()).status_code == 200, ruta
+        client.post("/v1/credenciales/PRUEBAS/rotar", headers=e.cabeceras())
+        client.post(
+            "/v1/conversiones",
+            json={"moneda": "USD", "montos": [{"valor": "1000", "moneda": "COP"}]},
+            headers=e.cabeceras(),
+        )
+
+    assert [c[2] for c in e.socios.consumos] == ["conversiones"]
+
+
+def test_si_la_cotizacion_lanza_la_unidad_vuelve_al_presupuesto(e) -> None:
+    """KAN-30: antes una excepción se volvía 503 y la unidad quedaba gastada."""
+
+    async def explota(*_):
+        raise RuntimeError("bug")
+
+    with e.cliente() as client:
+        client.app.state.servicio_oferta.solicitar = explota
+        respuesta = client.post("/v1/cotizaciones", json=COTIZACION, headers=e.cabeceras())
+
+    _es_error_publico(respuesta, 503, "SERVICIO_NO_DISPONIBLE")
+    assert e.socios.devoluciones == [("socio-1", "PRODUCCION")]
+    assert e.socios.consumidas[("socio-1", "PRODUCCION")] == 0
+
+
+def test_si_no_se_puede_devolver_la_unidad_queda_en_la_metrica(e) -> None:
+    async def explota(*_):
+        raise RuntimeError("bug")
+
+    async def no_devuelve(*_):
+        raise ErrorServicio("AUTH caído")
+
+    antes = DEVOLUCION_FALLIDA._value.get()
+    with e.cliente() as client:
+        client.app.state.servicio_oferta.solicitar = explota
+        e.socios.devolver = no_devuelve
+        respuesta = client.post("/v1/cotizaciones", json=COTIZACION, headers=e.cabeceras())
+
+    _es_error_publico(respuesta, 503, "SERVICIO_NO_DISPONIBLE")
+    assert DEVOLUCION_FALLIDA._value.get() == antes + 1
+
+
+def test_un_rango_de_consumo_invalido_es_422_y_no_503(e) -> None:
+    async def rechaza(*_):
+        raise SolicitudInvalida("El rango va hasta 366 días.")
+
+    e.socios.consumo = rechaza
+    with e.cliente() as client:
+        respuesta = client.get(
+            "/v1/consumo?desde=2025-01-01&hasta=2026-11-19", headers=e.cabeceras()
+        )
+
+    _es_error_publico(respuesta, 422, "DATOS_INVALIDOS")
+
+
+# ---------- Idempotency-Key (v0.54) ----------
+
+
+def _con_llave(e, llave: str = "llave-1") -> dict:
+    return {**e.cabeceras(), "Idempotency-Key": llave}
+
+
+def test_un_reintento_con_la_misma_llave_no_descuenta_ni_cuenta_otra_vez(e) -> None:
+    """El 504 del gateway: el BFF terminó la cotización y el socio reintenta con la misma llave."""
+    with e.cliente() as client:
+        primera = client.post("/v1/cotizaciones", json=COTIZACION, headers=_con_llave(e))
+        segunda = client.post("/v1/cotizaciones", json=COTIZACION, headers=_con_llave(e))
+
+    assert primera.status_code == segunda.status_code == 200
+    assert segunda.json() == primera.json()
+    assert segunda.headers["idempotent-replayed"] == "true"
+    assert "idempotent-replayed" not in primera.headers
+    assert e.socios.consumidas[("socio-1", "PRODUCCION")] == 1
+    assert [c for c in e.socios.consumos if c[2] == "cotizaciones"] == [
+        ("socio-1", "PRODUCCION", "cotizaciones", "OK")
+    ]
+
+
+def test_sin_llave_cada_cotizacion_descuenta(e) -> None:
+    with e.cliente() as client:
+        client.post("/v1/cotizaciones", json=COTIZACION, headers=e.cabeceras())
+        client.post("/v1/cotizaciones", json=COTIZACION, headers=e.cabeceras())
+
+    assert e.socios.consumidas[("socio-1", "PRODUCCION")] == 2
+
+
+def test_llaves_distintas_son_cotizaciones_distintas(e) -> None:
+    with e.cliente() as client:
+        client.post("/v1/cotizaciones", json=COTIZACION, headers=_con_llave(e, "a"))
+        client.post("/v1/cotizaciones", json=COTIZACION, headers=_con_llave(e, "b"))
+
+    assert e.socios.consumidas[("socio-1", "PRODUCCION")] == 2
+
+
+def test_la_misma_llave_con_otro_cuerpo_es_422_y_no_descuenta(e) -> None:
+    with e.cliente() as client:
+        client.post("/v1/cotizaciones", json=COTIZACION, headers=_con_llave(e))
+        otra = client.post(
+            "/v1/cotizaciones", json={**COTIZACION, "plazoMeses": 120}, headers=_con_llave(e)
+        )
+
+    _es_error_publico(otra, 422, "IDEMPOTENCIA_EN_CONFLICTO")
+    assert e.socios.consumidas[("socio-1", "PRODUCCION")] == 1
+
+
+def test_la_llave_de_un_socio_no_le_sirve_a_otro(e) -> None:
+    with e.cliente() as client:
+        client.post("/v1/cotizaciones", json=COTIZACION, headers=_con_llave(e))
+        almacen = client.app.state.idempotencia_socios
+
+    assert all(":socio-1:PRODUCCION:cotizaciones:" in clave for clave in almacen.datos)
+
+
+def test_con_la_primera_en_curso_responde_409_con_retry_after(e) -> None:
+    async def reclamada(*_):
+        return {"estado": "EN_CURSO"}
+
+    with e.cliente() as client:
+        client.app.state.idempotencia_socios.reclamar = reclamada
+        respuesta = client.post("/v1/cotizaciones", json=COTIZACION, headers=_con_llave(e))
+
+    cuerpo = _es_error_publico(respuesta, 409, "SOLICITUD_EN_CURSO")
+    assert cuerpo["puedeReintentar"] is True and respuesta.headers["retry-after"] == "1"
+    assert e.socios.consumidas.get(("socio-1", "PRODUCCION"), 0) == 0
+
+
+def test_si_la_cotizacion_falla_la_llave_se_libera(e) -> None:
+    sin_consentimiento = {**COTIZACION, "consentimientoId": "c-otro"}
+    with e.cliente() as client:
+        primera = client.post("/v1/cotizaciones", json=sin_consentimiento, headers=_con_llave(e))
+        segunda = client.post("/v1/cotizaciones", json=sin_consentimiento, headers=_con_llave(e))
+        almacen = client.app.state.idempotencia_socios
+
+    assert primera.status_code == segunda.status_code
+    assert segunda.json()["codigo"] != "SOLICITUD_EN_CURSO"
+    assert almacen.datos == {}
+
+
+@pytest.mark.parametrize("llave", ["", "con espacio", "x" * 256])
+def test_una_llave_invalida_es_422(e, llave) -> None:
+    with e.cliente() as client:
+        respuesta = client.post("/v1/cotizaciones", json=COTIZACION, headers=_con_llave(e, llave))
+
+    _es_error_publico(respuesta, 422, "DATOS_INVALIDOS")
+    assert e.socios.consumidas.get(("socio-1", "PRODUCCION"), 0) == 0
+
+
+def test_si_redis_no_responde_se_cotiza_sin_idempotencia(e) -> None:
+    async def caido(*_):
+        raise ConnectionError("redis")
+
+    with e.cliente() as client:
+        client.app.state.idempotencia_socios.reclamar = caido
+        respuesta = client.post("/v1/cotizaciones", json=COTIZACION, headers=_con_llave(e))
+
+    assert respuesta.status_code == 200
+    assert e.socios.consumidas[("socio-1", "PRODUCCION")] == 1
+
+
+def test_el_modo_prueba_tambien_respeta_la_llave(e) -> None:
+    cabeceras = {**e.cabeceras(entorno="PRUEBAS"), "Idempotency-Key": "llave-prueba"}
+    with e.cliente() as client:
+        consentimiento = client.post(
+            "/v1/consentimientos",
+            json={
+                "documentoIdentidad": "1000000001",
+                "finalidad": "cotizacion",
+                "versionTexto": "v1",
+            },
+            headers=cabeceras,
+        )
+        cuerpo = {**COTIZACION, "consentimientoId": consentimiento.json()["id"],
+                  "documentoIdentidad": "1000000001"}  # fmt: skip
+        primera = client.post("/v1/cotizaciones", json=cuerpo, headers=cabeceras)
+        segunda = client.post("/v1/cotizaciones", json=cuerpo, headers=cabeceras)
+
+    assert primera.status_code == 200, primera.text
+    assert segunda.json() == primera.json()
+    assert e.socios.consumidas[("socio-1", "PRUEBAS")] == 1
 
 
 def test_una_falla_inesperada_es_503_controlado_y_en_ingles(e) -> None:

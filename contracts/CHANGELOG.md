@@ -572,6 +572,51 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.55 — 2026-11-19
+
+- HU-W07 (KAN-30), `GET /v1/consumo`: las estadísticas cuadran con el presupuesto y con lo que el socio hizo.
+  - **Días de Colombia** (`America/Bogota`): antes se agrupaba por día UTC y lo de después de las 19:00 caía en el día
+    siguiente. `hasta` por defecto también es el día de Colombia.
+  - **`diario` trae todos los días** del rango, con 0 los que no tuvieron llamadas (el gráfico no los salta). El rango
+    va hasta 366 días; más largo responde 422 `DATOS_INVALIDOS`.
+  - **`porApi`: `cotizaciones-auto` suma en `cotizaciones`**, la misma bolsa del presupuesto. Así, `llamadas - errores`
+    de esa fila son las cotizaciones que descontaron presupuesto.
+  - **No cuentan las consultas de la cuenta** (`/v1/consumo`, `/v1/estado`, `/v1/ventas` y `/v1/credenciales`, con la
+    rotación): el portal las lee al abrirse, así que mirar las estadísticas las subía.
+  - **Sí cuenta un 422 por cuerpo inválido** con un token válido (FastAPI lo rechazaba antes de identificar al socio).
+- Sin cambio de contrato pero sí de comportamiento: si una cotización **lanza** (no solo si responde un error), la unidad
+  de presupuesto vuelve. Si no se puede devolver, queda en la métrica `bff_socios_devolucion_fallida_total`.
+- Solo cambios aditivos en la forma. Afecta al frontend: el panel del socio muestra días en 0 y una sola fila de
+  cotizaciones; no requiere cambios de código.
+
+## v0.54 — 2026-11-19
+
+- HU-W07 (KAN-30), API de socios: `POST /v1/cotizaciones` y `POST /v1/cotizaciones-auto` aceptan la cabecera
+  opcional `Idempotency-Key`. El gateway corta a los 700 ms, pero el BFF terminaba la cotización: el socio veía un
+  504, reintentaba y se descontaban **dos** unidades de presupuesto y se contaban dos llamadas.
+  - Con la misma clave, el reintento recibe la respuesta guardada con `Idempotent-Replayed: true`, sin descontar
+    presupuesto ni contarse en `/v1/consumo`. La clave vale 24 h, por socio, entorno y operación.
+  - Códigos nuevos de `ErrorPublico`: `SOLICITUD_EN_CURSO` (409, con `Retry-After`: la primera sigue en curso) e
+    `IDEMPOTENCIA_EN_CONFLICTO` (422: la clave ya se usó con otro cuerpo).
+  - Si la cotización falla, la clave se libera y el socio puede reintentar con ella.
+- Sin cambio de contrato pero sí de comportamiento: cada llamada del socio se registra en el consumo **antes** de
+  responder (antes era una tarea suelta que Cloud Run podía no correr). Si AUTH tarda más de 150 ms, la llamada no se
+  cuenta y queda en la métrica `bff_socios_consumo_perdido_total`.
+- Solo cambios aditivos: sin la cabecera todo sigue igual. Afecta al frontend: no (el portal no cotiza); los socios
+  pueden empezar a enviarla.
+
+## v0.53 — 2026-11-18
+
+- HU-M06 (KAN-36): la especialidad y el horario del prestador llegan como datos y la app los muestra en su idioma
+  (antes eran texto en español y en inglés se veían igual).
+  - `Prestador` gana `codigoEspecialidad: EspecialidadPrestador` (enum nuevo: `URGENCIAS`, `MEDICINA_GENERAL`,
+    `MECANICA_GENERAL`, `LLANTAS_Y_FRENOS`, `GRUA_LIVIANA`, `GRUA_Y_CARRO_TALLER`) y `horarioAtencion: HorarioAtencion`
+    (tipo nuevo: `abierto24h`, `diaDesde`/`diaHasta` con el enum nuevo `DiaSemana`, `abre`/`cierra` en «HH:MM»).
+  - `especialidad` y `horario` quedan `@deprecated` y siguen llegando en español para las versiones de la app que ya
+    están instaladas. El catálogo pasa a la versión `2026-11-18.1`, así que la app lo descarga de nuevo.
+  - CLAIMS `0010` agrega los campos nuevos al validador de `prestadores`.
+- Solo cambios aditivos. Afecta al frontend: el móvil (detalle del prestador en ES/EN).
+
 ## v0.52 — 2026-11-12
 
 - HU-M06 (KAN-36), fase 5 del plan de pendientes (B5 y B6): «Mis asistencias» en la app.

@@ -1989,6 +1989,40 @@ class TipoPrestador(Enum):
     GRUA = "GRUA"  # v0.49
 
 
+@strawberry.enum
+class EspecialidadPrestador(Enum):
+    """v0.53: la app lo traduce."""
+
+    URGENCIAS = "URGENCIAS"
+    MEDICINA_GENERAL = "MEDICINA_GENERAL"
+    MECANICA_GENERAL = "MECANICA_GENERAL"
+    LLANTAS_Y_FRENOS = "LLANTAS_Y_FRENOS"
+    GRUA_LIVIANA = "GRUA_LIVIANA"
+    GRUA_Y_CARRO_TALLER = "GRUA_Y_CARRO_TALLER"
+
+
+@strawberry.enum
+class DiaSemana(Enum):
+    LUNES = "LUNES"
+    MARTES = "MARTES"
+    MIERCOLES = "MIERCOLES"
+    JUEVES = "JUEVES"
+    VIERNES = "VIERNES"
+    SABADO = "SABADO"
+    DOMINGO = "DOMINGO"
+
+
+@strawberry.type
+class HorarioAtencion:
+    """v0.53: horario de la sede; con `abierto24h` el resto viene null."""
+
+    abierto24h: bool = strawberry.field(name="abierto24h")
+    dia_desde: DiaSemana | None
+    dia_hasta: DiaSemana | None
+    abre: str | None
+    cierra: str | None
+
+
 @strawberry.type
 class Prestador:
     id: strawberry.ID
@@ -2000,10 +2034,17 @@ class Prestador:
     activo: bool
     # v0.49: el detalle del prestador en la app.
     aliado: bool
-    especialidad: str
+    especialidad: str = strawberry.field(
+        deprecation_reason="v0.53: usar codigoEspecialidad; la app lo traduce a su idioma"
+    )
     direccion: str
-    horario: str | None
+    horario: str | None = strawberry.field(
+        deprecation_reason="v0.53: usar horarioAtencion; la app lo traduce a su idioma"
+    )
     foto_url: str | None
+    # v0.53: datos en vez de texto en español.
+    codigo_especialidad: EspecialidadPrestador | None = None
+    horario_atencion: HorarioAtencion | None = None
 
 
 @strawberry.type
@@ -2026,6 +2067,25 @@ class CatalogoPrestadores:
 
 MENSAJE_PRESTADORES = "No pudimos consultar los prestadores. Intenta de nuevo."
 TIPOS_PRESTADOR = {t.value for t in TipoPrestador}
+ESPECIALIDADES = {e.value for e in EspecialidadPrestador}
+DIAS = {d.value for d in DiaSemana}
+
+
+def _dia(valor) -> DiaSemana | None:
+    return DiaSemana(valor) if valor in DIAS else None
+
+
+def _horario_atencion(h: dict | None) -> HorarioAtencion | None:
+    """Un horario mal formado se omite (null) en vez de romper la respuesta entera."""
+    if not isinstance(h, dict) or not isinstance(h.get("abierto_24h"), bool):
+        return None
+    return HorarioAtencion(
+        abierto24h=h["abierto_24h"],
+        dia_desde=_dia(h.get("dia_desde")),
+        dia_hasta=_dia(h.get("dia_hasta")),
+        abre=h.get("abre"),
+        cierra=h.get("cierra"),
+    )
 
 
 def _prestador(p: dict) -> Prestador:
@@ -2043,6 +2103,12 @@ def _prestador(p: dict) -> Prestador:
         direccion=p.get("direccion") or "",
         horario=p.get("horario"),
         foto_url=p.get("foto_url"),
+        codigo_especialidad=(
+            EspecialidadPrestador(p["codigo_especialidad"])
+            if p.get("codigo_especialidad") in ESPECIALIDADES
+            else None
+        ),
+        horario_atencion=_horario_atencion(p.get("horario_atencion")),
     )
 
 

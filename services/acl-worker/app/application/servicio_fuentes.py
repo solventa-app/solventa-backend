@@ -6,6 +6,12 @@ abierto, timeout, HTTP 5xx del proveedor) degrada al último valor cacheado
 (`de_cache=True`) o, si no hay nada en caché, a un valor por defecto mínimo
 (`degradado=True`) — regla de arquitectura #4. La composición de oferta/score
 a partir de este dato es trabajo de RISK/RATING, no de este servicio.
+
+`de_cache=True` quiere decir «no se pudo consultar al proveedor y se sirve el último valor
+bueno»: es la señal con la que RATING y RISK vuelven la oferta PRELIMINAR (CA-W01-04). Con
+`servir_cache_en_ttl` (EC010) un valor cacheado dentro del TTL se sirve sin llamar al proveedor,
+pero NO se marca `de_cache`: no hubo ninguna falla, el dato tiene a lo sumo el TTL de edad y es
+el mismo que habría devuelto una consulta en vivo hace unos minutos.
 """
 
 import logging
@@ -74,7 +80,10 @@ class ServicioConsultaFuentes:
         cacheado = self._cache.obtener(consulta.fuente, consulta.cliente_id)
         forzar = forzar_proveedor or getattr(consulta, "forzar_proveedor", False)
         if self._servir_cache_en_ttl and cacheado is not None and not forzar:
-            cacheado.de_cache = True
+            # Dentro del TTL no hubo falla: no es una degradación y `de_cache` queda en False (la
+            # caché nunca lo guarda). Si se marcara, RATING volvería PRELIMINAR cada cotización
+            # repetida del mismo cliente en los siguientes minutos, y una PRELIMINAR no se puede
+            # aceptar (D-11).
             return cacheado
 
         presupuesto = self._presupuesto_con_cache_s if cacheado is not None else self._presupuesto_s

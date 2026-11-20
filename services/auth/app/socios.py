@@ -12,6 +12,9 @@ Reglas:
 - **Solo las cotizaciones descuentan presupuesto** (W07-9). `reservar` es un único `UPDATE` con la
   condición `consumidas < asignadas`, así que es atómico aunque lleguen varias a la vez.
 - `consumos_socio` es append-only y no guarda datos personales.
+- El consumo se cuenta por **días de Colombia** (`ZONA_CONSUMO`), con todos los días del rango
+  (los que no tienen llamadas van en 0), y `cotizaciones-auto` suma en `cotizaciones`, la misma
+  bolsa del presupuesto (KAN-30, contrato v0.55).
 
 Capa simple (regla 3): el `Protocol` existe solo para probar con dobles sin PostgreSQL."""
 
@@ -23,6 +26,7 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
+from zoneinfo import ZoneInfo
 
 from psycopg.errors import UniqueViolation
 from psycopg_pool import ConnectionPool
@@ -41,6 +45,12 @@ MINUTOS_BLOQUEO = 15
 MENSAJE_CREDENCIALES = "Credenciales inválidas."
 MAXIMO_IDS_POR_CONSULTA = 200
 PREFIJO_CLIENT_ID = {"PRODUCCION": "sol_prod_", "PRUEBAS": "sol_test_"}
+# Los días del consumo son los del socio (Colombia), no los de UTC: a las 19:00 de Bogotá ya es
+# mañana en UTC y la llamada caía en el día siguiente del gráfico.
+ZONA_CONSUMO = "America/Bogota"
+MAXIMO_DIAS_CONSUMO = 366
+# Las APIs que cuentan en la fila de otra: las dos cotizaciones gastan la misma bolsa (W07-9).
+FILA_DE_API = {"cotizaciones-auto": "cotizaciones"}
 
 
 class CredencialesSocioInvalidas(Exception):
@@ -337,22 +347,36 @@ class RepositorioSociosPostgres:
                    round(avg(latencia_ms))::int AS latencia_media_ms
             FROM consumos_socio
             WHERE socio_id = %(socio_id)s AND entorno = %(entorno)s
-              AND ocurrido_en >= %(desde)s AND ocurrido_en < %(hasta)s::date + 1
+              AND ocurrido_en >= (%(desde)s::date)::timestamp AT TIME ZONE %(zona)s
+              AND ocurrido_en < (%(hasta)s::date + 1)::timestamp AT TIME ZONE %(zona)s
             GROUP BY api ORDER BY api
             """,
-            {"socio_id": socio_id, "entorno": entorno, "desde": desde, "hasta": hasta},
+            {
+                "socio_id": socio_id,
+                "entorno": entorno,
+                "desde": desde,
+                "hasta": hasta,
+                "zona": ZONA_CONSUMO,
+            },
         )
 
     def consumo_diario(self, socio_id: str, entorno: str, desde: date, hasta: date) -> list[dict]:
         return self._varias(
             """
-            SELECT (ocurrido_en AT TIME ZONE 'UTC')::date AS fecha, count(*) AS llamadas
+            SELECT (ocurrido_en AT TIME ZONE %(zona)s)::date AS fecha, count(*) AS llamadas
             FROM consumos_socio
             WHERE socio_id = %(socio_id)s AND entorno = %(entorno)s
-              AND ocurrido_en >= %(desde)s AND ocurrido_en < %(hasta)s::date + 1
+              AND ocurrido_en >= (%(desde)s::date)::timestamp AT TIME ZONE %(zona)s
+              AND ocurrido_en < (%(hasta)s::date + 1)::timestamp AT TIME ZONE %(zona)s
             GROUP BY 1 ORDER BY 1
             """,
-            {"socio_id": socio_id, "entorno": entorno, "desde": desde, "hasta": hasta},
+            {
+                "socio_id": socio_id,
+                "entorno": entorno,
+                "desde": desde,
+                "hasta": hasta,
+                "zona": ZONA_CONSUMO,
+            },
         )
 
 
@@ -530,12 +554,14 @@ class ServicioSocios:
     def consumo(
         self, socio_id: str, entorno: str, desde: date | None, hasta: date | None
     ) -> dict[str, Any]:
-        """Por defecto, los últimos 30 días."""
+        """Por defecto, los últimos 30 días (de Colombia)."""
         validar_entorno(entorno)
-        hasta = hasta or self._reloj().date()
+        hasta = hasta or self._reloj().astimezone(ZoneInfo(ZONA_CONSUMO)).date()
         desde = desde or hasta - timedelta(days=29)
         if desde > hasta:
             raise DatoSocioInvalido("`desde` no puede ser posterior a `hasta`.")
+        if (hasta - desde).days >= MAXIMO_DIAS_CONSUMO:
+            raise DatoSocioInvalido(f"El rango va hasta {MAXIMO_DIAS_CONSUMO} días.")
         presupuesto = self._repo.presupuesto(socio_id, entorno, "cotizaciones") or {
             "asignadas": 0,
             "consumidas": 0,
@@ -549,6 +575,42 @@ class ServicioSocios:
                 "consumidas": presupuesto["consumidas"],
                 "restantes": max(0, presupuesto["asignadas"] - presupuesto["consumidas"]),
             },
-            "por_api": self._repo.consumo_por_api(socio_id, entorno, desde, hasta),
-            "diario": self._repo.consumo_diario(socio_id, entorno, desde, hasta),
+            "por_api": _juntar_filas(self._repo.consumo_por_api(socio_id, entorno, desde, hasta)),
+            "diario": _todos_los_dias(
+                self._repo.consumo_diario(socio_id, entorno, desde, hasta), desde, hasta
+            ),
         }
+
+
+def _juntar_filas(filas: list[dict]) -> list[dict]:
+    """Suma en una fila las APIs de `FILA_DE_API` (la latencia media, ponderada por llamadas)."""
+    juntas: dict[str, dict] = {}
+    for fila in filas:
+        api = FILA_DE_API.get(fila["api"], fila["api"])
+        actual = juntas.get(api)
+        if actual is None:
+            juntas[api] = {**fila, "api": api}
+            continue
+        llamadas = actual["llamadas"] + fila["llamadas"]
+        latencias = [
+            (f["latencia_media_ms"], f["llamadas"])
+            for f in (actual, fila)
+            if f.get("latencia_media_ms") is not None
+        ]
+        peso = sum(n for _, n in latencias)
+        juntas[api] = {
+            "api": api,
+            "llamadas": llamadas,
+            "errores": actual["errores"] + fila["errores"],
+            "latencia_media_ms": round(sum(m * n for m, n in latencias) / peso) if peso else None,
+        }
+    return [juntas[api] for api in sorted(juntas)]
+
+
+def _todos_los_dias(filas: list[dict], desde: date, hasta: date) -> list[dict]:
+    """Un día por fecha del rango; los que no tienen llamadas van en 0 (el gráfico no los salta)."""
+    por_dia = {fila["fecha"]: fila["llamadas"] for fila in filas}
+    return [
+        {"fecha": desde + timedelta(days=n), "llamadas": por_dia.get(desde + timedelta(days=n), 0)}
+        for n in range((hasta - desde).days + 1)
+    ]

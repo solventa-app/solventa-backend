@@ -126,3 +126,12 @@ def test_construir_enviador_real_con_sns_modo_real(monkeypatch) -> None:
     monkeypatch.setenv("SNS_MODO", "real")
     config = Configuracion.desde_entorno()
     assert isinstance(construir_enviador(config), EnviadorSnsBoto3)
+
+
+def test_payload_fcm_v1_con_canal_de_alta_prioridad() -> None:
+    enviador = EnviadorStub()
+    enviador.enviar(_destino(), _mensaje())
+    gcm = enviador.enviados[0]["gcm"]
+    assert gcm["android"]["priority"] == "HIGH"
+    assert gcm["android"]["notification"]["channel_id"] == "avisos_push"
+    assert "tag" not in gcm["notification"]

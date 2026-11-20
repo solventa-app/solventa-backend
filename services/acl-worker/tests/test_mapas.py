@@ -1,5 +1,7 @@
 """Rutas y tiempos de los prestadores (HU-M06, v0.51, B8): simulado, Mapbox, caché y endpoint."""
 
+import json
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +12,7 @@ from app.adapters.mapas import (
     AdaptadorMapasSinToken,
     CacheMapas,
     codificar_polyline6,
+    decodificar_polyline6,
     mapas_desde_entorno,
 )
 from app.main import app
@@ -17,26 +20,6 @@ from app.main import app
 CLIENTE = (4.6767, -74.0483)
 CLINICA = {"id": "prs-bog-001", "latitud": 4.6859, "longitud": -74.0524}
 TALLER = {"id": "prs-bog-002", "latitud": 4.6835, "longitud": -74.0322}
-
-
-def decodificar_polyline6(texto: str) -> list[tuple[float, float]]:
-    puntos, i, lat, lon = [], 0, 0, 0
-    while i < len(texto):
-        valores = []
-        for _ in range(2):
-            resultado, desplazamiento = 0, 0
-            while True:
-                b = ord(texto[i]) - 63
-                i += 1
-                resultado |= (b & 0x1F) << desplazamiento
-                desplazamiento += 5
-                if b < 0x20:
-                    break
-            valores.append(~(resultado >> 1) if resultado & 1 else resultado >> 1)
-        lat += valores[0]
-        lon += valores[1]
-        puntos.append((lat / 1e6, lon / 1e6))
-    return puntos
 
 
 def test_polyline6_ida_y_vuelta():
@@ -112,6 +95,33 @@ def test_cache_por_celda_sin_coordenadas_en_la_llave():
     # A unos 50 m cae en la misma celda.
     assert cache.obtener((4.6769, -74.0484), ["a"], set()) == [{"prestador_id": "a"}]
     assert cache.obtener((4.70, -74.0483), ["a"], set()) is None
+
+
+def test_la_cache_no_entrega_la_ubicacion_de_otro_cliente():
+    """H2: la línea guardada termina donde estaba el primero; a otro cliente de la misma celda
+    se le entrega terminando en su propio origen, y Redis no guarda la ubicación exacta."""
+
+    class Almacen(dict):
+        def set(self, nombre, valor, ex=None):
+            self[nombre] = valor
+
+    almacen = Almacen()
+    cache = CacheMapas(almacen)
+    prestador = (4.6859, -74.0524)
+    primero, segundo = (4.676712, -74.048312), (4.677001, -74.048002)
+    linea = codificar_polyline6([prestador, (4.68, -74.05), primero])
+    cache.guardar(
+        primero,
+        ["a"],
+        {"a"},
+        [{"prestador_id": "a", "geometria": linea}, {"prestador_id": "b", "geometria": None}],
+    )
+    assert "4676712" not in json.dumps(
+        decodificar_polyline6(json.loads(next(iter(almacen.values())))[0]["geometria"])
+    )
+    ruta, sin_linea = cache.obtener(segundo, ["a"], {"a"})
+    assert decodificar_polyline6(ruta["geometria"]) == [prestador, (4.68, -74.05), segundo]
+    assert sin_linea["geometria"] is None
 
 
 def test_endpoints_simulados():
