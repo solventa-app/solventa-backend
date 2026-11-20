@@ -38,8 +38,14 @@ def test_demo_staging_crea_un_vuelo_diario_y_clima_para_el_cliente():
 
     repo = RepositorioPropuestasFalso()
     coberturas = RepositorioCoberturasParametricasFalso()
-    creadas = sembrar_demo_staging(repo, coberturas, "usuario-felipe-1234", "AV19", 5)
+    creadas = sembrar_demo_staging(repo, coberturas, "usuario-felipe-1234", "titular-1", "AV19", 5)
     assert [c["tipo"] for c in creadas] == ["VUELO", "CLIMA"]
     assert len(coberturas._coberturas) == 6  # noqa: SLF001 (5 días de vuelo + 1 de clima)
-    assert sembrar_demo_staging(repo, coberturas, "usuario-felipe-1234", "AV19", 5) == creadas
+    # El titular es el `cliente_id` (lo que filtra `miCoberturaParametrica`) y el usuario de AUTH es
+    # quien la aceptó (a quien CLAIMS le manda el push y a quien el BFF le muestra `indemnizacion`).
+    propuestas = list(repo._por_oferta.values())  # noqa: SLF001
+    assert {p["cliente_id"] for p in propuestas} == {"titular-1"}
+    assert {p["actor_usuario_id"] for p in propuestas} == {"usuario-felipe-1234"}
+    otra = sembrar_demo_staging(repo, coberturas, "usuario-felipe-1234", "titular-1", "AV19", 5)
+    assert otra == creadas
     assert len(coberturas._coberturas) == 6  # noqa: SLF001
