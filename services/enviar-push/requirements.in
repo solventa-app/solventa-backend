@@ -1,4 +1,4 @@
-fastapi==0.162.4
+fastapi==0.164.0
 uvicorn[standard]==0.54.0
 httpx==0.28.1
 prometheus-fastapi-instrumentator==8.1.0
@@ -8,5 +8,5 @@ opentelemetry-exporter-otlp-proto-http==1.45.1
 opentelemetry-instrumentation-httpx==0.66b1
 google-auth==2.62.2
 requests==2.34.2
-google-cloud-pubsub==2.43.0
-boto3==1.44.0
+google-cloud-pubsub==2.44.0
+boto3==1.44.5
