@@ -56,7 +56,7 @@ def test_en_la_nube_el_token_de_recaudo_no_puede_ser_el_local(monkeypatch) -> No
     assert Configuracion.desde_entorno().token_recaudo_credito == "tok_recaudo_staging"
 
 
-def test_el_aviso_de_ambiente_de_pruebas_esta_apagado_por_defecto_y_se_enciende(monkeypatch) -> None:
+def test_el_aviso_de_pruebas_esta_apagado_por_defecto_y_se_enciende(monkeypatch) -> None:
     _limpiar(monkeypatch)
     monkeypatch.delenv("DOCUMENTO_AMBIENTE_PRUEBAS", raising=False)
     assert Configuracion.desde_entorno().documento_ambiente_pruebas is False
