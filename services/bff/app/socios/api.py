@@ -909,7 +909,9 @@ def construir_router() -> APIRouter:
             credencial = await estado(request).clientes.socios.rotar(socio.id, entorno)
         except ErrorServicio as error:
             raise no_disponible() from error
-        logger.info("credencial rotada socio=%s entorno=%s", id_opaco(socio.id), entorno)
+        # Se loguea la constante, no el texto de la ruta (inyección en logs).
+        rotado = "PRODUCCION" if entorno == "PRODUCCION" else "PRUEBAS"
+        logger.info("credencial rotada socio=%s entorno=%s", id_opaco(socio.id), rotado)
         return _credencial(credencial)
 
     return router

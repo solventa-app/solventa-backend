@@ -167,7 +167,7 @@ class ServicioParametricos:
         if existente is not None:
             logger.info(
                 "evento=%s poliza=%s ya tenía siniestro paramétrico: no se duplica",
-                evento["eventId"],
+                id_opaco(evento["eventId"]),
                 id_opaco(poliza_id),
             )
             return False

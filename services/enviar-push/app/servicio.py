@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from app.clientes import PuertoAuth, PushDeshabilitado, SinDispositivoActivo
+from app.identificadores import id_opaco
 from app.plantillas import PlantillaDesconocida, Plantillas
 from app.sns import PuertoEnviadorPush, TokenInvalido
 
@@ -32,7 +33,10 @@ class ServicioEnviarPush:
                 datos["plantilla"], datos.get("variables")
             )
         except PlantillaDesconocida:
-            logger.error("plantilla desconocida=%s; evento descartado", datos["plantilla"])
+            # Lo que llega en el evento no se loguea en crudo (inyección en logs): su huella.
+            logger.error(
+                "plantilla desconocida=%s; evento descartado", id_opaco(str(datos["plantilla"]))
+            )
             return "PLANTILLA_DESCONOCIDA"
 
         try:
@@ -62,5 +66,5 @@ class ServicioEnviarPush:
             logger.info("token invalido; dispositivo marcado en AUTH, push confirmado")
             return "TOKEN_INVALIDO"
 
-        logger.info("push enviado idempotencia=%s", datos["idempotencia"])
+        logger.info("push enviado idempotencia=%s", id_opaco(str(datos["idempotencia"])))
         return "ENVIADO"
