@@ -75,12 +75,12 @@
     },
     {
       "tipo": "siniestro-foto",
-      "descripcion": "Foto de evidencia de un siniestro: la sube el cliente desde el móvil a nombre del caso que va a reportar (HU-M05) o CLAIMS con la semilla (HU-W04). La lee el operador en la mesa de siniestros.",
+      "descripcion": "Foto de evidencia de un siniestro: la sube el cliente desde el móvil a nombre del caso que va a reportar (HU-M05) o CLAIMS con la semilla (HU-W04). La lee el operador en la mesa de siniestros y, v0.64, el cliente que la subió en el detalle de su caso (M05-07).",
       "activo": true,
       "tipos_contenido": ["image/jpeg", "image/png"],
       "tamano_max_bytes": 10485760,
       "quien_sube": ["servicio:claims", "CLIENTE"],
-      "quien_lee": ["BACKOFFICE", "servicio:claims"],
+      "quien_lee": ["BACKOFFICE", "servicio:claims", "CLIENTE"],
       "propietario": "siniestro",
       "requiere_consentimiento": false,
       "retencion_dias": null

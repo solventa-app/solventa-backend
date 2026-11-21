@@ -575,6 +575,8 @@ class ServicioSiniestros:
                 "perito": _perito(perito),
                 "instrucciones": None,
                 "vencimiento_informe": None,
+                # v0.64: cuándo pasó a un perito, para la línea de tiempo del cliente.
+                "derivada_en": asignacion["asignada_en"] if asignacion else None,
             }
         if asignacion is not None:
             return {
@@ -592,6 +594,7 @@ class ServicioSiniestros:
                 "perito": _perito(perito),
                 "instrucciones": asignacion.get("instrucciones"),
                 "vencimiento_informe": asignacion["vence_informe_en"],
+                "derivada_en": asignacion["asignada_en"],
             }
         return None
 
