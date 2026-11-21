@@ -31,10 +31,23 @@ workflow.
 
 El job **Reporte consolidado** (`scripts/reporte_seguridad.py`) junta los resultados y deja:
 
-- en el **resumen del run**: semáforo 🟢🟡🔴, tabla por herramienta (críticos, altos, medios, bajos) y los hallazgos
+- en el **resumen del run**: calificación, semáforo 🟢🟡🔴, tabla por herramienta (críticos, altos, medios, bajos) y los hallazgos
   principales de cada una;
 - el artefacto **`reporte-seguridad`**, con `reporte-seguridad.pdf`, `.md` y `.json` (todos los hallazgos
   normalizados, para depurarlos).
+
+**Calificación (como la de MobSF en el móvil):** un puntaje de 0 a 100 y una letra, en total y por escaneo. Parte de
+100 y resta por severidad, con un tope para que una sola herramienta ruidosa no lo deje en cero:
+
+| Severidad | Resta por hallazgo | Tope |
+|---|---:|---:|
+| Crítica | 15 | 40 |
+| Alta | 4 | 30 |
+| Media | 0,5 | 20 |
+| Baja | 0,1 | 10 |
+
+Letra: A ≥ 90, B ≥ 75, C ≥ 60, D ≥ 40 y F por debajo. Es orientativa: sirve para ver la tendencia entre runs, no
+reemplaza revisar los hallazgos.
 
 El semáforo queda en 🔴 si hay algún hallazgo crítico o alto, en 🟡 si solo hay medios y en 🟢 en otro caso. Los
 resultados crudos de cada herramienta quedan en los artefactos `seguridad-*`.

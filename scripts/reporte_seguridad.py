@@ -355,6 +355,29 @@ def conteo(hallazgos: list[dict]) -> dict[str, int]:
     return c
 
 
+# Puntaje de 0 a 100 (orientativo, como el de MobSF): parte de 100 y resta por severidad, con un tope por
+# severidad para que una sola herramienta ruidosa no lo deje en cero. (descuento por hallazgo, tope)
+DESCUENTOS = {"critica": (15, 40), "alta": (4, 30), "media": (0.5, 20), "baja": (0.1, 10)}
+
+
+def puntaje(c: dict[str, int]) -> int:
+    descuento = sum(min(c[s] * por_uno, tope) for s, (por_uno, tope) in DESCUENTOS.items())
+    return max(0, round(100 - descuento))
+
+
+# Letra a partir del puntaje, al estilo de la calificación de MobSF en el móvil.
+LETRAS = [(90, "A"), (75, "B"), (60, "C"), (40, "D"), (0, "F")]
+
+
+def letra(valor: int) -> str:
+    return next(nota for minimo, nota in LETRAS if valor >= minimo)
+
+
+def calificacion(c: dict[str, int]) -> str:
+    valor = puntaje(c)
+    return f"{valor}/100 ({letra(valor)})"
+
+
 def semaforo(c: dict[str, int]) -> tuple[str, str]:
     if c["critica"] or c["alta"]:
         return "🔴", "Hay hallazgos críticos o altos por revisar"
@@ -386,19 +409,19 @@ def _celda(texto: str) -> str:
 def escribir_md(hallazgos, corridos, ctx) -> str:
     total = conteo(hallazgos)
     icono, frase = semaforo(total)
-    lineas = [f"## {icono} Reporte de seguridad: {frase}", ""]
+    lineas = [f"## {icono} Reporte de seguridad: {calificacion(total)} · {frase}", ""]
     lineas.append(
         f"`{ctx['repositorio']}` · rama `{ctx['rama']}` · commit `{ctx['commit']}` · {ctx['evento']} · {ctx['fecha']}"
     )
     lineas += [
         "",
-        "Informativo: no bloquea el merge. El PDF, el Markdown y el JSON completo están en el artefacto "
+        "Puntaje orientativo de 0 a 100 (parte de 100 y resta por severidad, con tope; ver `DESCUENTOS`) y letra de A a F (A ≥ 90, B ≥ 75, C ≥ 60, D ≥ 40). Informativo: no bloquea el merge. El PDF, el Markdown y el JSON completo están en el artefacto "
         "`reporte-seguridad`.",
         "",
     ]
     lineas += [
-        "| Escaneo | Herramienta | Críticos | Altos | Medios | Bajos | Info | Estado |",
-        "|---|---|---:|---:|---:|---:|---:|---|",
+        "| Escaneo | Herramienta | Críticos | Altos | Medios | Bajos | Info | Calificación | Estado |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---|",
     ]
     for clave, (nombre, herramienta) in ESCANEOS.items():
         if clave not in corridos:
@@ -407,11 +430,11 @@ def escribir_md(hallazgos, corridos, ctx) -> str:
         estado = semaforo(c)[0]
         lineas.append(
             f"| {nombre} | {herramienta} | {c['critica']} | {c['alta']} | {c['media']} | {c['baja']} | "
-            f"{c['info']} | {estado} |"
+            f"{c['info']} | {calificacion(c)} | {estado} |"
         )
     lineas.append(
         f"| **Total** | | **{total['critica']}** | **{total['alta']}** | **{total['media']}** | "
-        f"**{total['baja']}** | **{total['info']}** | {icono} |"
+        f"**{total['baja']}** | **{total['info']}** | **{calificacion(total)}** | {icono} |"
     )
     sin_correr = [ESCANEOS[k][1] for k in ESCANEOS if k not in corridos]
     if sin_correr:
@@ -456,12 +479,12 @@ def escribir_html(hallazgos, corridos, ctx) -> str:
         filas.append(
             f"<tr><td>{e(nombre)}</td><td>{e(herramienta)}</td>"
             + "".join(f"<td class=n>{c[s]}</td>" for s in SEVERIDADES)
-            + f"<td>{semaforo(c)[0]}</td></tr>"
+            + f"<td class=n>{calificacion(c)}</td><td>{semaforo(c)[0]}</td></tr>"
         )
     filas.append(
         "<tr class=total><td>Total</td><td></td>"
         + "".join(f"<td class=n>{total[s]}</td>" for s in SEVERIDADES)
-        + f"<td>{icono}</td></tr>"
+        + f"<td class=n>{calificacion(total)}</td><td>{icono}</td></tr>"
     )
     secciones = []
     for clave, (nombre, herramienta) in ESCANEOS.items():
@@ -502,14 +525,15 @@ table {{ border-collapse: collapse; width: 100%; }} th, td {{ border-bottom: 1px
 th {{ background: #f0f0f0; }} td.n {{ text-align: right; }} tr.total td {{ font-weight: bold; border-top: 2px solid #999; }}
 tr {{ break-inside: avoid; }} .mono {{ font-family: ui-monospace, Menlo, monospace; font-size: 9.5px; word-break: break-all; }}
 .det {{ color: #666; font-size: 9.5px; }}
+.puntaje {{ font-size: 22px; font-weight: bold; margin-right: 10px; }} .puntaje small {{ font-size: 12px; color: #666; }}
 .sev {{ display: inline-block; padding: 1px 6px; border-radius: 3px; color: #fff; font-size: 9.5px; }}
 .critica {{ background: #7b1fa2; }} .alta {{ background: #c62828; }} .media {{ background: #ef6c00; }}
 .baja {{ background: #1565c0; }} .info {{ background: #757575; }}
 </style></head><body>
 <h1>Reporte de seguridad · {e(ctx["repositorio"])}</h1>
 <div class=meta>Rama <b>{e(ctx["rama"])}</b> · commit <b>{e(ctx["commit"])}</b> · evento {e(ctx["evento"])} · {e(ctx["fecha"])}<br>{e(ctx["run"])}</div>
-<div class=semaforo>{icono} <b>{e(frase)}</b>. Reporte informativo: no bloquea el merge.</div>
-<table><thead><tr><th>Escaneo</th><th>Herramienta</th><th>Críticos</th><th>Altos</th><th>Medios</th><th>Bajos</th><th>Info</th><th>Estado</th></tr></thead>
+<div class=semaforo><span class=puntaje>{letra(puntaje(total))} · {puntaje(total)}<small>/100</small></span> {icono} <b>{e(frase)}</b>. Reporte informativo: no bloquea el merge.</div>
+<table><thead><tr><th>Escaneo</th><th>Herramienta</th><th>Críticos</th><th>Altos</th><th>Medios</th><th>Bajos</th><th>Info</th><th>Calificación</th><th>Estado</th></tr></thead>
 <tbody>{"".join(filas)}</tbody></table>{nota}
 {"".join(secciones)}
 </body></html>
@@ -530,6 +554,8 @@ def consolidar(entrada: Path, salida: Path) -> None:
         json.dumps(
             {
                 "contexto": ctx,
+                "puntaje": puntaje(total),
+                "letra": letra(puntaje(total)),
                 "semaforo": semaforo(total)[0],
                 "total": total,
                 "escaneos": sorted(corridos),
