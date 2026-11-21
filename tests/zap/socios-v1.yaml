@@ -1,0 +1,57 @@
+# OWASP ZAP sobre la API de socios /v1 (KAN-223, HU-W07): plan del framework de automatización.
+#
+# Importa el contrato OpenAPI que sirve el propio BFF (`/v1/openapi.json`), recorre todas las
+# operaciones con el token de un socio de PRUEBAS (modo prueba: no toca fuentes ni cobra) y hace el
+# escaneo pasivo y un activo acotado. El token llega por las variables que ZAP lee solo:
+# `ZAP_AUTH_HEADER=Authorization` y `ZAP_AUTH_HEADER_VALUE="Bearer <token>"` (las pone
+# `scripts/zap_socios.sh`, que lo pide a `POST /v1/token`). Nada secreto en este archivo.
+#
+# Variables del plan: OBJETIVO (p. ej. http://localhost:8000 o el gateway) y SALIDA (carpeta del informe).
+env:
+  contexts:
+    - name: socios-v1
+      urls:
+        - ${OBJETIVO}/v1/
+      includePaths:
+        - ${OBJETIVO}/v1/.*
+      excludePaths:
+        - ${OBJETIVO}/v1/graphql/.*  # canales de usuarios: no son de esta prueba
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+
+jobs:
+  - type: openapi
+    parameters:
+      apiUrl: ${OBJETIVO}/v1/openapi.json
+      targetUrl: ${OBJETIVO}
+      context: socios-v1
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  - type: activeScan
+    parameters:
+      context: socios-v1
+      maxRuleDurationInMins: 2
+      maxScanDurationInMins: 15
+      # El límite de tasa (KAN-217) cortaría el escaneo con 429: ZAP espera entre peticiones y el
+      # script corre el BFF de la prueba con un tope más alto para PRUEBAS (se declara en el informe).
+      delayInMs: 20
+      threadPerHost: 2
+    policyDefinition:
+      defaultStrength: low
+      defaultThreshold: medium
+
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: ${SALIDA}
+      reportFile: zap-socios-v1.json
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: ${SALIDA}
+      reportFile: zap-socios-v1.html
