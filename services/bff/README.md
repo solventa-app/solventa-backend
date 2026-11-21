@@ -69,6 +69,10 @@ rutas explícitas, nunca como un `Mount("/v1")`.
   `app/socios/scopes.py`). Es una dependencia de FastAPI, así que corre antes de validar el cuerpo: sin el scope, 403
   `PROHIBIDO` sin gastar presupuesto ni llamar a nadie. Sin el claim `scopes`, 401. Una ruta `/v1` nueva sin scope hace
   fallar `test_cada_ruta_v1_con_token_declara_su_scope`.
+- **Límite de tasa (KAN-217, contrato v0.61, `app/socios/limite_tasa.py`):** 20 llamadas por segundo por credencial en
+  PRODUCCION y 5 en PRUEBAS (`LIMITE_SOCIO_RPS_PRODUCCION`, `LIMITE_SOCIO_RPS_PRUEBAS`; 0 lo apaga). Al pasarlo, 429
+  `LIMITE_DE_TASA` con `Retry-After: 1`, antes del scope y del presupuesto. Ventana de 1 s en Redis; sin Redis no
+  se aplica. Las pruebas lo apagan en `tests/conftest.py` salvo `test_socios_limite_tasa.py`.
 - **El socio es un intermediario como el ASESOR** (`rol = SOCIO`): aceptar (con el contacto del titular y la tasa del
   socio, que POLICY congela), código, emitir y reenviar reutilizan `ServicioSuscripcion` y `ServicioFirmaPago`. Un
   socio solo ve lo que vendió (404 si no) y la URL del enlace nunca vuelve en la respuesta.

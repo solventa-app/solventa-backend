@@ -63,6 +63,9 @@ class Configuracion:
     # Orígenes del front web autorizados a renovar la sesión (`ORIGENES_WEB_PERMITIDOS`, separados
     # por coma). Vacío = sin verificación de `Origin` (local); en staging y producción se fija.
     origenes_web: tuple[str, ...] = ()
+    # Límite de tasa por credencial de socio (KAN-217, v0.61): llamadas por segundo; 0 = sin límite.
+    limite_socio_rps_produccion: int = 20
+    limite_socio_rps_pruebas: int = 5
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -117,4 +120,6 @@ class Configuracion:
                 for o in os.getenv("ORIGENES_WEB_PERMITIDOS", "").split(",")
                 if o.strip()
             ),
+            limite_socio_rps_produccion=int(os.getenv("LIMITE_SOCIO_RPS_PRODUCCION", "20")),
+            limite_socio_rps_pruebas=int(os.getenv("LIMITE_SOCIO_RPS_PRUEBAS", "5")),
         )
