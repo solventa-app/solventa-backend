@@ -2258,6 +2258,7 @@ class CodigoErrorAsistencia(Enum):
     TIPO_NO_ATENDIDO = "TIPO_NO_ATENDIDO"
     DATOS_INVALIDOS = "DATOS_INVALIDOS"
     NO_ENCONTRADA = "NO_ENCONTRADA"
+    POLIZA_NO_VALIDA = "POLIZA_NO_VALIDA"  # v0.65
 
 
 @strawberry.enum
@@ -2296,6 +2297,8 @@ class SolicitudAsistenciaInput:
     descripcion: str | None = None
     direccion: str | None = None
     origen_ubicacion: OrigenUbicacion = OrigenUbicacion.GPS
+    # v0.65 (KAN-36): la póliza de auto que eligió el cliente; la valida CLAIMS.
+    poliza_id: strawberry.ID | None = None
 
 
 @strawberry.input
@@ -2323,6 +2326,7 @@ class Asistencia:
     llegada_estimada: datetime | None = None
     descripcion: str | None = None
     ubicacion: "UbicacionAsistencia | None" = None
+    poliza_id: strawberry.ID | None = None  # v0.65
 
 
 @strawberry.type
@@ -2375,6 +2379,7 @@ def _asistencia(datos: dict) -> Asistencia:
             if (u := datos.get("ubicacion"))
             else None
         ),
+        poliza_id=strawberry.ID(datos["poliza_id"]) if datos.get("poliza_id") else None,
     )
 
 
@@ -4490,6 +4495,15 @@ class Mutation:
             "longitud": entrada.longitud,
             "origen_ubicacion": entrada.origen_ubicacion.value,
         }
+        if entrada.poliza_id:
+            solicitud["poliza_id"] = str(entrada.poliza_id)
+            # El HMAC del documento reconoce como suya una póliza que vendió un asesor. Si AUTH no
+            # responde, CLAIMS igual la reconoce si el cliente la firmó o la aceptó.
+            try:
+                identidad = await _auth(info).obtener_identidad(usuario.id)
+            except ErrorServicio:
+                identidad = None
+            solicitud["titular_id"] = (identidad or {}).get("titular_id")
         if (
             entrada.origen_ubicacion == OrigenUbicacion.DIRECCION
             and not (entrada.direccion or "").strip()

@@ -7,11 +7,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.application.asistencias import (
+    MENSAJE_POLIZA_NO_VALIDA,
     ErrorAsistencia,
     RepositorioAsistenciasMongo,
     ServicioAsistencias,
 )
 from app.application.cifrado import CIFRADO_CLAVE_LOCAL, CifradorAesGcm
+from app.application.clientes import ServicioNoDisponible, SolicitudRechazada
 from app.application.configuracion import Configuracion
 from app.main import create_app
 
@@ -176,7 +178,7 @@ def test_la_respuesta_no_devuelve_la_ubicacion_ni_el_cliente():
     respuesta = _servicio().solicitar(_solicitud())
     assert set(respuesta) == {
         "id", "estado", "tipo_asistencia", "prestador", "minutos_estimados", "motivo",
-        "solicitada_en", "cancelada_en", "confirmada_en", "llegada_estimada",
+        "solicitada_en", "cancelada_en", "confirmada_en", "llegada_estimada", "poliza_id",
     }  # fmt: skip
     assert respuesta["prestador"]["nombre"] == "Clínica Norte"
 
@@ -392,3 +394,113 @@ def test_v052_http_mis_y_detalle():
         assert http.get(f"/asistencias/{ID}", params={"cliente_id": "cli-1"}).status_code == 200
         r = http.get(f"/asistencias/{ID}", params={"cliente_id": "otro"})
         assert r.status_code == 404 and r.json()["codigo"] == "NO_ENCONTRADA"
+
+
+# ---------- v0.65 (KAN-36): la póliza de auto que eligió el cliente ----------
+
+POLIZA_AUTO = {
+    "id": "pol-auto",
+    "estado": "EMITIDA",
+    "producto": "AUTO",
+    "vigencia_desde": "2026-10-01T00:00:00+00:00",
+    "vigencia_hasta": "2027-10-01T00:00:00+00:00",
+    "firmante_id": "cli-1",
+    "actor_usuario_id": "cli-1",
+    "cliente_id": "titular-hmac",
+}
+
+
+class PolicyFalsa:
+    def __init__(self, polizas=None, falla=None):
+        self.polizas = polizas if polizas is not None else {"pol-auto": dict(POLIZA_AUTO)}
+        self.falla = falla
+        self.pedidas: list[str] = []
+
+    def obtener_poliza(self, poliza_id):
+        self.pedidas.append(poliza_id)
+        if self.falla:
+            raise self.falla
+        if poliza_id not in self.polizas:
+            raise SolicitudRechazada("404")
+        return self.polizas[poliza_id]
+
+
+def _con_poliza(policy=None, repo=None):
+    return ServicioAsistencias(
+        repo or RepoAsistenciasFalso(),
+        RedFalsa("siempre"),
+        reloj=lambda: AHORA,
+        policy=policy or PolicyFalsa(),
+    )
+
+
+def test_v055_con_su_poliza_de_auto_vigente_se_pide_y_queda_guardada():
+    repo = RepoAsistenciasFalso()
+    servicio = _con_poliza(repo=repo)
+    r = servicio.solicitar(_solicitud(poliza_id="pol-auto"))
+    assert r["estado"] == "CONFIRMADA"
+    assert r["poliza_id"] == "pol-auto"
+    guardada = repo.asistencias[ID]
+    assert guardada["poliza_id"] == "pol-auto" and guardada["poliza_verificada"] is True
+
+
+def test_v055_la_reconoce_por_el_titular_aunque_la_haya_vendido_un_asesor():
+    vendida = {**POLIZA_AUTO, "firmante_id": "asesor-1", "actor_usuario_id": "asesor-1"}
+    servicio = _con_poliza(PolicyFalsa({"pol-auto": vendida}))
+    r = servicio.solicitar(_solicitud(poliza_id="pol-auto", titular_id="titular-hmac"))
+    assert r["poliza_id"] == "pol-auto"
+
+
+@pytest.mark.parametrize(
+    "poliza",
+    [
+        {**POLIZA_AUTO, "producto": "VIDA_DEUDOR"},  # la hipotecaria no cubre asistencia
+        {**POLIZA_AUTO, "firmante_id": "otro", "actor_usuario_id": "otro"},  # ajena
+        {**POLIZA_AUTO, "estado": "CANCELADA"},
+        {**POLIZA_AUTO, "vigencia_hasta": "2026-11-01T00:00:00+00:00"},  # vencida
+        {**POLIZA_AUTO, "vigencia_desde": "2026-12-01T00:00:00+00:00"},  # aún no empieza
+    ],
+)
+def test_v055_una_poliza_que_no_es_suya_de_auto_y_vigente_se_rechaza(poliza):
+    repo = RepoAsistenciasFalso()
+    servicio = _con_poliza(PolicyFalsa({"pol-auto": poliza}), repo=repo)
+    with pytest.raises(ErrorAsistencia) as error:
+        servicio.solicitar(_solicitud(poliza_id="pol-auto"))
+    assert error.value.codigo == "POLIZA_NO_VALIDA"
+    assert str(error.value) == MENSAJE_POLIZA_NO_VALIDA
+    assert repo.asistencias == {}  # no se crea nada
+
+
+def test_v055_una_poliza_inexistente_se_rechaza():
+    with pytest.raises(ErrorAsistencia) as error:
+        _con_poliza().solicitar(_solicitud(poliza_id="no-existe"))
+    assert error.value.codigo == "POLIZA_NO_VALIDA"
+
+
+def test_v055_si_policy_no_responde_la_asistencia_sigue_sin_verificar_la_poliza():
+    repo = RepoAsistenciasFalso()
+    servicio = _con_poliza(PolicyFalsa(falla=ServicioNoDisponible("x")), repo=repo)
+    r = servicio.solicitar(_solicitud(poliza_id="pol-auto"))
+    assert r["estado"] == "CONFIRMADA"
+    assert repo.asistencias[ID]["poliza_verificada"] is False
+
+
+def test_v055_sin_poliza_no_se_consulta_policy_como_las_versiones_anteriores():
+    policy = PolicyFalsa()
+    r = _con_poliza(policy).solicitar(_solicitud())
+    assert r["poliza_id"] is None and policy.pedidas == []
+
+
+def test_v055_http_poliza_no_valida_con_codigo():
+    servicio = _con_poliza(PolicyFalsa({"pol-auto": {**POLIZA_AUTO, "producto": "VIDA_DEUDOR"}}))
+    app = create_app(
+        config=Configuracion(mongo_uri="mongodb://no-se-usa"),
+        servicio=object(),
+        reiniciar=lambda: 0,
+        catalogo=object(),
+        asistencias=servicio,
+    )
+    with TestClient(app) as http:
+        r = http.post("/asistencias", json=_solicitud(poliza_id="pol-auto"))
+    assert r.status_code == 409, r.text
+    assert r.json() == {"detail": MENSAJE_POLIZA_NO_VALIDA, "codigo": "POLIZA_NO_VALIDA"}
