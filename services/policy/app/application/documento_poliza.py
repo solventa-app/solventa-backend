@@ -91,7 +91,7 @@ CLAUSULAS_COMUNES = [
         "El titular puede conocer, actualizar, rectificar y suprimir sus datos.",
     ),
     (
-        "Firma electrónica",
+        "Validez de la firma electrónica",
         "Las partes reconocen la validez de la firma electrónica de este contrato (Ley 527 de 1999 "
         "y Decreto 2364 de 2012). La evidencia de la firma y la huella del documento permiten "
         "verificar que su contenido no cambió.",
