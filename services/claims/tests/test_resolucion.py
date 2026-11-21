@@ -208,3 +208,18 @@ def test_api_dependencia_caida_es_503_con_mensaje():
     with _cliente(payments=PaymentsFalso(falla=ServicioNoDisponible("x"))) as c:
         r = c.post("/siniestros/sin-01/aprobar", json={})
         assert r.status_code == 503 and r.json() == {"detail": MENSAJE_ORDEN_PAGO}
+
+
+def test_la_resolucion_guarda_cuando_paso_a_un_perito_para_la_linea_de_tiempo():
+    """v0.64: el detalle del cliente muestra EN_REVISION aunque el caso ya se resolvió."""
+    servicio, _ = _servicio()
+    assert servicio.obtener("sin-01")["resolucion"] is None
+    derivado = servicio.derivar("sin-01", "per-01", None, "op")
+    assert derivado["resolucion"]["derivada_en"] == AHORA
+    aprobado = servicio.aprobar("sin-01", "op")
+    assert aprobado["resolucion"]["derivada_en"] == AHORA
+
+
+def test_sin_perito_la_resolucion_no_trae_derivada_en():
+    servicio, _ = _servicio()
+    assert servicio.aprobar("sin-01", "op")["resolucion"]["derivada_en"] is None
