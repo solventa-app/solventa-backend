@@ -1,0 +1,6 @@
+# Reglas de Trivy (seguridad.yml, job `iac`) que no aplican a este proyecto. Una por línea, con su motivo.
+# Antes de añadir una, confirma en el reporte que el hallazgo de verdad no aplica; no se ignora para "poner verde".
+
+# DS-0026 "No HEALTHCHECK defined": Cloud Run no usa el HEALTHCHECK de Docker; la salud la revisan sus propias sondas
+# (por defecto, la sonda TCP de arranque del contenedor).
+AVD-DS-0026
