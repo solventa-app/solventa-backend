@@ -43,6 +43,9 @@ class Configuracion:
     gcp_region: str = "us-central1"
     tareas_cola: str = "verificacion-onboarding"
     tareas_cuenta: str = ""
+    # KAN-131: el `max_attempts` de la cola `verificacion-onboarding` (infra/tareas.tf). En el
+    # último intento la verificación cierra en RECHAZADA técnico en vez de responder 503 otra vez.
+    tareas_max_intentos: int = 5
     url_propia: str = ""
     # Rutas completas de los temas (projects/<p>/topics/<t>); vacías = el evento se loguea.
     tema_verificado: str = ""
@@ -84,6 +87,7 @@ class Configuracion:
             gcp_region=os.getenv("GCP_REGION", "us-central1"),
             tareas_cola=os.getenv("TAREAS_COLA", "verificacion-onboarding"),
             tareas_cuenta=os.getenv("TAREAS_CUENTA", ""),
+            tareas_max_intentos=int(os.getenv("TAREAS_MAX_INTENTOS", "5")),
             url_propia=os.getenv("URL_PROPIA", ""),
             tema_verificado=os.getenv("PUBSUB_TEMA_ONBOARDING_VERIFICADO", "").strip(),
             tema_rechazado=os.getenv("PUBSUB_TEMA_ONBOARDING_RECHAZADO", "").strip(),

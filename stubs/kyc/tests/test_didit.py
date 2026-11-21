@@ -100,3 +100,13 @@ def test_sin_llave_403_sin_imagen_400_y_respeta_el_modo_error() -> None:
             == 400
         )
         assert _documento(client, _imagen(), params={"modo": "error"}).status_code == 503
+
+
+def test_sin_rostro_la_prueba_de_vida_responde_422_como_didit() -> None:
+    with TestClient(create_app()) as client:
+        r = client.post(
+            "/v3/passive-liveness/",
+            files={"user_image": ("r.jpg", _imagen("CASO=sin-rostro"))},
+            headers=LLAVE,
+        )
+    assert r.status_code == 422

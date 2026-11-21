@@ -27,7 +27,7 @@ es determinista: `aprobada`, salvo en modo `rechaza`. El consolidador de KYC rea
 
 - `POST /v3/id-verification/`, `/v3/passive-liveness/`, `/v3/face-match/` (multipart) y `GET /` para la sonda. Piden `x-api-key`
   (sin ella `403`); falta una imagen → `400`. Obedecen los mismos modos.
-- Marcadores dentro de los bytes de la imagen: `CASO=ilegible|vencido|menor|suplantacion|rostro-distinto` y `NUMERO=<n>`. Los datos por
+- Marcadores dentro de los bytes de la imagen: `CASO=ilegible|vencido|menor|suplantacion|rostro-distinto|sin-rostro` y `NUMERO=<n>`. Los datos por
   omisión son ficticios (`COL`, número `1000000001`).
 
 ## Modos de falla
