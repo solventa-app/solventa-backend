@@ -175,9 +175,9 @@ def create_app(reloj: Callable[[], datetime] = lambda: datetime.now(UTC)) -> Fas
 
     async def _esperar_respuesta(modo: str) -> None:
         if modo == "lento":
-            await asyncio.sleep(random.uniform(LATENCIA_LENTA_MIN_MS, LATENCIA_LENTA_MAX_MS) / 1000)
+            await asyncio.sleep(random.uniform(LATENCIA_LENTA_MIN_MS, LATENCIA_LENTA_MAX_MS) / 1000)  # nosec B311
         else:
-            await asyncio.sleep(random.uniform(LATENCIA_SANA_MIN_MS, LATENCIA_SANA_MAX_MS) / 1000)
+            await asyncio.sleep(random.uniform(LATENCIA_SANA_MIN_MS, LATENCIA_SANA_MAX_MS) / 1000)  # nosec B311
 
     async def _aplicar_modo(modo: str) -> None:
         await _fallar_si_corresponde(modo)

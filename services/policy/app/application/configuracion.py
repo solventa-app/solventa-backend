@@ -88,7 +88,7 @@ class Configuracion:
                 raise ValueError(f"DISPARADOR=externo exige {', '.join(faltan)}")
         token = os.getenv("TOKEN_RECAUDO_CREDITO", "tok_recaudo_local")
         en_la_nube = bool(os.getenv("K_SERVICE") or os.getenv("CLOUD_RUN_JOB"))
-        if en_la_nube and token == "tok_recaudo_local":
+        if en_la_nube and token == "tok_recaudo_local":  # nosec B105
             raise ValueError("TOKEN_RECAUDO_CREDITO no se ha configurado")
         return cls(
             # Sin valor por defecto: compose y Cloud Run fijan DATABASE_URL completa, y una URL

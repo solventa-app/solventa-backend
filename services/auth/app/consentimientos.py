@@ -156,7 +156,7 @@ class AlmacenConsentimientosPostgres:
                 now() + make_interval(days => %(vigencia_dias)s)
             )
             RETURNING {_COLUMNAS}
-            """,
+            """,  # nosec B608
             {
                 "id": str(uuid.uuid4()),
                 "finalidad": finalidad,
@@ -170,12 +170,14 @@ class AlmacenConsentimientosPostgres:
                 "vigencia_dias": vigencia_dias,
             },
         )
-        assert consentimiento is not None  # INSERT ... RETURNING siempre devuelve la fila
+        # INSERT ... RETURNING siempre devuelve la fila.
+        assert consentimiento is not None  # nosec B101
         return consentimiento
 
     def obtener(self, consentimiento_id: str) -> Consentimiento | None:
         return self._una(
-            f"SELECT {_COLUMNAS} FROM consentimientos WHERE id = %(id)s", {"id": consentimiento_id}
+            f"SELECT {_COLUMNAS} FROM consentimientos WHERE id = %(id)s",  # nosec B608
+            {"id": consentimiento_id},
         )
 
     def revocar(self, consentimiento_id: str) -> Consentimiento | None:
@@ -185,7 +187,7 @@ class AlmacenConsentimientosPostgres:
             UPDATE consentimientos SET revocado_en = now()
             WHERE id = %(id)s AND revocado_en IS NULL
             RETURNING {_COLUMNAS}
-            """,
+            """,  # nosec B608
             {"id": consentimiento_id},
         )
         return revocado if revocado is not None else self.obtener(consentimiento_id)

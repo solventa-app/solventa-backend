@@ -31,7 +31,7 @@ PLATAFORMAS = ("android", "ios")
 
 MOTIVO_NUEVA_SESION = "NUEVA_SESION"
 MOTIVO_CIERRE_SESION = "CIERRE_SESION"
-MOTIVO_TOKEN_INVALIDO = "TOKEN_INVALIDO"
+MOTIVO_TOKEN_INVALIDO = "TOKEN_INVALIDO"  # nosec B105
 MOTIVO_CUENTA_SUSPENDIDA = "CUENTA_SUSPENDIDA"
 
 
@@ -234,7 +234,7 @@ class RepositorioDispositivosPushPostgres:
                 plataforma = %(plat)s, familia_id = %(fam)s, activo = true,
                 desactivado_en = NULL, motivo_desactivacion = NULL
             RETURNING {_TODAS}
-            """,
+            """,  # nosec B608
             {
                 "id": dispositivo_id,
                 "u": usuario_id,
@@ -244,7 +244,7 @@ class RepositorioDispositivosPushPostgres:
                 "a": ahora,
             },
         )
-        assert fila is not None
+        assert fila is not None  # nosec B101
         return fila
 
     def actualizar_token(
@@ -261,7 +261,7 @@ class RepositorioDispositivosPushPostgres:
                 token_actualizado_en = %(a)s
             WHERE usuario_id = %(u)s AND instalacion_id = %(inst)s AND activo
             RETURNING {_TODAS}
-            """,
+            """,  # nosec B608
             {
                 "u": usuario_id,
                 "inst": instalacion_id,
@@ -284,7 +284,7 @@ class RepositorioDispositivosPushPostgres:
 
     def activo_de(self, usuario_id: str) -> dict | None:
         return self._una(
-            f"SELECT {_TODAS} FROM dispositivos_push WHERE usuario_id = %(u)s AND activo",
+            f"SELECT {_TODAS} FROM dispositivos_push WHERE usuario_id = %(u)s AND activo",  # nosec B608
             {"u": usuario_id},
         )
 

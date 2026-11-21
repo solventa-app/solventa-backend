@@ -34,20 +34,22 @@ class RepositorioArchivosPostgres:
                      %(subido_por_id)s, %(consentimiento_id)s, %(tipo_contenido)s,
                      %(tamano_declarado)s, %(objeto)s, %(derivado_de)s)
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 archivo,
             ).fetchone()
 
     def obtener(self, archivo_id: str) -> dict[str, Any] | None:
         with self._pool.connection() as conexion:
             return conexion.execute(
-                f"SELECT {_COLUMNAS} FROM archivos WHERE id = %(id)s", {"id": archivo_id}
+                f"SELECT {_COLUMNAS} FROM archivos WHERE id = %(id)s",  # nosec B608
+                {"id": archivo_id},
             ).fetchone()
 
     def obtener_por_objeto(self, objeto: str) -> dict[str, Any] | None:
         with self._pool.connection() as conexion:
             return conexion.execute(
-                f"SELECT {_COLUMNAS} FROM archivos WHERE objeto = %(objeto)s", {"objeto": objeto}
+                f"SELECT {_COLUMNAS} FROM archivos WHERE objeto = %(objeto)s",  # nosec B608
+                {"objeto": objeto},
             ).fetchone()
 
     def listar_por_propietario(
@@ -59,7 +61,7 @@ class RepositorioArchivosPostgres:
                 SELECT {_COLUMNAS} FROM archivos
                 WHERE propietario_tipo = %(tipo)s AND propietario_id = %(id)s
                 ORDER BY creado_en DESC LIMIT %(limite)s
-                """,
+                """,  # nosec B608
                 {"tipo": propietario_tipo, "id": propietario_id, "limite": limite},
             ).fetchall()
 
@@ -75,7 +77,7 @@ class RepositorioArchivosPostgres:
                     disponible_en = now(), actualizado_en = now()
                 WHERE id = %(id)s AND estado = 'PENDIENTE'
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 {"id": archivo_id, "tamano": tamano_bytes, "crc32c": crc32c},
             ).fetchone()
 
@@ -87,7 +89,7 @@ class RepositorioArchivosPostgres:
                 SET estado = 'RECHAZADO', motivo = %(motivo)s, actualizado_en = now()
                 WHERE id = %(id)s AND estado = 'PENDIENTE'
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 {"id": archivo_id, "motivo": motivo},
             ).fetchone()
 
@@ -101,7 +103,7 @@ class RepositorioArchivosPostgres:
                 SET estado = 'ELIMINADO', eliminado_en = now(), actualizado_en = now()
                 WHERE id = %(id)s AND estado = %(desde)s
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 {"id": archivo_id, "desde": desde},
             ).fetchone()
 
@@ -114,7 +116,7 @@ class RepositorioArchivosPostgres:
                 SET retener_desde = COALESCE(retener_desde, %(desde)s), actualizado_en = now()
                 WHERE id = %(id)s AND estado = 'DISPONIBLE'
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 {"id": archivo_id, "desde": desde},
             ).fetchone()
 
@@ -130,7 +132,7 @@ class RepositorioArchivosPostgres:
                 WHERE a.estado = 'DISPONIBLE' AND a.retener_desde IS NOT NULL
                   AND a.retener_desde + make_interval(days => r.dias) <= %(ahora)s
                 ORDER BY a.retener_desde LIMIT %(limite)s
-                """,
+                """,  # nosec B608
                 {
                     "tipos": list(dias_por_tipo),
                     "dias": list(dias_por_tipo.values()),
@@ -149,7 +151,7 @@ class RepositorioArchivosPostgres:
                 SELECT {_COLUMNAS} FROM archivos
                 WHERE estado = 'PENDIENTE' AND creado_en < %(antes)s
                 ORDER BY creado_en LIMIT %(limite)s
-                """,
+                """,  # nosec B608
                 {"antes": antes, "limite": limite},
             ).fetchall()
 

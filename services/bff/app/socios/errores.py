@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from app.idioma import Idioma, traducir
 
 MENSAJE_CREDENCIALES_INVALIDAS = "Credenciales inválidas."
-MENSAJE_TOKEN_INVALIDO = "Falta el token de acceso o no es válido."
+MENSAJE_TOKEN_INVALIDO = "Falta el token de acceso o no es válido."  # nosec B105
 MENSAJE_SOLO_PRODUCCION = "Esta operación requiere un token de producción."
 MENSAJE_SIN_PERMISO = "El token no tiene permiso para esta operación."
 MENSAJE_NO_ENCONTRADO = "No existe o no pertenece a este socio."

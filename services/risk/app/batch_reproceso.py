@@ -247,7 +247,7 @@ def main() -> int:
         if cliente_redis is not None:
             try:
                 cliente_redis.close()
-            except Exception:
+            except Exception:  # nosec B110
                 pass
 
 

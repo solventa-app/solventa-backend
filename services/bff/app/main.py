@@ -295,7 +295,7 @@ def create_app(
             if verificador is not None and getattr(request.state, "socio", None) is None:
                 try:
                     request.state.socio = await verificador.verificar(request.headers)
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001  # nosec B110
                     pass
             idioma = idioma_de(request.headers.get("accept-language"))
             return respuesta_de_error(datos_invalidos(), idioma)

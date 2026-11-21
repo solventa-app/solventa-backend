@@ -119,7 +119,7 @@ class AlmacenRedis:
         await self._respaldo.guardar(clave, valor)
         try:
             await self._redis.set(clave, json.dumps(valor), ex=TTL_SEGUNDOS)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001  # nosec B110
             pass
 
     async def aclose(self) -> None:

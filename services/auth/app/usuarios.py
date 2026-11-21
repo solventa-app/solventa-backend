@@ -379,7 +379,7 @@ class RepositorioUsuariosPostgres:
                         %(documento_cifrado)s, %(tipo_documento)s, %(pais)s, %(correo_hmac)s)
                 ON CONFLICT (usuario) DO NOTHING
                 RETURNING {_TODAS}
-                """,
+                """,  # nosec B608
                 {
                     "id": usuario_id,
                     "usuario": alias,
@@ -402,7 +402,8 @@ class RepositorioUsuariosPostgres:
 
     def obtener_por_titular(self, titular_id: str) -> dict | None:
         return self._una(
-            f"SELECT {_TODAS} FROM usuarios WHERE titular_id = %(t)s", {"t": titular_id}
+            f"SELECT {_TODAS} FROM usuarios WHERE titular_id = %(t)s",  # nosec B608
+            {"t": titular_id},
         )
 
     def nombres_cifrados(self, ids: list[str]) -> dict[str, str]:
@@ -431,11 +432,12 @@ class RepositorioUsuariosPostgres:
             return {fila["titular_id"]: (fila["id"], fila["nombre_cifrado"]) for fila in filas}
 
     def obtener(self, usuario_id: str) -> dict | None:
-        return self._una(f"SELECT {_TODAS} FROM usuarios WHERE id = %(id)s", {"id": usuario_id})
+        return self._una(f"SELECT {_TODAS} FROM usuarios WHERE id = %(id)s", {"id": usuario_id})  # nosec B608
 
     def obtener_por_alias(self, alias: str) -> dict | None:
         return self._una(
-            f"SELECT {_TODAS} FROM usuarios WHERE usuario = %(usuario)s", {"usuario": alias}
+            f"SELECT {_TODAS} FROM usuarios WHERE usuario = %(usuario)s",  # nosec B608
+            {"usuario": alias},
         )
 
     def listar(self, rol: str | None) -> list[dict]:
@@ -445,7 +447,7 @@ class RepositorioUsuariosPostgres:
                 SELECT {_TODAS} FROM usuarios
                 WHERE %(rol)s::text IS NULL OR rol = %(rol)s
                 ORDER BY creado_en
-                """,
+                """,  # nosec B608
                 {"rol": rol},
             ).fetchall()
             return [dict(fila) for fila in filas]
@@ -455,7 +457,7 @@ class RepositorioUsuariosPostgres:
             f"""
             UPDATE usuarios SET rol = %(rol)s, actualizado_en = now()
             WHERE id = %(id)s RETURNING {_TODAS}
-            """,
+            """,  # nosec B608
             {"id": usuario_id, "rol": rol},
         )
 
@@ -464,7 +466,7 @@ class RepositorioUsuariosPostgres:
             f"""
             UPDATE usuarios SET estado = 'SUSPENDIDO', actualizado_en = now()
             WHERE id = %(id)s RETURNING {_TODAS}
-            """,
+            """,  # nosec B608
             {"id": usuario_id},
         )
 
@@ -477,7 +479,7 @@ class RepositorioUsuariosPostgres:
             UPDATE usuarios SET idioma = %(idioma)s, moneda = %(moneda)s,
                 pais = COALESCE(%(pais)s, pais), actualizado_en = now()
             WHERE id = %(id)s RETURNING {_TODAS}
-            """,
+            """,  # nosec B608
             {"id": usuario_id, "idioma": idioma, "moneda": moneda, "pais": pais},
         )
 
@@ -487,7 +489,7 @@ class RepositorioUsuariosPostgres:
             f"""
             UPDATE usuarios SET notificaciones_push = %(h)s, actualizado_en = now()
             WHERE id = %(id)s RETURNING {_TODAS}
-            """,
+            """,  # nosec B608
             {"id": usuario_id, "h": habilitado},
         )
 
@@ -509,7 +511,7 @@ class RepositorioUsuariosPostgres:
                     correo_hmac = COALESCE(%(hmac)s, correo_hmac),
                     actualizado_en = now()
                 WHERE id = %(id)s RETURNING {_TODAS}
-                """,
+                """,  # nosec B608
                 {
                     "id": usuario_id,
                     "correo": correo_cifrado,
@@ -527,7 +529,7 @@ class RepositorioUsuariosPostgres:
             UPDATE usuarios SET hash_clave = %(hash)s, intentos_fallidos = 0,
                 bloqueado_hasta = NULL, actualizado_en = now()
             WHERE id = %(id)s RETURNING {_TODAS}
-            """,
+            """,  # nosec B608
             {"id": usuario_id, "hash": hash_clave},
         )
 
@@ -567,7 +569,7 @@ class RepositorioUsuariosPostgres:
                     %(correo_cifrado)s, %(correo_hmac)s)
             ON CONFLICT DO NOTHING
             RETURNING {_TODAS}
-            """,
+            """,  # nosec B608
             {
                 "id": usuario_id,
                 "usuario": alias,
@@ -579,7 +581,8 @@ class RepositorioUsuariosPostgres:
 
     def obtener_por_correo_hmac(self, correo_hmac: str) -> dict | None:
         return self._una(
-            f"SELECT {_TODAS} FROM usuarios WHERE correo_hmac = %(h)s", {"h": correo_hmac}
+            f"SELECT {_TODAS} FROM usuarios WHERE correo_hmac = %(h)s",  # nosec B608
+            {"h": correo_hmac},
         )
 
     def cerrar_verificacion(
@@ -609,7 +612,7 @@ class RepositorioUsuariosPostgres:
                 WHERE id = %(id)s
                   AND estado IN ('PENDIENTE_VERIFICACION', 'RECHAZADA', %(estado)s)
                 RETURNING {_TODAS}
-                """,
+                """,  # nosec B608
                 {
                     "id": usuario_id,
                     "estado": estado,

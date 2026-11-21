@@ -98,9 +98,9 @@ def create_app() -> FastAPI:
         if modo == "error":
             raise HTTPException(status_code=503, detail="proveedor_no_disponible")
         if modo == "lento":
-            await asyncio.sleep(random.uniform(LATENCIA_LENTA_MIN_MS, LATENCIA_LENTA_MAX_MS) / 1000)
+            await asyncio.sleep(random.uniform(LATENCIA_LENTA_MIN_MS, LATENCIA_LENTA_MAX_MS) / 1000)  # nosec B311
         else:
-            await asyncio.sleep(random.uniform(LATENCIA_SANA_MIN_MS, LATENCIA_SANA_MAX_MS) / 1000)
+            await asyncio.sleep(random.uniform(LATENCIA_SANA_MIN_MS, LATENCIA_SANA_MAX_MS) / 1000)  # nosec B311
 
     @app.get("/health", tags=["operacion"])
     def health() -> dict[str, str]:

@@ -54,20 +54,20 @@ class RepositorioIndemnizacionesPostgres:
                      %(metodo_transferencia)s)
                 ON CONFLICT (siniestro_id) DO NOTHING
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 {"id": str(uuid.uuid4()), **datos},
             ).fetchone()
             if fila is not None:
                 return fila
             return conexion.execute(
-                f"SELECT {_COLUMNAS} FROM indemnizaciones WHERE siniestro_id = %(siniestro_id)s",
+                f"SELECT {_COLUMNAS} FROM indemnizaciones WHERE siniestro_id = %(siniestro_id)s",  # nosec B608
                 {"siniestro_id": datos["siniestro_id"]},
             ).fetchone()
 
     def obtener(self, indemnizacion_id: str) -> dict[str, Any] | None:
         with self._pool.connection() as conexion:
             return conexion.execute(
-                f"SELECT {_COLUMNAS} FROM indemnizaciones WHERE id = %(id)s",
+                f"SELECT {_COLUMNAS} FROM indemnizaciones WHERE id = %(id)s",  # nosec B608
                 {"id": indemnizacion_id},
             ).fetchone()
 

@@ -45,7 +45,7 @@ class CacheScore:
     def guardar(self, clave: str, valor: dict[str, Any]) -> None:
         try:
             self._almacen.set(clave, json.dumps(valor), ex=self._ttl_segundos)
-        except Exception:
+        except Exception:  # nosec B110
             # Cache-aside: un fallo de Redis nunca debe tumbar la respuesta ya
             # resuelta al llamador (regla de arquitectura #4).
             pass
