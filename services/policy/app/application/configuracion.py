@@ -53,8 +53,10 @@ class Configuracion:
     # hasta cuántos días atrás mira un pago rechazado o pendiente.
     reconciliacion_lote_max: int = 100
     reconciliacion_dias: int = 30
-    # El PDF avisa que la firma y el cobro son simulados. Apagarlo solo con un proveedor real.
-    documento_ambiente_pruebas: bool = True
+    # Aviso opcional en el PDF de que la firma y el cobro son simulados. Apagado por defecto
+    # (pedido de felipe, 2026-11-21): no se muestran textos de simulación al usuario; se
+    # enciende con DOCUMENTO_AMBIENTE_PRUEBAS=true.
+    documento_ambiente_pruebas: bool = False
     # Bloque 9 (W03-19 a W03-37).
     # La imagen de la firma: ALMACENAMIENTO, y la reescritura de las URLs firmadas en local
     # (`http://localhost:4443/=http://fake-gcs:4443/`).
@@ -116,7 +118,7 @@ class Configuracion:
             emision_max_intentos=int(os.getenv("EMISION_MAX_INTENTOS", "12")),
             reconciliacion_lote_max=_entero_positivo("RECONCILIACION_LOTE_MAX", "100"),
             reconciliacion_dias=_entero_positivo("RECONCILIACION_DIAS", "30"),
-            documento_ambiente_pruebas=os.getenv("DOCUMENTO_AMBIENTE_PRUEBAS", "true").lower()
+            documento_ambiente_pruebas=os.getenv("DOCUMENTO_AMBIENTE_PRUEBAS", "false").lower()
             in ("1", "true", "yes", "si"),
             almacenamiento_url=os.getenv("ALMACENAMIENTO_URL", "http://localhost:8009"),
             almacenamiento_timeout_segundos=float(
