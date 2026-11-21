@@ -1,6 +1,8 @@
 # ADR-12 — CMEK en Cloud SQL: deuda consciente y procedimiento para activarlo
 
-- **Estado:** aceptado como deuda consciente (2026-11-20). La activación queda lista para una ventana del equipo.
+- **Estado:** aceptado como deuda consciente (2026-11-20). **Actualizado el 2026-11-21: el equipo decidió activarlo.**
+  `usar_cmek_sql` y `usar_cmek_redis` quedan en `true` en `infra/staging.tfvars` y la liberación que los lleve a `main`
+  se hace en la ventana de [`docs/guia-activar-cmek.md`](../guia-activar-cmek.md), que reemplaza el procedimiento de abajo.
 - **Historia:** HA-SEG-002 (KAN-64), escenario EC022. Pendiente 7 del plan de Felipe del Sprint 2
   (`sprint-2/pendientes-sprint-2-felipe.md` en la carpeta del proyecto).
 
@@ -38,6 +40,8 @@ reemplazo a propósito, y está bien que lo haga: perder `auth`, `payments`, `po
    con `costos-staging.yml`, así que toma la llave en el siguiente encendido sin migrar nada.
 
 ## Procedimiento para activar CMEK en Cloud SQL (30 a 60 min, con staging encendido)
+
+> Versión vigente y más detallada (bucket, `--clean` en la exportación y verificación): [`docs/guia-activar-cmek.md`](../guia-activar-cmek.md).
 
 Lo corre una persona del equipo con permisos sobre el proyecto `solventa-511815`. Ningún paso lo hace el pipeline
 solo.

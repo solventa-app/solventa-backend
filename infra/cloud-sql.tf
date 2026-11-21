@@ -33,8 +33,8 @@ resource "google_sql_database_instance" "principal" {
   # Staging: sin protección de borrado para poder destruir la instancia sin pasos manuales extra.
   deletion_protection = false
 
-  # CMEK del disco (HA-SEG-002): solo se puede fijar al crear la instancia. En staging se activa con
-  # `usar_cmek_sql = true` en una ventana acordada (export/import de `auth`, `payments` y `policy`).
+  # CMEK del disco (HA-SEG-002): solo se puede fijar al crear la instancia. Activarlo reemplaza la instancia, así que
+  # se aplica en la ventana de docs/guia-activar-cmek.md (export/import de las cinco bases).
   encryption_key_name = (var.crear_kms && var.usar_cmek_sql) ? google_kms_crypto_key.campos_personales[0].id : null
 
   settings {

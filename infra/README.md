@@ -373,13 +373,14 @@ openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n' | gcloud secrets versions ad
 
 - **Cloud SQL (`usar_cmek_sql`):** PostgreSQL en Cloud SQL solo acepta `encryption_key_name` **al crear la instancia**.
   Activar `usar_cmek_sql = true` sobre una instancia existente fuerza su reemplazo (que el guardia `scripts/revisar_plan.py`
-  bloquea por seguridad). Por eso la migración a CMEK se hace en un PR propio con ventana acordada con el equipo:
-  1. Exportar las bases `auth`, `payments` y `policy` con `gcloud sql export sql`.
-  2. Mergear `usar_cmek_sql = true` y correr *Deploy staging* con `permitir_destruir = true` para recrear la instancia con CMEK.
-  3. Importar los volcados o correr las migraciones y `scripts/crear_usuarios.py`.
-- **Memorystore Redis (`usar_cmek_redis`):** como Redis es caché efímera y el botón *Costos staging → apagar* la destruye
-  a diario, basta con activar `usar_cmek_redis = true` cuando esté apagada: en el próximo *encender* nace con
-  `customer_managed_key` apuntando a `campos-personales`.
+  bloquea por seguridad). Desde el 2026-11-21 `usar_cmek_sql = true` está en `staging.tfvars`: la liberación que lo lleve
+  a `main` se hace en la ventana de [`docs/guia-activar-cmek.md`](../docs/guia-activar-cmek.md) (exportar las cinco bases,
+  aplicar con `permitir_destruir = true`, importar y verificar). Hasta esa ventana, *Deploy staging* y *Costos staging*
+  quedan bloqueados por el reemplazo. Terraform crea el agente de servicio de Cloud SQL si falta
+  (`google_project_service_identity`) antes de darle permiso sobre la llave.
+- **Memorystore Redis (`usar_cmek_redis = true` desde el 2026-11-21):** como Redis es caché efímera y el botón *Costos
+  staging → apagar* la destruye a diario, en el próximo *encender* nace con `customer_managed_key` apuntando a
+  `campos-personales`. Si está encendida al liberar, la ventana de la guía la reemplaza junto con Cloud SQL.
 - **MongoDB Atlas (`M0`):** se queda en M0 **sin CMEK de disco** (decisión 6 de `docs/plan-completar-hu-w01.md`). En Atlas,
   *Encryption at Rest using Customer Key Management* exige subir el clúster a **M10 (~USD 57/mes)**, casi una quinta parte
   del presupuesto total del equipo. En M0, Atlas cifra el disco por defecto con AES-256 y los campos personales/financieros
