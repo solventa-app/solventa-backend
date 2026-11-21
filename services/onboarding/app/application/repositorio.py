@@ -11,6 +11,10 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
+# KAN-131: RECHAZADA por una falla técnica, no por la persona. No gasta intento, no avisa a AUTH y
+# no cuenta para el tope diario de rechazos. Vive aquí porque lo usan el servicio y la consulta.
+MOTIVOS_TECNICOS = frozenset({"PROVEEDOR_NO_DISPONIBLE", "IMAGEN_NO_DISPONIBLE"})
+
 _COLUMNAS = (
     "id, estado, intento, token_hash, token_vence_en, jurisdiccion, tipo_documento, "
     "consentimiento_id, usuario_id, titular_id, anverso_id, reverso_id, rostro_id, video_id, "
@@ -83,14 +87,16 @@ class RepositorioPostgres:
             ).fetchall()
 
     def contar_rechazadas_desde(self, usuario_id: str, desde: datetime) -> int:
-        """Sesiones RECHAZADAS de la cuenta creadas desde `desde` (tope diario, KAN-31)."""
+        """Sesiones RECHAZADAS de la cuenta creadas desde `desde` (tope diario, KAN-31). No cuentan
+        los rechazos técnicos (KAN-131): una caída del proveedor no le agota el día a nadie."""
         with self._pool.connection() as conexion:
             fila = conexion.execute(
                 """
                 SELECT count(*) AS total FROM sesiones_onboarding
                 WHERE usuario_id = %(u)s AND estado = 'RECHAZADA' AND creado_en >= %(d)s
+                  AND (motivo IS NULL OR NOT (motivo = ANY(%(t)s)))
                 """,
-                {"u": usuario_id, "d": desde},
+                {"u": usuario_id, "d": desde, "t": sorted(MOTIVOS_TECNICOS)},
             ).fetchone()
             return int(fila["total"]) if fila else 0
 

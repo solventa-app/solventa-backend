@@ -92,6 +92,10 @@ class Configuracion:
     # Solo local: `origen=destino` para bajar del emulador las URLs firmadas para el celular.
     identidad_reescrituras: Mapping[str, str] = field(default_factory=dict)
     identidad_cache_ttl_segundos: int = 30 * 24 * 3600
+    # Circuito propio de identidad (KAN-131): Didit cobra y tarda, así que se abre con más fallos
+    # seguidos y se queda abierto más tiempo que el genérico (3 y 5 s).
+    identidad_breaker_umbral: int = 5
+    identidad_breaker_ttl_segundos: float = 30.0
     # Notificaciones al cliente (HU-W03, bloque 5).
     notificaciones_url: str = "http://localhost:8106"
     # "simulado" (`stubs/notificaciones`, local y CI) o "resend" (correo real). Con "resend"
@@ -225,6 +229,8 @@ class Configuracion:
             identidad_cache_ttl_segundos=int(
                 os.getenv("IDENTIDAD_CACHE_TTL_SEGUNDOS", str(30 * 24 * 3600))
             ),
+            identidad_breaker_umbral=int(os.getenv("IDENTIDAD_BREAKER_UMBRAL", "5")),
+            identidad_breaker_ttl_segundos=float(os.getenv("IDENTIDAD_BREAKER_TTL_SEGUNDOS", "30")),
             redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/1"),
             open_finance_url=os.getenv("OPEN_FINANCE_URL", "http://localhost:8101"),
             open_data_url=os.getenv("OPEN_DATA_URL", "http://localhost:8102"),
