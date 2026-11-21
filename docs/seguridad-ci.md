@@ -21,7 +21,7 @@ Para correrlo a mano: **Actions → Seguridad → Run workflow** (elige la rama)
 | Dependencias (SCA) | osv-scanner | los `requirements.txt` de servicios y stubs, `requirements-dev.txt` y `uv.lock` |
 | Código (SAST) | Bandit y Semgrep (`p/python`) | `services/` y `stubs/`, sin las pruebas |
 | Infraestructura y Dockerfiles | Trivy config | `infra/*.tf` y los Dockerfile |
-| Imágenes de contenedor | Trivy | una imagen por servicio de `.github/servicios.json`; las CVE de la imagen base se agrupan |
+| Imágenes de contenedor | Trivy | una imagen por servicio de `.github/servicios.json`; las CVE de la imagen base se agrupan y solo cuentan las que ya tienen versión corregida (`--ignore-unfixed`) |
 | Aplicación desplegada (DAST) | OWASP ZAP baseline (pasivo) | el gateway de staging (`/graphql/web` y `/v1/graphql/app`); si staging está apagado, se omite |
 
 El gateway de staging se toma de la variable del repo `STAGING_GATEWAY_URL` o, si no existe, del valor fijo en el
@@ -69,6 +69,10 @@ Para generarlo en local con resultados ya descargados: `python3 scripts/reporte_
   - `B101`: `assert` de tipo tras un `INSERT ... RETURNING`, que siempre devuelve la fila.
 - **Falso positivo de Semgrep:** `# nosemgrep` en la línea (o la anterior), con el motivo en un comentario aparte:
   Semgrep toma lo que va después de `nosemgrep:` como ids de reglas.
+- **CVE de las imágenes:** casi todas vienen de los paquetes de Debian de la imagen base `python:3.14-slim`, compartida
+  por los 23 Dockerfile. El 2026-11-21 eran 248 (56 altas), de las que solo 38 tenían arreglo (6 altas), y la imagen
+  base ya estaba en su último digest. Por eso Trivy corre con `--ignore-unfixed`: el puntaje refleja lo que se puede
+  corregir (subir el digest de la base cuando Debian publique el parche, o `apt-get upgrade` en el Dockerfile).
 - **Dependencia vulnerable:** se sube la versión en el `requirements.in` del servicio y se recompila
   (`scripts/compilar-requirements.sh`); Dependabot ya abre muchos de estos PR.
 
