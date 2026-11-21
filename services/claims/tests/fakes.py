@@ -142,6 +142,10 @@ class RepositorioFalso:
                     return copy.deepcopy(e)
         return None
 
+    def cifrar_evidencias_legadas(self):
+        self.llamadas_cifrar_legadas = getattr(self, "llamadas_cifrar_legadas", 0) + 1
+        return 0
+
     def guardar_evidencia(self, evidencia):
         lista = self.evidencias_por.setdefault(evidencia["siniestro_id"], [])
         lista[:] = [e for e in lista if e["id"] != evidencia["id"]] + [copy.deepcopy(evidencia)]

@@ -121,6 +121,8 @@ class PuertoRepositorio(Protocol):
 
     def evidencias(self, ids: list[str], primaria: bool = False) -> dict[str, list[dict]]: ...
 
+    def cifrar_evidencias_legadas(self) -> int: ...
+
     def verificaciones(self, ids: list[str], primaria: bool = False) -> dict[str, list[dict]]: ...
 
     def asignaciones(self, ids: list[str], primaria: bool = False) -> dict[str, dict]: ...
@@ -309,6 +311,14 @@ class ServicioSiniestros:
     def _evidencia_reportada(sid: str, orden: int, foto: dict, ahora: datetime) -> dict:
         lat, lon = foto.get("latitud"), foto.get("longitud")
         geo = lat is not None and lon is not None
+        # v0.66: sin GPS, la app manda el punto de la dirección que el cliente escribió y ubicó.
+        de_direccion = foto.get("origen_ubicacion") == "DIRECCION"
+        if not geo:
+            nota = "Sin ubicación: el cliente no dio permiso"
+        elif de_direccion:
+            nota = f"{lat:.4f}, {lon:.4f} · dirección escrita por el cliente (sin GPS)"
+        else:
+            nota = f"{lat:.4f}, {lon:.4f} · tomada en la app"
         return {
             "id": f"{sid}-foto-{orden}",
             "siniestro_id": sid,
@@ -320,9 +330,7 @@ class ServicioSiniestros:
             "geoetiquetada": geo,
             "latitud": float(lat) if geo else None,
             "longitud": float(lon) if geo else None,
-            "nota": f"{lat:.4f}, {lon:.4f} · tomada en la app"
-            if geo
-            else "Sin ubicación: el cliente no dio permiso",
+            "nota": nota,
             "creado_en": ahora,
         }
 
@@ -422,6 +430,11 @@ class ServicioSiniestros:
         logger.info("siniestro=%s rechazado motivo=%s", id_opaco(siniestro_id), motivo)
         self._publicar(evento_rechazado(siniestro, resolucion, actor))
         return self.obtener(siniestro_id, primaria=True)
+
+    def cifrar_evidencias_legadas(self) -> dict[str, int]:
+        """HA-SEG-002: cifra la ubicación de las evidencias guardadas en claro antes del cambio.
+        Se corre una vez por ambiente tras desplegar; es idempotente."""
+        return {"cifradas": self._repo.cifrar_evidencias_legadas()}
 
     def aprobar_vencidos(self) -> dict[str, int]:
         """Una pasada del plazo del dictamen (D-3): cada caso PENDIENTE vencido se aprueba por el

@@ -93,6 +93,24 @@ def test_reporta_con_nombre_y_documento_de_auth_y_llega_pendiente():
     assert enviado["asegurado"] == {"nombre": "Ana Pérez", "documento": "1020304050"}
     assert enviado["cobertura_aplicada"] == RAMO_POLIZA
     assert enviado["evidencias"][1]["latitud"] is None
+    assert enviado["evidencias"][0]["origen_ubicacion"] == "GPS"  # sin el campo (app anterior)
+
+
+def test_sin_gps_la_foto_viaja_con_el_punto_de_la_direccion_escrita():
+    """v0.66: la app manda `origenUbicacion: DIRECCION` y el BFF se lo pasa a CLAIMS."""
+    foto = {
+        "archivoId": "arc-1",
+        "tomadaEn": "2026-11-04T13:05:00+00:00",
+        "latitud": 4.6767,
+        "longitud": -74.0483,
+        "origenUbicacion": "DIRECCION",
+    }
+    client, claims = _montar()
+    with client:
+        r = _post(client, REPORTAR, {"e": entrada(fotos=[foto])})["data"]["reportarSiniestro"]
+    assert r["__typename"] == "SiniestroReportado"
+    evidencia = claims.llamadas[0][1]["evidencias"][0]
+    assert evidencia["origen_ubicacion"] == "DIRECCION" and evidencia["latitud"] == 4.6767
 
 
 def test_reenviar_el_mismo_reporte_devuelve_el_mismo_caso():

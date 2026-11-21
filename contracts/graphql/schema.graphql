@@ -1148,6 +1148,9 @@ input FotoReporteInput {
   # Donde se tomó la foto (GPS del teléfono); null si el cliente no dio permiso: la foto queda sin geoetiqueta.
   latitud: Float = null
   longitud: Float = null
+  # v0.66 (HU-M05, KAN-35): de dónde salen `latitud` y `longitud`. DIRECCION = sin GPS, la app usa el punto de la
+  # dirección que el cliente escribió y ubicó (`ubicarDireccion`). Las versiones de la app ya instaladas no lo mandan.
+  origenUbicacion: OrigenUbicacion! = GPS
 }
 
 # v0.42: qué pasó, en una póliza de AUTO. Decide la cobertura y cómo se calcula la indemnización.
