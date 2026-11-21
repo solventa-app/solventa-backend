@@ -46,6 +46,22 @@ tiempo, y un recorrido que se cae antes de pagar rompe el umbral (`recorridos_si
 declarar (`RITMO_EMISION`, `FACTOR_PICO`; también `CLIENTES_PRUEBA`). Los guiones crean
 CLIENTES con el BACKOFFICE (`USUARIO_BACKOFFICE` / `CLAVE_BACKOFFICE`), así que en staging necesitan esas credenciales.
 
+Guiones de la API de socios `/v1` (HU-W07, KAN-223). Usan `lib/socios.js`: token ES256 de un socio de **PRUEBAS** (modo
+prueba, sin fuentes ni cobro, pero con la reserva real del presupuesto en AUTH), consentimiento y cotización. Las fichas de
+EC015 y EC018 **no están en el repo**: lo que mide cada guion es una interpretación declarada en su cabecera y en el informe.
+
+| Guion | Escenario | Umbral | Qué mide de verdad |
+|---|---|---|---|
+| `ec015-socios-escala.js` | EC015 (interpretación: la API de socios aguanta que crezca el tráfico) | p95 ≤ 700 ms en cada escalón; 0 % 5xx; ≥ 99 % de 200 | `POST /v1/cotizaciones` de `SOCIOS` socios en 4 escalones hasta `RITMO_MAXIMO` por segundo. El autoescalado de Cloud Run solo se ve en staging |
+| `ec018-socios-aislamiento.js` | EC018 (interpretación: un socio que llama de más no degrada a los demás, KAN-217) | Socio normal: 0 % 429, 0 % 5xx, p95 ≤ 700 ms. Abusivo: 0 % 5xx, todo 429 es `LIMITE_DE_TASA` con `Retry-After` | Un socio a `RITMO_ABUSIVO` por segundo y otro a `RITMO_NORMAL`, a la vez; al final, el presupuesto del abusivo contra sus 200 |
+
+Variables: `BFF_URL` (o `GATEWAY_URL`) y, fuera de local, las credenciales `SOCIO_<n>_CLIENT_ID` / `SOCIO_<n>_CLAVE` (las de
+por defecto son las solo locales de los socios `socio-k6-<n>`, que se crean con `python -m app.crear_socio`). EC015 necesita el
+BFF con `LIMITE_SOCIO_RPS_PRUEBAS` por encima del ritmo por socio (o 0); EC018, con el límite encendido.
+
+OWASP ZAP sobre `/v1`: `scripts/zap_socios.sh` con el plan `tests/zap/socios-v1.yaml` (importa `/v1/openapi.json`, escaneo
+pasivo y activo acotado con el token de un socio de PRUEBAS).
+
 Reglas:
 
 ## Cómo correrlos

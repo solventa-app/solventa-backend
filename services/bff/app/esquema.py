@@ -1477,6 +1477,7 @@ MENSAJES_ONBOARDING = {
     "ESTADO_INVALIDO": "Este paso ya no aplica a tu verificación.",
     "PIEZAS_INCOMPLETAS": "Faltan fotos o el video. Complétalos e intenta de nuevo.",
     "SIN_INTENTOS": "Ya no quedan intentos de verificación.",
+    "RECORRIDOS_AGOTADOS": "Hoy ya no puedes intentar la verificación otra vez. Vuelve mañana.",
     "SESION_CON_CUENTA": "Esta verificación ya tiene una cuenta.",
     "CORREO_YA_REGISTRADO": "Ya existe una cuenta con ese correo.",
     "DATO_INVALIDO": "Revisa los datos e intenta de nuevo.",
@@ -1752,6 +1753,63 @@ class SiniestroReportado:
     tipo_siniestro_auto: TipoSiniestroAuto | None = None  # v0.42: solo en pólizas de AUTO
 
 
+@strawberry.type
+class FotoSiniestro:
+    """v0.64: una foto que subió el cliente al reportar."""
+
+    id: strawberry.ID
+    registrada_en: datetime
+    archivo_id: strawberry.Private[str]
+
+    @strawberry.field
+    async def url(self, info: Info) -> str:
+        """URL firmada de lectura pedida **como el CLIENTE que consulta**: el almacenamiento solo
+        firma lo que él mismo subió. Vacía si no está disponible (nunca un error técnico)."""
+        usuario = info.context.get("usuario")
+        try:
+            descarga = await _almacenamiento(info).descarga(
+                usuario.rol, usuario.id, self.archivo_id
+            )
+        except (ErrorServicio, ArchivoRechazado):
+            logger.warning("foto=%s sin URL de lectura", id_opaco(str(self.id)))
+            return ""
+        return descarga["url"]
+
+
+@strawberry.type
+class HitoSiniestro:
+    """v0.64: un paso de la línea de tiempo del caso."""
+
+    estado: EstadoSiniestro
+    en: datetime
+
+
+@strawberry.type
+class DetalleSiniestroCliente:
+    """v0.64 (HU-M05, KAN-35): el detalle de un caso para el CLIENTE que lo reportó (M05-07).
+    Sin datos del operador ni del perito."""
+
+    id: strawberry.ID
+    radicado: str
+    estado: EstadoSiniestro
+    ocurrido_en: datetime
+    notificado_en: datetime
+    vence_dictamen_en: datetime
+    descripcion: str
+    ubicacion: Ubicacion
+    fotos: list[FotoSiniestro]
+    historial: list[HitoSiniestro]
+    aprueba_al_vencer: bool
+    poliza_id: strawberry.Private[str]
+    resolucion: ResolucionCliente | None = None
+    tipo_siniestro_auto: TipoSiniestroAuto | None = None
+
+    @strawberry.field
+    async def poliza(self, info: Info) -> Poliza:
+        """La póliza la escribe POLICY: se pide solo si la consulta la usa."""
+        return _poliza(await _poliza_del_siniestro(info, self.poliza_id))
+
+
 ResultadoReporteSiniestro = Annotated[
     SiniestroReportado | ErrorSiniestro, strawberry.union("ResultadoReporteSiniestro")
 ]
@@ -1854,6 +1912,63 @@ def _siniestro_reportado(datos: dict) -> SiniestroReportado:
         notificado_en=_fecha(datos["notificado_en"]),
         vence_dictamen_en=_fecha(datos["vence_dictamen_en"]),
         fotos=sum(1 for e in datos.get("evidencias", []) if e["tipo"] == "FOTO"),
+        resolucion=_resolucion_cliente(datos.get("resolucion")),
+        tipo_siniestro_auto=_tipo_siniestro_auto(datos.get("tipo_siniestro_auto")),
+    )
+
+
+# KAN-290: en estos tipos el operador digita el valor del daño y CLAIMS no los aprueba
+# solos al vencer.
+TIPOS_AUTO_CON_VALOR_DANO = {"CHOQUE_PARCIAL", "HURTO_PARCIAL", "RESPONSABILIDAD_CIVIL"}
+ESTADO_DE_RESOLUCION = {
+    "APROBACION": EstadoSiniestro.APROBADO,
+    "RECHAZO": EstadoSiniestro.RECHAZADO,
+}
+
+
+def _historial_siniestro(datos: dict) -> list[HitoSiniestro]:
+    """v0.64: PENDIENTE al reportar, EN_REVISION si pasó por un perito y el desenlace."""
+    hitos = [HitoSiniestro(estado=EstadoSiniestro.PENDIENTE, en=_fecha(datos["notificado_en"]))]
+    resolucion = datos.get("resolucion") or {}
+    if resolucion.get("derivada_en"):
+        hitos.append(
+            HitoSiniestro(estado=EstadoSiniestro.EN_REVISION, en=_fecha(resolucion["derivada_en"]))
+        )
+    final = ESTADO_DE_RESOLUCION.get(resolucion.get("tipo", ""))
+    if final is not None:
+        hitos.append(HitoSiniestro(estado=final, en=_fecha(resolucion["resuelta_en"])))
+    return hitos
+
+
+def _detalle_siniestro_cliente(datos: dict) -> DetalleSiniestroCliente:
+    """v0.64: el expediente de CLAIMS recortado a lo que el cliente escribió o subió."""
+    ubicacion = datos["ubicacion"]
+    return DetalleSiniestroCliente(
+        id=strawberry.ID(datos["id"]),
+        radicado=datos["radicado"],
+        estado=EstadoSiniestro(datos["estado"]),
+        ocurrido_en=_fecha(datos["ocurrido_en"]),
+        notificado_en=_fecha(datos["notificado_en"]),
+        vence_dictamen_en=_fecha(datos["vence_dictamen_en"]),
+        descripcion=datos["descripcion"],
+        ubicacion=Ubicacion(
+            descripcion=ubicacion["descripcion"],
+            ciudad=ubicacion["ciudad"],
+            latitud=float(ubicacion["latitud"]),
+            longitud=float(ubicacion["longitud"]),
+        ),
+        fotos=[
+            FotoSiniestro(
+                id=strawberry.ID(e["id"]),
+                registrada_en=_fecha(e["registrada_en"]),
+                archivo_id=e["archivo_id"],
+            )
+            for e in datos.get("evidencias", [])
+            if e["tipo"] == "FOTO"
+        ],
+        historial=_historial_siniestro(datos),
+        aprueba_al_vencer=datos.get("tipo_siniestro_auto") not in TIPOS_AUTO_CON_VALOR_DANO,
+        poliza_id=datos["poliza_id"],
         resolucion=_resolucion_cliente(datos.get("resolucion")),
         tipo_siniestro_auto=_tipo_siniestro_auto(datos.get("tipo_siniestro_auto")),
     )
@@ -2143,6 +2258,7 @@ class CodigoErrorAsistencia(Enum):
     TIPO_NO_ATENDIDO = "TIPO_NO_ATENDIDO"
     DATOS_INVALIDOS = "DATOS_INVALIDOS"
     NO_ENCONTRADA = "NO_ENCONTRADA"
+    POLIZA_NO_VALIDA = "POLIZA_NO_VALIDA"  # v0.65
 
 
 @strawberry.enum
@@ -2181,6 +2297,8 @@ class SolicitudAsistenciaInput:
     descripcion: str | None = None
     direccion: str | None = None
     origen_ubicacion: OrigenUbicacion = OrigenUbicacion.GPS
+    # v0.65 (KAN-36): la póliza de auto que eligió el cliente; la valida CLAIMS.
+    poliza_id: strawberry.ID | None = None
 
 
 @strawberry.input
@@ -2208,6 +2326,7 @@ class Asistencia:
     llegada_estimada: datetime | None = None
     descripcion: str | None = None
     ubicacion: "UbicacionAsistencia | None" = None
+    poliza_id: strawberry.ID | None = None  # v0.65
 
 
 @strawberry.type
@@ -2260,6 +2379,7 @@ def _asistencia(datos: dict) -> Asistencia:
             if (u := datos.get("ubicacion"))
             else None
         ),
+        poliza_id=strawberry.ID(datos["poliza_id"]) if datos.get("poliza_id") else None,
     )
 
 
@@ -2839,6 +2959,19 @@ class Query:
         except ErrorServicio as error:
             raise ErrorPublico(MENSAJE_SINIESTROS) from error
         return [_siniestro_reportado(d) for d in datos]
+
+    @strawberry.field
+    async def mi_siniestro(self, info: Info, id: strawberry.ID) -> DetalleSiniestroCliente | None:
+        """v0.64 (HU-M05, KAN-35): el detalle de un caso del CLIENTE del token. `null` si no
+        existe o no lo reportó él: un caso ajeno se trata igual que uno inexistente."""
+        usuario = exigir_rol(info, *SOLO_CLIENTE, siempre=True)
+        try:
+            datos = await _claims(info).obtener(str(id))
+        except ErrorServicio as error:
+            raise ErrorPublico(MENSAJE_SINIESTROS) from error
+        if datos is None or datos.get("reportado_por") != usuario.id:
+            return None
+        return _detalle_siniestro_cliente(datos)
 
     @strawberry.field
     async def indemnizacion(self, info: Info, id: strawberry.ID) -> Indemnizacion | None:
@@ -4362,6 +4495,15 @@ class Mutation:
             "longitud": entrada.longitud,
             "origen_ubicacion": entrada.origen_ubicacion.value,
         }
+        if entrada.poliza_id:
+            solicitud["poliza_id"] = str(entrada.poliza_id)
+            # El HMAC del documento reconoce como suya una póliza que vendió un asesor. Si AUTH no
+            # responde, CLAIMS igual la reconoce si el cliente la firmó o la aceptó.
+            try:
+                identidad = await _auth(info).obtener_identidad(usuario.id)
+            except ErrorServicio:
+                identidad = None
+            solicitud["titular_id"] = (identidad or {}).get("titular_id")
         if (
             entrada.origen_ubicacion == OrigenUbicacion.DIRECCION
             and not (entrada.direccion or "").strip()

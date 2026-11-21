@@ -16,17 +16,24 @@ token se loguean."""
 import asyncio
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
 from functools import cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from prometheus_client import Counter
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.clientes import CredencialesSocioInvalidas, ErrorServicio, PresupuestoAgotado
+from app.clientes import (
+    CredencialesSocioInvalidas,
+    ErrorServicio,
+    PresupuestoAgotado,
+    SolicitudInvalida,
+)
 from app.esquema import estado_visible, ramo_de
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.idioma import idioma_de, traducir
@@ -41,6 +48,7 @@ from app.servicio_suscripcion import (
     ServicioSuscripcion,
     explicar_estado,
 )
+from app.socios import scopes
 from app.socios.autenticacion import SocioActual
 from app.socios.errores import (
     MENSAJE_CREDENCIALES_INVALIDAS,
@@ -52,10 +60,20 @@ from app.socios.errores import (
     no_disponible,
     no_encontrado,
 )
+from app.socios.idempotencia import CABECERA_REPETIDA, Repetida, ejecutar_idempotente
 
 logger = logging.getLogger("bff.socios")
+# Las consultas de la cuenta no se cuentan en el consumo (`credenciales` incluye la rotación).
+APIS_SIN_CONSUMO = frozenset({"consumo", "estado", "ventas", "credenciales"})
+DEVOLUCION_FALLIDA = Counter(
+    "bff_socios_devolucion_fallida_total",
+    "Cotizaciones que no se hicieron y cuya unidad de presupuesto no se pudo devolver.",
+)
 
 CONTRATO = Path(__file__).resolve().parent.parent / "socios-v1.json"
+# v0.63 (HA-MOD-003, EC033): /v2 convive con /v1 (política en ADR-13).
+CONTRATO_V2 = Path(__file__).resolve().parent.parent / "socios-v2.json"
+VERSIONES = ("/v1/", "/v2/")
 CANAL_SOCIOS = "API"
 SEGUNDOS_PRESUPUESTO = 3600
 
@@ -63,6 +81,11 @@ SEGUNDOS_PRESUPUESTO = 3600
 @cache
 def contrato() -> dict:
     return json.loads(CONTRATO.read_text(encoding="utf-8"))
+
+
+@cache
+def contrato_v2() -> dict:
+    return json.loads(CONTRATO_V2.read_text(encoding="utf-8"))
 
 
 # ---------- Entradas (camelCase del contrato) ----------
@@ -169,6 +192,34 @@ def oferta_rest(datos: dict) -> dict:
         "vehiculo": _vehiculo_rest(datos.get("vehiculo")),
         "coberturas": _coberturas_rest(datos.get("coberturas")),
     }
+
+
+def precio_v2(oferta: dict) -> dict:
+    """v0.63 (/v2): un solo `precio` en lugar de `prima` y `rangoPrima` de /v1."""
+    if oferta.get("prima"):
+        prima = oferta["prima"]
+        return {"tipo": "EXACTO", "valor": prima["valor"], "moneda": prima["moneda"]}
+    rango = oferta["rangoPrima"]
+    return {
+        "tipo": "RANGO",
+        "minima": rango["minima"]["valor"],
+        "maxima": rango["maxima"]["valor"],
+        "moneda": rango["minima"]["moneda"],
+    }
+
+
+def cotizacion_v2(cotizacion: dict) -> dict:
+    """La respuesta de `POST /v1/cotizaciones` con la oferta en la forma de /v2. /v2 es un
+    adaptador sobre /v1: misma regla de negocio, presupuesto y modo prueba."""
+    oferta = cotizacion["oferta"]
+    nueva: dict = {}
+    for clave, valor in oferta.items():
+        if clave in ("prima", "rangoPrima"):
+            continue
+        nueva[clave] = valor
+        if clave == "tipo":
+            nueva["precio"] = precio_v2(oferta)
+    return {**cotizacion, "oferta": nueva}
 
 
 def _vehiculo_rest(datos: dict | None) -> dict | None:
@@ -286,6 +337,49 @@ def _fecha_opcional(valor: str | None) -> str | None:
         raise datos_invalidos() from error
 
 
+# ---------- Token y scopes (HA-SEG-004, EC025) ----------
+
+
+async def socio_de(request: Request, scope: str) -> SocioActual:
+    """Verifica el token y exige el scope de la ruta. `request.state.socio` se asigna antes de
+    exigirlo para que el 403 también quede en el consumo (`main.py`) como ERROR_CLIENTE."""
+    socio = await request.app.state.verificador_socios.verificar(request.headers)
+    request.state.socio = socio
+    antifraude = getattr(request.app.state, "antifraude_socios", None)
+    if antifraude is not None:
+        try:
+            await antifraude.revisar_credencial(socio.id, socio.entorno)
+        except ErrorApiSocio:
+            # Para que el 403 de la suspensión no cuente como un sondeo más (main.py).
+            request.state.suspendida = True
+            raise
+    limite = getattr(request.app.state, "limite_tasa_socios", None)
+    if limite is not None:
+        # KAN-217 (v0.61): antes del scope, el presupuesto o cualquier otro servicio.
+        await limite.revisar(socio.id, socio.entorno)
+    socio.exigir(scope)
+    return socio
+
+
+def requiere(scope: str) -> Callable[[Request], Awaitable[SocioActual]]:
+    """Dependencia de FastAPI: corre antes de validar el cuerpo, así que un token sin el scope
+    recibe 403 sin reservar presupuesto, entrar al modo prueba ni llamar a otro servicio."""
+
+    async def dependencia(request: Request) -> SocioActual:
+        return await socio_de(request, scope)
+
+    return dependencia
+
+
+# Cada ruta `/v1` con token declara su scope con uno de estos tipos (la tabla está en el
+# contrato, `socios-v1.json`, sección «Scopes»). `test_cada_ruta_v1_con_token_declara_su_scope`
+# falla si una ruta nueva no lo hace.
+SocioCotizaciones = Annotated[SocioActual, Depends(requiere(scopes.COTIZACIONES))]
+SocioPropuestas = Annotated[SocioActual, Depends(requiere(scopes.PROPUESTAS))]
+SocioPolizas = Annotated[SocioActual, Depends(requiere(scopes.POLIZAS))]
+SocioCuenta = Annotated[SocioActual, Depends(requiere(scopes.CUENTA))]
+
+
 # ---------- Router ----------
 
 
@@ -293,11 +387,6 @@ def construir_router() -> APIRouter:
     """Las dependencias (clientes, servicios, verificador y modo prueba) se leen de `app.state`,
     que arma el lifespan del BFF."""
     router = APIRouter(tags=["socios"])
-
-    async def socio_de(request: Request) -> SocioActual:
-        socio = await request.app.state.verificador_socios.verificar(request.headers)
-        request.state.socio = socio  # para el registro de consumo (`main.py`)
-        return socio
 
     def estado(request: Request) -> Any:
         return request.app.state
@@ -310,6 +399,50 @@ def construir_router() -> APIRouter:
         if prueba is None:
             raise no_disponible()
         return prueba
+
+    async def _con_presupuesto(
+        request: Request, socio: SocioActual, cotizar: Callable[[], Awaitable[Any]]
+    ) -> tuple[Any, int]:
+        """Reserva una unidad, cotiza y la devuelve si la cotización no se hizo (W07-9): tanto si
+        responde `ErrorOfertaDatos` como si **lanza** o se cancela (KAN-30: antes una excepción
+        se volvía 503 y la unidad quedaba gastada)."""
+        socios = estado(request).clientes.socios
+        try:
+            restantes = await socios.reservar(socio.id, socio.entorno)
+        except PresupuestoAgotado as error:
+            raise ErrorApiSocio(
+                429, "PRESUPUESTO_AGOTADO", MENSAJE_PRESUPUESTO_AGOTADO, False, None,
+                SEGUNDOS_PRESUPUESTO,
+            ) from error  # fmt: skip
+        except ErrorServicio as error:
+            raise no_disponible() from error
+        try:
+            resultado = await cotizar()
+        except BaseException:
+            await _devolver(socios, socio)
+            raise
+        if isinstance(resultado, ErrorOfertaDatos):
+            await _devolver(socios, socio)
+        return resultado, restantes
+
+    async def _idempotente(
+        request: Request, socio: SocioActual, api: str, body: BaseModel, operacion: Any
+    ) -> Any:
+        """`Idempotency-Key` (v0.54): un reintento tras un 504 del gateway recibe la misma
+        respuesta sin reservar presupuesto ni contarse otra vez en el consumo."""
+        resultado = await ejecutar_idempotente(
+            request,
+            getattr(request.app.state, "idempotencia_socios", None),
+            socio.id,
+            socio.entorno,
+            api,
+            body.model_dump(mode="json"),
+            operacion,
+        )
+        if isinstance(resultado, Repetida):
+            request.state.consumo_omitido = True
+            return JSONResponse(resultado.cuerpo, headers={CABECERA_REPETIDA: "true"})
+        return resultado
 
     # ---------- Acceso (públicas) ----------
 
@@ -345,8 +478,9 @@ def construir_router() -> APIRouter:
     # ---------- Consentimiento ----------
 
     @router.post("/v1/consentimientos", status_code=201)
-    async def registrar_consentimiento(body: SolicitudConsentimiento, request: Request) -> dict:
-        socio = await socio_de(request)
+    async def registrar_consentimiento(
+        body: SolicitudConsentimiento, request: Request, socio: SocioCotizaciones
+    ) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).consentimiento(
                 socio, body.finalidad, body.version_texto, body.documento_identidad
@@ -378,8 +512,9 @@ def construir_router() -> APIRouter:
         return datos
 
     @router.post("/v1/consentimientos/{consentimiento_id}/revocar")
-    async def revocar_consentimiento(consentimiento_id: str, request: Request) -> dict:
-        socio = await socio_de(request)
+    async def revocar_consentimiento(
+        consentimiento_id: str, request: Request, socio: SocioCotizaciones
+    ) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).revocar(socio, consentimiento_id)
         await _consentimiento_del_socio(request, socio, consentimiento_id)
@@ -400,8 +535,12 @@ def construir_router() -> APIRouter:
     # ---------- Cotización ----------
 
     @router.post("/v1/cotizaciones")
-    async def cotizar(body: SolicitudCotizacion, request: Request) -> dict:
-        socio = await socio_de(request)
+    async def cotizar(body: SolicitudCotizacion, request: Request, socio: SocioCotizaciones) -> Any:
+        return await _idempotente(
+            request, socio, "cotizaciones", body, lambda: _cotizar(body, request, socio)
+        )
+
+    async def _cotizar(body: SolicitudCotizacion, request: Request, socio: SocioActual) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).cotizar(
                 socio, body.consentimiento_id, body.documento_identidad
@@ -415,29 +554,18 @@ def construir_router() -> APIRouter:
         consentimiento = await _consentimiento_del_socio(request, socio, body.consentimiento_id)
         if not consentimiento.get("vigente"):
             raise ErrorApiSocio(409, "CONSENTIMIENTO_NO_VIGENTE", MENSAJE_SIN_CONSENTIMIENTO)
-        socios = estado(request).clientes.socios
-        try:
-            restantes = await socios.reservar(socio.id, socio.entorno)
-        except PresupuestoAgotado as error:
-            raise ErrorApiSocio(
-                429, "PRESUPUESTO_AGOTADO", MENSAJE_PRESUPUESTO_AGOTADO, False, None,
-                SEGUNDOS_PRESUPUESTO,
-            ) from error  # fmt: skip
-        except ErrorServicio as error:
-            raise no_disponible() from error
-        resultado = await estado(request).servicio_oferta.solicitar(
-            body.consentimiento_id,
-            body.documento_identidad,
-            body.valor_credito,
-            body.plazo_meses,
-            body.direccion_inmueble,
+        resultado, restantes = await _con_presupuesto(
+            request,
+            socio,
+            lambda: estado(request).servicio_oferta.solicitar(
+                body.consentimiento_id,
+                body.documento_identidad,
+                body.valor_credito,
+                body.plazo_meses,
+                body.direccion_inmueble,
+            ),
         )
         if isinstance(resultado, ErrorOfertaDatos):
-            # La cotización no se hizo: la unidad vuelve al presupuesto (W07-9).
-            try:
-                await socios.devolver(socio.id, socio.entorno)
-            except ErrorServicio:
-                logger.warning("no se pudo devolver una cotización socio=%s", id_opaco(socio.id))
             if resultado.motivo == "CONSENTIMIENTO_NO_VIGENTE":
                 raise ErrorApiSocio(409, "CONSENTIMIENTO_NO_VIGENTE", resultado.mensaje)
             if not resultado.puede_reintentar:
@@ -445,12 +573,36 @@ def construir_router() -> APIRouter:
             raise no_disponible()
         return {"oferta": oferta_rest(resultado), "presupuestoRestante": restantes}
 
+    @router.post("/v2/cotizaciones")
+    async def cotizar_v2(
+        body: SolicitudCotizacion, request: Request, socio: SocioCotizaciones
+    ) -> Any:
+        """v0.63 (HA-MOD-003): como `/v1/cotizaciones` con el precio unificado. Su
+        `Idempotency-Key` va aparte de la de /v1 (guarda la respuesta ya en la forma de /v2)."""
+
+        async def operacion() -> dict:
+            return cotizacion_v2(await _cotizar(body, request, socio))
+
+        return await _idempotente(request, socio, "cotizaciones-v2", body, operacion)
+
+    @router.get("/v2/openapi.json")
+    def openapi_v2() -> dict:
+        return contrato_v2()
+
     @router.post("/v1/cotizaciones-auto")
-    async def cotizar_auto(body: SolicitudCotizacionAuto, request: Request) -> dict:
+    async def cotizar_auto(
+        body: SolicitudCotizacionAuto, request: Request, socio: SocioCotizaciones
+    ) -> Any:
         """v0.42 (KAN-290): como `/v1/cotizaciones`, para la póliza de auto. Descuenta
         presupuesto solo si la cotización se hizo: un dato inválido o un vehículo que no se oferta
         lo devuelve."""
-        socio = await socio_de(request)
+        return await _idempotente(
+            request, socio, "cotizaciones-auto", body, lambda: _cotizar_auto(body, request, socio)
+        )
+
+    async def _cotizar_auto(
+        body: SolicitudCotizacionAuto, request: Request, socio: SocioActual
+    ) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).cotizar_auto(
                 socio, body.consentimiento_id, body.documento_identidad, body.placa
@@ -458,30 +610,20 @@ def construir_router() -> APIRouter:
         consentimiento = await _consentimiento_del_socio(request, socio, body.consentimiento_id)
         if not consentimiento.get("vigente"):
             raise ErrorApiSocio(409, "CONSENTIMIENTO_NO_VIGENTE", MENSAJE_SIN_CONSENTIMIENTO)
-        socios = estado(request).clientes.socios
-        try:
-            restantes = await socios.reservar(socio.id, socio.entorno)
-        except PresupuestoAgotado as error:
-            raise ErrorApiSocio(
-                429, "PRESUPUESTO_AGOTADO", MENSAJE_PRESUPUESTO_AGOTADO, False, None,
-                SEGUNDOS_PRESUPUESTO,
-            ) from error  # fmt: skip
-        except ErrorServicio as error:
-            raise no_disponible() from error
-        resultado = await estado(request).servicio_oferta.solicitar_auto(
-            body.consentimiento_id,
-            body.documento_identidad,
-            body.placa,
-            body.kilometraje_anual,
-            body.ciudad_circulacion,
-            body.uso,
-            body.deducible,
+        resultado, restantes = await _con_presupuesto(
+            request,
+            socio,
+            lambda: estado(request).servicio_oferta.solicitar_auto(
+                body.consentimiento_id,
+                body.documento_identidad,
+                body.placa,
+                body.kilometraje_anual,
+                body.ciudad_circulacion,
+                body.uso,
+                body.deducible,
+            ),
         )
         if isinstance(resultado, ErrorOfertaDatos):
-            try:
-                await socios.devolver(socio.id, socio.entorno)
-            except ErrorServicio:
-                logger.warning("no se pudo devolver una cotización socio=%s", id_opaco(socio.id))
             if resultado.motivo == "CONSENTIMIENTO_NO_VIGENTE":
                 raise ErrorApiSocio(409, "CONSENTIMIENTO_NO_VIGENTE", resultado.mensaje)
             if resultado.motivo in ("VEHICULO_NO_ENCONTRADO", "VEHICULO_NO_ASEGURABLE"):
@@ -494,8 +636,9 @@ def construir_router() -> APIRouter:
     # ---------- Propuesta, identidad y emisión ----------
 
     @router.post("/v1/propuestas", status_code=201)
-    async def crear_propuesta(body: SolicitudPropuesta, request: Request) -> dict:
-        socio = await socio_de(request)
+    async def crear_propuesta(
+        body: SolicitudPropuesta, request: Request, socio: SocioPropuestas
+    ) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).aceptar(socio, body.oferta_id, idioma(request))
         clientes = estado(request).clientes
@@ -534,8 +677,9 @@ def construir_router() -> APIRouter:
         return datos
 
     @router.get("/v1/propuestas/{propuesta_id}")
-    async def obtener_propuesta(propuesta_id: str, request: Request) -> dict:
-        socio = await socio_de(request)
+    async def obtener_propuesta(
+        propuesta_id: str, request: Request, socio: SocioPropuestas
+    ) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).propuesta(socio, propuesta_id, idioma(request))
         return propuesta_rest(
@@ -543,8 +687,9 @@ def construir_router() -> APIRouter:
         )
 
     @router.post("/v1/propuestas/{propuesta_id}/codigo")
-    async def enviar_codigo(propuesta_id: str, body: SolicitudCodigo, request: Request) -> dict:
-        socio = await socio_de(request)
+    async def enviar_codigo(
+        propuesta_id: str, body: SolicitudCodigo, request: Request, socio: SocioPropuestas
+    ) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).codigo(socio, propuesta_id)
         datos = await estado(request).servicio_firma_pago.enviar_codigo(
@@ -559,9 +704,8 @@ def construir_router() -> APIRouter:
 
     @router.post("/v1/propuestas/{propuesta_id}/codigo/verificar")
     async def verificar_codigo(
-        propuesta_id: str, body: VerificacionCodigo, request: Request
+        propuesta_id: str, body: VerificacionCodigo, request: Request, socio: SocioPropuestas
     ) -> dict:
-        socio = await socio_de(request)
         if socio.es_prueba:
             return await modo_prueba(request).verificar(
                 socio, propuesta_id, body.codigo, idioma(request)
@@ -574,8 +718,7 @@ def construir_router() -> APIRouter:
         return propuesta_rest(datos, idioma(request))
 
     @router.post("/v1/propuestas/{propuesta_id}/emitir")
-    async def emitir(propuesta_id: str, request: Request) -> dict:
-        socio = await socio_de(request)
+    async def emitir(propuesta_id: str, request: Request, socio: SocioPropuestas) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).emitir(socio, propuesta_id, idioma(request))
         datos = await estado(request).servicio_firma_pago.emitir(socio.como_usuario(), propuesta_id)
@@ -598,8 +741,7 @@ def construir_router() -> APIRouter:
         }
 
     @router.post("/v1/propuestas/{propuesta_id}/reenviar-enlace")
-    async def reenviar_enlace(propuesta_id: str, request: Request) -> dict:
-        socio = await socio_de(request)
+    async def reenviar_enlace(propuesta_id: str, request: Request, socio: SocioPropuestas) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).reenviar(socio, propuesta_id)
         datos = await estado(request).servicio_firma_pago.reenviar_enlace(
@@ -616,8 +758,7 @@ def construir_router() -> APIRouter:
     # ---------- Póliza ----------
 
     @router.get("/v1/polizas/{poliza_id}")
-    async def obtener_poliza(poliza_id: str, request: Request) -> dict:
-        socio = await socio_de(request)
+    async def obtener_poliza(poliza_id: str, request: Request, socio: SocioPolizas) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).poliza(socio, poliza_id)
         try:
@@ -631,8 +772,7 @@ def construir_router() -> APIRouter:
         return poliza_rest(datos)
 
     @router.get("/v1/polizas/{poliza_id}/documento", response_class=Response)
-    async def documento_poliza(poliza_id: str, request: Request) -> Response:
-        socio = await socio_de(request)
+    async def documento_poliza(poliza_id: str, request: Request, socio: SocioPolizas) -> Response:
         if socio.es_prueba:
             numero, pdf = await modo_prueba(request).documento(socio, poliza_id)
         else:
@@ -658,8 +798,7 @@ def construir_router() -> APIRouter:
     # ---------- Cuenta ----------
 
     @router.get("/v1/estado")
-    async def estado_sistema(request: Request, ventana: str = "1h") -> dict:
-        await socio_de(request)
+    async def estado_sistema(request: Request, socio: SocioCuenta, ventana: str = "1h") -> dict:
         salud = getattr(estado(request), "salud", None)
         if salud is None:
             raise no_disponible()
@@ -668,12 +807,15 @@ def construir_router() -> APIRouter:
         return await salud.para_socio(ventana)
 
     @router.get("/v1/consumo")
-    async def consumo(request: Request, desde: str | None = None, hasta: str | None = None) -> dict:
-        socio = await socio_de(request)
+    async def consumo(
+        request: Request, socio: SocioCuenta, desde: str | None = None, hasta: str | None = None
+    ) -> dict:
         try:
             datos = await estado(request).clientes.socios.consumo(
                 socio.id, socio.entorno, _fecha_opcional(desde), _fecha_opcional(hasta)
             )
+        except SolicitudInvalida as error:
+            raise datos_invalidos() from error
         except ErrorServicio as error:
             raise no_disponible() from error
         return {
@@ -694,8 +836,9 @@ def construir_router() -> APIRouter:
         }
 
     @router.get("/v1/ventas")
-    async def ventas(request: Request, desde: str | None = None, hasta: str | None = None) -> dict:
-        socio = await socio_de(request)
+    async def ventas(
+        request: Request, socio: SocioCuenta, desde: str | None = None, hasta: str | None = None
+    ) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).ventas(socio)
         clientes = estado(request).clientes
@@ -717,9 +860,10 @@ def construir_router() -> APIRouter:
         }
 
     @router.post("/v1/conversiones")
-    async def conversiones(cuerpo: SolicitudConversion, request: Request) -> dict:
+    async def conversiones(
+        cuerpo: SolicitudConversion, request: Request, socio: SocioCotizaciones
+    ) -> dict:
         """Solo para mostrar: no cambia lo cobrado ni descuenta presupuesto (KAN-209)."""
-        socio = await socio_de(request)
         if socio.es_prueba:
             tasas = TASAS_PRUEBA
         else:
@@ -740,8 +884,7 @@ def construir_router() -> APIRouter:
         return {"montos": montos}
 
     @router.get("/v1/credenciales")
-    async def credenciales(request: Request) -> dict:
-        socio = await socio_de(request)
+    async def credenciales(request: Request, socio: SocioCuenta) -> dict:
         _solo_produccion(socio)
         socios = estado(request).clientes.socios
         try:
@@ -758,8 +901,7 @@ def construir_router() -> APIRouter:
         }
 
     @router.post("/v1/credenciales/{entorno}/rotar")
-    async def rotar(entorno: str, request: Request) -> dict:
-        socio = await socio_de(request)
+    async def rotar(entorno: str, request: Request, socio: SocioCuenta) -> dict:
         _solo_produccion(socio)
         if entorno not in ("PRODUCCION", "PRUEBAS"):
             raise datos_invalidos()
@@ -767,10 +909,20 @@ def construir_router() -> APIRouter:
             credencial = await estado(request).clientes.socios.rotar(socio.id, entorno)
         except ErrorServicio as error:
             raise no_disponible() from error
-        logger.info("credencial rotada socio=%s entorno=%s", id_opaco(socio.id), entorno)
+        # Se loguea la constante, no el texto de la ruta (inyección en logs).
+        rotado = "PRODUCCION" if entorno == "PRODUCCION" else "PRUEBAS"
+        logger.info("credencial rotada socio=%s entorno=%s", id_opaco(socio.id), rotado)
         return _credencial(credencial)
 
     return router
+
+
+async def _devolver(socios: Any, socio: SocioActual) -> None:
+    try:
+        await socios.devolver(socio.id, socio.entorno)
+    except Exception:  # noqa: BLE001 - la respuesta al socio no cambia; queda en la métrica
+        DEVOLUCION_FALLIDA.inc()
+        logger.warning("no se pudo devolver una cotización socio=%s", id_opaco(socio.id))
 
 
 def _credencial(datos: dict) -> dict:
@@ -783,9 +935,20 @@ def _credencial(datos: dict) -> dict:
 
 
 def es_ruta_de_socios(camino: str) -> bool:
-    return camino.startswith("/v1/") and not camino.startswith("/v1/graphql")
+    return camino.startswith(VERSIONES) and not camino.startswith("/v1/graphql")
+
+
+def cuenta_en_el_consumo(api: str) -> bool:
+    """Las consultas de la cuenta (las que lee el portal al abrirse) no son uso de la API: si
+    contaran, mirar las estadísticas las subiría (KAN-30, contrato v0.55)."""
+    return api not in APIS_SIN_CONSUMO
 
 
 def api_de(camino: str) -> str:
-    """El nombre de la API para el consumo: el primer tramo después de `/v1/`."""
-    return camino.removeprefix("/v1/").split("/", 1)[0] or "raiz"
+    """El nombre de la API para el consumo: el primer tramo después de la versión.
+    `/v2/cotizaciones` cuenta como `cotizaciones`, igual que en /v1: es la misma operación."""
+    for version in VERSIONES:
+        if camino.startswith(version):
+            camino = camino.removeprefix(version)
+            break
+    return camino.split("/", 1)[0] or "raiz"

@@ -4,11 +4,16 @@ Capa simple (regla 3). ONBOARDING es el **único escritor** de su base (regla 1)
 estado son condicionales (`UPDATE ... WHERE estado = ...`): si dos tareas de verificación corren a
 la vez, solo una cierra la sesión. El pool va en `autocommit` (una sentencia = una transacción)."""
 
+from datetime import datetime
 from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
+
+# KAN-131: RECHAZADA por una falla técnica, no por la persona. No gasta intento, no avisa a AUTH y
+# no cuenta para el tope diario de rechazos. Vive aquí porque lo usan el servicio y la consulta.
+MOTIVOS_TECNICOS = frozenset({"PROVEEDOR_NO_DISPONIBLE", "IMAGEN_NO_DISPONIBLE"})
 
 _COLUMNAS = (
     "id, estado, intento, token_hash, token_vence_en, jurisdiccion, tipo_documento, "
@@ -69,6 +74,31 @@ class RepositorioPostgres:
                 """,
                 {"u": usuario_id},
             ).fetchone()
+
+    def abiertas_de_usuario(self, usuario_id: str, excepto: str) -> list[dict[str, Any]]:
+        """Las otras sesiones INICIADO de la cuenta (KAN-31: se invalidan al ligar una nueva)."""
+        with self._pool.connection() as conexion:
+            return conexion.execute(
+                f"""
+                SELECT {_COLUMNAS} FROM sesiones_onboarding
+                WHERE usuario_id = %(u)s AND estado = 'INICIADO' AND id <> %(x)s
+                """,
+                {"u": usuario_id, "x": excepto},
+            ).fetchall()
+
+    def contar_rechazadas_desde(self, usuario_id: str, desde: datetime) -> int:
+        """Sesiones RECHAZADAS de la cuenta creadas desde `desde` (tope diario, KAN-31). No cuentan
+        los rechazos técnicos (KAN-131): una caída del proveedor no le agota el día a nadie."""
+        with self._pool.connection() as conexion:
+            fila = conexion.execute(
+                """
+                SELECT count(*) AS total FROM sesiones_onboarding
+                WHERE usuario_id = %(u)s AND estado = 'RECHAZADA' AND creado_en >= %(d)s
+                  AND (motivo IS NULL OR NOT (motivo = ANY(%(t)s)))
+                """,
+                {"u": usuario_id, "d": desde, "t": sorted(MOTIVOS_TECNICOS)},
+            ).fetchone()
+            return int(fila["total"]) if fila else 0
 
     def actualizar(
         self, sesion_id: str, cambios: dict[str, Any], estados: tuple[str, ...]

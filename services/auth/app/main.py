@@ -439,7 +439,9 @@ def create_app(
             app.state.socios = ServicioSocios(
                 RepositorioSociosPostgres(pool),
                 construir_cifrador(config),
-                FirmadorTokensSocio(config.socios_clave_firma),
+                FirmadorTokensSocio(
+                    config.socios_clave_firma, clave_anterior=config.socios_clave_firma_anterior
+                ),
             )
         try:
             yield

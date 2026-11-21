@@ -511,6 +511,14 @@ class RepositorioCoberturasParametricasFalso:
             ventana_horas=ventana_horas,
         )
 
+    def celdas_clima_vigentes(self) -> list[dict]:
+        celdas = {
+            (round(c["latitud"], 2), round(c["longitud"], 2), c["variable"])
+            for c in self._coberturas.values()
+            if c["tipo"] == "CLIMA" and c["estado"] == "VIGENTE"
+        }
+        return [{"latitud": a, "longitud": o, "variable": v} for a, o, v in sorted(celdas)]
+
     def vigentes_de_vuelo(self, numero_vuelo: str, fecha) -> list[dict]:
         return [
             c

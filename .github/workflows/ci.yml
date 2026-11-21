@@ -66,6 +66,7 @@ jobs:
               - 'services/acl-worker/app/evento.parametrico.recibido.schema.json'
               - 'scripts/sincronizar_socios.py'
               - 'services/bff/app/socios-v1.json'
+              - 'services/bff/app/socios-v2.json'
               - 'services/bff/app/salud.json'
               - 'requirements-dev.txt'
             infra:
@@ -202,11 +203,12 @@ jobs:
             aquasec/trivy:0.56.2 image --severity HIGH,CRITICAL --exit-code 0 "${{ matrix.servicio }}:ci"
 
   cobertura:
-    # Solo en los push a develop y main. Sonar mide el proyecto entero en cada análisis: un servicio sin
+    # En los push a develop y main y en los PRs del propio repo (igual que el móvil: Sonar decora el PR; los de
+    # forks y Dependabot no reciben SONAR_TOKEN). Sonar mide el proyecto entero en cada análisis: un servicio sin
     # informe cuenta como 0 % cubierto, así que se corren las pruebas de TODOS (no solo de los que
     # cambiaron). Las migraciones no entran: se ejercen contra el almacén real en `migraciones`.
     needs: cambios
-    if: github.event_name == 'push'
+    if: (github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -395,12 +397,14 @@ jobs:
             -c 'git config --global --add safe.directory /repo && gitleaks git /repo --no-banner --redact --verbose'
 
   sonar:
-    # Se activa solo cuando el repo tiene los secretos SONAR_TOKEN y SONAR_HOST_URL.
+    # Se activa solo cuando el repo tiene los secretos SONAR_TOKEN y SONAR_HOST_URL. Deja el reporte (quality gate,
+    # métricas y problemas graves) en el resumen del run y como artefacto `reporte-sonar`.
     needs: [servicio, cobertura]
     # Solo con la cobertura lista: si `cobertura` se cancela (un push nuevo cancela la ejecución anterior) o falla, un
     # análisis sin informes publicaría 0 % de cobertura (pasó el 2026-10-19 con tres merges en 41 s).
     if: >-
-      !cancelled() && github.event_name == 'push' && needs.servicio.result != 'failure' &&
+      !cancelled() && (github.event_name == 'push' || (github.event.pull_request.head.repo.full_name ==
+      github.repository && github.actor != 'dependabot[bot]')) && needs.servicio.result != 'failure' &&
       needs.cobertura.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -420,6 +424,16 @@ jobs:
         if: env.SONAR_TOKEN != ''
         env:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      # Quality gate, métricas y problemas graves en el resumen del run y como artefacto (informativo).
+      - name: Reporte de Sonar
+        if: always() && env.SONAR_TOKEN != ''
+        run: python3 scripts/reporte_sonar.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && env.SONAR_TOKEN != ''
+        with:
+          name: reporte-sonar
+          path: reporte-sonar.md
+          if-no-files-found: ignore
 
   ci-ok:
     # Único check requerido por la protección de rama. La matriz de servicios es dinámica y varios jobs se

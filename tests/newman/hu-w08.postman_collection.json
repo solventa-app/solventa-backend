@@ -676,6 +676,305 @@
           ]
         },
         {
+          "name": "2.2a firmaPorEnlace con la sesión del CLIENTE (AUTO)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.firmaPorEnlace;",
+                  "pm.test('vigente, de AUTO y con la versión del documento', () => { pm.expect(r.vigente).to.be.true; pm.expect(r.propuesta.producto).to.eql('AUTO'); });",
+                  "pm.collectionVariables.set('version_abc', r.documento.version);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/graphql/web-suscripcion",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "graphql",
+                "web-suscripcion"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query($p: ID) { firmaPorEnlace(propuestaId: $p) { vigente propuesta { id estado producto } documento { version } } }\",\n  \"variables\": {\n    \"p\": \"{{propuesta_abc}}\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "2.2b firmarPorEnlace NOMBRE -> FIRMADA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.firmarPorEnlace;",
+                  "pm.test('FIRMADA', () => pm.expect(r.estado).to.eql('FIRMADA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/graphql/web-suscripcion",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "graphql",
+                "web-suscripcion"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($e: FirmarPorEnlaceInput!) { firmarPorEnlace(entrada: $e) { __typename ... on FirmaRegistrada { estado } ... on ErrorFirma { mensaje motivo } } }\",\n  \"variables\": {\n    \"e\": {\n      \"propuestaId\": \"{{propuesta_abc}}\",\n      \"versionDocumento\": \"{{version_abc}}\",\n      \"aceptaTerminos\": true,\n      \"autorizaCobro\": true,\n      \"modo\": \"NOMBRE\",\n      \"nombreFirma\": \"Cliente Siniestros Demo\"\n    }\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "2.2c iniciarPago del CLIENTE (AUTO)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.iniciarPago;",
+                  "pm.test('SesionPago', () => pm.expect(r.__typename).to.eql('SesionPago'));",
+                  "pm.collectionVariables.set('sesion_abc', r.sesionId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/graphql/web-suscripcion",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "graphql",
+                "web-suscripcion"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($p: ID) { iniciarPago(propuestaId: $p) { __typename ... on SesionPago { sesionId } ... on ErrorPago { mensaje motivo } } }\",\n  \"variables\": {\n    \"p\": \"{{propuesta_abc}}\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "2.2d el cliente paga en la pasarela (tarjeta aprobada)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('la pasarela recibió el pago', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{stub_pasarela_url}}/checkout/{{sesion_abc}}/pagar",
+              "host": [
+                "{{stub_pasarela_url}}"
+              ],
+              "path": [
+                "checkout",
+                "{{sesion_abc}}",
+                "pagar"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numero\": \"4242424242424242\",\n  \"nombre\": \"Cliente Demo\",\n  \"vencimiento\": \"12/30\",\n  \"cvv\": \"123\",\n  \"tipo\": \"CREDITO\"\n}"
+            }
+          }
+        },
+        {
+          "name": "2.2e confirmarPago -> póliza de AUTO EMITIDA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const r = cuerpo.data.confirmarPago;",
+                  "pm.test('póliza EMITIDA de AUTO con su vehículo', () => { pm.expect(r.estado).to.eql('EMITIDA'); pm.expect(r.producto).to.eql('AUTO'); pm.expect(r.vehiculo.placaEnmascarada).to.match(/^ABC/); });",
+                  "pm.collectionVariables.set('poliza_abc', r.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/graphql/web-suscripcion",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "graphql",
+                "web-suscripcion"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation($s: ID!, $p: ID) { confirmarPago(sesionId: $s, propuestaId: $p) { __typename ... on Poliza { id numero estado producto vehiculo { placaEnmascarada } } ... on ErrorPago { mensaje motivo } } }\",\n  \"variables\": {\n    \"s\": \"{{sesion_abc}}\",\n    \"p\": \"{{propuesta_abc}}\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "2.2f «Mis pólizas» del CLIENTE: la de AUTO EMITIDA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
+                  "const cuerpo = pm.response.json();",
+                  "const p = cuerpo.data.propuestas.propuestas.find(x => x.id === pm.collectionVariables.get('propuesta_abc'));",
+                  "pm.test('EMITIDA con su póliza de AUTO', () => { pm.expect(p.estadoVisible).to.eql('EMITIDA'); pm.expect(p.poliza.producto).to.eql('AUTO'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/graphql/web-suscripcion",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "graphql",
+                "web-suscripcion"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query { propuestas { propuestas { id estadoVisible producto poliza { id producto } } } }\",\n  \"variables\": {}\n}"
+            }
+          }
+        },
+        {
           "name": "2.3 JKL012 con 3 siniestros: oferta",
           "request": {
             "method": "POST",
@@ -1102,7 +1401,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"{ propuestas(pagina: 1, tamano: 50) { propuestas { producto poliza { id ramo producto } } } }\",\n  \"variables\": {}\n}"
+              "raw": "{\n  \"query\": \"{ propuestas(pagina: 1, tamano: 50) { propuestas { producto poliza { id ramo producto vigenciaDesde vigenciaHasta } } } }\",\n  \"variables\": {}\n}"
             }
           },
           "event": [
@@ -1122,7 +1421,7 @@
                 "exec": [
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const cuerpo = pm.response.json();",
-                  "const auto = cuerpo.data.propuestas.propuestas.find(p => p.producto === 'AUTO' && p.poliza);",
+                  "// La que cubre la fecha del siniestro: la de la semilla (2.2e emite otra que empieza hoy).\nconst ocurrido = new Date(pm.collectionVariables.get('ocurrido_en'));\nconst auto = cuerpo.data.propuestas.propuestas.find(p => p.producto === 'AUTO' && p.poliza && new Date(p.poliza.vigenciaDesde) <= ocurrido && ocurrido <= new Date(p.poliza.vigenciaHasta));",
                   "pm.test('Tiene una póliza de auto emitida', () => pm.expect(auto).to.not.eql(undefined));",
                   "pm.collectionVariables.set('poliza_auto', auto.poliza.id);",
                   "pm.test('Ramo por producto', () => pm.expect(auto.poliza.ramo).to.eql('Automóviles todo riesgo'));"

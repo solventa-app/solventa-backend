@@ -108,7 +108,8 @@ def test_crear_sesion_devuelve_la_url_de_la_pagina_y_vence_a_los_10_min(client) 
 
 
 def test_la_misma_referencia_devuelve_la_misma_sesion(client) -> None:
-    assert _sesion(client)["sesion_id"] == _sesion(client)["sesion_id"]
+    primera, segunda = _sesion(client), _sesion(client)
+    assert primera["sesion_id"] == segunda["sesion_id"]
     assert _sesion(client, "int-2")["sesion_id"] != _sesion(client)["sesion_id"]
 
 

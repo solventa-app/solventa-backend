@@ -24,6 +24,8 @@ from pymongo import MongoClient
 
 from app.application.catalogo_prestadores import prestador_desde_documento
 from app.application.cifrado import CifradorCampos
+from app.application.clientes import ServicioNoDisponible, SolicitudRechazada
+from app.application.servicio_siniestros import poliza_es_del_cliente
 
 logger = logging.getLogger("claims.asistencias")
 
@@ -43,6 +45,7 @@ MENSAJE_DIRECCION_LARGA = f"La dirección no puede pasar de {MAX_DIRECCION} cara
 MENSAJE_DIRECCION_REQUERIDA = "Escribe la dirección a la que debe llegar el prestador."
 MENSAJE_SOLICITUD_AJENA = "Esta solicitud ya existe. Vuelve a intentarlo desde el mapa."
 MENSAJE_NO_ENCONTRADA = "No encontramos esa asistencia."
+MENSAJE_POLIZA_NO_VALIDA = "Elige una póliza de vehículo vigente para pedir la asistencia."
 
 
 class ErrorAsistencia(Exception):
@@ -59,6 +62,13 @@ class RedPrestadores(Protocol):
     no responde."""
 
     def solicitar(self, pedido: dict) -> dict: ...
+
+
+class PolicyPolizas(Protocol):
+    """POLICY, para validar la póliza de la asistencia (v0.65). Lanza `SolicitudRechazada` si no
+    existe y `ServicioNoDisponible` si no responde."""
+
+    def obtener_poliza(self, poliza_id: str) -> dict: ...
 
 
 class RepositorioAsistencias(Protocol):
@@ -145,6 +155,7 @@ def _publica(asistencia: dict) -> dict:
         "cancelada_en": asistencia.get("cancelada_en"),
         "confirmada_en": asistencia.get("confirmada_en"),
         "llegada_estimada": asistencia.get("llegada_estimada"),
+        "poliza_id": asistencia.get("poliza_id"),
     }
 
 
@@ -188,10 +199,43 @@ class ServicioAsistencias:
         repositorio: RepositorioAsistencias,
         red: RedPrestadores,
         reloj: Callable[[], datetime] = lambda: datetime.now(UTC),
+        policy: PolicyPolizas | None = None,
     ) -> None:
         self._repo = repositorio
         self._red = red
         self._reloj = reloj
+        self._policy = policy
+
+    def _verificar_poliza(self, solicitud: dict) -> bool:
+        """v0.65: la póliza que eligió el cliente debe ser suya, de AUTO, EMITIDA y vigente hoy.
+        Devuelve si quedó verificada. Si POLICY no responde, la asistencia sigue (es una urgencia,
+        regla #4) y la póliza queda sin verificar."""
+        if self._policy is None:
+            return False
+        try:
+            poliza = self._policy.obtener_poliza(solicitud["poliza_id"])
+        except SolicitudRechazada as error:
+            raise ErrorAsistencia("POLIZA_NO_VALIDA", MENSAJE_POLIZA_NO_VALIDA) from error
+        except ServicioNoDisponible:
+            logger.warning("POLICY no respondió: la póliza de la asistencia queda sin verificar")
+            return False
+        ahora = self._reloj()
+        try:
+            desde, hasta = (
+                _al(datetime.fromisoformat(str(poliza[k])))
+                for k in ("vigencia_desde", "vigencia_hasta")
+            )
+        except (KeyError, ValueError) as error:
+            raise ErrorAsistencia("POLIZA_NO_VALIDA", MENSAJE_POLIZA_NO_VALIDA) from error
+        valida = (
+            poliza_es_del_cliente(poliza, solicitud["cliente_id"], solicitud.get("titular_id"))
+            and poliza.get("estado") == "EMITIDA"
+            and poliza.get("producto") == "AUTO"
+            and desde <= ahora <= hasta
+        )
+        if not valida:
+            raise ErrorAsistencia("POLIZA_NO_VALIDA", MENSAJE_POLIZA_NO_VALIDA)
+        return True
 
     def _desenlace(self, asistencia: dict, intento: int) -> dict:
         """Lo decide la red de prestadores por el ACL. Si no responde, NO_CONFIRMADA (regla 4).
@@ -263,6 +307,8 @@ class ServicioAsistencias:
             raise ErrorAsistencia("PRESTADOR_NO_DISPONIBLE", MENSAJE_PRESTADOR_NO_DISPONIBLE)
         if prestador["tipo"] != solicitud["tipo_asistencia"]:
             raise ErrorAsistencia("TIPO_NO_ATENDIDO", MENSAJE_TIPO_NO_ATENDIDO)
+        poliza_id = solicitud.get("poliza_id")
+        poliza_verificada = self._verificar_poliza(solicitud) if poliza_id else False
 
         ahora = self._reloj()
         asistencia = {
@@ -280,6 +326,9 @@ class ServicioAsistencias:
             "intentos": 1,
             "solicitada_en": ahora,
             "actualizada_en": ahora,
+            # v0.65: id opaco de POLICY (no es dato personal) y si se pudo verificar.
+            "poliza_id": poliza_id,
+            "poliza_verificada": poliza_verificada,
         }
         asistencia.update(self._desenlace(asistencia, 1))
         self._repo.crear(asistencia)

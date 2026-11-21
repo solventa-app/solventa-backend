@@ -41,6 +41,105 @@ CONDICIONES = {
         "cobro recurrente de la prima. La póliza se emite cuando se confirme el primer pago."
     ),
 }
+# Condiciones generales del contrato (borrador y firmado): texto de un contrato de seguro
+# colombiano con las normas que lo rigen (Código de Comercio, Ley 527 de 1999, Ley 1581 de
+# 2012). Es la base del producto del proyecto, no un clausulado registrado ante la
+# Superintendencia Financiera.
+CLAUSULAS_COMUNES = [
+    (
+        "Declaración del estado del riesgo",
+        "El tomador declara que la información entregada para cotizar es veraz y completa. La "
+        "reticencia o inexactitud sobre hechos que, conocidos por la aseguradora, la hubieran "
+        "retraído de celebrar el contrato o la hubieran llevado a estipular condiciones más "
+        "onerosas, produce su nulidad relativa (artículo 1058 del Código de Comercio).",
+    ),
+    (
+        "Prima y forma de pago",
+        "La prima se paga mensualmente en la forma indicada en este documento. La mora en el pago "
+        "de la prima o de los certificados que se expidan con fundamento en ella produce la "
+        "terminación automática del contrato (artículo 1068 del Código de Comercio). La póliza se "
+        "emite cuando se confirma el primer pago.",
+    ),
+    (
+        "Vigencia y renovación",
+        "La vigencia es la que figura en la póliza. Se renueva por períodos iguales si ninguna de "
+        "las partes manifiesta lo contrario y la prima se encuentra al día.",
+    ),
+    (
+        "Aviso del siniestro",
+        "El asegurado debe dar aviso del siniestro dentro de los tres (3) días hábiles "
+        "siguientes a la fecha en que lo haya conocido o debido conocer (artículo 1075 del "
+        "Código de Comercio), por la aplicación o la página web de Solventa, con los soportes "
+        "que se le soliciten.",
+    ),
+    (
+        "Pago de la indemnización",
+        "La aseguradora paga la indemnización dentro del mes siguiente a la fecha en que el "
+        "asegurado o beneficiario acredite la ocurrencia y la cuantía de la pérdida (artículo 1080 "
+        "del Código de Comercio).",
+    ),
+    (
+        "Revocación",
+        "El tomador puede revocar el contrato en cualquier momento mediante aviso escrito; la "
+        "aseguradora, con aviso escrito enviado con no menos de diez (10) días hábiles de "
+        "antelación (artículo 1071 del Código de Comercio). La prima no devengada se devuelve.",
+    ),
+    (
+        "Tratamiento de datos personales",
+        "Los datos personales se tratan conforme a la Ley 1581 de 2012 y la autorización otorgada "
+        "por el titular, solo para cotizar, emitir, administrar el seguro y atender siniestros. "
+        "El titular puede conocer, actualizar, rectificar y suprimir sus datos.",
+    ),
+    (
+        "Validez de la firma electrónica",
+        "Las partes reconocen la validez de la firma electrónica de este contrato (Ley 527 de 1999 "
+        "y Decreto 2364 de 2012). La evidencia de la firma y la huella del documento permiten "
+        "verificar que su contenido no cambió.",
+    ),
+    (
+        "Defensor del consumidor financiero",
+        "El asegurado puede presentar quejas ante el defensor del consumidor financiero o ante la "
+        "Superintendencia Financiera de Colombia.",
+    ),
+]
+CLAUSULAS_PRODUCTO = {
+    "VIDA_DEUDOR": [
+        (
+            "Objeto del seguro",
+            "Ampara el saldo insoluto del crédito hipotecario en caso de muerte o incapacidad "
+            "total y permanente del deudor asegurado. El beneficiario a título oneroso es la "
+            "entidad acreedora, hasta el saldo de la deuda; el excedente, si lo hay, es de los "
+            "beneficiarios que designe el asegurado.",
+        ),
+        (
+            "Exclusiones",
+            "No hay cobertura por suicidio o tentativa durante el primer año de vigencia, por "
+            "enfermedades preexistentes no declaradas, ni por actos de guerra o participación en "
+            "actos delictivos del asegurado.",
+        ),
+    ],
+    "AUTO": [
+        (
+            "Objeto del seguro",
+            "Ampara el vehículo descrito contra pérdida total o parcial por daños y por hurto, y "
+            "la responsabilidad civil extracontractual del conductor autorizado, hasta los valores "
+            "asegurados y con los deducibles de esta póliza. Incluye asistencia en carretera.",
+        ),
+        (
+            "Exclusiones",
+            "No hay cobertura si el conductor no tiene licencia vigente, conduce bajo el efecto "
+            "del alcohol o de sustancias psicoactivas, si el vehículo se usa para un fin "
+            "distinto al declarado, ni por daños mecánicos o eléctricos que no provengan de un "
+            "accidente.",
+        ),
+        (
+            "Cobertura paramétrica de clima",
+            "La póliza incluye una cobertura paramétrica en la ciudad de circulación: si la fuente "
+            "oficial de clima registra un evento que supera el umbral pactado, la indemnización se "
+            "liquida sin necesidad de reclamación.",
+        ),
+    ],
+}
 NOMBRE_COBERTURA = {
     "RESPONSABILIDAD_CIVIL": "Responsabilidad civil extracontractual",
     "PERDIDA_TOTAL_DANOS": "Pérdida total por daños",
@@ -98,6 +197,14 @@ class _Documento(FPDF):
         self.cell(0, 9, _latin1(titulo or f"Póliza No. {numero}"), new_x="LMARGIN", new_y="NEXT")
         self.ln(2)
 
+    def footer(self) -> None:
+        """Pie de cada página: quién emite y el número de página, como un contrato real."""
+        self.set_y(-12)
+        self.set_font("Helvetica", "", 8)
+        self.set_text_color(120, 120, 120)
+        self.cell(0, 5, _latin1(f"Solventa · Página {self.page_no()} de {{nb}}"), align="C")
+        self.set_text_color(0, 0, 0)
+
     def firma(self, imagen: bytes | None, texto: str | None) -> None:
         """La firma del titular estampada (W03-24): la imagen (trazo o cargada) o su nombre con una
         letra cursiva. Sin ninguna, el documento conserva solo el sello de la evidencia."""
@@ -120,6 +227,22 @@ class _Documento(FPDF):
             self.set_font("Helvetica", "", 10)
             self.multi_cell(0, 6, _latin1(valor), new_x="LMARGIN", new_y="NEXT")
         self.ln(3)
+
+
+def _condiciones_generales(pdf: _Documento, producto: str) -> None:
+    """Las cláusulas numeradas del contrato: primero las del producto, luego las comunes."""
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_fill_color(235, 240, 246)
+    pdf.cell(0, 7, "Condiciones generales", new_x="LMARGIN", new_y="NEXT", fill=True)
+    pdf.ln(1)
+    clausulas = CLAUSULAS_PRODUCTO.get(producto, CLAUSULAS_PRODUCTO["VIDA_DEUDOR"])
+    for i, (titulo, texto) in enumerate([*clausulas, *CLAUSULAS_COMUNES], start=1):
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.multi_cell(0, 5, _latin1(f"{i}. {titulo}"), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 9)
+        pdf.multi_cell(0, 4.5, _latin1(texto), new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1.5)
+    pdf.ln(2)
 
 
 def _secciones_del_producto(pdf: _Documento, propuesta: dict[str, Any]) -> None:
@@ -252,6 +375,8 @@ def generar_borrador(propuesta: dict[str, Any], ambiente_pruebas: bool = True) -
         new_x="LMARGIN",
         new_y="NEXT",
     )
+    pdf.ln(3)
+    _condiciones_generales(pdf, producto)
     if ambiente_pruebas:
         pdf.ln(3)
         pdf.set_text_color(160, 0, 0)
@@ -299,6 +424,8 @@ def generar_contrato_firmado(
         new_x="LMARGIN",
         new_y="NEXT",
     )
+    pdf.ln(3)
+    _condiciones_generales(pdf, producto)
     pdf.ln(3)
     pdf.seccion(
         "Firma electrónica",

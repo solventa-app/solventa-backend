@@ -51,5 +51,12 @@
       "CAMIONETA": "140000000",
       "MOTOCICLETA": "12000000"
     }
+  },
+  "parametrica_clima": {
+    "descripcion": "HU-M04 + HU-W08: toda póliza de auto incluye una cobertura paramétrica de clima en la ciudad de circulación, sin cambiar la prima. Si la lluvia acumulada en la ventana supera el umbral, CLAIMS paga el monto fijo sin reclamo. POLICY la crea al emitir.",
+    "variable": "PRECIPITACION_MM",
+    "umbral": "40",
+    "ventana_horas": 24,
+    "monto": "500000"
   }
 }

@@ -1,0 +1,643 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Solventa · API de socios de distribución (v2)",
+    "version": "2.0.0",
+    "description": "Segunda versión de la API de socios (HA-MOD-003, EC033, KAN-69). Contrato v0.63 (`contracts/CHANGELOG.md`). Política de versiones: `docs/adr/ADR-13-versionado-api-socios.md`.\n\n## Qué cambia frente a /v1\n\nSolo `POST /v2/cotizaciones`. La oferta trae **un solo campo `precio`** en lugar de `prima` y `rangoPrima`: `{\"tipo\":\"EXACTO\",\"valor\",\"moneda\"}` en una oferta COMPLETA y `{\"tipo\":\"RANGO\",\"minima\",\"maxima\",\"moneda\"}` en una PRELIMINAR. El cuerpo de la solicitud, los errores, el token, el scope (`cotizaciones`), la `Idempotency-Key` y el presupuesto son los mismos de /v1; una cotización por /v2 descuenta presupuesto igual y cuenta en el consumo como `cotizaciones`.\n\n## Convivencia\n\n/v1 sigue igual y sin fecha de retiro. Todo lo demás (token, consentimientos, propuestas, pólizas y cuenta) se sigue llamando por /v1. La `Idempotency-Key` de /v2 es independiente de la de /v1: la misma clave en las dos versiones son dos solicitudes distintas."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "API Gateway de socios"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/v2/openapi.json": {
+      "get": {
+        "operationId": "openapiV2",
+        "summary": "Este contrato",
+        "tags": [
+          "Acceso"
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "security": []
+      }
+    },
+    "/v2/cotizaciones": {
+      "post": {
+        "operationId": "cotizarV2",
+        "summary": "Cotiza la póliza con el precio unificado (descuenta presupuesto)",
+        "tags": [
+          "Cotización"
+        ],
+        "responses": {
+          "200": {
+            "description": "Oferta COMPLETA o PRELIMINAR.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CotizacionV2"
+                }
+              }
+            },
+            "headers": {
+              "Idempotent-Replayed": {
+                "description": "`true` cuando es la respuesta guardada de una `Idempotency-Key` ya usada (v0.54).",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "true"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "422": {
+            "description": "Datos inválidos (`DATOS_INVALIDOS`), o la `Idempotency-Key` ya se usó con otro cuerpo (`IDEMPOTENCIA_EN_CONFLICTO`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Sin consentimiento vigente (`CONSENTIMIENTO_NO_VIGENTE`), o la misma `Idempotency-Key` sigue en curso (`SOLICITUD_EN_CURSO`, con `Retry-After`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Presupuesto agotado (`PRESUPUESTO_AGOTADO`), o pasó el límite de llamadas por segundo (`LIMITE_DE_TASA`, `Retry-After: 1`).",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorPublico"
+                }
+              }
+            }
+          }
+        },
+        "description": "Igual que `POST /v1/cotizaciones` (mismo cuerpo, errores, scope y presupuesto); solo cambia la forma de la oferta. Única operación que descuenta presupuesto (W07-9). Si las fuentes fallan, la oferta es PRELIMINAR (no es un error). Con un token de PRUEBAS responde el modo prueba: datos simulados, sin consultar fuentes ni cobrar.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SolicitudCotizacion"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": [
+              "cotizaciones"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT ES256 de `POST /v1/token`. Los scopes que pide cada operación van en su `security` (OpenAPI 3.1 los admite en un esquema `http bearer`)."
+      }
+    },
+    "parameters": {
+      "AcceptLanguage": {
+        "name": "Accept-Language",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "es",
+            "en"
+          ],
+          "default": "es"
+        }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "description": "Opcional (v0.54). Un valor único por cotización (p. ej. un UUID), de 1 a 255 caracteres visibles. Si el socio reintenta con la misma clave (p. ej. tras un 504 del gateway), recibe la misma respuesta con `Idempotent-Replayed: true`, sin descontar presupuesto ni contar otra llamada en el consumo. Vale 24 horas, por socio, entorno y operación. Mientras la primera sigue en curso responde 409 `SOLICITUD_EN_CURSO`; con otro cuerpo, 422 `IDEMPOTENCIA_EN_CONFLICTO`. Si la cotización falla, la clave se libera y se puede reintentar con ella.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        }
+      }
+    },
+    "responses": {
+      "NoAutenticado": {
+        "description": "Sin token o token inválido (`TOKEN_INVALIDO`).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorPublico"
+            }
+          }
+        }
+      },
+      "NoDisponible": {
+        "description": "Falla interna controlada (`SERVICIO_NO_DISPONIBLE`), con `Retry-After`.",
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorPublico"
+            }
+          }
+        }
+      },
+      "SinPermiso": {
+        "description": "El token es válido pero no trae el scope de esta operación (`PROHIBIDO`), o la credencial está suspendida por el antifraude (`CREDENCIAL_SUSPENDIDA`, con `Retry-After`). Sale antes de descontar presupuesto, entrar al modo prueba o llamar a otro servicio, y cuenta en `/v1/consumo` como error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorPublico"
+            }
+          }
+        },
+        "headers": {
+          "Retry-After": {
+            "description": "Solo con `CREDENCIAL_SUSPENDIDA`: segundos que faltan.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ErrorPublico": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "enum": [
+              "CREDENCIALES_INVALIDAS",
+              "TOKEN_INVALIDO",
+              "PROHIBIDO",
+              "NO_ENCONTRADO",
+              "DATOS_INVALIDOS",
+              "CONSENTIMIENTO_NO_VIGENTE",
+              "OFERTA_NO_ENCONTRADA",
+              "OFERTA_PRELIMINAR",
+              "OFERTA_VENCIDA",
+              "CONTACTO_INVALIDO",
+              "CODIGO_INVALIDO",
+              "CODIGO_VENCIDO",
+              "INTENTOS_AGOTADOS",
+              "PROPUESTA_NO_VALIDA",
+              "PRESUPUESTO_AGOTADO",
+              "SERVICIO_NO_DISPONIBLE",
+              "SOLICITUD_EN_CURSO",
+              "IDEMPOTENCIA_EN_CONFLICTO",
+              "LIMITE_DE_TASA",
+              "CREDENCIAL_SUSPENDIDA"
+            ]
+          },
+          "mensaje": {
+            "type": "string",
+            "description": "En el idioma de `Accept-Language` (es o en)."
+          },
+          "puedeReintentar": {
+            "type": "boolean"
+          },
+          "intentosRestantes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "codigo",
+          "mensaje",
+          "puedeReintentar"
+        ],
+        "description": "Error controlado. Nunca un 5xx crudo (regla 4): ante una falla interna se responde 503 con este cuerpo, `puedeReintentar = true` y `Retry-After`."
+      },
+      "Monto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "valor": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d+)?$",
+            "examples": [
+              "1500000.00"
+            ]
+          },
+          "moneda": {
+            "type": "string",
+            "examples": [
+              "COP"
+            ]
+          }
+        },
+        "required": [
+          "valor",
+          "moneda"
+        ]
+      },
+      "SolicitudCotizacion": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "consentimientoId": {
+            "type": "string"
+          },
+          "documentoIdentidad": {
+            "type": "string",
+            "minLength": 6,
+            "maxLength": 20,
+            "description": "Al menos 6 dígitos."
+          },
+          "valorCredito": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d+)?$",
+            "examples": [
+              "1500000.00"
+            ]
+          },
+          "plazoMeses": {
+            "type": "integer",
+            "minimum": 6,
+            "maximum": 200
+          },
+          "direccionInmueble": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "consentimientoId",
+          "documentoIdentidad",
+          "valorCredito",
+          "plazoMeses",
+          "direccionInmueble"
+        ]
+      },
+      "FuenteConsultada": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "nombre": {
+            "type": "string"
+          },
+          "estado": {
+            "type": "string",
+            "enum": [
+              "OK",
+              "CACHE",
+              "FALLO"
+            ]
+          }
+        },
+        "required": [
+          "nombre",
+          "estado"
+        ]
+      },
+      "Producto": {
+        "type": "string",
+        "enum": [
+          "VIDA_DEUDOR",
+          "AUTO"
+        ],
+        "description": "v0.42: el producto de la oferta o la póliza."
+      },
+      "Vehiculo": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "v0.42: el vehículo asegurado. La placa va enmascarada.",
+        "properties": {
+          "placaEnmascarada": {
+            "type": "string",
+            "examples": [
+              "ABC•••"
+            ]
+          },
+          "marca": {
+            "type": "string"
+          },
+          "linea": {
+            "type": "string"
+          },
+          "modelo": {
+            "type": "integer",
+            "description": "Año de fabricación."
+          },
+          "clase": {
+            "type": "string",
+            "enum": [
+              "AUTOMOVIL",
+              "CAMPERO",
+              "CAMIONETA",
+              "MOTOCICLETA"
+            ]
+          },
+          "uso": {
+            "type": "string",
+            "enum": [
+              "PARTICULAR",
+              "COMERCIAL"
+            ]
+          },
+          "valorComercial": {
+            "$ref": "#/components/schemas/Monto"
+          },
+          "ciudadCirculacion": {
+            "type": "string"
+          },
+          "kilometrajeAnual": {
+            "type": "integer"
+          },
+          "deducible": {
+            "type": "string",
+            "enum": [
+              "DIEZ_POR_CIENTO",
+              "SIN_DEDUCIBLE"
+            ]
+          }
+        },
+        "required": [
+          "placaEnmascarada",
+          "marca",
+          "linea",
+          "modelo",
+          "clase",
+          "uso",
+          "valorComercial",
+          "ciudadCirculacion",
+          "kilometrajeAnual",
+          "deducible"
+        ]
+      },
+      "CoberturaAuto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "RESPONSABILIDAD_CIVIL",
+              "PERDIDA_TOTAL_DANOS",
+              "PERDIDA_PARCIAL_DANOS",
+              "PERDIDA_TOTAL_HURTO",
+              "PERDIDA_PARCIAL_HURTO",
+              "ASISTENCIA"
+            ]
+          },
+          "valorAsegurado": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Monto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deducible": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "tipo"
+        ]
+      },
+      "Precio": {
+        "description": "EXACTO en una oferta COMPLETA; RANGO en una PRELIMINAR (fuentes degradadas).",
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tipo": {
+                "const": "EXACTO"
+              },
+              "valor": {
+                "$ref": "#/components/schemas/Monto/properties/valor"
+              },
+              "moneda": {
+                "type": "string",
+                "examples": [
+                  "COP"
+                ]
+              }
+            },
+            "required": [
+              "tipo",
+              "valor",
+              "moneda"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tipo": {
+                "const": "RANGO"
+              },
+              "minima": {
+                "$ref": "#/components/schemas/Monto/properties/valor"
+              },
+              "maxima": {
+                "$ref": "#/components/schemas/Monto/properties/valor"
+              },
+              "moneda": {
+                "type": "string",
+                "examples": [
+                  "COP"
+                ]
+              }
+            },
+            "required": [
+              "tipo",
+              "minima",
+              "maxima",
+              "moneda"
+            ]
+          }
+        ]
+      },
+      "OfertaV2": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "COMPLETA",
+              "PRELIMINAR"
+            ]
+          },
+          "precio": {
+            "$ref": "#/components/schemas/Precio"
+          },
+          "cobertura": {
+            "$ref": "#/components/schemas/Monto"
+          },
+          "nivelRiesgo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "BAJO",
+                  "MEDIO",
+                  "ALTO"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fuentes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FuenteConsultada"
+            }
+          },
+          "producto": {
+            "$ref": "#/components/schemas/Producto"
+          },
+          "vehiculo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Vehiculo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coberturas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoberturaAuto"
+            },
+            "description": "v0.42: solo AUTO; vacía en VIDA_DEUDOR."
+          }
+        },
+        "required": [
+          "id",
+          "tipo",
+          "precio",
+          "cobertura",
+          "fuentes"
+        ],
+        "description": "Como la `Oferta` de /v1, con `precio` en lugar de `prima` y `rangoPrima`. Una PRELIMINAR no se puede aceptar."
+      },
+      "CotizacionV2": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "oferta": {
+            "$ref": "#/components/schemas/OfertaV2"
+          },
+          "presupuestoRestante": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "oferta",
+          "presupuestoRestante"
+        ]
+      }
+    }
+  }
+}

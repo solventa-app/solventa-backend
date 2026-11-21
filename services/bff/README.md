@@ -64,6 +64,23 @@ rutas explícitas, nunca como un `Mount("/v1")`.
 
 - **Token:** JWT ES256 de AUTH (`POST /v1/token`), validado con el JWKS de AUTH (10 min en caché; se vuelve a pedir si
   llega un `kid` desconocido). Lo lee de `X-Forwarded-Authorization` o `Authorization`. `app/socios/autenticacion.py`.
+- **Scopes (HA-SEG-004, EC025, contrato v0.57):** cada ruta `/v1` con token declara su scope con un tipo
+  (`SocioCotizaciones`, `SocioPropuestas`, `SocioPolizas` o `SocioCuenta` en `app/socios/api.py`; la lista en
+  `app/socios/scopes.py`). Es una dependencia de FastAPI, así que corre antes de validar el cuerpo: sin el scope, 403
+  `PROHIBIDO` sin gastar presupuesto ni llamar a nadie. Sin el claim `scopes`, 401. Una ruta `/v1` nueva sin scope hace
+  fallar `test_cada_ruta_v1_con_token_declara_su_scope`.
+- **`/v2` (v0.63, HA-MOD-003, [ADR-13](../../docs/adr/ADR-13-versionado-api-socios.md)):** convive con `/v1` y solo
+  trae `POST /v2/cotizaciones` (oferta con un `precio` en lugar de `prima`/`rangoPrima`) y `GET /v2/openapi.json`
+  (copia `app/socios-v2.json`). Es un adaptador sobre `/v1/cotizaciones` (`cotizacion_v2`): mismo presupuesto, scope,
+  errores y modo prueba; en el consumo cuenta como `cotizaciones`.
+- **Antifraude (HA-SEG-004, contrato v0.62, `app/socios/antifraude.py`):** 30 respuestas 403/404 a una credencial
+  (socio y entorno) en 60 s la suspenden 15 min (403 `CREDENCIAL_SUSPENDIDA` con `Retry-After`). Contadores en Redis;
+  sin Redis no se aplica. La fuerza bruta del token ya la frena AUTH (bloqueo tras 5 fallos). Falta: avisar al
+  operador (evento o correo), un desbloqueo manual y reglas que usen el límite de tasa (KAN-217).
+- **Límite de tasa (KAN-217, contrato v0.61, `app/socios/limite_tasa.py`):** 20 llamadas por segundo por credencial en
+  PRODUCCION y 5 en PRUEBAS (`LIMITE_SOCIO_RPS_PRODUCCION`, `LIMITE_SOCIO_RPS_PRUEBAS`; 0 lo apaga). Al pasarlo, 429
+  `LIMITE_DE_TASA` con `Retry-After: 1`, antes del scope y del presupuesto. Ventana de 1 s en Redis; sin Redis no
+  se aplica. Las pruebas lo apagan en `tests/conftest.py` salvo `test_socios_limite_tasa.py`.
 - **El socio es un intermediario como el ASESOR** (`rol = SOCIO`): aceptar (con el contacto del titular y la tasa del
   socio, que POLICY congela), código, emitir y reenviar reutilizan `ServicioSuscripcion` y `ServicioFirmaPago`. Un
   socio solo ve lo que vendió (404 si no) y la URL del enlace nunca vuelve en la respuesta.
@@ -71,7 +88,17 @@ rutas explícitas, nunca como un `Mount("/v1")`.
   consentimiento sea del socio; si la cotización falla por nosotros, la devuelve. Agotado: 429 con `Retry-After`.
 - **Errores:** siempre `ErrorPublico` (`codigo`, `mensaje` en es o en, `puedeReintentar`), también los 422 de FastAPI.
   Una falla inesperada es 503 con `Retry-After`, nunca un 5xx crudo. `app/socios/errores.py`.
-- **Consumo:** un middleware registra cada llamada del socio en AUTH (API, resultado y latencia) después de responder.
+- **Consumo:** un middleware registra cada llamada del socio en AUTH (API, resultado y latencia) **antes** de
+  responder, con un tope de 150 ms (KAN-30: la tarea suelta tras la respuesta se perdía en Cloud Run). Lo que no se
+  pudo registrar suma en `bff_socios_consumo_perdido_total`.
+  No cuentan las consultas de la cuenta (`consumo`, `estado`, `ventas`, `credenciales`), que el portal lee al abrirse;
+  un 422 por cuerpo inválido sí cuenta. AUTH agrupa por días de Colombia y suma `cotizaciones-auto` en `cotizaciones`
+  (v0.55).
+- **Presupuesto:** si una cotización no se hizo (error o excepción), la unidad vuelve; si AUTH no la acepta, suma en
+  `bff_socios_devolucion_fallida_total`.
+- **Idempotency-Key (v0.54):** en `POST /v1/cotizaciones` y `/v1/cotizaciones-auto`, un reintento con la misma llave
+  devuelve la respuesta guardada en Redis (24 h) con `Idempotent-Replayed: true`, sin descontar presupuesto ni contarse
+  en el consumo (`app/socios/idempotencia.py`).
 - **Modo prueba** (`app/socios/modo_prueba.py`): con un token de PRUEBAS, datos simulados por documento de prueba,
   código `000000` y avance solo hasta EMITIDA, sin llamar a las fuentes, a RATING, a POLICY ni a los stubs. Estado en
   Redis (24 h) o en memoria.

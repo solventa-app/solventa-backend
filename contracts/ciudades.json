@@ -1,187 +1,259 @@
 {
   "version": "1",
   "pais": "CO",
-  "descripcion": "Ciudades de Colombia que ofrece la app móvil al reportar un siniestro (lista desplegable). El nombre es el texto canónico que viaja en `ReporteSiniestroInput.ubicacion.ciudad`; las ciudades de los prestadores de `claims` (`services/claims/migrations/datos/prestadores.json`) salen de aquí. La app ofrece además «Otra ciudad» con texto libre. Las copias viven en cada cliente (móvil: `lib/features/claims/domain/ciudades.dart`).",
+  "descripcion": "Ciudades de Colombia que ofrece la app móvil al reportar un siniestro (lista desplegable). El nombre es el texto canónico que viaja en `ReporteSiniestroInput.ubicacion.ciudad`; las ciudades de los prestadores de `claims` (`services/claims/migrations/datos/prestadores.json`) salen de aquí. La app ofrece además «Otra ciudad» con texto libre. Las copias viven en cada cliente (móvil: `lib/features/claims/domain/ciudades.dart`). `latitud` y `longitud` (centro de la ciudad, 2 decimales: la celda de clima de HU-M04) los usa POLICY para la cobertura paramétrica de clima de la póliza de auto (copia en `services/policy/app/ciudades.json`).",
   "ciudades": [
     {
       "id": "bogota",
       "nombre": "Bogotá",
-      "departamento": "Bogotá D.C."
+      "departamento": "Bogotá D.C.",
+      "latitud": 4.61,
+      "longitud": -74.08
     },
     {
       "id": "medellin",
       "nombre": "Medellín",
-      "departamento": "Antioquia"
+      "departamento": "Antioquia",
+      "latitud": 6.25,
+      "longitud": -75.56
     },
     {
       "id": "cali",
       "nombre": "Cali",
-      "departamento": "Valle del Cauca"
+      "departamento": "Valle del Cauca",
+      "latitud": 3.45,
+      "longitud": -76.53
     },
     {
       "id": "barranquilla",
       "nombre": "Barranquilla",
-      "departamento": "Atlántico"
+      "departamento": "Atlántico",
+      "latitud": 10.96,
+      "longitud": -74.80
     },
     {
       "id": "cartagena",
       "nombre": "Cartagena",
-      "departamento": "Bolívar"
+      "departamento": "Bolívar",
+      "latitud": 10.39,
+      "longitud": -75.51
     },
     {
       "id": "cucuta",
       "nombre": "Cúcuta",
-      "departamento": "Norte de Santander"
+      "departamento": "Norte de Santander",
+      "latitud": 7.89,
+      "longitud": -72.50
     },
     {
       "id": "bucaramanga",
       "nombre": "Bucaramanga",
-      "departamento": "Santander"
+      "departamento": "Santander",
+      "latitud": 7.12,
+      "longitud": -73.12
     },
     {
       "id": "pereira",
       "nombre": "Pereira",
-      "departamento": "Risaralda"
+      "departamento": "Risaralda",
+      "latitud": 4.81,
+      "longitud": -75.69
     },
     {
       "id": "santa-marta",
       "nombre": "Santa Marta",
-      "departamento": "Magdalena"
+      "departamento": "Magdalena",
+      "latitud": 11.24,
+      "longitud": -74.20
     },
     {
       "id": "ibague",
       "nombre": "Ibagué",
-      "departamento": "Tolima"
+      "departamento": "Tolima",
+      "latitud": 4.44,
+      "longitud": -75.23
     },
     {
       "id": "manizales",
       "nombre": "Manizales",
-      "departamento": "Caldas"
+      "departamento": "Caldas",
+      "latitud": 5.07,
+      "longitud": -75.52
     },
     {
       "id": "villavicencio",
       "nombre": "Villavicencio",
-      "departamento": "Meta"
+      "departamento": "Meta",
+      "latitud": 4.14,
+      "longitud": -73.63
     },
     {
       "id": "pasto",
       "nombre": "Pasto",
-      "departamento": "Nariño"
+      "departamento": "Nariño",
+      "latitud": 1.21,
+      "longitud": -77.28
     },
     {
       "id": "monteria",
       "nombre": "Montería",
-      "departamento": "Córdoba"
+      "departamento": "Córdoba",
+      "latitud": 8.75,
+      "longitud": -75.88
     },
     {
       "id": "neiva",
       "nombre": "Neiva",
-      "departamento": "Huila"
+      "departamento": "Huila",
+      "latitud": 2.93,
+      "longitud": -75.28
     },
     {
       "id": "armenia",
       "nombre": "Armenia",
-      "departamento": "Quindío"
+      "departamento": "Quindío",
+      "latitud": 4.53,
+      "longitud": -75.68
     },
     {
       "id": "valledupar",
       "nombre": "Valledupar",
-      "departamento": "Cesar"
+      "departamento": "Cesar",
+      "latitud": 10.46,
+      "longitud": -73.25
     },
     {
       "id": "popayan",
       "nombre": "Popayán",
-      "departamento": "Cauca"
+      "departamento": "Cauca",
+      "latitud": 2.44,
+      "longitud": -76.61
     },
     {
       "id": "sincelejo",
       "nombre": "Sincelejo",
-      "departamento": "Sucre"
+      "departamento": "Sucre",
+      "latitud": 9.30,
+      "longitud": -75.40
     },
     {
       "id": "tunja",
       "nombre": "Tunja",
-      "departamento": "Boyacá"
+      "departamento": "Boyacá",
+      "latitud": 5.54,
+      "longitud": -73.36
     },
     {
       "id": "riohacha",
       "nombre": "Riohacha",
-      "departamento": "La Guajira"
+      "departamento": "La Guajira",
+      "latitud": 11.54,
+      "longitud": -72.91
     },
     {
       "id": "florencia",
       "nombre": "Florencia",
-      "departamento": "Caquetá"
+      "departamento": "Caquetá",
+      "latitud": 1.61,
+      "longitud": -75.61
     },
     {
       "id": "yopal",
       "nombre": "Yopal",
-      "departamento": "Casanare"
+      "departamento": "Casanare",
+      "latitud": 5.34,
+      "longitud": -72.40
     },
     {
       "id": "quibdo",
       "nombre": "Quibdó",
-      "departamento": "Chocó"
+      "departamento": "Chocó",
+      "latitud": 5.69,
+      "longitud": -76.66
     },
     {
       "id": "soacha",
       "nombre": "Soacha",
-      "departamento": "Cundinamarca"
+      "departamento": "Cundinamarca",
+      "latitud": 4.58,
+      "longitud": -74.22
     },
     {
       "id": "bello",
       "nombre": "Bello",
-      "departamento": "Antioquia"
+      "departamento": "Antioquia",
+      "latitud": 6.34,
+      "longitud": -75.56
     },
     {
       "id": "itagui",
       "nombre": "Itagüí",
-      "departamento": "Antioquia"
+      "departamento": "Antioquia",
+      "latitud": 6.18,
+      "longitud": -75.60
     },
     {
       "id": "envigado",
       "nombre": "Envigado",
-      "departamento": "Antioquia"
+      "departamento": "Antioquia",
+      "latitud": 6.17,
+      "longitud": -75.59
     },
     {
       "id": "soledad",
       "nombre": "Soledad",
-      "departamento": "Atlántico"
+      "departamento": "Atlántico",
+      "latitud": 10.92,
+      "longitud": -74.77
     },
     {
       "id": "palmira",
       "nombre": "Palmira",
-      "departamento": "Valle del Cauca"
+      "departamento": "Valle del Cauca",
+      "latitud": 3.54,
+      "longitud": -76.30
     },
     {
       "id": "buenaventura",
       "nombre": "Buenaventura",
-      "departamento": "Valle del Cauca"
+      "departamento": "Valle del Cauca",
+      "latitud": 3.88,
+      "longitud": -77.03
     },
     {
       "id": "floridablanca",
       "nombre": "Floridablanca",
-      "departamento": "Santander"
+      "departamento": "Santander",
+      "latitud": 7.06,
+      "longitud": -73.09
     },
     {
       "id": "dosquebradas",
       "nombre": "Dosquebradas",
-      "departamento": "Risaralda"
+      "departamento": "Risaralda",
+      "latitud": 4.84,
+      "longitud": -75.67
     },
     {
       "id": "tulua",
       "nombre": "Tuluá",
-      "departamento": "Valle del Cauca"
+      "departamento": "Valle del Cauca",
+      "latitud": 4.08,
+      "longitud": -76.20
     },
     {
       "id": "barrancabermeja",
       "nombre": "Barrancabermeja",
-      "departamento": "Santander"
+      "departamento": "Santander",
+      "latitud": 7.07,
+      "longitud": -73.85
     },
     {
       "id": "sogamoso",
       "nombre": "Sogamoso",
-      "departamento": "Boyacá"
+      "departamento": "Boyacá",
+      "latitud": 5.71,
+      "longitud": -72.93
     }
   ]
 }

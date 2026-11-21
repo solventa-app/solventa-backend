@@ -37,7 +37,9 @@ class DatosFuente:
     fuente: Fuente
     datos: dict[str, Any]
     capturado_en: datetime
-    de_cache: bool = False  # True si se degradó al último valor en caché (CA-W01-04, EC010)
+    # True solo si el proveedor falló y se degradó al último valor en caché (CA-W01-04). Lo servido
+    # desde la caché dentro del TTL (`CACHE_SERVIR_EN_TTL`, EC010) NO cuenta: no hubo falla.
+    de_cache: bool = False
     degradado: bool = False  # True si no hay dato real ni caché y se usa el valor por defecto
 
 
@@ -311,6 +313,12 @@ class ResultadoIdentidad:
     vivo: bool | None = None
     puntaje_vida: float | None = None
     alertas: tuple[str, ...] = ()
+
+
+class ProveedorMalConfigurado(Exception):
+    """El proveedor de identidad rechazó la llamada por la cuenta, no por la foto ni por estar
+    caído: llave inválida (401/403) o sin créditos (402). No cuenta para el circuito (abrirlo no
+    arregla nada) y se registra como `error` para que alguien lo atienda (KAN-131)."""
 
 
 class PuertoVerificacionIdentidad(Protocol):

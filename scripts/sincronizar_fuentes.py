@@ -37,7 +37,13 @@ COPIAS_VEHICULO = [
     for servicio in ("acl-worker", "risk", "rating")
 ]
 TARIFAS_AUTO = RAIZ / "contracts" / "tarifas-auto.json"
-COPIAS_TARIFAS = [RAIZ / "services" / "rating" / "app" / "tarifas-auto.json"]
+# HU-M04 + HU-W08: POLICY lee `parametrica_clima` de la tarifa y las coordenadas de la ciudad de
+# circulación para crear la cobertura de clima de la póliza de auto al emitirla.
+COPIAS_TARIFAS = [
+    RAIZ / "services" / servicio / "app" / "tarifas-auto.json" for servicio in ("rating", "policy")
+]
+CIUDADES = RAIZ / "contracts" / "ciudades.json"
+COPIAS_CIUDADES = [RAIZ / "services" / "policy" / "app" / "ciudades.json"]
 
 
 PARES = [
@@ -45,6 +51,7 @@ PARES = [
     (SESION, COPIAS_SESION),
     (FUENTES_VEHICULO, COPIAS_VEHICULO),
     (TARIFAS_AUTO, COPIAS_TARIFAS),
+    (CIUDADES, COPIAS_CIUDADES),
 ]
 
 

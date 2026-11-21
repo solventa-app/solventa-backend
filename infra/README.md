@@ -18,7 +18,7 @@ agrega nada hasta que alguien las enciende.
 | APIs (Cloud Run, Artifact Registry, Secret Manager, Pub/Sub, IAM, IAM Credentials, STS, Resource Manager) | siempre | $0 | `disable_on_destroy = false` |
 | Repositorio de Artifact Registry | siempre | centavos por GB | imágenes de los servicios/stubs |
 | Cloud KMS (key ring `solventa-backend` + llave `campos-personales` + IAM para AUTH, RISK y RATING) | `crear_kms` | ~USD 0,06/mes por versión de llave + ~USD 0,03 / 10.000 ops | `kms.tf`; un key ring **no se puede borrar** nunca; activado en `staging.tfvars` |
-| CMEK en Cloud SQL y Memorystore Redis | `usar_cmek_sql` / `usar_cmek_redis` | $0 adicional (usa la misma llave de KMS) | Cloud SQL exige recrear/migrar la instancia (`export/import` en ventana acordada); Redis se aplica en el próximo encendido |
+| CMEK en Cloud SQL y Memorystore Redis | `usar_cmek_sql` / `usar_cmek_redis` | $0 adicional (usa la misma llave de KMS) | Cloud SQL exige recrear/migrar la instancia (`export/import` en ventana acordada, procedimiento en [ADR-12](../docs/adr/ADR-12-cmek-cloud-sql.md)); Redis se aplica en el próximo encendido |
 | Workload Identity Federation (GitHub) + service account de despliegue + sus permisos | `crear_pipeline` | $0 | `cicd.tf`; sin llaves; limitada a este repo y al entorno `staging` |
 | Un servicio de Cloud Run por entrada de `.github/servicios.json`, sus jobs de migración, una service account por servicio y los secretos | `crear_servicios` | ~$0 en reposo | `servicios.tf`; máx. `max_instancias` por servicio (`calentar_camino_critico = true` sube `min_instance_count = 1` solo durante sesiones de medición) |
 | Cola de Cloud Tasks `reintento-cobros` + trabajos de Cloud Scheduler `sonda-acl` y `reconciliacion-cobros-policy` y `DISPARADOR=externo` en PAYMENTS y el ACL Worker | `crear_tareas` | $0 (capa gratuita: 1 M de operaciones de Cloud Tasks; 3 trabajos de Scheduler por cuenta) | `tareas.tf`. En Cloud Run los bucles de fondo no corren de forma confiable (`cpu_idle = true`, mínimo 0). Ver «Disparadores externos» |
@@ -125,7 +125,7 @@ servicios siguen con su bucle (`DISPARADOR=bucle`), que en Cloud Run no es fiabl
 | Reapertura de pólizas con el pago rechazado o pendiente que se recuperó (W03-14, CA-W03-06) | Cloud Scheduler `reconciliacion-cobros-policy`, cada `reconciliacion_cobros_cron` (15 min por defecto); además el BFF avisa a POLICY tras cada `reintentarCobro` del back-office | `POST /reconciliacion/cobros` de POLICY |
 | Reconciliación de fuentes degradadas (W01) | El ACL Worker encola una tarea en la cola `reconciliacion-fuentes` en vez del job de `rq`; la cola reintenta (5 intentos, 10 a 300 s) mientras el consolidador responda 503 | `POST /reconciliar` del consolidador (token OIDC de la cuenta del ACL Worker) |
 
-Con `crear_tareas = true` hay **tres** trabajos de Scheduler en la cuenta (`sonda-acl`, `risk-reproceso-nocturno` del batch y `reconciliacion-cobros-policy`), que es justo el tope de la capa gratuita que documenta `crear_tareas` (3 por cuenta de facturación; no se verificó contra la factura). Si esa cuenta tiene trabajos de otros proyectos, el cuarto ya cobra centavos al mes.
+Con `crear_tareas = true` hay **tres** trabajos de Scheduler en la cuenta (`sonda-acl`, `risk-reproceso-nocturno` del batch y `reconciliacion-cobros-policy`), que es justo el tope de la capa gratuita que documenta `crear_tareas` (3 por cuenta de facturación; no se verificó contra la factura). Desde el 2026-11-17 la cuenta es exclusiva de Solventa; un cuarto trabajo ya cobra centavos al mes.
 
 Límites que conviene saber: el estado de los circuitos vive en la memoria de cada instancia, así que la sonda revisa los de
 la instancia que recibe la llamada; y una tarea de reconciliación que agota sus 5 intentos se descarta (no hay un registro de
@@ -373,13 +373,14 @@ openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n' | gcloud secrets versions ad
 
 - **Cloud SQL (`usar_cmek_sql`):** PostgreSQL en Cloud SQL solo acepta `encryption_key_name` **al crear la instancia**.
   Activar `usar_cmek_sql = true` sobre una instancia existente fuerza su reemplazo (que el guardia `scripts/revisar_plan.py`
-  bloquea por seguridad). Por eso la migración a CMEK se hace en un PR propio con ventana acordada con el equipo:
-  1. Exportar las bases `auth`, `payments` y `policy` con `gcloud sql export sql`.
-  2. Mergear `usar_cmek_sql = true` y correr *Deploy staging* con `permitir_destruir = true` para recrear la instancia con CMEK.
-  3. Importar los volcados o correr las migraciones y `scripts/crear_usuarios.py`.
-- **Memorystore Redis (`usar_cmek_redis`):** como Redis es caché efímera y el botón *Costos staging → apagar* la destruye
-  a diario, basta con activar `usar_cmek_redis = true` cuando esté apagada: en el próximo *encender* nace con
-  `customer_managed_key` apuntando a `campos-personales`.
+  bloquea por seguridad). Desde el 2026-11-21 `usar_cmek_sql = true` está en `staging.tfvars`: la liberación que lo lleve
+  a `main` se hace en la ventana de [`docs/guia-activar-cmek.md`](../docs/guia-activar-cmek.md) (exportar las cinco bases,
+  aplicar con `permitir_destruir = true`, importar y verificar). Hasta esa ventana, *Deploy staging* y *Costos staging*
+  quedan bloqueados por el reemplazo. Terraform crea el agente de servicio de Cloud SQL si falta
+  (`google_project_service_identity`) antes de darle permiso sobre la llave.
+- **Memorystore Redis (`usar_cmek_redis = true` desde el 2026-11-21):** como Redis es caché efímera y el botón *Costos
+  staging → apagar* la destruye a diario, en el próximo *encender* nace con `customer_managed_key` apuntando a
+  `campos-personales`. Si está encendida al liberar, la ventana de la guía la reemplaza junto con Cloud SQL.
 - **MongoDB Atlas (`M0`):** se queda en M0 **sin CMEK de disco** (decisión 6 de `docs/plan-completar-hu-w01.md`). En Atlas,
   *Encryption at Rest using Customer Key Management* exige subir el clúster a **M10 (~USD 57/mes)**, casi una quinta parte
   del presupuesto total del equipo. En M0, Atlas cifra el disco por defecto con AES-256 y los campos personales/financieros
@@ -412,6 +413,9 @@ Pasos, en orden (nada se aplica a mano; va por el pipeline al llegar a `main`):
 1. **Cargar `clave-firma-socios`** en Secret Manager antes de la liberación: AUTH no arranca en Cloud Run con el
    marcador ni con la clave local. Una clave EC P-256 en PKCS#8, como DER en base64 de una sola línea:
    `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -outform DER | base64 -w0 | gcloud secrets versions add clave-firma-socios --data-file=-`.
+   Para **rotarla** sin cortar tokens vivos se publica también la anterior (`SOCIOS_CLAVE_FIRMA_ANTERIOR`, secreto
+   `clave-firma-socios-anterior`, que Terraform crea con el marcador: AUTH arranca igual y no publica nada extra hasta
+   que se carga). Pasos y lo que falta para hacerlo automático en [ADR-14](../docs/adr/ADR-14-rotacion-credenciales-socios.md).
 2. Liberar con `crear_gateway_socios = true` y `jwks_socios_url = ""`. API Gateway no acepta un `x-google-jwks_uri`
    vacío, así que Terraform usa `https://<gateway de los usuarios>/v1/.well-known/jwks.json` (ruta pública de
    `openapi.yaml` que sirve el BFF sin token). `jwks_socios_url` solo hace falta para apuntar a otro origen. Antes
@@ -464,11 +468,12 @@ Pub/Sub y Cloud Scheduler:
   únicamente el ACL Worker (escritor único del evento); consume únicamente CLAIMS. El agente de servicio de Pub/Sub
   recibe `roles/pubsub.publisher` en el tema DLQ y `roles/pubsub.subscriber` en la suscripción original, como pide la
   [documentación oficial de `dead_letter_policy`](https://cloud.google.com/pubsub/docs/handling-failures#dead_letter_topic).
-- **Dos `google_cloud_scheduler_job` de demostración** (`consulta-demo-vuelo-parametrico` y
-  `consulta-demo-clima-parametrico`, cada 15 min) que llaman a `POST /eventos-parametricos/_consultar` del ACL Worker
-  con los dos datos fijos de la semilla `sembrar_polizas_parametricas` de POLICY (vuelo `AV9340`, celda de clima de
-  Bogotá `4.62,-74.09`). **No son una enumeración real de pólizas vigentes**: ese endpoint no existe todavía en ningún
-  servicio y construirlo es trabajo de código (otro día), no de infraestructura. Suman un cuarto y quinto trabajo de
+- **Dos `google_cloud_scheduler_job`** (`consulta-demo-vuelo-parametrico` y `consulta-demo-clima-parametrico`, cada
+  8 h). El de vuelo es de demostración: llama a `POST /eventos-parametricos/_consultar` del ACL Worker con el vuelo fijo
+  `AV9340` de la semilla `sembrar_polizas_parametricas`. El de clima llama a `POST /coberturas-parametricas/_consultar-clima`
+  de POLICY (KAN-290), que consulta al ACL Worker una vez por cada celda con coberturas de clima vigentes: la que trae toda
+  póliza de auto en su ciudad de circulación y la de la semilla. La cuenta `sched-parametricos-demo` invoca al ACL Worker
+  y a POLICY. Suman un cuarto y quinto trabajo de
   Scheduler junto con `sonda-acl`, `risk-reproceso-nocturno` y `reconciliacion-cobros-policy`: con `crear_tareas`,
   `crear_batch` y `crear_push` los tres encendidos, el equipo pasa el tope gratuito de 3 trabajos por cuenta de
   facturación y paga centavos al mes por los extra.
@@ -650,6 +655,16 @@ key ring de KMS (no se puede borrar) ni los secretos si ya cargaste valores real
 
 - Resuelto el 2026-10-17: el proyecto de staging es `solventa-511815` y su cuenta de facturación ya está vinculada y en uso
   (`billing_account_id` llega por `TF_VAR_billing_account_id`, no por el repositorio).
+- **Cambio de cuenta de facturación (2026-11-17):** el proyecto pasó de «Mi cuenta de facturación» (compartida con otros
+  proyectos del equipo) a «Solventa Billing Account» (exclusiva, también en COP, así que `presupuesto_moneda` no cambia).
+  El presupuesto no se mueve con el proyecto, y como `billing_account_id` fuerza reemplazo en `google_billing_budget` y en
+  `google_billing_account_iam_member.terraform_lee_presupuesto`, el plan trae destrucciones que `scripts/revisar_plan.py`
+  bloquea. Se hizo a mano, en este orden: (1) `terraform state rm` de ambos recursos; (2) `apply` acotado con `-target` y
+  `-var billing_account_id=<nueva>` para crearlos en la cuenta nueva; (3) `gcloud billing projects link`; (4) actualizar la
+  variable `GCP_BILLING_ACCOUNT_ID` de GitHub y el `terraform.tfvars` local. La API de presupuestos respondió 400 mientras el
+  proyecto seguía en la cuenta vieja, así que el paso 3 va **antes** del `apply` del presupuesto (unos minutos sin freno de
+  gasto). Un `terraform.tfvars` local con `billing_account_id` gana sobre `TF_VAR_*`: edítalo o pasa `-var`. El presupuesto y el
+  `billing.viewer` viejos quedan huérfanos en la cuenta anterior y se pueden borrar allí.
 - La **cuenta/organización de MongoDB Atlas** y sus API keys, si se activa `crear_mongo_atlas` — hoy
   no existen.
 - Confirmar que `repositorio_github` (`solventa-app/solventa-backend`) sigue siendo el `origin`

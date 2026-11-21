@@ -137,5 +137,25 @@ class ClienteAcl:
             return ResultadoNotificacion(estado="pendiente", motivo="acl_no_disponible")
         return resultado
 
+    def consultar_clima(self, latitud: float, longitud: float, variable: str) -> bool:
+        """Pide al ACL que consulte el clima de una celda y publique el evento si hay dato
+        (HU-M04, póliza de auto). Devuelve si se publicó; nunca lanza (regla #4)."""
+        try:
+            respuesta = self._cliente.post(
+                "/eventos-parametricos/_consultar",
+                json={
+                    "tipo": "CLIMA",
+                    "clave": f"{latitud:.2f},{longitud:.2f}",
+                    "latitud": latitud,
+                    "longitud": longitud,
+                    "variable": variable,
+                },
+            )
+            respuesta.raise_for_status()
+            return bool(respuesta.json().get("publicado"))
+        except (httpx.HTTPError, ValueError, TypeError, AttributeError) as error:
+            logger.warning("ACL no disponible al consultar clima error=%s", type(error).__name__)
+            return False
+
     def cerrar(self) -> None:
         self._cliente.close()

@@ -102,7 +102,9 @@ Endpoints internos, como el resto: solo los llama el BFF, que ya validó el toke
 - `POST /socios/{id}/consumos` (append-only, sin datos personales) y `GET /socios/{id}/consumo?entorno=&desde=&hasta=`.
 - **Secretos:** la clave del socio se guarda cifrada (AES-GCM, contexto = id del socio). La clave de firma llega en
   `SOCIOS_CLAVE_FIRMA` (DER PKCS#8 en base64 o PEM); en local hay una fija y pública, como `JWT_SECRETO`, y en Cloud
-  Run sale de Secret Manager (`clave-firma-socios`) y no arranca con la local (W07-26).
+  Run sale de Secret Manager (`clave-firma-socios`) y no arranca con la local (W07-26). `SOCIOS_CLAVE_FIRMA_ANTERIOR`
+  (opcional; en Cloud Run, secreto `clave-firma-socios-anterior`, con el marcador mientras no haya rotación) publica también la clave anterior en el JWKS, sin firmar con ella, para rotar sin cortar tokens vivos
+  ([ADR-14](../../docs/adr/ADR-14-rotacion-credenciales-socios.md)).
 
 ## Operación
 

@@ -35,6 +35,7 @@ class Configuracion:
     edad_minima: int = 18
     max_intentos: int = 3
     vigencia_token_s: int = 1800
+    max_rechazadas_dia: int = 3
     timeout_s: float = 20.0
     # "bucle" (hilo de este proceso, local y CI) o "externo" (Cloud Tasks).
     disparador: str = "bucle"
@@ -42,6 +43,9 @@ class Configuracion:
     gcp_region: str = "us-central1"
     tareas_cola: str = "verificacion-onboarding"
     tareas_cuenta: str = ""
+    # KAN-131: el `max_attempts` de la cola `verificacion-onboarding` (infra/tareas.tf). En el
+    # último intento la verificación cierra en RECHAZADA técnico en vez de responder 503 otra vez.
+    tareas_max_intentos: int = 5
     url_propia: str = ""
     # Rutas completas de los temas (projects/<p>/topics/<t>); vacías = el evento se loguea.
     tema_verificado: str = ""
@@ -76,12 +80,14 @@ class Configuracion:
             edad_minima=_entero_positivo("EDAD_MINIMA", "18"),
             max_intentos=_entero_positivo("MAX_INTENTOS", "3"),
             vigencia_token_s=_entero_positivo("TOKEN_VIGENCIA_SEGUNDOS", "1800"),
+            max_rechazadas_dia=_entero_positivo("MAX_RECHAZADAS_DIA", "3"),
             timeout_s=float(os.getenv("TIMEOUT_SEGUNDOS", "20")),
             disparador=disparador,
             gcp_proyecto=os.getenv("GCP_PROYECTO", ""),
             gcp_region=os.getenv("GCP_REGION", "us-central1"),
             tareas_cola=os.getenv("TAREAS_COLA", "verificacion-onboarding"),
             tareas_cuenta=os.getenv("TAREAS_CUENTA", ""),
+            tareas_max_intentos=int(os.getenv("TAREAS_MAX_INTENTOS", "5")),
             url_propia=os.getenv("URL_PROPIA", ""),
             tema_verificado=os.getenv("PUBSUB_TEMA_ONBOARDING_VERIFICADO", "").strip(),
             tema_rechazado=os.getenv("PUBSUB_TEMA_ONBOARDING_RECHAZADO", "").strip(),

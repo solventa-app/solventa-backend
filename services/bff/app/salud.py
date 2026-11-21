@@ -22,6 +22,7 @@ ventana. El socio nunca ve nombres de micros (W07-14)."""
 import asyncio
 import json
 import logging
+import math
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -83,7 +84,7 @@ class MetricasPrometheus:
         if not resultado:
             return None
         valor = float(resultado[0]["value"][1])
-        return None if valor != valor else valor  # NaN = sin datos
+        return None if math.isnan(valor) else valor  # NaN = sin datos
 
     async def micro(self, nombre: str, ventana: str) -> Metricas | None:
         filtro = f'job="servicios",instance=~"{nombre}:.*",handler!="/metrics"'

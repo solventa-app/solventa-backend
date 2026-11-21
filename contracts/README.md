@@ -8,7 +8,7 @@ Aquí vive todo lo que otro componente (o el repo `solventa-frontend`) necesita 
 | `graphql/schema.graphql` | Contrato del BFF (web y móvil) | `solventa-frontend` (codegen) y `services/bff` |
 | `events/*.schema.json` | Eventos del bus (Pub/Sub), JSON Schema 2020-12 | Servicios productores y consumidores |
 | `openapi/socios-v1.json` | API REST de los socios de distribución (`/v1`, HU-W07), OpenAPI 3.1 | El portal de socios (codegen), los socios y `services/bff` (copia en `app/socios-v1.json`) |
-| `ciudades.json` | Catálogo de ciudades de Colombia para la lista desplegable de la app móvil (reporte de siniestro); las ciudades de los prestadores salen de aquí | La app móvil (copia en `lib/features/claims/domain/ciudades.dart`) y `services/claims` (prueba de coherencia con los prestadores) |
+| `ciudades.json` | Catálogo de ciudades de Colombia para la lista desplegable de la app móvil (reporte de siniestro); las ciudades de los prestadores salen de aquí. Cada ciudad trae `latitud`/`longitud` (centro, 2 decimales): es la celda de la cobertura de clima de la póliza de auto | La app móvil (copia en `lib/features/claims/domain/ciudades.dart`), `services/claims` (prueba de coherencia con los prestadores) y `services/policy` (copia en `app/ciudades.json`, cobertura de clima de auto) |
 | `salud.json` | Pesos y reglas de la salud del sistema (HU-W07) | `services/bff` (copia en `app/salud.json`) |
 | `CHANGELOG.md` | Bitácora de cambios de contrato | Todos |
 

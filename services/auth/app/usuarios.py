@@ -592,9 +592,10 @@ class RepositorioUsuariosPostgres:
         tipo_documento: str | None = None,
         pais: str | None = None,
     ) -> dict | None:
-        """Solo desde PENDIENTE_VERIFICACION; idempotente si ya está en `estado`. `None` si no
-        aplica (no existe, o está en otro estado). `UsuarioDuplicado` si el titular ya es de otra
-        cuenta (índice único de la `0008`)."""
+        """Desde PENDIENTE_VERIFICACION o RECHAZADA; idempotente si ya está en `estado`. Una
+        cuenta RECHAZADA vuelve a ACTIVO si un recorrido nuevo se aprueba (KAN-31); una ACTIVA
+        nunca baja a RECHAZADA. `None` si no aplica (no existe, o está en otro estado).
+        `UsuarioDuplicado` si el titular ya es de otra cuenta (índice único de la `0008`)."""
         try:
             return self._una(
                 f"""
@@ -605,7 +606,8 @@ class RepositorioUsuariosPostgres:
                     tipo_documento = COALESCE(%(tipo_documento)s, tipo_documento),
                     pais = COALESCE(%(pais)s, pais),
                     actualizado_en = now()
-                WHERE id = %(id)s AND estado IN ('PENDIENTE_VERIFICACION', %(estado)s)
+                WHERE id = %(id)s
+                  AND estado IN ('PENDIENTE_VERIFICACION', 'RECHAZADA', %(estado)s)
                 RETURNING {_TODAS}
                 """,
                 {
@@ -981,8 +983,9 @@ class ServicioUsuarios:
     ) -> dict | None:
         """Lo llama el servicio `onboarding` al cerrar: ACTIVO o RECHAZADA. Con la identidad
         verificada se fijan el nombre (cifrado) y el titular y documento del CLIENTE (W03-36): así
-        «Mis pólizas» liga las que le vendieron antes. Idempotente. `None` si la cuenta no existe o
-        no está pendiente; `UsuarioDuplicado` si el documento ya es de otra cuenta."""
+        «Mis pólizas» liga las que le vendieron antes. Idempotente. Una cuenta RECHAZADA se puede
+        activar con un recorrido nuevo aprobado (KAN-31). `None` si la cuenta no existe o no está
+        pendiente ni rechazada; `UsuarioDuplicado` si el documento ya es de otra cuenta."""
         nombre_cifrado = titular_id = documento_cifrado = tipo_n = pais_n = None
         if aprobada and nombre:
             if self._cifrador is None:

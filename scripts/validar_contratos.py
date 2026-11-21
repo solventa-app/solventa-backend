@@ -28,7 +28,9 @@ def _refs(nodo):
 
 def validar_openapi(ruta: Path) -> None:
     """OpenAPI 3.1 de socios: las `$ref` resuelven, los esquemas son JSON Schema 2020-12, cada
-    operación tiene un `operationId` único y todas las rutas van bajo `/v1/`."""
+    operación tiene un `operationId` único y todas las rutas van bajo la versión del archivo
+    (`socios-v1.json` → `/v1/`, `socios-v2.json` → `/v2/`, v0.63)."""
+    version = "/" + ruta.stem.rsplit("-", 1)[-1] + "/"
     doc = json.loads(ruta.read_text(encoding="utf-8"))
     if doc.get("openapi") != "3.1.0":
         raise ValueError("debe declarar openapi 3.1.0")
@@ -45,8 +47,10 @@ def validar_openapi(ruta: Path) -> None:
             raise ValueError(f"esquema {nombre}: {e}") from e
     vistos: set[str] = set()
     for camino, operaciones in doc["paths"].items():
-        if not camino.startswith("/v1/") or camino.startswith("/v1/graphql"):
-            raise ValueError(f"{camino}: las rutas de socios van bajo /v1/ y fuera de /v1/graphql")
+        if not camino.startswith(version) or camino.startswith("/v1/graphql"):
+            raise ValueError(
+                f"{camino}: las rutas de socios van bajo {version} y fuera de /v1/graphql"
+            )
         for metodo, operacion in operaciones.items():
             op_id = operacion.get("operationId")
             if not op_id or op_id in vistos:

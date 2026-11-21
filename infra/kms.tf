@@ -63,17 +63,33 @@ resource "google_kms_crypto_key_iam_member" "cifrado_servicios" {
   member        = "serviceAccount:${google_service_account.runtime[each.key].email}"
 }
 
-# Agentes de servicio de GCP para CMEK de disco en Cloud SQL y Memorystore Redis (cuando se activan).
+# Agentes de servicio de GCP para CMEK de disco en Cloud SQL y Memorystore Redis (cuando se activan). El agente
+# solo existe cuando algo lo pide: `google_project_service_identity` lo crea si falta, para que el permiso sobre la
+# llave no falle en un proyecto donde el agente aún no se ha generado (ADR-12).
+resource "google_project_service_identity" "cloud_sql" {
+  count    = (var.crear_kms && var.crear_cloud_sql && var.usar_cmek_sql) ? 1 : 0
+  provider = google-beta
+  project  = var.project_id
+  service  = "sqladmin.googleapis.com"
+}
+
+resource "google_project_service_identity" "redis" {
+  count    = (var.crear_kms && var.crear_redis && var.usar_cmek_redis) ? 1 : 0
+  provider = google-beta
+  project  = var.project_id
+  service  = "redis.googleapis.com"
+}
+
 resource "google_kms_crypto_key_iam_member" "cmek_sql" {
   count         = (var.crear_kms && var.crear_cloud_sql && var.usar_cmek_sql) ? 1 : 0
   crypto_key_id = google_kms_crypto_key.campos_personales[0].id
   role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
-  member        = "serviceAccount:service-${data.google_project.actual.number}@gcp-sa-cloud-sql.iam.gserviceaccount.com"
+  member        = "serviceAccount:${google_project_service_identity.cloud_sql[0].email}"
 }
 
 resource "google_kms_crypto_key_iam_member" "cmek_redis" {
   count         = (var.crear_kms && var.crear_redis && var.usar_cmek_redis) ? 1 : 0
   crypto_key_id = google_kms_crypto_key.campos_personales[0].id
   role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
-  member        = "serviceAccount:service-${data.google_project.actual.number}@cloud-redis.iam.gserviceaccount.com"
+  member        = "serviceAccount:${google_project_service_identity.redis[0].email}"
 }

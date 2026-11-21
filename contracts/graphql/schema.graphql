@@ -835,8 +835,8 @@ enum MotivoOnboarding {
   ROSTRO_NO_COINCIDE
   MENOR_DE_EDAD
   DOCUMENTO_YA_REGISTRADO
-  PROVEEDOR_NO_DISPONIBLE # EN_REVISION: el proveedor no respondió; se revisa sin que la persona repita nada
-  IMAGEN_NO_DISPONIBLE # EN_REVISION
+  PROVEEDOR_NO_DISPONIBLE # RECHAZADA técnico (v0.58): el proveedor siguió fallando tras los reintentos; no gasta intento
+  IMAGEN_NO_DISPONIBLE # RECHAZADA técnico (v0.58): no se pudieron leer las fotos; no gasta intento
 }
 
 enum PasoOnboarding {
@@ -879,6 +879,7 @@ type CodigoOnboardingEnviado {
 # `codigo` es estable: TOKEN_INVALIDO, SIN_CONSENTIMIENTO, ESTADO_INVALIDO, PIEZAS_INCOMPLETAS, SIN_INTENTOS,
 # SESION_CON_CUENTA, CORREO_YA_REGISTRADO, DATO_INVALIDO, JURISDICCION_NO_SOPORTADA, NO_DISPONIBLE (con reintento)
 # ESPERA_REQUERIDA (v0.31: reenvío del código antes de 60 s; trae `segundosRestantes`),
+# RECORRIDOS_AGOTADOS (v0.56: la cuenta ya tuvo 3 recorridos rechazados en 24 h; `iniciarOnboarding` con sesión),
 # o un código del almacenamiento (TIPO_CONTENIDO_NO_ADMITIDO, TAMANO_NO_ADMITIDO, OBJETO_NO_SUBIDO, ...).
 type ErrorOnboarding {
   codigo: String!
@@ -1053,6 +1054,46 @@ type SiniestroReportado {
 # El error trae el mensaje para el cliente (póliza ajena o fuera de vigencia, foto inválida, relato muy corto, sin
 # identidad verificada o servicio caído con reintento).
 union ResultadoReporteSiniestro = SiniestroReportado | ErrorSiniestro
+
+# ---------- Detalle del caso para el CLIENTE (v0.64, HU-M05, KAN-35) ----------
+# M05-07 en el móvil. Lo mismo que `SiniestroReportado` más lo que el propio cliente escribió o subió (relato,
+# ubicación y fotos), su póliza y la línea de tiempo. Sin datos del operador ni del perito: ni el comentario, ni las
+# verificaciones, ni la suma reclamada, ni si la aprobación fue automática.
+
+# Una foto que subió el cliente al reportar. Los documentos de soporte del operador no se muestran.
+type FotoSiniestro {
+  id: ID!
+  # URL firmada de lectura del almacenamiento (vence en minutos): al vencer, la app vuelve a pedir el detalle. Vacía si
+  # el archivo no está disponible (la app muestra «Imagen no disponible»).
+  url: String!
+  registradaEn: DateTime!
+}
+
+# Un paso de la línea de tiempo: PENDIENTE al reportar, EN_REVISION si se derivó a un perito, y APROBADO o RECHAZADO
+# al resolver. Del más antiguo al más reciente.
+type HitoSiniestro {
+  estado: EstadoSiniestro!
+  en: DateTime!
+}
+
+type DetalleSiniestroCliente {
+  id: ID!
+  radicado: String!
+  estado: EstadoSiniestro!
+  ocurridoEn: DateTime!
+  notificadoEn: DateTime!
+  venceDictamenEn: DateTime!
+  tipoSiniestroAuto: TipoSiniestroAuto # solo en pólizas de AUTO
+  descripcion: String!
+  ubicacion: Ubicacion!
+  poliza: Poliza!
+  fotos: [FotoSiniestro!]!
+  historial: [HitoSiniestro!]!
+  resolucion: ResolucionCliente # null mientras está PENDIENTE
+  # true si, vencido el plazo estando PENDIENTE, el sistema lo aprueba solo. false en auto parcial o de responsabilidad
+  # civil: el operador tiene que valorar el daño (la app no promete la aprobación automática).
+  apruebaAlVencer: Boolean!
+}
 
 # ---------- Indemnización y cobertura paramétrica (v0.48, KAN-259, HU-M04 Fase 5) ----------
 # Lo que la app móvil mostrará en la Fase 6 (fuera de este contrato) al tocar el push de una indemnización
@@ -1316,6 +1357,7 @@ enum CodigoErrorAsistencia {
   TIPO_NO_ATENDIDO # el prestador no atiende ese tipo de asistencia
   DATOS_INVALIDOS # idSolicitud mal formado o de otra persona, o textos demasiado largos
   NO_ENCONTRADA # cancelar una asistencia que no existe o no es del cliente
+  POLIZA_NO_VALIDA # v0.65: la póliza no es del cliente, no es de auto, no está emitida o no está vigente
 }
 
 input SolicitudAsistenciaInput {
@@ -1328,6 +1370,11 @@ input SolicitudAsistenciaInput {
   longitud: Float!
   # v0.50 (HU-M06, B4): de dónde salió la ubicación. Se guarda con la asistencia y en la auditoría.
   origenUbicacion: OrigenUbicacion! = GPS
+  # v0.65 (HU-M06, KAN-36): la póliza de auto del cliente que cubre la asistencia (la elige en la app). Opcional para
+  # las versiones de la app ya instaladas. Si llega, CLAIMS exige que sea suya, de AUTO, EMITIDA y vigente
+  # (POLIZA_NO_VALIDA si no). Si POLICY no responde, la asistencia sigue (es una urgencia) y la póliza queda sin
+  # verificar.
+  polizaId: ID = null
 }
 
 # v0.50 (HU-M06, B4 y B9): sin permiso de ubicación o con el GPS apagado, el cliente escribe su dirección; la app la
@@ -1375,6 +1422,7 @@ type Asistencia {
   # v0.52 (B6): solo en misAsistencias y asistencia(id), y solo al cliente dueño: lo que pidió y adónde.
   descripcion: String
   ubicacion: UbicacionAsistencia
+  polizaId: ID # v0.65: la póliza que eligió el cliente; null si la pidió una versión anterior de la app
 }
 
 type UbicacionAsistencia {
@@ -1435,6 +1483,8 @@ type Query {
   peritos(siniestroId: ID!): [Perito!]!
   # v0.35 (HU-M05): los casos que reportó el CLIENTE del token, del más reciente al más antiguo.
   misSiniestros: [SiniestroReportado!]!
+  # v0.64 (HU-M05, KAN-35): el detalle de un caso del CLIENTE del token. null si no existe o no lo reportó él.
+  miSiniestro(id: ID!): DetalleSiniestroCliente
   # ---------- v0.22 (HU-W07) ----------
   # Solo BACKOFFICE. `ventana`: 15m, 1h, 24h o 7d.
   estadoSistema(ventana: String = "1h"): EstadoSistema!

@@ -572,6 +572,153 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.65 — 2026-11-21
+
+- HU-M06 (KAN-36): al pedir asistencia en el móvil, el cliente elige su póliza de **auto**. Las hipotecarias
+  (`VIDA_DEUDOR`) no se ofrecen.
+  - `SolicitudAsistenciaInput` gana `polizaId: ID = null`, opcional para las versiones de la app ya instaladas.
+  - Si llega, CLAIMS valida contra POLICY que la póliza sea del cliente (la firmó, la aceptó o es el titular), de
+    `AUTO`, `EMITIDA` y vigente. Si no, responde `ErrorAsistencia` con el código nuevo `POLIZA_NO_VALIDA`.
+  - Si POLICY no responde, la asistencia sigue (es una urgencia, regla #4) y la póliza se guarda sin verificar.
+  - `Asistencia` gana `polizaId: ID` (null en las pedidas sin póliza). CLAIMS guarda `poliza_id` y
+    `poliza_verificada` en el documento, sin migración (MongoDB, campos nuevos opcionales).
+- Solo cambios aditivos. Afecta al frontend: el móvil (campo «Póliza que cubre la asistencia» en el formulario de M06-02).
+
+## v0.64 — 2026-11-21
+
+- HU-M05 (KAN-35): el detalle de un caso para el CLIENTE en la app (M05-07). Antes la app armaba el detalle con lo poco
+  que trae `misSiniestros`.
+  - Query nueva `miSiniestro(id: ID!): DetalleSiniestroCliente`, solo CLIENTE: null si el caso no existe o no lo
+    reportó él (mismo trato que uno inexistente).
+  - Tipo nuevo `DetalleSiniestroCliente`: lo de `SiniestroReportado` más el relato, la ubicación, la póliza (`Poliza`),
+    las fotos (`FotoSiniestro`, con URL firmada de lectura), la línea de tiempo (`HitoSiniestro`: PENDIENTE,
+    EN_REVISION si pasó por un perito, y APROBADO o RECHAZADO) y `apruebaAlVencer` (false en auto parcial o de
+    responsabilidad civil: vencido el plazo no se aprueba solo porque el operador valora el daño, KAN-290).
+  - Sin datos del operador ni del perito (comentario, verificaciones, suma reclamada, aprobación automática).
+  - `tipos-archivo.json`: `siniestro-foto` suma `CLIENTE` a `quien_lee`. El almacenamiento solo le deja leer a un
+    CLIENTE lo que él mismo subió, así que ve sus fotos y nunca las de otro caso.
+  - CLAIMS: la resolución del expediente trae `derivada_en` (cuándo pasó a un perito) para la línea de tiempo.
+- Solo cambios aditivos. Afecta al frontend: el móvil (detalle del siniestro).
+
+## v0.63 — 2026-11-21
+
+- HU-W07 (KAN-69), HA-MOD-003 / EC033: **primera versión nueva de la API de socios, `/v2`, que convive con `/v1`**
+  (política en [ADR-13](../docs/adr/ADR-13-versionado-api-socios.md)). Contrato nuevo `openapi/socios-v2.json`
+  (**2.0.0**), servido en `GET /v2/openapi.json`.
+  - `POST /v2/cotizaciones`: mismo cuerpo, errores, scope (`cotizaciones`), presupuesto y modo prueba que
+    `POST /v1/cotizaciones`. Lo único que cambia (y por eso es otra versión): la oferta trae **un solo `precio`** en
+    lugar de `prima` y `rangoPrima`: `{"tipo":"EXACTO","valor","moneda"}` (COMPLETA) o
+    `{"tipo":"RANGO","minima","maxima","moneda"}` (PRELIMINAR).
+  - Cuenta en `/v1/consumo` como `cotizaciones`, igual que /v1. La `Idempotency-Key` de /v2 va aparte de la de /v1.
+  - También le aplican el límite de tasa (v0.61) y el antifraude (v0.62): `LIMITE_DE_TASA` y
+    `CREDENCIAL_SUSPENDIDA` están en el `ErrorPublico` de /v2.
+  - El gateway (Envoy y `openapi-socios.yaml`) suma las dos rutas con el mismo corte de 0,7 s; el token se valida en
+    el borde igual que en /v1.
+- `/v1` no cambia ni se anuncia su retiro. Afecta al frontend: no (el portal usa /v1; la guía de integración puede
+  mencionar /v2 cuando se publique).
+
+## v0.62 — 2026-11-21
+
+- HU-W07 (KAN-66), HA-SEG-004: **antifraude mínimo de la API de socios en el BFF**. Si un token recibe 30 respuestas
+  403 o 404 en 60 s (sondear lo que no es suyo u operaciones sin permiso), la credencial de ese socio en ese entorno
+  queda suspendida 15 minutos y toda llamada con token responde **403 `CREDENCIAL_SUSPENDIDA`** con `Retry-After`,
+  antes de revisar el scope o gastar presupuesto. El otro entorno sigue; vence sola.
+  - La fuerza bruta sobre `POST /v1/token` no cambia: AUTH ya bloquea la credencial tras 5 fallos y responde
+    siempre `CREDENCIALES_INVALIDAS` (para no revelar qué `clientId` existen).
+  - Contadores en Redis; si Redis no responde, no se aplica (regla 4). Métrica `bff_socios_anomalia_total{regla}`.
+- `socios-v1.json` pasa a **1.3.0**: `CREDENCIAL_SUSPENDIDA` en `ErrorPublico`, `Retry-After` en `SinPermiso` y la
+  sección «Antifraude» en `info.description`. Solo cambios aditivos. Afecta al frontend: la web puede sincronizar su
+  copia del contrato cuando quiera (el portal no usa el código nuevo).
+
+## v0.61 — 2026-11-21
+
+- HU-W07 (KAN-217, KAN-218): **límite de tasa por credencial de socio en el BFF**. Cada credencial (socio y entorno)
+  admite 20 llamadas por segundo en PRODUCCION y 5 en PRUEBAS a las operaciones con token
+  (`LIMITE_SOCIO_RPS_PRODUCCION` y `LIMITE_SOCIO_RPS_PRUEBAS`; 0 lo apaga). La que pasa el tope recibe
+  **429 `LIMITE_DE_TASA`** con `Retry-After: 1` y `puedeReintentar = true`, antes de revisar el scope, descontar
+  presupuesto o llamar a otro servicio; cuenta en `/v1/consumo` como error del cliente.
+  - Ventana fija de 1 s en Redis, compartida por las instancias del BFF. Sin Redis se deja pasar (regla 4) y se
+    cuenta en `bff_socios_limite_sin_almacen_total`; los rechazos, en `bff_socios_limite_tasa_total{entorno}`.
+  - Es independiente del presupuesto de cotizaciones (`PRESUPUESTO_AGOTADO`, por hora y solo para cotizar).
+- `socios-v1.json` pasa a **1.2.0**: `LIMITE_DE_TASA` en `ErrorPublico`, respuesta `LimiteDeTasa` (429) en las 18
+  operaciones con token y la sección «Límite de tasa» en `info.description`. Solo cambios aditivos. Afecta al
+  frontend: la web puede sincronizar su copia del contrato (el portal no llama tan rápido como para verlo).
+
+## v0.58 — 2026-11-20
+
+- HU-M01 (KAN-131): una falla técnica del proveedor de identidad ya no deja la verificación en `EN_REVISION` sin salida.
+  - El ACL separa «la foto no sirve» (4xx de entrada de Didit → rechazo `ILEGIBLE`, que gasta intento) de «Didit falló»
+    (429, 5xx, timeout o circuito abierto) y de «la cuenta de Didit está mal» (401/402/403). El circuito de identidad tiene
+    umbral y TTL propios y solo cuenta las fallas reales.
+  - ONBOARDING reintenta en segundo plano las fallas técnicas (la sesión sigue `EN_VERIFICACION`). Si siguen, la sesión
+    cierra en `RECHAZADA` con `motivo` `PROVEEDOR_NO_DISPONIBLE` o `IMAGEN_NO_DISPONIBLE`: **no gasta intento**
+    (`intentosRestantes` no baja y reintentar repite el mismo `intento`), no rechaza la cuenta en AUTH y no cuenta para el
+    tope de `RECORRIDOS_AGOTADOS`.
+  - `EN_REVISION` ya no se produce por fallas del proveedor (el valor sigue en el enum).
+- Sin cambios de forma: solo cambia con qué `estado` llegan dos motivos que ya existían. Afecta al frontend: el móvil
+  muestra un texto propio para esos dos motivos en la tarjeta «rechazada» y en M01-07c.
+
+## v0.57 — 2026-11-20
+
+- HU-W07 (KAN-30, KAN-217), HA-SEG-004 / EC025: **el BFF valida los scopes del token del socio en cada llamada `/v1`**.
+  AUTH ya los emitía (`cotizaciones`, `propuestas`, `polizas`, `cuenta`), pero nadie los revisaba.
+  - Cada operación con token declara su scope en `security` (`socios-v1.json` pasa a **1.1.0**, con la tabla en
+    `info.description`, sección «Scopes»). Un token válido sin ese scope recibe **403 `PROHIBIDO`** (respuesta nueva
+    `SinPermiso`), antes de descontar presupuesto, entrar al modo prueba o llamar a otro servicio; cuenta en
+    `/v1/consumo` como error.
+  - Un token sin el claim `scopes`, o con un valor que no es una lista de textos, es **401 `TOKEN_INVALIDO`**.
+  - El token y el scope se revisan **antes que el cuerpo**: un cuerpo inválido sin token válido ahora es 401 (antes
+    422). Un JSON que ni se puede leer sigue siendo 422.
+- Solo cambios aditivos (una respuesta nueva; `PROHIBIDO` ya estaba en `ErrorPublico`). Todos los socios siguen
+  recibiendo los cuatro scopes, así que el portal no cambia de comportamiento. Afecta al frontend: la web copia el
+  contrato (`contrato/socios-v1.json` y `apps/web/src/contrato/socios-v1.json`) y regenera sus tipos.
+
+## v0.56 — 2026-11-20
+
+- HU-M01 (KAN-31): reintentar la verificación de identidad después de agotar los intentos.
+  - AUTH: una cuenta `RECHAZADA` vuelve a `ACTIVO` si un recorrido nuevo se aprueba (antes `RECHAZADA` era definitivo
+    y un recorrido nuevo aprobado no activaba la cuenta). Una cuenta `ACTIVO` nunca baja a `RECHAZADA`.
+  - ONBOARDING: tope de 3 recorridos `RECHAZADA` por cuenta en 24 h (`MAX_RECHAZADAS_DIA`). Al ligar otro,
+    `iniciarOnboarding` responde `ErrorOnboarding` con el código nuevo `RECORRIDOS_AGOTADOS`.
+  - ONBOARDING: ligar un recorrido nuevo a la cuenta **invalida los otros recorridos abiertos** (`INICIADO`) de esa
+    cuenta: pierden sus cuatro piezas, que empiezan a vencer con su retención, y queda el evento `INVALIDADA`. Ninguna
+    foto vieja se vuelve a usar.
+- Solo cambios aditivos (un código nuevo de `ErrorOnboarding`). Afecta al frontend: el móvil (abre un recorrido nuevo
+  al aceptar el consentimiento y muestra el mensaje del código nuevo).
+
+## v0.55 — 2026-11-19
+
+- HU-W07 (KAN-30), `GET /v1/consumo`: las estadísticas cuadran con el presupuesto y con lo que el socio hizo.
+  - **Días de Colombia** (`America/Bogota`): antes se agrupaba por día UTC y lo de después de las 19:00 caía en el día
+    siguiente. `hasta` por defecto también es el día de Colombia.
+  - **`diario` trae todos los días** del rango, con 0 los que no tuvieron llamadas (el gráfico no los salta). El rango
+    va hasta 366 días; más largo responde 422 `DATOS_INVALIDOS`.
+  - **`porApi`: `cotizaciones-auto` suma en `cotizaciones`**, la misma bolsa del presupuesto. Así, `llamadas - errores`
+    de esa fila son las cotizaciones que descontaron presupuesto.
+  - **No cuentan las consultas de la cuenta** (`/v1/consumo`, `/v1/estado`, `/v1/ventas` y `/v1/credenciales`, con la
+    rotación): el portal las lee al abrirse, así que mirar las estadísticas las subía.
+  - **Sí cuenta un 422 por cuerpo inválido** con un token válido (FastAPI lo rechazaba antes de identificar al socio).
+- Sin cambio de contrato pero sí de comportamiento: si una cotización **lanza** (no solo si responde un error), la unidad
+  de presupuesto vuelve. Si no se puede devolver, queda en la métrica `bff_socios_devolucion_fallida_total`.
+- Solo cambios aditivos en la forma. Afecta al frontend: el panel del socio muestra días en 0 y una sola fila de
+  cotizaciones; no requiere cambios de código.
+
+## v0.54 — 2026-11-19
+
+- HU-W07 (KAN-30), API de socios: `POST /v1/cotizaciones` y `POST /v1/cotizaciones-auto` aceptan la cabecera
+  opcional `Idempotency-Key`. El gateway corta a los 700 ms, pero el BFF terminaba la cotización: el socio veía un
+  504, reintentaba y se descontaban **dos** unidades de presupuesto y se contaban dos llamadas.
+  - Con la misma clave, el reintento recibe la respuesta guardada con `Idempotent-Replayed: true`, sin descontar
+    presupuesto ni contarse en `/v1/consumo`. La clave vale 24 h, por socio, entorno y operación.
+  - Códigos nuevos de `ErrorPublico`: `SOLICITUD_EN_CURSO` (409, con `Retry-After`: la primera sigue en curso) e
+    `IDEMPOTENCIA_EN_CONFLICTO` (422: la clave ya se usó con otro cuerpo).
+  - Si la cotización falla, la clave se libera y el socio puede reintentar con ella.
+- Sin cambio de contrato pero sí de comportamiento: cada llamada del socio se registra en el consumo **antes** de
+  responder (antes era una tarea suelta que Cloud Run podía no correr). Si AUTH tarda más de 150 ms, la llamada no se
+  cuenta y queda en la métrica `bff_socios_consumo_perdido_total`.
+- Solo cambios aditivos: sin la cabecera todo sigue igual. Afecta al frontend: no (el portal no cotiza); los socios
+  pueden empezar a enviarla.
+
 ## v0.53 — 2026-11-18
 
 - HU-M06 (KAN-36): la especialidad y el horario del prestador llegan como datos y la app los muestra en su idioma
@@ -714,3 +861,12 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   suma el filtro `poliza_id` a `GET /interno/coberturas-parametricas`. Solo cambios aditivos.
 - Afecta al frontend: en teoría sí (son las queries que la Fase 6, fuera de este contrato, va a consumir), pero la
   app móvil no las llama todavía.
+
+## Configuración — 2026-11-20 (sin cambio de esquema ni versión nueva)
+
+- KAN-290 (HU-W08) + KAN-259 (HU-M04): toda póliza de auto lleva una cobertura paramétrica de clima en su ciudad de
+  circulación. `contracts/ciudades.json` suma `latitud` y `longitud` (centro de la ciudad, 2 decimales: la celda de
+  clima) a cada ciudad, y `contracts/tarifas-auto.json` suma `parametrica_clima` (variable, umbral, ventana y monto
+  fijo; no cambia la prima). Copias nuevas en `services/policy/app/` con `scripts/sincronizar_fuentes.py`.
+- Afecta al frontend: no. El móvil ya muestra la cobertura en «Mi cobertura» (`miCoberturaParametrica`, v0.48); la
+  copia de ciudades del móvil puede ignorar los campos nuevos.

@@ -144,6 +144,7 @@ def create_app(
                     config.edad_minima,
                     config.max_intentos,
                     config.vigencia_token_s,
+                    config.max_rechazadas_dia,
                 ),
                 cuentas=cuentas,
             )
@@ -296,10 +297,15 @@ def create_app(
         response_model=OnboardingResponse,
         responses=errores,
     )
-    def tarea_verificar(sesion_id: str) -> OnboardingResponse:
-        """La dispara Cloud Tasks (privado, token OIDC). Un 503 hace que la reintente."""
+    def tarea_verificar(
+        sesion_id: str,
+        x_cloudtasks_taskretrycount: Annotated[int | None, Header()] = None,
+    ) -> OnboardingResponse:
+        """La dispara Cloud Tasks (privado, token OIDC). Un 503 hace que la reintente. En el último
+        intento de la cola (KAN-131) la sesión cierra en RECHAZADA técnico en vez de otro 503."""
+        ultimo = (x_cloudtasks_taskretrycount or 0) + 1 >= config.tareas_max_intentos
         try:
-            return _vista(_servicio().verificar(sesion_id))
+            return _vista(_servicio().verificar(sesion_id, ultimo_intento=ultimo))
         except VerificacionPendiente as error:
             raise HTTPException(status_code=503, detail="VERIFICACION_PENDIENTE") from error
 

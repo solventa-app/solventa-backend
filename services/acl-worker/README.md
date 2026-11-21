@@ -50,6 +50,11 @@ Experimento 1 a Python/`rq`, aplicada aquí a Open Finance/Open Data (no a KYC).
   (`PRESUPUESTO_CON_CACHE_MS`, 300 ms por defecto) para cumplir **EC010 ≤ 500 ms**, o sirve
   directamente desde caché dentro del TTL si `CACHE_SERVIR_EN_TTL=true` (salvo `forzar_proveedor=True`).
   Si no hay nada en caché, devuelve un valor mínimo con `degradado=True`. Nunca se propaga un 5xx crudo.
+  **`de_cache=True` significa «el proveedor falló y se sirve el último valor bueno»** (con eso RATING y
+  RISK vuelven la oferta `PRELIMINAR`, CA-W01-04). Lo servido dentro del TTL sale con `de_cache=False`:
+  no hubo falla, y marcarlo volvía preliminar toda cotización repetida del mismo cliente en 5 minutos.
+  El job de reconciliación del Consolidador consulta con `forzar_proveedor=True` para no tomar ese valor
+  cacheado por una recuperación del proveedor.
 - **Invalidación activa de caché al revocar consentimiento (CA-W01-08):** `POST /fuentes/invalidar-cache`
   con `{"cliente_id": "..."}` en el cuerpo borra de inmediato las claves cacheadas de todas las fuentes
   configuradas para ese titular, además del TTL pasivo de 5 minutos.
@@ -191,8 +196,16 @@ Agregar un proveedor nuevo no toca el código: su variable `PRESUPUESTO_MS_<PROV
   datos?, documento_autentico, coincide_rostro, puntaje_rostro, vivo, puntaje_vida, alertas}`. Siempre 200. Las imágenes llegan como URLs
   firmadas de `almacenamiento`; el ACL las descarga solo de `IDENTIDAD_ORIGENES_IMAGENES` (anti-SSRF, máx. 10 MB) y llama a las APIs
   independientes de Didit v3 (`id-verification`, `passive-liveness`, `face-match`, encabezado `x-api-key`, `save_api_request=false`).
-- Motivos: `documento_rechazado`, `prueba_de_vida_fallida`, `rostro_no_coincide`; en `pendiente`, `imagen_no_disponible`,
-  `circuito_abierto` o `proveedor_no_disponible`. Circuito `identidad` con su sonda (`GET /`), sin reintento (Didit cobra por llamada).
+- Motivos: `documento_rechazado`, `prueba_de_vida_fallida`, `rostro_no_coincide` e `imagen_no_procesable`; en `pendiente`,
+  `imagen_no_disponible`, `circuito_abierto`, `proveedor_no_disponible` o `proveedor_mal_configurado`. Circuito `identidad` con su
+  sonda (`GET /`), sin reintento (Didit cobra por llamada).
+- **Errores de Didit separados por culpa (KAN-131):** 400/413/415/422 (sin rostro, imagen inválida o grande) → `rechazada` /
+  `imagen_no_procesable`, gasta intento y no cuenta para el circuito. 401/402/403 (llave o créditos) → `ProveedorMalConfigurado`:
+  log `error` (Sentry), excluido del circuito y `pendiente` / `proveedor_mal_configurado`. 429, 5xx y timeout → falla técnica que
+  sí cuenta. El circuito de identidad tiene umbral y TTL propios: `IDENTIDAD_BREAKER_UMBRAL` (5) e
+  `IDENTIDAD_BREAKER_TTL_SEGUNDOS` (30), en vez de los globales (3 y 5 s). ONBOARDING reintenta los `pendiente` y, si siguen,
+  cierra en `RECHAZADA` técnico sin gastar intento. En los logs: `circuito=identidad abierto`, `proveedor de identidad mal
+  configurado` y `fallo verificando identidad ... error=HTTPStatusError`.
 - **Caché por huella**: llave `acl:identidad:{sha256 de las imágenes}`, nunca la cédula; valor cifrado AES-GCM con
   `IDENTIDAD_LLAVE_CACHE` (32 bytes en base64), TTL `IDENTIDAD_CACHE_TTL_SEGUNDOS` (30 días). Solo guarda resultados definitivos.
   Sin llave en la nube, la caché se apaga con un aviso; en local la llave es aleatoria por proceso.

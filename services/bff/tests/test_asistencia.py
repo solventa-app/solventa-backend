@@ -5,7 +5,7 @@ import asyncio
 
 import httpx
 import pytest
-from fakes import ClaimsFalso, clientes_falsos, token_de_prueba
+from fakes import AuthFalso, ClaimsFalso, _usuario_publico, clientes_falsos, token_de_prueba
 from fastapi.testclient import TestClient
 
 from app.autenticacion_usuarios import MENSAJE_SIN_PERMISO
@@ -141,7 +141,9 @@ def test_un_id_que_no_es_uuid_no_llega_a_claims():
     assert claims.llamadas == []
 
 
-@pytest.mark.parametrize("codigo", ["PRESTADOR_NO_DISPONIBLE", "TIPO_NO_ATENDIDO", "OTRO_NUEVO"])
+@pytest.mark.parametrize(
+    "codigo", ["PRESTADOR_NO_DISPONIBLE", "TIPO_NO_ATENDIDO", "POLIZA_NO_VALIDA", "OTRO_NUEVO"]
+)
 def test_el_rechazo_de_claims_va_en_la_union(codigo):
     claims = ClaimsFalso()
     claims.rechazo_asistencia = (codigo, "Mensaje de CLAIMS.")
@@ -327,3 +329,43 @@ def test_una_asistencia_y_la_ajena_es_no_encontrada():
 def test_mis_asistencias_solo_el_cliente():
     r = _pedir(ClaimsFalso(), MIS, {}, rol="ASESOR")
     assert r["errors"][0]["message"] == MENSAJE_SIN_PERMISO
+
+
+# ---------- v0.65 (KAN-36): la póliza de auto que eligió el cliente ----------
+
+
+def _pedir_con_auth(claims, auth, variables):
+    headers = {"Authorization": f"Bearer {token_de_prueba('CLIENTE', usuario_id='cli-1')}"}
+    clientes = clientes_falsos(claims=claims, auth=auth)
+    with TestClient(create_app(config=Configuracion.desde_entorno(), clientes=clientes)) as http:
+        r = http.post(
+            "/graphql/app", json={"query": SOLICITAR, "variables": variables}, headers=headers
+        )
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_v055_con_poliza_viaja_a_claims_con_el_titular_de_auth():
+    auth = AuthFalso()
+    auth.usuarios["cli-1"] = _usuario_publico("cli-1", "ana.cliente", "CLIENTE")
+    auth.documentos["cli-1"] = "1020304050"
+    claims = ClaimsFalso()
+    _pedir_con_auth(claims, auth, {"e": _entrada(polizaId="pol-auto")})
+    _, solicitud = claims.llamadas[0]
+    assert solicitud["poliza_id"] == "pol-auto"
+    assert solicitud["titular_id"]  # el HMAC del documento, nunca el documento
+    assert "1020304050" not in str(solicitud)
+
+
+def test_v055_si_auth_no_responde_igual_se_pide_sin_titular():
+    claims = ClaimsFalso()
+    _pedir_con_auth(claims, AuthFalso(falla=True), {"e": _entrada(polizaId="pol-auto")})
+    _, solicitud = claims.llamadas[0]
+    assert solicitud["poliza_id"] == "pol-auto" and solicitud["titular_id"] is None
+
+
+def test_v055_sin_poliza_no_consulta_auth_ni_manda_campos_nuevos():
+    claims = ClaimsFalso()
+    _pedir(claims, SOLICITAR, {"e": _entrada()})
+    _, solicitud = claims.llamadas[0]
+    assert "poliza_id" not in solicitud and "titular_id" not in solicitud

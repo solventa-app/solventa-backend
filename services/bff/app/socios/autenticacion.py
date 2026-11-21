@@ -16,7 +16,12 @@ import jwt
 
 from app.autenticacion_usuarios import UsuarioActual, extraer_cabecera_autorizacion
 from app.clientes import ErrorServicio, PuertoSocios
-from app.socios.errores import MENSAJE_TOKEN_INVALIDO, ErrorApiSocio, no_disponible
+from app.socios.errores import (
+    MENSAJE_SIN_PERMISO,
+    MENSAJE_TOKEN_INVALIDO,
+    ErrorApiSocio,
+    no_disponible,
+)
 
 logger = logging.getLogger("bff.socios.autenticacion")
 
@@ -30,6 +35,8 @@ ENTORNOS = ("PRODUCCION", "PRUEBAS")
 class SocioActual:
     id: str
     entorno: str
+    # Los del claim `scopes` del token (HA-SEG-004): cada ruta `/v1` exige el suyo con `exigir`.
+    scopes: frozenset[str] = frozenset()
 
     @property
     def es_prueba(self) -> bool:
@@ -37,7 +44,13 @@ class SocioActual:
 
     def como_usuario(self) -> UsuarioActual:
         """El socio como actor de los servicios de W03 (W07-20): un intermediario con rol SOCIO."""
-        return UsuarioActual(id=self.id, rol="SOCIO", scopes=())
+        # `UsuarioActual.scopes` solo decide `verificacion-pendiente`, que el socio nunca trae.
+        return UsuarioActual(id=self.id, rol="SOCIO", scopes=tuple(sorted(self.scopes)))
+
+    def exigir(self, scope: str) -> None:
+        """403 `PROHIBIDO` si el token no trae el scope de la ruta (EC025)."""
+        if scope not in self.scopes:
+            raise ErrorApiSocio(403, "PROHIBIDO", MENSAJE_SIN_PERMISO)
 
 
 def _token_invalido() -> ErrorApiSocio:
@@ -103,4 +116,11 @@ class VerificadorTokensSocio:
             raise _token_invalido() from error
         if claims.get("rol") != "SOCIO" or claims.get("entorno") not in ENTORNOS:
             raise _token_invalido()
-        return SocioActual(id=str(claims["sub"]), entorno=claims["entorno"])
+        # Sin el claim o mal formado no es un token de AUTH: 401. Bien formado pero sin el scope
+        # de la ruta: 403 (`SocioActual.exigir`).
+        scopes = claims.get("scopes")
+        if not isinstance(scopes, list) or not all(isinstance(s, str) for s in scopes):
+            raise _token_invalido()
+        return SocioActual(
+            id=str(claims["sub"]), entorno=claims["entorno"], scopes=frozenset(scopes)
+        )

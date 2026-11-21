@@ -167,7 +167,7 @@ class ServicioParametricos:
         if existente is not None:
             logger.info(
                 "evento=%s poliza=%s ya tenía siniestro paramétrico: no se duplica",
-                evento["eventId"],
+                id_opaco(evento["eventId"]),
                 id_opaco(poliza_id),
             )
             return False
@@ -208,7 +208,12 @@ class ServicioParametricos:
             # volver a consultar POLICY ni al ACL. No son datos personales (regla #6): se guardan
             # en claro, sin cifrar.
             "evento_valor": datos.get("valor"),
-            "evento_umbral": cobertura.get("umbral_retraso_min") or cobertura.get("umbral"),
+            # `is not None`: un umbral de 0 min (demo de staging) es un umbral válido, no un vacío.
+            "evento_umbral": (
+                cobertura["umbral_retraso_min"]
+                if cobertura.get("umbral_retraso_min") is not None
+                else cobertura.get("umbral")
+            ),
             "evento_variable": datos.get("variable"),
             "evento_cancelado": bool(datos.get("cancelado")) if tipo == "VUELO" else None,
             # KAN-259 Fase 5 (BFF `polizaAnterior`): la vigencia de la cobertura al momento del

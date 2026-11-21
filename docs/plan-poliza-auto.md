@@ -65,6 +65,7 @@ menor que el del odómetro (se avisa y se usa el del odómetro).
   responsabilidad civil); `aprobarSiniestro` admite `valorDano` en pérdida parcial (A-3).
 - API de socios (`socios-v1.json`): `producto` y `vehiculo` en la cotización. Modo prueba con respuestas fijas de auto.
 - Eventos: `poliza.emitida` lleva `producto`.
+| A-9 | **Clima incluido (HU-M04, 2026-11-20):** toda póliza `AUTO` lleva, sin cambio de prima ni de formulario, una cobertura paramétrica `CLIMA` en la celda de su ciudad de circulación (`latitud`/`longitud` de `contracts/ciudades.json`; parámetros en `parametrica_clima` de `tarifas-auto.json`: precipitación ≥ 40 mm en 24 h, monto fijo de 500.000 COP). POLICY la crea al emitir (idempotente; si falla, la póliza queda emitida y se registra) y Cloud Scheduler llama a `POST /coberturas-parametricas/_consultar-clima` de POLICY, que consulta al ACL una vez por celda vigente. CLAIMS la liquida como cualquier paramétrica y el cliente recibe el push. Una ciudad fuera del catálogo se queda sin clima. La cobertura no aparece en la lista `coberturas` de la oferta (no se agrega un valor a `TipoCobertura` para no romper la web ni el móvil); se ve en «Mi cobertura» del móvil. El de vuelo sigue saliendo solo de la semilla | Cerrada |
 
 ## 5. Tareas
 

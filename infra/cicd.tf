@@ -108,8 +108,8 @@ resource "google_project_iam_member" "terraform_propietario" {
   member  = "serviceAccount:${google_service_account.terraform[0].email}"
 }
 
-# Para que `plan` pueda leer el presupuesto (la cuenta de facturación es compartida con otros proyectos). Solo
-# lectura: cambiar el presupuesto sigue siendo manual, de quien administra la facturación.
+# Para que `plan` pueda leer el presupuesto. Solo lectura a propósito: la cuenta de facturación (la de Solventa) no la
+# administra Terraform desde el pipeline; cambiar el presupuesto sigue siendo manual, de quien administra la facturación.
 resource "google_billing_account_iam_member" "terraform_lee_presupuesto" {
   provider           = google.facturacion
   count              = (var.crear_pipeline && var.crear_presupuesto) ? 1 : 0

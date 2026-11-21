@@ -30,6 +30,9 @@ EN: dict[str, str] = {
     "Esta operación requiere un token de producción.": (
         "This operation requires a production token."
     ),
+    "El token no tiene permiso para esta operación.": (
+        "The token is not allowed to perform this operation."
+    ),
     "No existe o no pertenece a este socio.": (
         "It does not exist or does not belong to this partner."
     ),
@@ -42,6 +45,14 @@ EN: dict[str, str] = {
     ),
     "El servicio no está disponible en este momento. Intenta de nuevo.": (
         "The service is not available right now. Please try again."
+    ),
+    # Antifraude de socios (HA-SEG-004, v0.62)
+    "La credencial quedó suspendida temporalmente por actividad inusual. Intenta más tarde.": (
+        "The credential was temporarily suspended due to unusual activity. Try again later."
+    ),
+    # Límite de tasa por credencial de socio (KAN-217, v0.61)
+    "Demasiadas solicitudes por segundo para esta credencial. Intenta de nuevo.": (
+        "Too many requests per second for this credential. Please try again."
     ),
     # Acceso biométrico del teléfono (KAN-26, contrato v0.44)
     "No pudimos verificar este teléfono. Ingresa con tu correo y contraseña.": (

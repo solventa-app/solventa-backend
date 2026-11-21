@@ -19,6 +19,7 @@ from fastapi import FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
+from prometheus_client import Counter
 from prometheus_fastapi_instrumentator import Instrumentator
 from strawberry.fastapi import GraphQLRouter
 
@@ -49,9 +50,12 @@ from app.servicio_oferta import ServicioOferta
 from app.servicio_restablecimiento import ServicioRestablecimiento
 from app.servicio_suscripcion import MENSAJE_DOCUMENTO_NO_DISPONIBLE, ServicioSuscripcion
 from app.sesiones_revocadas import SesionesRevocadasMemoria, SesionesRevocadasRedis
-from app.socios.api import api_de, construir_router, es_ruta_de_socios
+from app.socios.antifraude import AlmacenContadoresMemoria, AlmacenContadoresRedis, Antifraude
+from app.socios.api import api_de, construir_router, cuenta_en_el_consumo, es_ruta_de_socios
 from app.socios.autenticacion import VerificadorTokensSocio
 from app.socios.errores import ErrorApiSocio, datos_invalidos, no_disponible, respuesta_de_error
+from app.socios.idempotencia import AlmacenIdempotenciaMemoria, AlmacenIdempotenciaRedis
+from app.socios.limite_tasa import AlmacenVentanasMemoria, AlmacenVentanasRedis, LimiteTasa
 from app.socios.modo_prueba import AlmacenMemoria, AlmacenRedis, ModoPrueba
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -67,8 +71,13 @@ CANALES = ("web", "app", "movil")
 RUTA_SUSCRIPCION = "web-suscripcion"
 
 logger_socios = logging.getLogger("bff.socios")
-# Tareas de registro de consumo en vuelo: se guardan para que no las recoja el recolector.
-_CONSUMOS_PENDIENTES: set[asyncio.Task] = set()
+# Tope del registro de consumo dentro de la petición del socio: si AUTH tarda más, la llamada no se
+# cuenta (queda en `bff_socios_consumo_perdido_total`) en vez de comerse el plazo de 700 ms.
+TIMEOUT_CONSUMO_SEGUNDOS = 0.15
+CONSUMO_PERDIDO = Counter(
+    "bff_socios_consumo_perdido_total",
+    "Llamadas de socios que no se pudieron registrar en el consumo (sin etiquetas de socio).",
+)
 
 
 async def _siempre() -> bool:
@@ -138,6 +147,39 @@ def create_app(
             if clientes is None:
                 abiertos.append(almacen)
             app.state.modo_prueba = ModoPrueba(almacen, app.state.clientes.socios)
+            # Idempotency-Key de las cotizaciones (v0.54): en Redis; en pruebas, en memoria.
+            idempotencia = (
+                AlmacenIdempotenciaRedis(config.redis_url)
+                if clientes is None
+                else AlmacenIdempotenciaMemoria()
+            )
+            if clientes is None:
+                abiertos.append(idempotencia)
+            app.state.idempotencia_socios = idempotencia
+            # Antifraude (v0.62, HA-SEG-004): contadores en Redis; en pruebas, en memoria.
+            contadores = (
+                AlmacenContadoresRedis(config.redis_url)
+                if clientes is None
+                else AlmacenContadoresMemoria()
+            )
+            if clientes is None:
+                abiertos.append(contadores)
+            app.state.antifraude_socios = Antifraude(contadores)
+            # Límite de tasa por credencial (KAN-217, v0.61): en Redis; en pruebas, en memoria.
+            ventanas = (
+                AlmacenVentanasRedis(config.redis_url)
+                if clientes is None
+                else AlmacenVentanasMemoria()
+            )
+            if clientes is None:
+                abiertos.append(ventanas)
+            app.state.limite_tasa_socios = LimiteTasa(
+                ventanas,
+                {
+                    "PRODUCCION": config.limite_socio_rps_produccion,
+                    "PRUEBAS": config.limite_socio_rps_pruebas,
+                },
+            )
         # Salud del sistema (HU-W07). Con dobles y sin `salud`, todos los micros responden.
         if salud is not None:
             app.state.salud = salud
@@ -245,6 +287,16 @@ def create_app(
         # En la API de socios, un cuerpo inválido es `ErrorPublico` (DATOS_INVALIDOS), no el
         # detalle de FastAPI; el resto del BFF responde como siempre.
         if es_ruta_de_socios(request.url.path):
+            # El token y su scope se revisan antes que el cuerpo (dependencia `requiere`), pero un
+            # JSON que ni se puede leer falla antes de las dependencias y el socio aún no está
+            # identificado: se identifica aquí para que el 422 cuente en su consumo (KAN-30). Sin
+            # un token válido no hay a quién contarlo y la respuesta sigue siendo el 422.
+            verificador = getattr(app.state, "verificador_socios", None)
+            if verificador is not None and getattr(request.state, "socio", None) is None:
+                try:
+                    request.state.socio = await verificador.verificar(request.headers)
+                except Exception:  # noqa: BLE001
+                    pass
             idioma = idioma_de(request.headers.get("accept-language"))
             return respuesta_de_error(datos_invalidos(), idioma)
         return await request_validation_exception_handler(request, error)
@@ -252,8 +304,11 @@ def create_app(
     @app.middleware("http")
     async def consumo_y_errores_de_socios(request: Request, siguiente):
         """Registra cada llamada de un socio (W07: consumo por API, sin datos personales) y
-        convierte una falla inesperada en un 503 controlado (regla 4). El registro corre después
-        de responder: no suma latencia."""
+        convierte una falla inesperada en un 503 controlado (regla 4). El registro se espera
+        **antes** de responder (KAN-30): una tarea suelta tras la respuesta se perdía en Cloud
+        Run (`cpu_idle = true`). La latencia registrada no incluye el propio registro, que tiene
+        su tope (`TIMEOUT_CONSUMO_SEGUNDOS`). Una respuesta repetida por `Idempotency-Key` no se
+        vuelve a contar."""
         if not es_ruta_de_socios(request.url.path):
             return await siguiente(request)
         inicio = time.perf_counter()
@@ -267,15 +322,21 @@ def create_app(
         socio = getattr(request.state, "socio", None)
         clientes_app = getattr(app.state, "clientes", None)
         socios = getattr(clientes_app, "socios", None)
-        if socio is not None and socios is not None:
+        repetida = getattr(request.state, "consumo_omitido", False)
+        api = api_de(request.url.path)
+        antifraude = getattr(app.state, "antifraude_socios", None)
+        if (
+            socio is not None
+            and antifraude is not None
+            and respuesta.status_code in (403, 404)
+            and not getattr(request.state, "suspendida", False)
+        ):
+            await antifraude.respuesta_rechazada(socio.id, socio.entorno)
+        if socio is not None and socios is not None and not repetida and cuenta_en_el_consumo(api):
             codigo = respuesta.status_code
             resultado = "OK" if codigo < 400 else ("ERROR" if codigo >= 500 else "ERROR_CLIENTE")
             latencia = int((time.perf_counter() - inicio) * 1000)
-            tarea = asyncio.create_task(
-                _registrar_consumo(socios, socio, api_de(request.url.path), resultado, latencia)
-            )
-            _CONSUMOS_PENDIENTES.add(tarea)
-            tarea.add_done_callback(_CONSUMOS_PENDIENTES.discard)
+            await _registrar_consumo(socios, socio, api, resultado, latencia)
         return respuesta
 
     @app.get("/polizas/{poliza_id}/documento", tags=["polizas"], response_class=Response)
@@ -374,9 +435,13 @@ def create_app(
 
 async def _registrar_consumo(socios, socio, api: str, resultado: str, latencia_ms: int) -> None:
     try:
-        await socios.registrar_consumo(socio.id, socio.entorno, api, resultado, latencia_ms)
-    except Exception:  # noqa: BLE001 - el consumo es de mejor esfuerzo, nunca afecta al socio
-        logger_socios.warning("no se pudo registrar el consumo de un socio")
+        await asyncio.wait_for(
+            socios.registrar_consumo(socio.id, socio.entorno, api, resultado, latencia_ms),
+            TIMEOUT_CONSUMO_SEGUNDOS,
+        )
+    except Exception:  # noqa: BLE001 - el consumo nunca hace fallar la llamada del socio
+        CONSUMO_PERDIDO.inc()
+        logger_socios.warning("no se pudo registrar el consumo de un socio api=%s", api)
 
 
 def _respuesta_de_error(error: ErrorFlujoDatos) -> JSONResponse:
