@@ -50,6 +50,7 @@ from app.servicio_oferta import ServicioOferta
 from app.servicio_restablecimiento import ServicioRestablecimiento
 from app.servicio_suscripcion import MENSAJE_DOCUMENTO_NO_DISPONIBLE, ServicioSuscripcion
 from app.sesiones_revocadas import SesionesRevocadasMemoria, SesionesRevocadasRedis
+from app.socios.antifraude import AlmacenContadoresMemoria, AlmacenContadoresRedis, Antifraude
 from app.socios.api import api_de, construir_router, cuenta_en_el_consumo, es_ruta_de_socios
 from app.socios.autenticacion import VerificadorTokensSocio
 from app.socios.errores import ErrorApiSocio, datos_invalidos, no_disponible, respuesta_de_error
@@ -155,6 +156,15 @@ def create_app(
             if clientes is None:
                 abiertos.append(idempotencia)
             app.state.idempotencia_socios = idempotencia
+            # Antifraude (v0.62, HA-SEG-004): contadores en Redis; en pruebas, en memoria.
+            contadores = (
+                AlmacenContadoresRedis(config.redis_url)
+                if clientes is None
+                else AlmacenContadoresMemoria()
+            )
+            if clientes is None:
+                abiertos.append(contadores)
+            app.state.antifraude_socios = Antifraude(contadores)
             # Límite de tasa por credencial (KAN-217, v0.61): en Redis; en pruebas, en memoria.
             ventanas = (
                 AlmacenVentanasRedis(config.redis_url)
@@ -314,6 +324,14 @@ def create_app(
         socios = getattr(clientes_app, "socios", None)
         repetida = getattr(request.state, "consumo_omitido", False)
         api = api_de(request.url.path)
+        antifraude = getattr(app.state, "antifraude_socios", None)
+        if (
+            socio is not None
+            and antifraude is not None
+            and respuesta.status_code in (403, 404)
+            and not getattr(request.state, "suspendida", False)
+        ):
+            await antifraude.respuesta_rechazada(socio.id, socio.entorno)
         if socio is not None and socios is not None and not repetida and cuenta_en_el_consumo(api):
             codigo = respuesta.status_code
             resultado = "OK" if codigo < 400 else ("ERROR" if codigo >= 500 else "ERROR_CLIENTE")
