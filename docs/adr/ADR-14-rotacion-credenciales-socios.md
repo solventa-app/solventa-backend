@@ -67,7 +67,7 @@ se propone es que **venzan**, con aviso y solapamiento:
 
 | Pieza | Necesita | Estado |
 |---|---|---|
-| Secreto `clave-firma-socios-anterior` | Agregar `"SOCIOS_CLAVE_FIRMA_ANTERIOR": "clave-firma-socios-anterior"` a los `secretos` de `auth` en `.github/servicios.json` (Terraform crea el secreto con el marcador al aplicar desde el pipeline) | Pendiente: crea un recurso facturable, lo decide el equipo |
+| Secreto `clave-firma-socios-anterior` | `"SOCIOS_CLAVE_FIRMA_ANTERIOR": "clave-firma-socios-anterior"` en los `secretos` de `auth` (`.github/servicios.json`). Terraform lo crea con el marcador al aplicar desde el pipeline (~USD 0,06 al mes por versión activa) y AUTH lo trata como «sin rotación» hasta que se cargue | Hecho (2026-11-21): queda listo para la primera rotación manual |
 | Rotación automática de la clave de firma | Rotación de Secret Manager, tema de Pub/Sub, Cloud Run job y sus permisos | Pendiente: infraestructura |
 | Vencimiento de credenciales | Migración de AUTH, scheduler, plantilla de correo y el campo en el portal | Pendiente: código en AUTH, BFF y web |
 

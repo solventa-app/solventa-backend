@@ -412,8 +412,9 @@ Pasos, en orden (nada se aplica a mano; va por el pipeline al llegar a `main`):
 1. **Cargar `clave-firma-socios`** en Secret Manager antes de la liberación: AUTH no arranca en Cloud Run con el
    marcador ni con la clave local. Una clave EC P-256 en PKCS#8, como DER en base64 de una sola línea:
    `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -outform DER | base64 -w0 | gcloud secrets versions add clave-firma-socios --data-file=-`.
-   Para **rotarla** sin cortar tokens vivos se publica también la anterior (`SOCIOS_CLAVE_FIRMA_ANTERIOR`): pasos y lo
-   que falta para hacerlo automático en [ADR-14](../docs/adr/ADR-14-rotacion-credenciales-socios.md).
+   Para **rotarla** sin cortar tokens vivos se publica también la anterior (`SOCIOS_CLAVE_FIRMA_ANTERIOR`, secreto
+   `clave-firma-socios-anterior`, que Terraform crea con el marcador: AUTH arranca igual y no publica nada extra hasta
+   que se carga). Pasos y lo que falta para hacerlo automático en [ADR-14](../docs/adr/ADR-14-rotacion-credenciales-socios.md).
 2. Liberar con `crear_gateway_socios = true` y `jwks_socios_url = ""`. API Gateway no acepta un `x-google-jwks_uri`
    vacío, así que Terraform usa `https://<gateway de los usuarios>/v1/.well-known/jwks.json` (ruta pública de
    `openapi.yaml` que sirve el BFF sin token). `jwks_socios_url` solo hace falta para apuntar a otro origen. Antes
