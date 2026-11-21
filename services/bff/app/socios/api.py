@@ -71,6 +71,9 @@ DEVOLUCION_FALLIDA = Counter(
 )
 
 CONTRATO = Path(__file__).resolve().parent.parent / "socios-v1.json"
+# v0.63 (HA-MOD-003, EC033): /v2 convive con /v1 (política en ADR-13).
+CONTRATO_V2 = Path(__file__).resolve().parent.parent / "socios-v2.json"
+VERSIONES = ("/v1/", "/v2/")
 CANAL_SOCIOS = "API"
 SEGUNDOS_PRESUPUESTO = 3600
 
@@ -78,6 +81,11 @@ SEGUNDOS_PRESUPUESTO = 3600
 @cache
 def contrato() -> dict:
     return json.loads(CONTRATO.read_text(encoding="utf-8"))
+
+
+@cache
+def contrato_v2() -> dict:
+    return json.loads(CONTRATO_V2.read_text(encoding="utf-8"))
 
 
 # ---------- Entradas (camelCase del contrato) ----------
@@ -184,6 +192,34 @@ def oferta_rest(datos: dict) -> dict:
         "vehiculo": _vehiculo_rest(datos.get("vehiculo")),
         "coberturas": _coberturas_rest(datos.get("coberturas")),
     }
+
+
+def precio_v2(oferta: dict) -> dict:
+    """v0.63 (/v2): un solo `precio` en lugar de `prima` y `rangoPrima` de /v1."""
+    if oferta.get("prima"):
+        prima = oferta["prima"]
+        return {"tipo": "EXACTO", "valor": prima["valor"], "moneda": prima["moneda"]}
+    rango = oferta["rangoPrima"]
+    return {
+        "tipo": "RANGO",
+        "minima": rango["minima"]["valor"],
+        "maxima": rango["maxima"]["valor"],
+        "moneda": rango["minima"]["moneda"],
+    }
+
+
+def cotizacion_v2(cotizacion: dict) -> dict:
+    """La respuesta de `POST /v1/cotizaciones` con la oferta en la forma de /v2. /v2 es un
+    adaptador sobre /v1: misma regla de negocio, presupuesto y modo prueba."""
+    oferta = cotizacion["oferta"]
+    nueva: dict = {}
+    for clave, valor in oferta.items():
+        if clave in ("prima", "rangoPrima"):
+            continue
+        nueva[clave] = valor
+        if clave == "tipo":
+            nueva["precio"] = precio_v2(oferta)
+    return {**cotizacion, "oferta": nueva}
 
 
 def _vehiculo_rest(datos: dict | None) -> dict | None:
@@ -537,6 +573,22 @@ def construir_router() -> APIRouter:
             raise no_disponible()
         return {"oferta": oferta_rest(resultado), "presupuestoRestante": restantes}
 
+    @router.post("/v2/cotizaciones")
+    async def cotizar_v2(
+        body: SolicitudCotizacion, request: Request, socio: SocioCotizaciones
+    ) -> Any:
+        """v0.63 (HA-MOD-003): como `/v1/cotizaciones` con el precio unificado. Su
+        `Idempotency-Key` va aparte de la de /v1 (guarda la respuesta ya en la forma de /v2)."""
+
+        async def operacion() -> dict:
+            return cotizacion_v2(await _cotizar(body, request, socio))
+
+        return await _idempotente(request, socio, "cotizaciones-v2", body, operacion)
+
+    @router.get("/v2/openapi.json")
+    def openapi_v2() -> dict:
+        return contrato_v2()
+
     @router.post("/v1/cotizaciones-auto")
     async def cotizar_auto(
         body: SolicitudCotizacionAuto, request: Request, socio: SocioCotizaciones
@@ -881,7 +933,7 @@ def _credencial(datos: dict) -> dict:
 
 
 def es_ruta_de_socios(camino: str) -> bool:
-    return camino.startswith("/v1/") and not camino.startswith("/v1/graphql")
+    return camino.startswith(VERSIONES) and not camino.startswith("/v1/graphql")
 
 
 def cuenta_en_el_consumo(api: str) -> bool:
@@ -891,5 +943,10 @@ def cuenta_en_el_consumo(api: str) -> bool:
 
 
 def api_de(camino: str) -> str:
-    """El nombre de la API para el consumo: el primer tramo después de `/v1/`."""
-    return camino.removeprefix("/v1/").split("/", 1)[0] or "raiz"
+    """El nombre de la API para el consumo: el primer tramo después de la versión.
+    `/v2/cotizaciones` cuenta como `cotizaciones`, igual que en /v1: es la misma operación."""
+    for version in VERSIONES:
+        if camino.startswith(version):
+            camino = camino.removeprefix(version)
+            break
+    return camino.split("/", 1)[0] or "raiz"

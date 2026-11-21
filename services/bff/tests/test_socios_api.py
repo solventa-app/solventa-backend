@@ -171,13 +171,20 @@ def test_el_jwks_se_guarda_y_se_lee_de_x_forwarded_authorization(e) -> None:
 
 # ---------- Scopes del token (HA-SEG-004, EC025) ----------
 
-PUBLICAS = {"/v1/token", "/v1/.well-known/jwks.json", "/v1/openapi.json", "/v1/docs"}
+PUBLICAS = {
+    "/v1/token",
+    "/v1/.well-known/jwks.json",
+    "/v1/openapi.json",
+    "/v1/docs",
+    "/v2/openapi.json",
+}
 # La tabla de `socios-v1.json` («Scopes»): (método, ruta) → scope que exige.
 SCOPE_DE_RUTA = {
     ("POST", "/v1/consentimientos"): scopes.COTIZACIONES,
     ("POST", "/v1/consentimientos/{consentimiento_id}/revocar"): scopes.COTIZACIONES,
     ("POST", "/v1/cotizaciones"): scopes.COTIZACIONES,
     ("POST", "/v1/cotizaciones-auto"): scopes.COTIZACIONES,
+    ("POST", "/v2/cotizaciones"): scopes.COTIZACIONES,
     ("POST", "/v1/conversiones"): scopes.COTIZACIONES,
     ("POST", "/v1/propuestas"): scopes.PROPUESTAS,
     ("GET", "/v1/propuestas/{propuesta_id}"): scopes.PROPUESTAS,
@@ -203,7 +210,9 @@ def _rutas_v1_con_token() -> set[tuple[str, str]]:
     return {
         (metodo.upper(), ruta)
         for ruta, operaciones in app.openapi()["paths"].items()
-        if ruta.startswith("/v1/") and not ruta.startswith("/v1/graphql") and ruta not in PUBLICAS
+        if ruta.startswith(("/v1/", "/v2/"))
+        and not ruta.startswith("/v1/graphql")
+        and ruta not in PUBLICAS
         for metodo in operaciones
     }
 
@@ -220,7 +229,7 @@ def test_cada_ruta_v1_con_token_declara_su_scope(e) -> None:
     """EC025 (100 % de las llamadas): toda ruta `/v1` con token, incluida una que se agregue
     mañana, responde 403 a un token sin scopes, y está en la tabla del contrato."""
     rutas = _rutas_v1_con_token()
-    assert rutas == set(SCOPE_DE_RUTA), "una ruta /v1 nueva necesita su scope (y su fila aquí)"
+    assert rutas == set(SCOPE_DE_RUTA), "una ruta /v1 o /v2 nueva necesita su scope (y su fila)"
     with e.cliente() as client:
         for metodo, ruta in sorted(rutas):
             respuesta = client.request(metodo, _url(ruta), headers=_con_scopes(e))

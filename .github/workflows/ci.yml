@@ -66,6 +66,7 @@ jobs:
               - 'services/acl-worker/app/evento.parametrico.recibido.schema.json'
               - 'scripts/sincronizar_socios.py'
               - 'services/bff/app/socios-v1.json'
+              - 'services/bff/app/socios-v2.json'
               - 'services/bff/app/salud.json'
               - 'requirements-dev.txt'
             infra:

@@ -69,6 +69,10 @@ rutas explícitas, nunca como un `Mount("/v1")`.
   `app/socios/scopes.py`). Es una dependencia de FastAPI, así que corre antes de validar el cuerpo: sin el scope, 403
   `PROHIBIDO` sin gastar presupuesto ni llamar a nadie. Sin el claim `scopes`, 401. Una ruta `/v1` nueva sin scope hace
   fallar `test_cada_ruta_v1_con_token_declara_su_scope`.
+- **`/v2` (v0.63, HA-MOD-003, [ADR-13](../../docs/adr/ADR-13-versionado-api-socios.md)):** convive con `/v1` y solo
+  trae `POST /v2/cotizaciones` (oferta con un `precio` en lugar de `prima`/`rangoPrima`) y `GET /v2/openapi.json`
+  (copia `app/socios-v2.json`). Es un adaptador sobre `/v1/cotizaciones` (`cotizacion_v2`): mismo presupuesto, scope,
+  errores y modo prueba; en el consumo cuenta como `cotizaciones`.
 - **Antifraude (HA-SEG-004, contrato v0.62, `app/socios/antifraude.py`):** 30 respuestas 403/404 a una credencial
   (socio y entorno) en 60 s la suspenden 15 min (403 `CREDENCIAL_SUSPENDIDA` con `Retry-After`). Contadores en Redis;
   sin Redis no se aplica. La fuerza bruta del token ya la frena AUTH (bloqueo tras 5 fallos). Falta: avisar al
