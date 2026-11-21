@@ -572,6 +572,18 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.65 — 2026-11-21
+
+- HU-M06 (KAN-36): al pedir asistencia en el móvil, el cliente elige su póliza de **auto**. Las hipotecarias
+  (`VIDA_DEUDOR`) no se ofrecen.
+  - `SolicitudAsistenciaInput` gana `polizaId: ID = null`, opcional para las versiones de la app ya instaladas.
+  - Si llega, CLAIMS valida contra POLICY que la póliza sea del cliente (la firmó, la aceptó o es el titular), de
+    `AUTO`, `EMITIDA` y vigente. Si no, responde `ErrorAsistencia` con el código nuevo `POLIZA_NO_VALIDA`.
+  - Si POLICY no responde, la asistencia sigue (es una urgencia, regla #4) y la póliza se guarda sin verificar.
+  - `Asistencia` gana `polizaId: ID` (null en las pedidas sin póliza). CLAIMS guarda `poliza_id` y
+    `poliza_verificada` en el documento, sin migración (MongoDB, campos nuevos opcionales).
+- Solo cambios aditivos. Afecta al frontend: el móvil (campo «Póliza que cubre la asistencia» en el formulario de M06-02).
+
 ## v0.63 — 2026-11-21
 
 - HU-W07 (KAN-69), HA-MOD-003 / EC033: **primera versión nueva de la API de socios, `/v2`, que convive con `/v1`**

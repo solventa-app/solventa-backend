@@ -29,6 +29,16 @@ from app.application.identificadores import id_opaco
 
 logger = logging.getLogger(__name__)
 
+
+def poliza_es_del_cliente(poliza: dict, cliente_id: str, titular_id: str | None) -> bool:
+    """Es suya si es el titular (el HMAC de su documento, como en `propuestas` del BFF, sin
+    importar quién la vendió), quien la firmó o quien la aceptó. La usan el reporte de siniestro
+    y, v0.65, la solicitud de asistencia."""
+    return cliente_id in {poliza.get("firmante_id"), poliza.get("actor_usuario_id")} or (
+        titular_id is not None and poliza.get("cliente_id") == titular_id
+    )
+
+
 MAX_TEXTO = 500
 ABIERTOS = ("PENDIENTE", "EN_REVISION")
 # Quien aprueba un caso cuyo plazo venció sin gestión (D-3 de la revisión QA).
@@ -269,12 +279,9 @@ class ServicioSiniestros:
             raise ErrorNegocio(MENSAJE_REPORTE_POLIZA) from error
         except ServicioNoDisponible as error:
             raise DependenciaNoDisponible(MENSAJE_POLIZA) from error
-        # Es suya si es el titular (el HMAC de su documento, como en `propuestas` del BFF, sin
-        # importar quién la vendió), quien la firmó o quien la aceptó.
-        suya = cliente_id in {poliza.get("firmante_id"), poliza.get("actor_usuario_id")} or (
-            titular_id is not None and poliza.get("cliente_id") == titular_id
-        )
-        if not suya or poliza.get("estado") != "EMITIDA":
+        if not poliza_es_del_cliente(poliza, cliente_id, titular_id) or (
+            poliza.get("estado") != "EMITIDA"
+        ):
             raise ErrorNegocio(MENSAJE_REPORTE_POLIZA)
         return poliza
 

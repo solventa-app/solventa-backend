@@ -149,6 +149,10 @@ class SolicitudAsistenciaRequest(BaseModel):
     longitud: float | None = Field(default=None, ge=-180, le=180)
     # v0.50 (B4): GPS o la dirección escrita y ubicada. Sin él se deduce de si hay coordenadas.
     origen_ubicacion: Literal["GPS", "DIRECCION"] | None = None
+    # v0.65: la póliza de auto que eligió el cliente y el HMAC de su documento (de AUTH, por el
+    # BFF) para reconocerla como suya aunque la haya vendido un asesor.
+    poliza_id: str | None = Field(default=None, min_length=1, max_length=64)
+    titular_id: str | None = Field(default=None, max_length=128)
 
 
 class RutasRequest(BaseModel):
@@ -231,19 +235,19 @@ def create_app(
                 autenticacion_para(modo, "acl-worker"),
             )
             repo_asistencias = RepositorioAsistenciasMongo(cliente_mongo, cifrador, config.mongo_db)
+            policy = ClientePolicy(
+                config.policy_url,
+                config.servicios_timeout_segundos,
+                autenticacion_para(modo, "policy"),
+            )
             if app.state.asistencias is None:
-                app.state.asistencias = ServicioAsistencias(repo_asistencias, acl)
+                app.state.asistencias = ServicioAsistencias(repo_asistencias, acl, policy=policy)
             if app.state.rutas is None:
                 app.state.rutas = ServicioRutas(
                     repo_asistencias.prestador,
                     acl,
                     RepositorioAuditoriaRutas(cliente_mongo, cifrador, config.mongo_db),
                 )
-            policy = ClientePolicy(
-                config.policy_url,
-                config.servicios_timeout_segundos,
-                autenticacion_para(modo, "policy"),
-            )
             payments = ClientePayments(
                 config.payments_url,
                 config.servicios_timeout_segundos,

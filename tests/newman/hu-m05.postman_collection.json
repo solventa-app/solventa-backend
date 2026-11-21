@@ -138,7 +138,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"{ propuestas(estado: EMITIDA) { propuestas { polizaId poliza { vigenciaDesde } } } }\",\n  \"variables\": {}\n}"
+              "raw": "{\n  \"query\": \"{ propuestas(estado: EMITIDA) { propuestas { polizaId producto poliza { vigenciaDesde } } } }\",\n  \"variables\": {}\n}"
             }
           },
           "event": [
@@ -150,7 +150,7 @@
                   "// Regla #4: nunca un 5xx crudo; GraphQL responde 200 aun con errores.",
                   "pm.test('HTTP 200 (nunca un 5xx)', () => pm.response.to.have.status(200));",
                   "const cuerpo = pm.response.json();",
-                  "const p = cuerpo.data.propuestas.propuestas.find(x => x.polizaId);",
+                  "// La de vida de la semilla: el reporte de esta colección no lleva tipo de siniestro de auto (hu-w08 emite pólizas de\n// AUTO para el mismo cliente demo).\nconst p = cuerpo.data.propuestas.propuestas.find(x => x.polizaId && x.producto === 'VIDA_DEUDOR');",
                   "pm.test('Tiene póliza emitida (sembrar-polizas-demo)', () => pm.expect(p).to.not.be.undefined);",
                   "pm.collectionVariables.set('poliza_cliente', p.polizaId);",
                   "// CLAIMS exige desde <= ocurrido <= hasta y no acepta fechas futuras. La póliza demo se crea al sembrar, así que una fecha fija",

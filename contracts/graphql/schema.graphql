@@ -1317,6 +1317,7 @@ enum CodigoErrorAsistencia {
   TIPO_NO_ATENDIDO # el prestador no atiende ese tipo de asistencia
   DATOS_INVALIDOS # idSolicitud mal formado o de otra persona, o textos demasiado largos
   NO_ENCONTRADA # cancelar una asistencia que no existe o no es del cliente
+  POLIZA_NO_VALIDA # v0.65: la póliza no es del cliente, no es de auto, no está emitida o no está vigente
 }
 
 input SolicitudAsistenciaInput {
@@ -1329,6 +1330,11 @@ input SolicitudAsistenciaInput {
   longitud: Float!
   # v0.50 (HU-M06, B4): de dónde salió la ubicación. Se guarda con la asistencia y en la auditoría.
   origenUbicacion: OrigenUbicacion! = GPS
+  # v0.65 (HU-M06, KAN-36): la póliza de auto del cliente que cubre la asistencia (la elige en la app). Opcional para
+  # las versiones de la app ya instaladas. Si llega, CLAIMS exige que sea suya, de AUTO, EMITIDA y vigente
+  # (POLIZA_NO_VALIDA si no). Si POLICY no responde, la asistencia sigue (es una urgencia) y la póliza queda sin
+  # verificar.
+  polizaId: ID = null
 }
 
 # v0.50 (HU-M06, B4 y B9): sin permiso de ubicación o con el GPS apagado, el cliente escribe su dirección; la app la
@@ -1376,6 +1382,7 @@ type Asistencia {
   # v0.52 (B6): solo en misAsistencias y asistencia(id), y solo al cliente dueño: lo que pidió y adónde.
   descripcion: String
   ubicacion: UbicacionAsistencia
+  polizaId: ID # v0.65: la póliza que eligió el cliente; null si la pidió una versión anterior de la app
 }
 
 type UbicacionAsistencia {
