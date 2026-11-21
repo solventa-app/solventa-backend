@@ -82,7 +82,8 @@ def test_el_intervalo_es_30_por_omision(monkeypatch) -> None:
 
 
 def test_el_intento_es_determinista_y_distinto_por_ciclo() -> None:
-    assert id_intento_ciclo("p", 1) == id_intento_ciclo("p", 1)
+    primero, segundo = id_intento_ciclo("p", 1), id_intento_ciclo("p", 1)
+    assert primero == segundo
     assert id_intento_ciclo("p", 1) != id_intento_ciclo("p", 2)
 
 

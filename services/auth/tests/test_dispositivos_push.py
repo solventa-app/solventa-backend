@@ -142,5 +142,6 @@ def test_token_invalido_borra_el_token_pero_no_desactiva_la_sesion() -> None:
 
 
 def test_hash_token_es_determinista() -> None:
-    assert hash_token("abc") == hash_token("abc")
+    primero, segundo = hash_token("abc"), hash_token("abc")
+    assert primero == segundo
     assert hash_token("abc") != hash_token("abcd")
