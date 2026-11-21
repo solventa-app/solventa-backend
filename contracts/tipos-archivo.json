@@ -27,7 +27,7 @@
     },
     {
       "tipo": "onboarding-video",
-      "descripcion": "Video corto de la prueba de vida (HU-M01, <= 10 s).",
+      "descripcion": "Video de la prueba de vida (HU-M01, <= 15 s: izquierda, derecha y centro).",
       "activo": true,
       "tipos_contenido": ["video/mp4"],
       "tamano_max_bytes": 15728640,

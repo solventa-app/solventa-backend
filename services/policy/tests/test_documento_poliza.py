@@ -177,3 +177,15 @@ def test_el_contrato_borrador_de_auto_habla_del_seguro_de_autos() -> None:
     texto = generar_borrador(PROPUESTA_AUTO).decode("latin-1")
     assert "seguro de autom" in texto and "Coberturas" in texto
     assert "cr\xe9dito hipotecario" not in texto
+
+
+def test_el_contrato_lleva_las_condiciones_generales_numeradas_y_el_pie_de_pagina() -> None:
+    from app.application.documento_poliza import generar_borrador
+
+    texto = generar_borrador(PROPUESTA_AUTO, ambiente_pruebas=False).decode("latin-1")
+    assert "Condiciones generales" in texto
+    assert "1. Objeto del seguro" in texto
+    assert "artículo 1068 del Código de Comercio" in texto  # mora: terminación automática
+    assert "Cobertura paramétrica de clima" in texto  # solo en auto
+    assert "Página 1 de" in texto
+    assert "ambiente de pruebas" not in texto

@@ -41,7 +41,7 @@ class ServicioPolizas:
     def __init__(
         self,
         repositorio: PuertoRepositorioPolizas,
-        ambiente_pruebas: bool = True,
+        ambiente_pruebas: bool = False,
         almacenamiento: PuertoAlmacenamiento | None = None,
         documentos: ServicioDocumentos | None = None,
     ) -> None:
