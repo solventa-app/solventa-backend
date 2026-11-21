@@ -144,7 +144,8 @@ jobs:
   imagenes:
     name: Imagen ${{ matrix.servicio.nombre }} (Trivy)
     # Construye la imagen igual que ci.yml y busca CVE del sistema operativo y de los paquetes de Python. El reporte
-    # agrupa las CVE de la imagen base, que se repiten en todos los servicios.
+    # agrupa las CVE de la imagen base, que se repiten en todos los servicios. Solo cuenta las que ya tienen versión
+    # corregida (--ignore-unfixed): las demás son de Debian sin parche y no hay nada que hacer en este repo.
     needs: servicios
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -162,7 +163,7 @@ jobs:
         run: |
           mkdir -p resultados
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/resultados:/salida" \
-            aquasec/trivy:0.69.3 image --quiet --exit-code 0 --scanners vuln --format json \
+            aquasec/trivy:0.69.3 image --quiet --exit-code 0 --scanners vuln --ignore-unfixed --format json \
             --output "/salida/trivy-imagen-${{ matrix.servicio.nombre }}.json" "${{ matrix.servicio.nombre }}:seguridad" \
             || rm -f "resultados/trivy-imagen-${{ matrix.servicio.nombre }}.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
