@@ -116,33 +116,59 @@ def leer_gitleaks(datos) -> list[dict]:
     return salida
 
 
+def _ruta_repo(ruta: str) -> str:
+    """Las herramientas corren en Docker con el repo montado en /repo o /src: se deja la ruta relativa al repo."""
+    for prefijo in ("/repo/", "/src/", os.environ.get("GITHUB_WORKSPACE", "/-") + "/"):
+        if ruta.startswith(prefijo):
+            return ruta[len(prefijo) :]
+    return ruta
+
+
 def leer_osv(datos) -> list[dict]:
-    salida = []
+    """La misma vulnerabilidad suele estar en el requirements.txt de varios servicios: se agrupa por (id, paquete)."""
+    grupos_vuln: dict[tuple, dict] = {}
     for resultado in (datos or {}).get("results") or []:
-        archivo = (resultado.get("source") or {}).get("path", "")
+        archivo = _ruta_repo((resultado.get("source") or {}).get("path", ""))
         for paquete in resultado.get("packages") or []:
             info = paquete.get("package") or {}
             vulns = {v.get("id"): v for v in paquete.get("vulnerabilities") or []}
             grupos = paquete.get("groups") or [{"ids": [i], "max_severity": ""} for i in vulns]
             for grupo in grupos:
                 ids = grupo.get("ids") or []
-                principal = vulns.get(ids[0], {}) if ids else {}
-                alias = [
-                    a
-                    for a in (grupo.get("aliases") or principal.get("aliases") or [])
-                    if a.startswith("CVE-")
-                ]
                 nombre = f"{info.get('name')}@{info.get('version')}"
-                salida.append(
-                    _hallazgo(
-                        "dependencias",
-                        _sev_cvss(grupo.get("max_severity")),
-                        f"{nombre}: {principal.get('summary') or ', '.join(ids)}",
-                        os.path.relpath(archivo) if archivo.startswith("/") else archivo,
-                        ", ".join(alias[:1] + ids[:1]),
-                        f"ecosistema {info.get('ecosystem', '')}",
-                    )
+                g = grupos_vuln.setdefault(
+                    (tuple(ids), nombre),
+                    {
+                        "grupo": grupo,
+                        "info": info,
+                        "vuln": vulns.get(ids[0], {}) if ids else {},
+                        "archivos": [],
+                    },
                 )
+                g["archivos"].append(archivo)
+    salida = []
+    for (ids, nombre), g in grupos_vuln.items():
+        alias = [
+            a
+            for a in (g["grupo"].get("aliases") or g["vuln"].get("aliases") or [])
+            if a.startswith("CVE-")
+        ]
+        archivos = sorted(set(g["archivos"]))
+        donde = (
+            ", ".join(archivos)
+            if len(archivos) <= 3
+            else f"{len(archivos)} archivos (p. ej. {archivos[0]})"
+        )
+        salida.append(
+            _hallazgo(
+                "dependencias",
+                _sev_cvss(g["grupo"].get("max_severity")),
+                f"{nombre}: {g['vuln'].get('summary') or ', '.join(ids)}",
+                donde,
+                ", ".join(alias[:1] + list(ids[:1])),
+                f"ecosistema {g['info'].get('ecosystem', '')}",
+            )
+        )
     return salida
 
 
@@ -172,7 +198,7 @@ def leer_semgrep(datos) -> list[dict]:
                 "sast-semgrep",
                 mapa.get(extra.get("severity", ""), "info"),
                 extra.get("message"),
-                f"{r.get('path')}:{(r.get('start') or {}).get('line', '')}",
+                f"{_ruta_repo(r.get('path', ''))}:{(r.get('start') or {}).get('line', '')}",
                 regla.rsplit(".", 1)[-1],
             )
         )
@@ -406,6 +432,14 @@ def _celda(texto: str) -> str:
     return str(texto).replace("|", "\\|").replace("\n", " ")
 
 
+def no_corrieron(corridos: set[str]) -> list[str]:
+    """Escaneos esperados en este evento (ESCANEOS_ESPERADOS, separados por coma) que no dejaron resultado."""
+    esperados = [
+        e.strip() for e in os.environ.get("ESCANEOS_ESPERADOS", "").split(",") if e.strip()
+    ]
+    return [ESCANEOS[k][1] for k in esperados if k in ESCANEOS and k not in corridos]
+
+
 def escribir_md(hallazgos, corridos, ctx) -> str:
     total = conteo(hallazgos)
     icono, frase = semaforo(total)
@@ -436,11 +470,11 @@ def escribir_md(hallazgos, corridos, ctx) -> str:
         f"| **Total** | | **{total['critica']}** | **{total['alta']}** | **{total['media']}** | "
         f"**{total['baja']}** | **{total['info']}** | **{calificacion(total)}** | {icono} |"
     )
-    sin_correr = [ESCANEOS[k][1] for k in ESCANEOS if k not in corridos]
+    sin_correr = no_corrieron(corridos)
     if sin_correr:
         lineas += [
             "",
-            f"Sin resultado en este run: {', '.join(sin_correr)} (no aplica a este evento o el escaneo falló; "
+            f"Sin resultado en este run: {', '.join(sin_correr)} (el escaneo falló o no pudo correr; "
             "revisa su job).",
         ]
     for clave, (nombre, herramienta) in ESCANEOS.items():
@@ -507,7 +541,7 @@ def escribir_html(hallazgos, corridos, ctx) -> str:
             "<table class=hall><thead><tr><th>Severidad</th><th>Hallazgo</th><th>Dónde</th><th>Regla</th></tr>"
             f"</thead><tbody>{cuerpo}</tbody></table>{resto}"
         )
-    sin_correr = [ESCANEOS[k][1] for k in ESCANEOS if k not in corridos]
+    sin_correr = no_corrieron(corridos)
     nota = (
         f"<p class=det>Sin resultado en este run: {e(', '.join(sin_correr))}.</p>"
         if sin_correr

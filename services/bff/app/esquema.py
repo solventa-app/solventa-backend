@@ -1471,7 +1471,7 @@ class CuentaOnboardingInput:
 FINALIDAD_ONBOARDING = "onboarding-biometrico"
 CANAL_APP = "app"
 MENSAJES_ONBOARDING = {
-    "TOKEN_INVALIDO": "Tu verificación venció o no es válida. Empieza de nuevo.",
+    "TOKEN_INVALIDO": "Tu verificación venció o no es válida. Empieza de nuevo.",  # nosec B105
     "SESION_NO_ENCONTRADA": "Tu verificación venció o no es válida. Empieza de nuevo.",
     "SIN_CONSENTIMIENTO": "Primero acepta el tratamiento de tus datos biométricos.",
     "ESTADO_INVALIDO": "Este paso ya no aplica a tu verificación.",
@@ -4280,7 +4280,7 @@ class Mutation:
                                 sesion=_sesion(sesion),
                                 onboarding=_onboarding_de(actual),
                             )
-                except Exception:
+                except Exception:  # nosec B110
                     pass
                 # Si es otra cuenta diferente o las credenciales no corresponden:
                 return _error_onboarding("SESION_CON_CUENTA")

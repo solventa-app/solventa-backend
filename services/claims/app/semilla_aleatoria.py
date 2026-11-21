@@ -128,7 +128,7 @@ def _rechazo(caso: dict, resuelta: datetime, azar: random.Random) -> dict:
 def generar(bases: Sequence[dict], ahora: datetime) -> list[dict]:
     """Los casos adicionales, en el formato de `siniestros.json`. Las fechas son relativas a
     `ahora`, para que la cuenta regresiva y la bandeja tengan sentido en cualquier día."""
-    azar = random.Random(SEMILLA)
+    azar = random.Random(SEMILLA)  # nosec B311
     pendientes = [base for base in bases if base["estado"] == "PENDIENTE"]
     estados = list(ESTADOS)
     azar.shuffle(estados)

@@ -210,7 +210,7 @@ def create_app(
             if cliente_redis is not None:
                 try:
                     cliente_redis.close()
-                except Exception:
+                except Exception:  # nosec B110
                     pass
 
     app = FastAPI(title="solventa-risk", version="0.1.0", lifespan=lifespan)

@@ -117,7 +117,7 @@ class RepositorioProgramacionesPostgres:
                          %(token)s, 'cobrando', 'RECURRENTE', %(medio)s)
                     ON CONFLICT (id_intento_cobro) DO NOTHING
                     RETURNING {_COLUMNAS}
-                    """,
+                    """,  # nosec B608
                     {
                         "id": cobro_id,
                         "intento": id_intento_ciclo(programacion["propuesta_id"], ciclo),

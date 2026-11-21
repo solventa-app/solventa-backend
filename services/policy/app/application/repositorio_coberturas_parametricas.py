@@ -125,7 +125,7 @@ class RepositorioCoberturasParametricas:
                         %(umbral_retraso_min)s,
                         %(latitud)s, %(longitud)s, %(variable)s, %(umbral)s, %(ventana_horas)s)
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 {
                     "id": cobertura_id,
                     "poliza_id": poliza_id,
@@ -156,7 +156,7 @@ class RepositorioCoberturasParametricas:
                 SELECT {_COLUMNAS} FROM coberturas_parametricas
                 WHERE tipo = 'VUELO' AND estado = 'VIGENTE'
                   AND numero_vuelo = %(numero_vuelo)s AND fecha_salida = %(fecha)s
-                """,
+                """,  # nosec B608
                 {"numero_vuelo": numero_vuelo, "fecha": fecha},
             )
             return [_fila(f) for f in cursor.fetchall()]
@@ -174,7 +174,7 @@ class RepositorioCoberturasParametricas:
                   AND round(latitud, 2) = round(%(latitud)s::numeric, 2)
                   AND round(longitud, 2) = round(%(longitud)s::numeric, 2)
                   AND (%(variable)s::text IS NULL OR variable = %(variable)s::text)
-                """,
+                """,  # nosec B608
                 {"latitud": latitud, "longitud": longitud, "variable": variable},
             )
             return [_fila(f) for f in cursor.fetchall()]
@@ -206,7 +206,7 @@ class RepositorioCoberturasParametricas:
         """Las coberturas de una póliza, para que la semilla sea idempotente (no duplica)."""
         with self._pool.connection() as conexion, conexion.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
-                f"SELECT {_COLUMNAS} FROM coberturas_parametricas WHERE poliza_id = %(poliza_id)s",
+                f"SELECT {_COLUMNAS} FROM coberturas_parametricas WHERE poliza_id = %(poliza_id)s",  # nosec B608
                 {"poliza_id": poliza_id},
             )
             return [_fila(f) for f in cursor.fetchall()]

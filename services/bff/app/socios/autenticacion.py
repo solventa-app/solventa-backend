@@ -81,7 +81,7 @@ class VerificadorTokensSocio:
                     logger.warning("AUTH no entregó el JWKS de socios error=%s", error)
                     raise no_disponible() from error
                 logger.warning("AUTH no entregó el JWKS; se usa el guardado error=%s", error)
-        assert self._jwks is not None
+        assert self._jwks is not None  # nosec B101
         return self._jwks
 
     async def _clave(self, kid: str | None):

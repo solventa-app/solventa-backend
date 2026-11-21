@@ -94,9 +94,9 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=503, detail="proveedor_no_disponible")
 
         if modo_resuelto == "lento":
-            await asyncio.sleep(random.uniform(LATENCIA_LENTA_MIN_MS, LATENCIA_LENTA_MAX_MS) / 1000)
+            await asyncio.sleep(random.uniform(LATENCIA_LENTA_MIN_MS, LATENCIA_LENTA_MAX_MS) / 1000)  # nosec B311
         else:
-            await asyncio.sleep(random.uniform(LATENCIA_SANA_MIN_MS, LATENCIA_SANA_MAX_MS) / 1000)
+            await asyncio.sleep(random.uniform(LATENCIA_SANA_MIN_MS, LATENCIA_SANA_MAX_MS) / 1000)  # nosec B311
 
         return {
             "fuente": fuente,

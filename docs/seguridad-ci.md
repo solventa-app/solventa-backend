@@ -58,7 +58,16 @@ Para generarlo en local con resultados ya descargados: `python3 scripts/reporte_
 
 - **Falso positivo de Trivy config:** se agrega a `.trivyignore` con su motivo, igual que `tool/mobsf-suprimir.txt` en
   el móvil.
-- **Falso positivo de Bandit:** `# nosec BXXX` en la línea, con el motivo en el mismo comentario.
+- **Falso positivo de Bandit:** `# nosec BXXX` en la línea. Bandit toma como regla cualquier palabra después de
+  `nosec`, así que el motivo va en el comentario de arriba o en esta lista. Los que ya están revisados (2026-11-21):
+  - `B608` (SQL armado con f-string, 75 casos en auth, payments, policy, almacenamiento y onboarding): solo se
+    interpolan constantes de columnas del módulo o, en `onboarding`, columnas de una lista permitida
+    (`_ACTUALIZABLES`); los valores siempre van como parámetros de psycopg.
+  - `B311` (`random` en los stubs y la semilla de siniestros): simula latencias y datos de demo, no es criptografía.
+  - `B110` (`except: pass`): cierres de clientes y la caché derivada de Redis, que por diseño nunca tumba la respuesta.
+  - `B105`/`B106`: códigos y mensajes de error que contienen la palabra "token" y la URL pública de OAuth de Google.
+  - `B101`: `assert` de tipo tras un `INSERT ... RETURNING`, que siempre devuelve la fila.
+- **Falso positivo de Semgrep:** `# nosemgrep: motivo` en la línea (o la anterior).
 - **Dependencia vulnerable:** se sube la versión en el `requirements.in` del servicio y se recompila
   (`scripts/compilar-requirements.sh`); Dependabot ya abre muchos de estos PR.
 

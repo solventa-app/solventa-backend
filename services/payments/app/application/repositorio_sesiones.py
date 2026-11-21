@@ -67,14 +67,14 @@ class RepositorioSesionesPostgres:
                 f"""
                 SELECT {_COLUMNAS} FROM sesiones_pago WHERE propuesta_id = %(p)s
                 ORDER BY intento DESC LIMIT 1
-                """,
+                """,  # nosec B608
                 {"p": propuesta_id},
             ).fetchone()
 
     def por_proveedor(self, proveedor_sesion_id: str) -> dict | None:
         with self._pool.connection() as conexion:
             return conexion.execute(
-                f"SELECT {_COLUMNAS} FROM sesiones_pago WHERE proveedor_sesion_id = %(s)s",
+                f"SELECT {_COLUMNAS} FROM sesiones_pago WHERE proveedor_sesion_id = %(s)s",  # nosec B608
                 {"s": proveedor_sesion_id},
             ).fetchone()
 
@@ -92,7 +92,7 @@ class RepositorioSesionesPostgres:
                      %(url_pago)s, %(vence_en)s, %(fallos_seguidos)s)
                 ON CONFLICT (propuesta_id, intento) DO NOTHING
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 sesion,
             ).fetchone()
             if fila is not None:
@@ -101,7 +101,7 @@ class RepositorioSesionesPostgres:
                 f"""
                 SELECT {_COLUMNAS} FROM sesiones_pago
                 WHERE propuesta_id = %(propuesta_id)s AND intento = %(intento)s
-                """,
+                """,  # nosec B608
                 sesion,
             ).fetchone()
 
@@ -116,7 +116,7 @@ class RepositorioSesionesPostgres:
                     fallos_seguidos = %(fallos)s, actualizado_en = now()
                 WHERE id = %(id)s
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 {"id": sesion_id, "estado": estado, "motivo": motivo, "fallos": fallos_seguidos},
             ).fetchone()
 
@@ -150,7 +150,7 @@ class RepositorioSesionesPostgres:
                      %(token)s, 'cobrado', %(referencia)s, 'INTERACTIVO', %(medio)s)
                 ON CONFLICT (id_intento_cobro) DO NOTHING
                 RETURNING {_COLUMNAS_COBRO}
-                """,
+                """,  # nosec B608
                 {
                     "id": cobro_id,
                     "intento": sesion["id_intento_cobro"],
@@ -166,7 +166,7 @@ class RepositorioSesionesPostgres:
             ).fetchone()
             if cobro is None:
                 cobro = conexion.execute(
-                    f"SELECT {_COLUMNAS_COBRO} FROM cobros WHERE id_intento_cobro = %(i)s",
+                    f"SELECT {_COLUMNAS_COBRO} FROM cobros WHERE id_intento_cobro = %(i)s",  # nosec B608
                     {"i": sesion["id_intento_cobro"]},
                 ).fetchone()
             actualizada = conexion.execute(
@@ -176,7 +176,7 @@ class RepositorioSesionesPostgres:
                     cobro_id = %(cobro)s, actualizado_en = now()
                 WHERE id = %(id)s
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 {"id": sesion["id"], "cobro": cobro["id"]},
             ).fetchone()
         return actualizada, self._descifrar_cobro(cobro)
