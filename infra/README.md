@@ -468,6 +468,11 @@ Pub/Sub y Cloud Scheduler:
   únicamente el ACL Worker (escritor único del evento); consume únicamente CLAIMS. El agente de servicio de Pub/Sub
   recibe `roles/pubsub.publisher` en el tema DLQ y `roles/pubsub.subscriber` en la suscripción original, como pide la
   [documentación oficial de `dead_letter_policy`](https://cloud.google.com/pubsub/docs/handling-failures#dead_letter_topic).
+  La DLQ tiene la suscripción pull `eventos-parametricos-dlq-retencion`, que retiene 7 días los eventos que
+  agotaron sus intentos (sin ella Pub/Sub los descartaría) y no expira aunque nadie la lea. Ningún servicio la
+  consume: para revisarlos, `gcloud pubsub subscriptions pull eventos-parametricos-dlq-retencion --limit=10`
+  (sin `--auto-ack`, así siguen ahí); para reprocesar uno, se publica de nuevo su cuerpo en `eventos-parametricos`
+  (`gcloud pubsub topics publish eventos-parametricos --message='<cuerpo>'`) y luego se confirma con `--auto-ack`.
 - **Dos `google_cloud_scheduler_job`** (`consulta-demo-vuelo-parametrico` y `consulta-demo-clima-parametrico`, cada
   8 h). El de vuelo es de demostración: llama a `POST /eventos-parametricos/_consultar` del ACL Worker con el vuelo fijo
   `AV9340` de la semilla `sembrar_polizas_parametricas`. El de clima llama a `POST /coberturas-parametricas/_consultar-clima`
