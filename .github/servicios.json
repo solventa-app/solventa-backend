@@ -32,7 +32,8 @@
       "JWT_SECRETO": "clave-jwt",
       "CIFRADO_CLAVE": "clave-cifrado",
       "CLIENTE_ID_CLAVE": "clave-cliente-id",
-      "SOCIOS_CLAVE_FIRMA": "clave-firma-socios"
+      "SOCIOS_CLAVE_FIRMA": "clave-firma-socios",
+      "SOCIOS_CLAVE_FIRMA_ANTERIOR": "clave-firma-socios-anterior"
     }
   },
   {
