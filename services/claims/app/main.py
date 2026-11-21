@@ -98,6 +98,8 @@ class FotoReporte(BaseModel):
     tomada_en: datetime
     latitud: float | None = Field(default=None, ge=-90, le=90)
     longitud: float | None = Field(default=None, ge=-180, le=180)
+    # v0.66: DIRECCION = sin GPS, el punto de la dirección que el cliente escribió en la app.
+    origen_ubicacion: Literal["GPS", "DIRECCION"] = "GPS"
 
 
 class ReporteRequest(BaseModel):
@@ -397,6 +399,13 @@ def create_app(
     def aprobar_vencidos() -> dict[str, int]:
         """Una pasada del plazo del dictamen. La dispara Cloud Scheduler; es idempotente."""
         return app.state.servicio.aprobar_vencidos()
+
+    @app.post("/evidencias/_cifrar-legadas", tags=["operacion"])
+    def cifrar_evidencias_legadas() -> dict[str, int]:
+        """HA-SEG-002: cifra la latitud, la longitud y la nota de las evidencias que se guardaron en
+        claro antes de este cambio. Se llama una vez por ambiente tras desplegar (con un token de
+        identidad, CLAIMS es privado); es idempotente y devuelve cuántas cifró."""
+        return app.state.servicio.cifrar_evidencias_legadas()
 
     @app.post("/eventos/parametricos", tags=["operacion"])
     def eventos_parametricos(body: dict[str, Any]) -> dict[str, int]:

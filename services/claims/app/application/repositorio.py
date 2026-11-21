@@ -5,7 +5,8 @@
   mutación se lee de la primaria (`primaria=True`): el operador ve lo que acaba de escribir aunque
   la réplica vaya atrasada.
 - Los datos personales (nombre y documento del asegurado, ubicación, descripción, comentario e
-  instrucciones) se guardan cifrados por campo con el id del siniestro como dueño (regla #6). Hacia
+  instrucciones) se guardan cifrados por campo con el id del siniestro como dueño (regla #6); la
+  ubicación de cada foto, con el id de la evidencia como dueño (HA-SEG-002). Hacia
   afuera salen en claro, solo por la red interna hacia el BFF.
 - Las lecturas de varios siniestros traen sus colecciones relacionadas en una consulta por colección
   (`$in`), sin una consulta por caso.
@@ -107,6 +108,67 @@ class RepositorioSiniestrosMongo:
     def _sin_id(doc: dict) -> dict:
         return {("id" if k == "_id" else k): v for k, v in doc.items()}
 
+    # ---------- Ubicación de las evidencias (HA-SEG-002, regla #6) ----------
+    # La latitud, la longitud y la nota (repite las coordenadas) de una foto dicen dónde estaba
+    # el cliente: van juntas en `ubicacion_cifrada`, con el id de la evidencia como dueño.
+    # `geoetiquetada` queda en claro (no es un dato personal). Los documentos de antes de este
+    # cambio traen los tres campos en claro: se leen igual y `cifrar_evidencias_legadas` los migra.
+
+    def _doc_evidencia(self, evidencia: dict) -> dict[str, Any]:
+        doc = {
+            k: v
+            for k, v in evidencia.items()
+            if k not in ("id", "latitud", "longitud", "nota", "ubicacion_cifrada")
+        }
+        doc["_id"] = evidencia["id"]
+        doc["ubicacion_cifrada"] = self._cifrador.cifrar(
+            json.dumps(
+                {
+                    "latitud": evidencia.get("latitud"),
+                    "longitud": evidencia.get("longitud"),
+                    "nota": evidencia.get("nota"),
+                },
+                ensure_ascii=False,
+            ),
+            f"evidencia:{evidencia['id']}",
+        )
+        return doc
+
+    def _a_evidencia(self, doc: dict) -> dict:
+        evidencia = self._sin_id(doc)
+        cifrada = evidencia.pop("ubicacion_cifrada", None)
+        if cifrada is not None:
+            evidencia.update(
+                json.loads(self._cifrador.descifrar(cifrada, f"evidencia:{evidencia['id']}"))
+            )
+        return evidencia
+
+    def cifrar_evidencias_legadas(self) -> int:
+        """Cifra la ubicación de las evidencias guardadas antes de HA-SEG-002 (latitud, longitud o
+        nota en claro). Idempotente: una evidencia ya cifrada no vuelve a salir en el filtro.
+        Devuelve cuántas cifró."""
+        filtro = {
+            "ubicacion_cifrada": {"$exists": False},
+            "$or": [
+                {"latitud": {"$exists": True}},
+                {"longitud": {"$exists": True}},
+                {"nota": {"$exists": True}},
+            ],
+        }
+        cifradas = 0
+        for doc in self._db[EVIDENCIAS].find(filtro):
+            evidencia = self._sin_id(doc)
+            nuevo = self._doc_evidencia(evidencia)
+            resultado = self._db[EVIDENCIAS].update_one(
+                {"_id": doc["_id"], "ubicacion_cifrada": {"$exists": False}},
+                {
+                    "$set": {"ubicacion_cifrada": nuevo["ubicacion_cifrada"]},
+                    "$unset": {"latitud": "", "longitud": "", "nota": ""},
+                },
+            )
+            cifradas += resultado.modified_count
+        return cifradas
+
     # ---------- Lectura ----------
 
     def listar(self, estado: str | None = None) -> list[dict]:
@@ -129,7 +191,7 @@ class RepositorioSiniestrosMongo:
         for doc in self._buscar(
             EVIDENCIAS, {"siniestro_id": {"$in": ids}}, primaria, orden=[("registrada_en", 1)]
         ):
-            por_siniestro[doc["siniestro_id"]].append(self._sin_id(doc))
+            por_siniestro[doc["siniestro_id"]].append(self._a_evidencia(doc))
         return por_siniestro
 
     def verificaciones(self, ids: list[str], primaria: bool = False) -> dict[str, list[dict]]:
@@ -248,10 +310,7 @@ class RepositorioSiniestrosMongo:
                     self._db[SINIESTROS].insert_one(doc, session=sesion)
                     if evidencias:
                         self._db[EVIDENCIAS].insert_many(
-                            [
-                                {**{k: v for k, v in e.items() if k != "id"}, "_id": e["id"]}
-                                for e in evidencias
-                            ],
+                            [self._doc_evidencia(e) for e in evidencias],
                             session=sesion,
                         )
             except DuplicateKeyError:
@@ -342,10 +401,10 @@ class RepositorioSiniestrosMongo:
 
     def evidencia(self, evidencia_id: str) -> dict | None:
         doc = self._db[EVIDENCIAS].find_one({"_id": evidencia_id})
-        return self._sin_id(doc) if doc else None
+        return self._a_evidencia(doc) if doc else None
 
     def guardar_evidencia(self, evidencia: dict) -> None:
-        doc = {**{k: v for k, v in evidencia.items() if k != "id"}, "_id": evidencia["id"]}
+        doc = self._doc_evidencia(evidencia)
         self._db[EVIDENCIAS].replace_one({"_id": evidencia["id"]}, doc, upsert=True)
 
     def guardar_verificacion(self, verificacion: dict) -> None:
