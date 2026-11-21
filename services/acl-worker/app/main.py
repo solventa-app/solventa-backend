@@ -649,6 +649,8 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 if llave_cache_identidad is not None
                 else None
             ),
+            umbral_circuito=config.identidad_breaker_umbral,
+            ttl_circuito_s=config.identidad_breaker_ttl_segundos,
         )
         if llave_cache_identidad is None:
             logger.warning("IDENTIDAD_LLAVE_CACHE sin cargar: la caché de identidad está apagada")

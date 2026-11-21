@@ -4,6 +4,12 @@ En Cloud Run la CPU se limita fuera de una petición, así que con `DISPARADOR=e
 verificación la dispara **Cloud Tasks**: una tarea HTTP hacia `POST /tareas/verificar/{id}`
 (token OIDC de la cuenta de servicio). En local y CI (`DISPARADOR=bucle`) corre en un hilo.
 
+Reintentos (KAN-131): ante `VerificacionPendiente` la tarea se repite. En el **último** intento se
+llama `verificar(sesion_id, ultimo_intento=True)`, que cierra la sesión en RECHAZADA técnico (sin
+gastar intento) en vez de dejarla colgada. En local lo cuenta el hilo; con Cloud Tasks, el
+encabezado `X-CloudTasks-TaskRetryCount` contra `TAREAS_MAX_INTENTOS` (el `max_attempts` de la cola
+`verificacion-onboarding` en `infra/tareas.tf`).
+
 Encolar nunca tumba el envío: si falla se registra y la sesión sigue `EN_VERIFICACION`; volver a
 enviarla la encola de nuevo. La verificación es idempotente (solo avanza desde EN_VERIFICACION)."""
 
@@ -40,11 +46,11 @@ class PlanificadorLocal:
     """`DISPARADOR=bucle`: un hilo de este proceso. Solo para local y CI."""
 
     def __init__(self, demora_reintento_s: float = 2.0, max_reintentos: int = 5) -> None:
-        self._verificar: Callable[[str], Any] | None = None
+        self._verificar: Callable[..., Any] | None = None
         self._demora_reintento_s = demora_reintento_s
         self._max_reintentos = max_reintentos
 
-    def conectar(self, verificar: Callable[[str], Any]) -> None:
+    def conectar(self, verificar: Callable[..., Any]) -> None:
         """Se conecta después de construir el servicio (que necesita al planificador)."""
         self._verificar = verificar
 
@@ -56,10 +62,11 @@ class PlanificadorLocal:
     def _correr(self, sesion_id: str, intento: int) -> None:
         if self._verificar is None:
             return
+        ultimo = intento + 1 >= self._max_reintentos
         try:
-            self._verificar(sesion_id)
+            self._verificar(sesion_id, ultimo_intento=ultimo)
         except VerificacionPendiente:
-            if intento + 1 < self._max_reintentos:
+            if not ultimo:
                 hilo = threading.Timer(
                     self._demora_reintento_s, self._correr, args=(sesion_id, intento + 1)
                 )

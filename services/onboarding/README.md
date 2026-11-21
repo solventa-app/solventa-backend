@@ -22,14 +22,24 @@ PostgreSQL + Alembic, puerto **8010**. Plan: `plan-almacenamiento-y-hu-m01.md` (
 
 | Resultado | Estado | Motivo |
 |---|---|---|
-| Documento rechazado por el proveedor | RECHAZADA | `ILEGIBLE` |
+| Documento rechazado por el proveedor, o una foto que el proveedor no puede procesar (4xx de entrada, `imagen_no_procesable`) | RECHAZADA | `ILEGIBLE` |
 | Prueba de vida fallida | RECHAZADA | `SUPLANTACION` |
 | El rostro no coincide | RECHAZADA | `ROSTRO_NO_COINCIDE` |
 | Sin número o sin fecha de nacimiento | RECHAZADA | `ILEGIBLE` |
 | Edad menor que `EDAD_MINIMA` | RECHAZADA | `MENOR_DE_EDAD` |
 | Otra sesión VERIFICADA con el mismo documento | RECHAZADA (sin reintento) | `DOCUMENTO_YA_REGISTRADO` |
-| Proveedor caído o circuito abierto | EN_REVISION | `PROVEEDOR_NO_DISPONIBLE` |
+| Proveedor caído, circuito abierto o mal configurado (llave o créditos), o el ACL no responde: **se reintenta**; agotados los reintentos | RECHAZADA técnico (sin gastar intento) | `PROVEEDOR_NO_DISPONIBLE` |
+| Una pieza que el ACL o el storage no pudieron leer: se reintenta; agotados, o si la pieza ya no existe | RECHAZADA técnico (sin gastar intento) | `IMAGEN_NO_DISPONIBLE` |
 | Todo bien | VERIFICADA | — |
+
+**Fallas técnicas (KAN-131).** El ACL responde `pendiente` cuando Didit falla (429, 5xx, timeout), su circuito está abierto
+o la cuenta está mal configurada. La tarea lanza `VerificacionPendiente` y se reintenta: en local el hilo (5 veces cada 2 s), en
+la nube Cloud Tasks (cola `verificacion-onboarding`, 5 intentos de 5 a 60 s). En el **último** intento (en la nube, el encabezado
+`X-CloudTasks-TaskRetryCount` contra `TAREAS_MAX_INTENTOS`, 5) la sesión cierra en `RECHAZADA` con un motivo técnico
+(`MOTIVOS_TECNICOS`). Ese rechazo no gasta intento (`intentos_restantes` lo suma de vuelta y `reintentar` repite el mismo
+`intento`), no avisa a AUTH y no cuenta para el tope diario. `EN_REVISION` ya no se usa para fallas del proveedor. Las sesiones
+que quedaron atascadas en `EN_REVISION` antes de este cambio se pasan una vez con
+`DATABASE_URL=... python -m app.pasar_en_revision_a_rechazada` (`--simular` solo cuenta).
 
 Hasta `MAX_INTENTOS` (3) por sesión y hasta `MAX_RECHAZADAS_DIA` (3) sesiones rechazadas por cuenta en 24 h (KAN-31; al ligar otra responde `RECORRIDOS_AGOTADOS`). Ligar un recorrido nuevo a la cuenta deja sin piezas a sus otros recorridos `INICIADO` (evento `INVALIDADA`): cada aceptación del consentimiento empieza limpia. El `titular_id` es el HMAC del número de documento con `CLIENTE_ID_CLAVE`, el
 mismo algoritmo y clave de AUTH y el BFF: así se ligan las pólizas previas. Su índice único parcial

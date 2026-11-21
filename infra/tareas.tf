@@ -163,8 +163,10 @@ resource "google_cloud_tasks_queue" "verificacion_onboarding" {
     max_concurrent_dispatches = 5
   }
 
-  # Si el storage o el ACL no responden, ONBOARDING contesta 503 y Cloud Tasks reintenta. Agotados, la sesión
-  # queda EN_VERIFICACION y volver a enviarla (idempotente) la vuelve a encolar.
+  # Si el storage o el ACL no responden, o Didit falla (el ACL responde `pendiente`), ONBOARDING contesta 503 y
+  # Cloud Tasks reintenta. En el último intento (X-CloudTasks-TaskRetryCount = max_attempts - 1) ONBOARDING cierra
+  # la sesión en RECHAZADA técnico, sin gastar intento (KAN-131). Si cambias max_attempts, cambia también
+  # TAREAS_MAX_INTENTOS de ONBOARDING (por omisión 5).
   retry_config {
     max_attempts  = 5
     min_backoff   = "5s"

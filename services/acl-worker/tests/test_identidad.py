@@ -3,6 +3,7 @@ huella de las imágenes y degradación sin 5xx."""
 
 import base64
 import json
+import time
 
 import httpx
 import pytest
@@ -11,6 +12,7 @@ from test_main import CONFIG_SIN_PROVEEDORES
 
 from app.adapters.identidad_didit import (
     MOTIVO_DOCUMENTO,
+    MOTIVO_IMAGEN_NO_PROCESABLE,
     MOTIVO_ROSTRO,
     MOTIVO_VIDA,
     AdaptadorIdentidadDidit,
@@ -21,12 +23,18 @@ from app.application.configuracion import Configuracion
 from app.application.servicio_identidad import (
     MOTIVO_CIRCUITO_ABIERTO,
     MOTIVO_IMAGEN_NO_DISPONIBLE,
+    MOTIVO_PROVEEDOR_MAL_CONFIGURADO,
     MOTIVO_PROVEEDOR_NO_DISPONIBLE,
     DescargadorImagenes,
     ImagenNoDisponible,
     ServicioIdentidad,
 )
-from app.domain.puertos import DatosDocumento, ImagenesIdentidad, ResultadoIdentidad
+from app.domain.puertos import (
+    DatosDocumento,
+    ImagenesIdentidad,
+    ProveedorMalConfigurado,
+    ResultadoIdentidad,
+)
 from app.main import create_app
 
 IMAGENES = ImagenesIdentidad(anverso=b"anverso", rostro=b"rostro", reverso=b"reverso")
@@ -362,3 +370,114 @@ def test_en_local_reescribe_el_origen_despues_de_validarlo() -> None:
     )
     assert descargador.descargar("http://localhost:4443/b/o?x=1") == b"ok"
     assert vistas == ["localhost:4443 http://fake-gcs:4443/b/o?x=1"]
+
+
+# ------------------------------------------------------- KAN-131: separar la foto de la caída
+
+
+def _didit_con_estado(ruta_fallida: str, estado: int, peticiones=None):
+    def manejar(peticion: httpx.Request) -> httpx.Response:
+        if peticiones is not None:
+            peticiones.append(peticion)
+        ruta = peticion.url.path
+        if ruta == ruta_fallida:
+            return httpx.Response(estado, json={"detail": "x"})
+        if ruta == "/v3/id-verification/":
+            return httpx.Response(200, json={"id_verification": DOCUMENTO_OK})
+        if ruta == "/v3/passive-liveness/":
+            return httpx.Response(200, json={"liveness": VIDA_OK})
+        return httpx.Response(200, json={"face_match": ROSTRO_OK})
+
+    cliente = httpx.Client(base_url="https://didit.prueba", transport=httpx.MockTransport(manejar))
+    return AdaptadorIdentidadDidit("https://didit.prueba", "llave-prueba", 15, cliente=cliente)
+
+
+@pytest.mark.parametrize("estado", [400, 413, 415, 422])
+def test_una_imagen_que_didit_no_procesa_es_un_rechazo_normal(estado: int) -> None:
+    peticiones: list[httpx.Request] = []
+    adaptador = _didit_con_estado("/v3/passive-liveness/", estado, peticiones)
+    resultado = adaptador.verificar_identidad("onb-1", IMAGENES)
+    assert (resultado.estado, resultado.motivo) == ("rechazada", MOTIVO_IMAGEN_NO_PROCESABLE)
+    assert len(peticiones) == 2  # no sigue a face-match: ya no se cobra otra llamada
+
+
+@pytest.mark.parametrize("estado", [401, 402, 403])
+def test_llave_o_creditos_lanzan_proveedor_mal_configurado(estado: int) -> None:
+    with pytest.raises(ProveedorMalConfigurado):
+        _didit_con_estado("/v3/id-verification/", estado).verificar_identidad("onb-1", IMAGENES)
+
+
+@pytest.mark.parametrize("estado", [429, 500, 503])
+def test_limite_de_uso_y_5xx_siguen_siendo_falla_tecnica(estado: int) -> None:
+    with pytest.raises(httpx.HTTPStatusError):
+        _didit_con_estado("/v3/face-match/", estado).verificar_identidad("onb-1", IMAGENES)
+
+
+def _servicio_didit(adaptador, umbral=5, ttl=30.0) -> ServicioIdentidad:
+    return ServicioIdentidad(
+        adaptador,
+        construir_fabrica(3, 5),
+        NOMBRE_CIRCUITO_IDENTIDAD,
+        15,
+        _descargar,
+        umbral_circuito=umbral,
+        ttl_circuito_s=ttl,
+    )
+
+
+def test_cinco_fotos_no_procesables_seguidas_no_abren_el_circuito() -> None:
+    servicio = _servicio_didit(_didit_con_estado("/v3/passive-liveness/", 422))
+    for intento in range(6):
+        resultado = servicio.verificar(f"onb-{intento}", "u/a", f"u/r{intento}")
+        assert (resultado.estado, resultado.motivo) == ("rechazada", MOTIVO_IMAGEN_NO_PROCESABLE)
+    assert servicio._circuito().context.state == "closed"
+
+
+def test_proveedor_mal_configurado_no_suma_al_circuito_y_se_loguea_como_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO")
+    servicio = _servicio_didit(_didit_con_estado("/v3/id-verification/", 402), umbral=2)
+    for intento in range(4):
+        resultado = servicio.verificar(f"onb-{intento}", "u/a", f"u/r{intento}")
+        assert (resultado.estado, resultado.motivo) == (
+            "pendiente",
+            MOTIVO_PROVEEDOR_MAL_CONFIGURADO,
+        )
+    assert servicio._circuito().context.state == "closed"
+    assert any(r.levelname == "ERROR" for r in caplog.records)
+
+
+def test_el_circuito_de_identidad_usa_su_umbral_propio_y_no_el_generico() -> None:
+    peticiones: list[httpx.Request] = []
+    servicio = _servicio_didit(_didit_con_estado("/v3/id-verification/", 503, peticiones))
+    for intento in range(5):  # el genérico (3) ya lo habría abierto
+        resultado = servicio.verificar(f"onb-{intento}", "u/a", f"u/r{intento}")
+        assert resultado.motivo == MOTIVO_PROVEEDOR_NO_DISPONIBLE
+    assert len(peticiones) == 5
+    abierto = servicio.verificar("onb-9", "u/a", "u/r9")
+    assert abierto.motivo == MOTIVO_CIRCUITO_ABIERTO
+    assert len(peticiones) == 5
+
+
+def test_el_circuito_de_identidad_se_recupera_tras_su_ttl() -> None:
+    adaptador = AdaptadorFalso(error=httpx.ReadTimeout("lento"))
+    servicio = _servicio_didit(adaptador, umbral=2, ttl=0.05)
+    for _ in range(2):
+        servicio.verificar("onb-1", "u/a", "u/r")
+    assert servicio.verificar("onb-1", "u/a", "u/r").motivo == MOTIVO_CIRCUITO_ABIERTO
+    adaptador.error = None
+    time.sleep(0.1)
+    assert servicio.verificar("onb-1", "u/a", "u/r") == APROBADA
+    assert servicio._circuito().context.state == "closed"
+
+
+def test_configuracion_del_circuito_de_identidad(monkeypatch: pytest.MonkeyPatch) -> None:
+    for nombre in ("IDENTIDAD_URL", "IDENTIDAD_BREAKER_UMBRAL", "IDENTIDAD_BREAKER_TTL_SEGUNDOS"):
+        monkeypatch.delenv(nombre, raising=False)
+    config = Configuracion.desde_entorno()
+    assert (config.identidad_breaker_umbral, config.identidad_breaker_ttl_segundos) == (5, 30)
+    monkeypatch.setenv("IDENTIDAD_BREAKER_UMBRAL", "8")
+    monkeypatch.setenv("IDENTIDAD_BREAKER_TTL_SEGUNDOS", "60")
+    config = Configuracion.desde_entorno()
+    assert (config.identidad_breaker_umbral, config.identidad_breaker_ttl_segundos) == (8, 60)
