@@ -166,9 +166,118 @@ def test_carrera_en_el_cierre_tambien_es_documento_ya_registrado(monkeypatch) ->
     assert pila.verificada()["motivo"] == "DOCUMENTO_YA_REGISTRADO"
 
 
-def test_proveedor_pendiente_queda_en_revision_sin_evento() -> None:
-    sesion = Pila({"estado": "pendiente", "motivo": "circuito_abierto"}).verificada()
-    assert (sesion["estado"], sesion["motivo"]) == ("EN_REVISION", "PROVEEDOR_NO_DISPONIBLE")
+# --- KAN-131: una falla técnica se reintenta y, si no, RECHAZADA sin gastar intento ----------
+
+
+def _enviada(pila: Pila) -> dict:
+    sesion, _ = pila.sesion_lista()
+    pila.servicio.enviar(sesion)
+    return pila.repo.obtener(sesion["id"])
+
+
+@pytest.mark.parametrize("motivo", ["proveedor_no_disponible", "circuito_abierto"])
+def test_proveedor_pendiente_se_reintenta_y_la_sesion_sigue_en_verificacion(motivo) -> None:
+    pila = Pila({"estado": "pendiente", "motivo": motivo})
+    sesion = _enviada(pila)
+    with pytest.raises(VerificacionPendiente):
+        pila.servicio.verificar(sesion["id"])
+    assert pila.repo.obtener(sesion["id"])["estado"] == "EN_VERIFICACION"
+    assert pila.bus.eventos == []
+
+
+@pytest.mark.parametrize(
+    "motivo_acl,motivo",
+    [
+        ("proveedor_no_disponible", "PROVEEDOR_NO_DISPONIBLE"),
+        ("circuito_abierto", "PROVEEDOR_NO_DISPONIBLE"),
+        ("proveedor_mal_configurado", "PROVEEDOR_NO_DISPONIBLE"),
+        ("imagen_no_disponible", "IMAGEN_NO_DISPONIBLE"),
+    ],
+)
+def test_en_el_ultimo_intento_cierra_en_rechazada_tecnico_sin_gastar_intento(
+    motivo_acl, motivo
+) -> None:
+    pila = Pila({"estado": "pendiente", "motivo": motivo_acl})
+    sesion = _enviada(pila)
+    pila.servicio.vincular_cuenta(sesion, "u-1")
+    cerrada = pila.servicio.verificar(sesion["id"], ultimo_intento=True)
+    assert (cerrada["estado"], cerrada["motivo"]) == ("RECHAZADA", motivo)
+    vista = pila.servicio.vista(cerrada)
+    assert (vista["intento"], vista["intentos_restantes"]) == (1, 3)
+    assert pila.cuentas.llamadas == []  # AUTH no se entera: la cuenta sigue pendiente
+
+
+def test_acl_o_storage_caidos_en_el_ultimo_intento_tambien_cierran_sin_gastar_intento() -> None:
+    pila = Pila()
+    sesion = _enviada(pila)
+    pila.identidad.caido = True
+    cerrada = pila.servicio.verificar(sesion["id"], ultimo_intento=True)
+    assert (cerrada["estado"], cerrada["motivo"]) == ("RECHAZADA", "PROVEEDOR_NO_DISPONIBLE")
+
+    pila = Pila()
+    sesion = _enviada(pila)
+    pila.storage.caido = True
+    cerrada = pila.servicio.verificar(sesion["id"], ultimo_intento=True)
+    assert (cerrada["estado"], cerrada["motivo"]) == ("RECHAZADA", "IMAGEN_NO_DISPONIBLE")
+
+
+def test_reintentar_tras_un_rechazo_tecnico_repite_el_mismo_intento_y_luego_aprueba() -> None:
+    pila = Pila({"estado": "pendiente", "motivo": "proveedor_no_disponible"})
+    sesion = _enviada(pila)
+    for _ in range(3):  # tres caídas seguidas en el intento 3 nunca agotan los intentos
+        pila.repo.sesiones[sesion["id"]]["intento"] = 3
+        cerrada = pila.servicio.verificar(sesion["id"], ultimo_intento=True)
+        assert pila.servicio.vista(cerrada)["intentos_restantes"] == 1
+        sesion = pila.servicio.reintentar(cerrada)
+        assert (sesion["estado"], sesion["intento"], sesion["anverso_id"]) == (
+            "INICIADO",
+            3,
+            None,
+        )
+        sesion, _ = _subir_y_enviar(pila, sesion)
+    pila.identidad.respuesta = APROBADA
+    assert pila.servicio.verificar(sesion["id"])["estado"] == "VERIFICADA"
+
+
+def _subir_y_enviar(pila: Pila, sesion: dict) -> tuple[dict, None]:
+    for paso, contenido in (
+        ("ANVERSO", "image/jpeg"),
+        ("REVERSO", "image/jpeg"),
+        ("ROSTRO", "image/jpeg"),
+        ("VIDEO", "video/mp4"),
+    ):
+        subida = pila.servicio.solicitar_subida(
+            pila.repo.obtener(sesion["id"]), paso, contenido, 100
+        )
+        pila.servicio.confirmar_subida(pila.repo.obtener(sesion["id"]), subida["archivo_id"])
+    return pila.servicio.enviar(pila.repo.obtener(sesion["id"])), None
+
+
+def test_una_foto_que_didit_no_procesa_es_ilegible_y_si_gasta_intento() -> None:
+    pila = Pila({"estado": "rechazada", "motivo": "imagen_no_procesable"})
+    sesion = pila.verificada()
+    assert (sesion["estado"], sesion["motivo"]) == ("RECHAZADA", "ILEGIBLE")
+    assert pila.servicio.vista(sesion)["intentos_restantes"] == 2
+    assert pila.servicio.reintentar(sesion)["intento"] == 2
+
+
+def test_una_pieza_que_ya_no_existe_cierra_sin_gastar_intento_y_sin_reintentar() -> None:
+    pila = Pila()
+    sesion = _enviada(pila)
+    pila.storage.archivos[sesion["anverso_id"]]["estado"] = "BORRADO"
+    cerrada = pila.servicio.verificar(sesion["id"])
+    assert (cerrada["estado"], cerrada["motivo"]) == ("RECHAZADA", "IMAGEN_NO_DISPONIBLE")
+    assert pila.servicio.vista(cerrada)["intentos_restantes"] == 3
+
+
+def test_el_tope_diario_no_cuenta_los_rechazos_tecnicos() -> None:
+    pila = Pila({"estado": "pendiente", "motivo": "proveedor_no_disponible"})
+    for _ in range(4):
+        sesion = _enviada(pila)
+        pila.servicio.vincular_cuenta(sesion, "u-1")
+        pila.servicio.verificar(sesion["id"], ultimo_intento=True)
+    sesion, _ = pila.sesion_lista()
+    assert pila.servicio.vincular_cuenta(sesion, "u-1")["usuario_id"] == "u-1"
 
 
 def test_acl_o_storage_caidos_dejan_la_tarea_pendiente() -> None:

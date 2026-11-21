@@ -835,8 +835,8 @@ enum MotivoOnboarding {
   ROSTRO_NO_COINCIDE
   MENOR_DE_EDAD
   DOCUMENTO_YA_REGISTRADO
-  PROVEEDOR_NO_DISPONIBLE # EN_REVISION: el proveedor no respondió; se revisa sin que la persona repita nada
-  IMAGEN_NO_DISPONIBLE # EN_REVISION
+  PROVEEDOR_NO_DISPONIBLE # RECHAZADA técnico (v0.58): el proveedor siguió fallando tras los reintentos; no gasta intento
+  IMAGEN_NO_DISPONIBLE # RECHAZADA técnico (v0.58): no se pudieron leer las fotos; no gasta intento
 }
 
 enum PasoOnboarding {

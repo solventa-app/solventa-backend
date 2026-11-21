@@ -572,6 +572,34 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.61 — 2026-11-21
+
+- HU-W07 (KAN-217, KAN-218): **límite de tasa por credencial de socio en el BFF**. Cada credencial (socio y entorno)
+  admite 20 llamadas por segundo en PRODUCCION y 5 en PRUEBAS a las operaciones con token
+  (`LIMITE_SOCIO_RPS_PRODUCCION` y `LIMITE_SOCIO_RPS_PRUEBAS`; 0 lo apaga). La que pasa el tope recibe
+  **429 `LIMITE_DE_TASA`** con `Retry-After: 1` y `puedeReintentar = true`, antes de revisar el scope, descontar
+  presupuesto o llamar a otro servicio; cuenta en `/v1/consumo` como error del cliente.
+  - Ventana fija de 1 s en Redis, compartida por las instancias del BFF. Sin Redis se deja pasar (regla 4) y se
+    cuenta en `bff_socios_limite_sin_almacen_total`; los rechazos, en `bff_socios_limite_tasa_total{entorno}`.
+  - Es independiente del presupuesto de cotizaciones (`PRESUPUESTO_AGOTADO`, por hora y solo para cotizar).
+- `socios-v1.json` pasa a **1.2.0**: `LIMITE_DE_TASA` en `ErrorPublico`, respuesta `LimiteDeTasa` (429) en las 18
+  operaciones con token y la sección «Límite de tasa» en `info.description`. Solo cambios aditivos. Afecta al
+  frontend: la web puede sincronizar su copia del contrato (el portal no llama tan rápido como para verlo).
+
+## v0.58 — 2026-11-20
+
+- HU-M01 (KAN-131): una falla técnica del proveedor de identidad ya no deja la verificación en `EN_REVISION` sin salida.
+  - El ACL separa «la foto no sirve» (4xx de entrada de Didit → rechazo `ILEGIBLE`, que gasta intento) de «Didit falló»
+    (429, 5xx, timeout o circuito abierto) y de «la cuenta de Didit está mal» (401/402/403). El circuito de identidad tiene
+    umbral y TTL propios y solo cuenta las fallas reales.
+  - ONBOARDING reintenta en segundo plano las fallas técnicas (la sesión sigue `EN_VERIFICACION`). Si siguen, la sesión
+    cierra en `RECHAZADA` con `motivo` `PROVEEDOR_NO_DISPONIBLE` o `IMAGEN_NO_DISPONIBLE`: **no gasta intento**
+    (`intentosRestantes` no baja y reintentar repite el mismo `intento`), no rechaza la cuenta en AUTH y no cuenta para el
+    tope de `RECORRIDOS_AGOTADOS`.
+  - `EN_REVISION` ya no se produce por fallas del proveedor (el valor sigue en el enum).
+- Sin cambios de forma: solo cambia con qué `estado` llegan dos motivos que ya existían. Afecta al frontend: el móvil
+  muestra un texto propio para esos dos motivos en la tarjeta «rechazada» y en M01-07c.
+
 ## v0.57 — 2026-11-20
 
 - HU-W07 (KAN-30, KAN-217), HA-SEG-004 / EC025: **el BFF valida los scopes del token del socio en cada llamada `/v1`**.

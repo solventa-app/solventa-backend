@@ -5,9 +5,14 @@
 2. Busca el resultado en la caché por la huella SHA-256 de las imágenes: un reintento con las
    mismas imágenes no vuelve a cobrarse.
 3. Llama al proveedor dentro de su propio circuito, **sin reintento** (cada llamada se cobra y
-   el corte es largo: corre en segundo plano, fuera del camino del usuario).
+   el corte es largo: corre en segundo plano, fuera del camino del usuario). El circuito de
+   identidad tiene umbral y TTL propios (`IDENTIDAD_BREAKER_UMBRAL`,
+   `IDENTIDAD_BREAKER_TTL_SEGUNDOS`) y no cuenta `ProveedorMalConfigurado` (llave o créditos):
+   abrirlo no arregla eso. Los rechazos por imagen (`imagen_no_procesable`) ya no son
+   excepción, así que tampoco cuentan (KAN-131).
 4. Si algo falla, responde `pendiente` con su motivo (nunca un 5xx, regla #4) y ONBOARDING
-   reintenta más tarde.
+   reintenta más tarde; si sigue fallando, ONBOARDING cierra en RECHAZADA técnico sin gastar
+   intento.
 
 Nada de esto se registra con datos personales: solo la referencia opaca y códigos."""
 
@@ -22,6 +27,7 @@ from app.application.circuitos import CircuitoAbiertoError
 from app.application.identificadores import id_opaco
 from app.domain.puertos import (
     ImagenesIdentidad,
+    ProveedorMalConfigurado,
     PuertoVerificacionIdentidad,
     ResultadoIdentidad,
 )
@@ -31,6 +37,7 @@ logger = logging.getLogger("acl_worker.identidad")
 MOTIVO_CIRCUITO_ABIERTO = "circuito_abierto"
 MOTIVO_PROVEEDOR_NO_DISPONIBLE = "proveedor_no_disponible"
 MOTIVO_IMAGEN_NO_DISPONIBLE = "imagen_no_disponible"
+MOTIVO_PROVEEDOR_MAL_CONFIGURADO = "proveedor_mal_configurado"
 TAMANO_MAXIMO_IMAGEN = 10 * 1024 * 1024
 
 
@@ -95,13 +102,28 @@ class ServicioIdentidad:
         presupuesto_s: float,
         descargar: Callable[[str], bytes],
         cache: CacheIdentidad | None = None,
+        umbral_circuito: int | None = None,
+        ttl_circuito_s: float | None = None,
     ) -> None:
         self._adaptador = adaptador
         self._fabrica = fabrica_circuitos
         self._nombre_circuito = nombre_circuito
+        self._umbral_circuito = umbral_circuito
+        self._ttl_circuito_s = ttl_circuito_s
+        # Se crea ya con sus valores: `get_breaker` solo los toma la primera vez, y `/circuitos` o
+        # la sonda lo piden sin ellos.
+        self._circuito()
         self._presupuesto_s = presupuesto_s
         self._descargar = descargar
         self._cache = cache
+
+    def _circuito(self):  # noqa: ANN202 (tipo interno de purgatory)
+        return self._fabrica.get_breaker(
+            self._nombre_circuito,
+            threshold=self._umbral_circuito,
+            ttl=self._ttl_circuito_s,
+            exclude=[ProveedorMalConfigurado],
+        )
 
     def verificar(
         self, referencia: str, anverso_url: str, rostro_url: str, reverso_url: str | None = None
@@ -125,7 +147,7 @@ class ServicioIdentidad:
                 return guardado
 
         try:
-            with self._fabrica.get_breaker(self._nombre_circuito):
+            with self._circuito():
                 resultado = self._adaptador.verificar_identidad(
                     referencia, imagenes, timeout_s=self._presupuesto_s
                 )
@@ -134,6 +156,16 @@ class ServicioIdentidad:
                 "circuito=%s abierto, identidad pendiente id=%s", self._nombre_circuito, ref
             )
             return ResultadoIdentidad(estado="pendiente", motivo=MOTIVO_CIRCUITO_ABIERTO)
+        except ProveedorMalConfigurado as error:
+            # Llave o créditos: no se arregla reintentando ni abriendo el circuito. Va como
+            # `error` para que salte en Sentry; la persona no pierde intento (motivo técnico).
+            logger.error(
+                "proveedor de identidad mal configurado circuito=%s id=%s causa=%s",
+                self._nombre_circuito,
+                ref,
+                error,
+            )
+            return ResultadoIdentidad(estado="pendiente", motivo=MOTIVO_PROVEEDOR_MAL_CONFIGURADO)
         except Exception as error:
             logger.warning(
                 "fallo verificando identidad circuito=%s id=%s error=%s",

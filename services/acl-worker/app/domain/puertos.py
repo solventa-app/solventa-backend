@@ -315,6 +315,12 @@ class ResultadoIdentidad:
     alertas: tuple[str, ...] = ()
 
 
+class ProveedorMalConfigurado(Exception):
+    """El proveedor de identidad rechazó la llamada por la cuenta, no por la foto ni por estar
+    caído: llave inválida (401/403) o sin créditos (402). No cuenta para el circuito (abrirlo no
+    arregla nada) y se registra como `error` para que alguien lo atienda (KAN-131)."""
+
+
 class PuertoVerificacionIdentidad(Protocol):
     def verificar_identidad(
         self, referencia: str, imagenes: ImagenesIdentidad, timeout_s: float | None = None

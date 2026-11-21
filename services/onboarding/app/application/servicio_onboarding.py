@@ -9,7 +9,10 @@ Capa simple (regla 3). El flujo:
    Tasks o un hilo en local).
 4. `verificar` manda las imágenes al ACL Worker (`/identidad/verificar`, Didit detrás) y aplica las
    reglas: documento auténtico, rostro y prueba de vida (el proveedor), edad mínima y un documento
-   por cuenta (`titular_id`). Con el proveedor caído la sesión queda EN_REVISION (EC010).
+   por cuenta (`titular_id`). Con el proveedor caído (o su circuito abierto) la tarea se reintenta;
+   si sigue fallando en el último intento, la sesión cierra en RECHAZADA con un motivo técnico
+   (`MOTIVOS_TECNICOS`) que **no gasta intento** ni avisa a AUTH, para que la persona reintente
+   con fotos nuevas (KAN-131). EN_REVISION ya no se usa para fallas del proveedor.
 
 5. Con la sesión cerrada y ligada a una cuenta, AUTH la activa (con nombre y documento) o la
    rechaza (solo sin intentos). Mejor esfuerzo: si AUTH no responde, se reintenta al ligar la cuenta
@@ -42,7 +45,7 @@ from app.application.clientes import (
 )
 from app.application.identificadores import hash_token, id_opaco, titular_id_desde_documento
 from app.application.planificador import PuertoPlanificador, VerificacionPendiente
-from app.application.repositorio import TitularYaVerificado
+from app.application.repositorio import MOTIVOS_TECNICOS, TitularYaVerificado
 
 logger = logging.getLogger("onboarding")
 
@@ -61,8 +64,16 @@ MOTIVOS_PROVEEDOR = {
     "documento_rechazado": "ILEGIBLE",
     "prueba_de_vida_fallida": "SUPLANTACION",
     "rostro_no_coincide": "ROSTRO_NO_COINCIDE",
+    # KAN-131: Didit no pudo procesar la foto (4xx de entrada). Es culpa de la foto: gasta intento.
+    "imagen_no_procesable": "ILEGIBLE",
 }
 SIN_REINTENTO = frozenset({"DOCUMENTO_YA_REGISTRADO"})
+# Motivo `pendiente` del ACL -> motivo técnico de M01 al agotar los reintentos.
+MOTIVOS_PENDIENTE = {"imagen_no_disponible": "IMAGEN_NO_DISPONIBLE"}
+
+
+def es_rechazo_tecnico(sesion: dict[str, Any]) -> bool:
+    return sesion["estado"] == "RECHAZADA" and sesion["motivo"] in MOTIVOS_TECNICOS
 
 
 class ErrorOnboarding(Exception):
@@ -172,6 +183,8 @@ class ServicioOnboarding:
 
     def vista(self, sesion: dict[str, Any]) -> dict[str, Any]:
         restantes = self._reglas.max_intentos - sesion["intento"]
+        if es_rechazo_tecnico(sesion):
+            restantes += 1  # el intento que falló por el proveedor no cuenta
         if sesion["estado"] == "RECHAZADA" and sesion["motivo"] in SIN_REINTENTO:
             restantes = 0
         return {
@@ -290,9 +303,12 @@ class ServicioOnboarding:
         self._planificador.encolar(sesion["id"])
         return nueva
 
-    def verificar(self, sesion_id: str) -> dict[str, Any]:
-        """La tarea. Solo avanza desde EN_VERIFICACION (idempotente). Una falla transitoria del
-        storage o del ACL lanza `VerificacionPendiente` y la tarea se reintenta."""
+    def verificar(self, sesion_id: str, ultimo_intento: bool = False) -> dict[str, Any]:
+        """La tarea. Solo avanza desde EN_VERIFICACION (idempotente). Una falla transitoria (el
+        storage o el ACL no responden, o el ACL responde `pendiente` porque el proveedor falló o su
+        circuito está abierto) lanza `VerificacionPendiente` y la tarea se reintenta. En el
+        `ultimo_intento` (lo decide el planificador) cierra en RECHAZADA técnico, sin gastar
+        intento, en vez de dejar la sesión colgada (KAN-131)."""
         sesion = self.obtener(sesion_id)
         if sesion["estado"] != "EN_VERIFICACION":
             return sesion
@@ -302,22 +318,54 @@ class ServicioOnboarding:
                 for c in ("anverso_id", "reverso_id", "rostro_id")
             )
         except ErrorAlmacenamiento:
-            return self._cerrar(sesion, "EN_REVISION", "IMAGEN_NO_DISPONIBLE")
+            # La pieza ya no existe: reintentar no la trae. Fotos nuevas, sin gastar intento.
+            return self._cerrar(sesion, "RECHAZADA", "IMAGEN_NO_DISPONIBLE")
         except ServicioNoDisponible as error:
-            raise VerificacionPendiente("almacenamiento") from error
+            return self._pendiente(
+                sesion, "almacenamiento", "IMAGEN_NO_DISPONIBLE", ultimo_intento, error
+            )
         try:
             resultado = self._identidad.verificar(
                 f"{sesion['id']}-{sesion['intento']}", anverso, rostro, reverso
             )
         except ServicioNoDisponible as error:
-            raise VerificacionPendiente("acl") from error
+            return self._pendiente(sesion, "acl", "PROVEEDOR_NO_DISPONIBLE", ultimo_intento, error)
 
         if resultado["estado"] == "pendiente":
-            return self._cerrar(sesion, "EN_REVISION", "PROVEEDOR_NO_DISPONIBLE", resultado)
+            motivo = MOTIVOS_PENDIENTE.get(resultado.get("motivo") or "", "PROVEEDOR_NO_DISPONIBLE")
+            return self._pendiente(
+                sesion,
+                resultado.get("motivo") or "pendiente",
+                motivo,
+                ultimo_intento,
+                None,
+                resultado,
+            )
         if resultado["estado"] == "rechazada":
             motivo = MOTIVOS_PROVEEDOR.get(resultado.get("motivo") or "", "ILEGIBLE")
             return self._cerrar(sesion, "RECHAZADA", motivo, resultado)
         return self._aprobar(sesion, resultado)
+
+    def _pendiente(
+        self,
+        sesion: dict[str, Any],
+        causa: str,
+        motivo: str,
+        ultimo_intento: bool,
+        error: Exception | None,
+        resultado: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Falla técnica: se reintenta; en el último intento, RECHAZADA técnico (sin gastar
+        intento, `MOTIVOS_TECNICOS`)."""
+        if not ultimo_intento:
+            raise VerificacionPendiente(causa) from error
+        logger.warning(
+            "sesion=%s intento=%s sin verificar tras los reintentos causa=%s",
+            id_opaco(sesion["id"]),
+            sesion["intento"],
+            causa,
+        )
+        return self._cerrar(sesion, "RECHAZADA", motivo, resultado)
 
     def _aprobar(self, sesion: dict[str, Any], resultado: dict[str, Any]) -> dict[str, Any]:
         datos = resultado.get("datos") or {}
@@ -472,7 +520,9 @@ class ServicioOnboarding:
         if sesion["estado"] != "RECHAZADA" or self.vista(sesion)["intentos_restantes"] <= 0:
             raise ErrorOnboarding("SIN_INTENTOS", 409)
         cambios: dict[str, Any] = {c: None for c in COLUMNAS_PIEZAS}
-        cambios.update(estado="INICIADO", motivo=None, intento=sesion["intento"] + 1)
+        # KAN-131: tras una falla técnica se repite el mismo intento (no se gastó).
+        intento = sesion["intento"] if es_rechazo_tecnico(sesion) else sesion["intento"] + 1
+        cambios.update(estado="INICIADO", motivo=None, intento=intento)
         nueva = self._cambiar(sesion, cambios, ("RECHAZADA",))
         self._repo.registrar_evento(sesion["id"], "REINTENTO", f"intento={nueva['intento']}")
         return nueva

@@ -309,6 +309,10 @@ async def socio_de(request: Request, scope: str) -> SocioActual:
     exigirlo para que el 403 también quede en el consumo (`main.py`) como ERROR_CLIENTE."""
     socio = await request.app.state.verificador_socios.verificar(request.headers)
     request.state.socio = socio
+    limite = getattr(request.app.state, "limite_tasa_socios", None)
+    if limite is not None:
+        # KAN-217 (v0.61): antes del scope, el presupuesto o cualquier otro servicio.
+        await limite.revisar(socio.id, socio.entorno)
     socio.exigir(scope)
     return socio
 
