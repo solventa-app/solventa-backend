@@ -223,11 +223,19 @@
         }
       },
       "SinPermiso": {
-        "description": "El token es válido pero no trae el scope de esta operación (`PROHIBIDO`). Sale antes de descontar presupuesto, entrar al modo prueba o llamar a otro servicio, y cuenta en `/v1/consumo` como error.",
+        "description": "El token es válido pero no trae el scope de esta operación (`PROHIBIDO`), o la credencial está suspendida por el antifraude (`CREDENCIAL_SUSPENDIDA`, con `Retry-After`). Sale antes de descontar presupuesto, entrar al modo prueba o llamar a otro servicio, y cuenta en `/v1/consumo` como error.",
         "content": {
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorPublico"
+            }
+          }
+        },
+        "headers": {
+          "Retry-After": {
+            "description": "Solo con `CREDENCIAL_SUSPENDIDA`: segundos que faltan.",
+            "schema": {
+              "type": "integer"
             }
           }
         }
@@ -259,7 +267,8 @@
               "SERVICIO_NO_DISPONIBLE",
               "SOLICITUD_EN_CURSO",
               "IDEMPOTENCIA_EN_CONFLICTO",
-              "LIMITE_DE_TASA"
+              "LIMITE_DE_TASA",
+              "CREDENCIAL_SUSPENDIDA"
             ]
           },
           "mensaje": {

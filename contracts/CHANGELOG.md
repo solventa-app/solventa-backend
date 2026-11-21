@@ -582,11 +582,25 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
     lugar de `prima` y `rangoPrima`: `{"tipo":"EXACTO","valor","moneda"}` (COMPLETA) o
     `{"tipo":"RANGO","minima","maxima","moneda"}` (PRELIMINAR).
   - Cuenta en `/v1/consumo` como `cotizaciones`, igual que /v1. La `Idempotency-Key` de /v2 va aparte de la de /v1.
-  - También le aplica el límite de tasa por credencial (v0.61): `LIMITE_DE_TASA` está en el `ErrorPublico` de /v2.
+  - También le aplican el límite de tasa (v0.61) y el antifraude (v0.62): `LIMITE_DE_TASA` y
+    `CREDENCIAL_SUSPENDIDA` están en el `ErrorPublico` de /v2.
   - El gateway (Envoy y `openapi-socios.yaml`) suma las dos rutas con el mismo corte de 0,7 s; el token se valida en
     el borde igual que en /v1.
 - `/v1` no cambia ni se anuncia su retiro. Afecta al frontend: no (el portal usa /v1; la guía de integración puede
   mencionar /v2 cuando se publique).
+
+## v0.62 — 2026-11-21
+
+- HU-W07 (KAN-66), HA-SEG-004: **antifraude mínimo de la API de socios en el BFF**. Si un token recibe 30 respuestas
+  403 o 404 en 60 s (sondear lo que no es suyo u operaciones sin permiso), la credencial de ese socio en ese entorno
+  queda suspendida 15 minutos y toda llamada con token responde **403 `CREDENCIAL_SUSPENDIDA`** con `Retry-After`,
+  antes de revisar el scope o gastar presupuesto. El otro entorno sigue; vence sola.
+  - La fuerza bruta sobre `POST /v1/token` no cambia: AUTH ya bloquea la credencial tras 5 fallos y responde
+    siempre `CREDENCIALES_INVALIDAS` (para no revelar qué `clientId` existen).
+  - Contadores en Redis; si Redis no responde, no se aplica (regla 4). Métrica `bff_socios_anomalia_total{regla}`.
+- `socios-v1.json` pasa a **1.3.0**: `CREDENCIAL_SUSPENDIDA` en `ErrorPublico`, `Retry-After` en `SinPermiso` y la
+  sección «Antifraude» en `info.description`. Solo cambios aditivos. Afecta al frontend: la web puede sincronizar su
+  copia del contrato cuando quiera (el portal no usa el código nuevo).
 
 ## v0.61 — 2026-11-21
 

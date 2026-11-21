@@ -73,6 +73,10 @@ rutas explícitas, nunca como un `Mount("/v1")`.
   trae `POST /v2/cotizaciones` (oferta con un `precio` en lugar de `prima`/`rangoPrima`) y `GET /v2/openapi.json`
   (copia `app/socios-v2.json`). Es un adaptador sobre `/v1/cotizaciones` (`cotizacion_v2`): mismo presupuesto, scope,
   errores y modo prueba; en el consumo cuenta como `cotizaciones`.
+- **Antifraude (HA-SEG-004, contrato v0.62, `app/socios/antifraude.py`):** 30 respuestas 403/404 a una credencial
+  (socio y entorno) en 60 s la suspenden 15 min (403 `CREDENCIAL_SUSPENDIDA` con `Retry-After`). Contadores en Redis;
+  sin Redis no se aplica. La fuerza bruta del token ya la frena AUTH (bloqueo tras 5 fallos). Falta: avisar al
+  operador (evento o correo), un desbloqueo manual y reglas que usen el límite de tasa (KAN-217).
 - **Límite de tasa (KAN-217, contrato v0.61, `app/socios/limite_tasa.py`):** 20 llamadas por segundo por credencial en
   PRODUCCION y 5 en PRUEBAS (`LIMITE_SOCIO_RPS_PRODUCCION`, `LIMITE_SOCIO_RPS_PRUEBAS`; 0 lo apaga). Al pasarlo, 429
   `LIMITE_DE_TASA` con `Retry-After: 1`, antes del scope y del presupuesto. Ventana de 1 s en Redis; sin Redis no
