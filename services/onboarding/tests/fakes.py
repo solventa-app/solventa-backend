@@ -12,7 +12,7 @@ from app.application.clientes import (
     ErrorAlmacenamiento,
     ServicioNoDisponible,
 )
-from app.application.repositorio import TitularYaVerificado
+from app.application.repositorio import MOTIVOS_TECNICOS, TitularYaVerificado
 from app.application.servicio_onboarding import Reglas, ServicioOnboarding
 
 AHORA = datetime(2026, 10, 27, 12, 0, tzinfo=UTC)
@@ -86,6 +86,7 @@ class RepositorioFalso:
             for s in self.sesiones.values()
             if s["usuario_id"] == usuario_id
             and s["estado"] == "RECHAZADA"
+            and s["motivo"] not in MOTIVOS_TECNICOS
             and s["creado_dt"] >= desde
         )
 

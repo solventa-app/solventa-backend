@@ -12,11 +12,22 @@ Ningún dato sale del ACL con la forma de Didit: la respuesta se traduce a `Resu
 búsqueda (minimización, ley 1581). `vendor_data` lleva solo la referencia opaca del onboarding.
 
 Didit responde HTTP 200 aunque rechace (documento vencido, suplantación, rostro distinto): el
-resultado sale de `status` y `warnings`, no del código HTTP."""
+resultado sale de `status` y `warnings`, no del código HTTP.
+
+Los errores HTTP se separan por culpa (KAN-131):
+- 400/413/415/422: la foto no sirve (sin rostro, formato inválido, demasiado grande). Es un rechazo
+  normal (`imagen_no_procesable`), gasta intento y no cuenta para el circuito.
+- 401/402/403: la cuenta (llave o créditos). `ProveedorMalConfigurado`, excluido del circuito.
+- 429, 5xx y timeout: Didit falló. Se lanza como antes y cuenta para el circuito."""
 
 import httpx
 
-from app.domain.puertos import DatosDocumento, ImagenesIdentidad, ResultadoIdentidad
+from app.domain.puertos import (
+    DatosDocumento,
+    ImagenesIdentidad,
+    ProveedorMalConfigurado,
+    ResultadoIdentidad,
+)
 
 APROBADO = "Approved"
 RIESGO_ERROR = "error"
@@ -24,6 +35,14 @@ RIESGO_ERROR = "error"
 MOTIVO_DOCUMENTO = "documento_rechazado"
 MOTIVO_VIDA = "prueba_de_vida_fallida"
 MOTIVO_ROSTRO = "rostro_no_coincide"
+MOTIVO_IMAGEN_NO_PROCESABLE = "imagen_no_procesable"
+
+ESTADOS_IMAGEN_NO_PROCESABLE = frozenset({400, 413, 415, 422})
+ESTADOS_CUENTA = frozenset({401, 402, 403})
+
+
+class _ImagenNoProcesable(Exception):
+    """Didit no pudo procesar la imagen (4xx de entrada). Nunca sale del adaptador."""
 
 
 def _alertas_de_error(bloque: dict) -> list[str]:
@@ -59,6 +78,10 @@ class AdaptadorIdentidadDidit:
             data={"save_api_request": "false", **campos},
             timeout=timeout,
         )
+        if respuesta.status_code in ESTADOS_IMAGEN_NO_PROCESABLE:
+            raise _ImagenNoProcesable(f"{ruta} HTTP {respuesta.status_code}")
+        if respuesta.status_code in ESTADOS_CUENTA:
+            raise ProveedorMalConfigurado(f"{ruta} HTTP {respuesta.status_code}")
         respuesta.raise_for_status()
         return respuesta.json()
 
@@ -66,6 +89,14 @@ class AdaptadorIdentidadDidit:
         self, referencia: str, imagenes: ImagenesIdentidad, timeout_s: float | None = None
     ) -> ResultadoIdentidad:
         timeout = timeout_s if timeout_s is not None else self._timeout_s
+        try:
+            return self._verificar(referencia, imagenes, timeout)
+        except _ImagenNoProcesable:
+            return ResultadoIdentidad(estado="rechazada", motivo=MOTIVO_IMAGEN_NO_PROCESABLE)
+
+    def _verificar(
+        self, referencia: str, imagenes: ImagenesIdentidad, timeout: float
+    ) -> ResultadoIdentidad:
         documento_archivos = {"front_image": imagenes.anverso}
         if imagenes.reverso is not None:
             documento_archivos["back_image"] = imagenes.reverso

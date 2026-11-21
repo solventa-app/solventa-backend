@@ -1,9 +1,12 @@
 """Endpoints de ONBOARDING con dobles (con los reales se verifica en vivo con compose)."""
 
+import time
+
 from fakes import Pila
 from fastapi.testclient import TestClient
 
 from app.application.configuracion import Configuracion
+from app.application.planificador import PlanificadorLocal, VerificacionPendiente
 from app.main import create_app
 
 
@@ -76,3 +79,40 @@ def test_sin_token_es_401_y_tarea_con_acl_caido_es_503() -> None:
         r = cliente.post(f"/tareas/verificar/{sesion['id']}")
         assert (r.status_code, r.json()["detail"]) == (503, "VERIFICACION_PENDIENTE")
         assert cliente.get("/usuarios/nadie/onboarding").status_code == 404
+
+
+def test_la_tarea_responde_503_y_en_el_ultimo_intento_de_cloud_tasks_cierra() -> None:
+    """KAN-131: Cloud Tasks reintenta con 503; en el último intento de la cola (encabezado
+    `X-CloudTasks-TaskRetryCount` = `TAREAS_MAX_INTENTOS` - 1) cierra en RECHAZADA técnico."""
+    pila = Pila({"estado": "pendiente", "motivo": "circuito_abierto"})
+    sesion, _ = pila.sesion_lista()
+    pila.servicio.enviar(sesion)
+    with _cliente(pila) as cliente:
+        r = cliente.post(
+            f"/tareas/verificar/{sesion['id']}", headers={"X-CloudTasks-TaskRetryCount": "3"}
+        )
+        assert (r.status_code, r.json()["detail"]) == (503, "VERIFICACION_PENDIENTE")
+        r = cliente.post(
+            f"/tareas/verificar/{sesion['id']}", headers={"X-CloudTasks-TaskRetryCount": "4"}
+        )
+        assert r.status_code == 200
+        assert (r.json()["estado"], r.json()["motivo"]) == ("RECHAZADA", "PROVEEDOR_NO_DISPONIBLE")
+        assert r.json()["intentos_restantes"] == 3
+
+
+def test_el_planificador_local_avisa_el_ultimo_intento() -> None:
+    llamadas: list[bool] = []
+
+    def verificar(sesion_id: str, ultimo_intento: bool = False) -> None:
+        llamadas.append(ultimo_intento)
+        if not ultimo_intento:
+            raise VerificacionPendiente("acl")
+
+    planificador = PlanificadorLocal(demora_reintento_s=0, max_reintentos=3)
+    planificador.conectar(verificar)
+    planificador._correr("s-1", 0)
+    for _ in range(100):
+        if len(llamadas) == 3:
+            break
+        time.sleep(0.01)
+    assert llamadas == [False, False, True]
