@@ -1055,6 +1055,46 @@ type SiniestroReportado {
 # identidad verificada o servicio caído con reintento).
 union ResultadoReporteSiniestro = SiniestroReportado | ErrorSiniestro
 
+# ---------- Detalle del caso para el CLIENTE (v0.64, HU-M05, KAN-35) ----------
+# M05-07 en el móvil. Lo mismo que `SiniestroReportado` más lo que el propio cliente escribió o subió (relato,
+# ubicación y fotos), su póliza y la línea de tiempo. Sin datos del operador ni del perito: ni el comentario, ni las
+# verificaciones, ni la suma reclamada, ni si la aprobación fue automática.
+
+# Una foto que subió el cliente al reportar. Los documentos de soporte del operador no se muestran.
+type FotoSiniestro {
+  id: ID!
+  # URL firmada de lectura del almacenamiento (vence en minutos): al vencer, la app vuelve a pedir el detalle. Vacía si
+  # el archivo no está disponible (la app muestra «Imagen no disponible»).
+  url: String!
+  registradaEn: DateTime!
+}
+
+# Un paso de la línea de tiempo: PENDIENTE al reportar, EN_REVISION si se derivó a un perito, y APROBADO o RECHAZADO
+# al resolver. Del más antiguo al más reciente.
+type HitoSiniestro {
+  estado: EstadoSiniestro!
+  en: DateTime!
+}
+
+type DetalleSiniestroCliente {
+  id: ID!
+  radicado: String!
+  estado: EstadoSiniestro!
+  ocurridoEn: DateTime!
+  notificadoEn: DateTime!
+  venceDictamenEn: DateTime!
+  tipoSiniestroAuto: TipoSiniestroAuto # solo en pólizas de AUTO
+  descripcion: String!
+  ubicacion: Ubicacion!
+  poliza: Poliza!
+  fotos: [FotoSiniestro!]!
+  historial: [HitoSiniestro!]!
+  resolucion: ResolucionCliente # null mientras está PENDIENTE
+  # true si, vencido el plazo estando PENDIENTE, el sistema lo aprueba solo. false en auto parcial o de responsabilidad
+  # civil: el operador tiene que valorar el daño (la app no promete la aprobación automática).
+  apruebaAlVencer: Boolean!
+}
+
 # ---------- Indemnización y cobertura paramétrica (v0.48, KAN-259, HU-M04 Fase 5) ----------
 # Lo que la app móvil mostrará en la Fase 6 (fuera de este contrato) al tocar el push de una indemnización
 # paramétrica (vuelo o clima) ya liquidada automáticamente por CLAIMS (ver evento `evento.parametrico.recibido`).
@@ -1436,6 +1476,8 @@ type Query {
   peritos(siniestroId: ID!): [Perito!]!
   # v0.35 (HU-M05): los casos que reportó el CLIENTE del token, del más reciente al más antiguo.
   misSiniestros: [SiniestroReportado!]!
+  # v0.64 (HU-M05, KAN-35): el detalle de un caso del CLIENTE del token. null si no existe o no lo reportó él.
+  miSiniestro(id: ID!): DetalleSiniestroCliente
   # ---------- v0.22 (HU-W07) ----------
   # Solo BACKOFFICE. `ventana`: 15m, 1h, 24h o 7d.
   estadoSistema(ventana: String = "1h"): EstadoSistema!

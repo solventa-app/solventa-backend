@@ -572,6 +572,22 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.64 — 2026-11-21
+
+- HU-M05 (KAN-35): el detalle de un caso para el CLIENTE en la app (M05-07). Antes la app armaba el detalle con lo poco
+  que trae `misSiniestros`.
+  - Query nueva `miSiniestro(id: ID!): DetalleSiniestroCliente`, solo CLIENTE: null si el caso no existe o no lo
+    reportó él (mismo trato que uno inexistente).
+  - Tipo nuevo `DetalleSiniestroCliente`: lo de `SiniestroReportado` más el relato, la ubicación, la póliza (`Poliza`),
+    las fotos (`FotoSiniestro`, con URL firmada de lectura), la línea de tiempo (`HitoSiniestro`: PENDIENTE,
+    EN_REVISION si pasó por un perito, y APROBADO o RECHAZADO) y `apruebaAlVencer` (false en auto parcial o de
+    responsabilidad civil: vencido el plazo no se aprueba solo porque el operador valora el daño, KAN-290).
+  - Sin datos del operador ni del perito (comentario, verificaciones, suma reclamada, aprobación automática).
+  - `tipos-archivo.json`: `siniestro-foto` suma `CLIENTE` a `quien_lee`. El almacenamiento solo le deja leer a un
+    CLIENTE lo que él mismo subió, así que ve sus fotos y nunca las de otro caso.
+  - CLAIMS: la resolución del expediente trae `derivada_en` (cuándo pasó a un perito) para la línea de tiempo.
+- Solo cambios aditivos. Afecta al frontend: el móvil (detalle del siniestro).
+
 ## v0.63 — 2026-11-21
 
 - HU-W07 (KAN-69), HA-MOD-003 / EC033: **primera versión nueva de la API de socios, `/v2`, que convive con `/v1`**
