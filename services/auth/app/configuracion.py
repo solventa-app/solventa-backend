@@ -48,6 +48,8 @@ class Configuracion:
     consentimiento_vigencia_dias: int = 30
     cliente_id_clave: str = CLIENTE_ID_CLAVE_LOCAL
     socios_clave_firma: str = SOCIOS_CLAVE_FIRMA_LOCAL
+    # ADR-14: la clave anterior solo se publica en el JWKS durante una rotación.
+    socios_clave_firma_anterior: str | None = None
     refresh_vigencia_dias: int = 8
     refresh_web_horas: int = 8
     refresh_gracia_segundos: int = 30
@@ -61,6 +63,9 @@ class Configuracion:
         consentimiento_vigencia_dias = int(os.getenv("CONSENTIMIENTO_VIGENCIA_DIAS", "30"))
         cliente_id_clave = os.getenv("CLIENTE_ID_CLAVE", CLIENTE_ID_CLAVE_LOCAL)
         socios_clave_firma = os.getenv("SOCIOS_CLAVE_FIRMA", SOCIOS_CLAVE_FIRMA_LOCAL)
+        # Vacía o con el marcador de Terraform = no hay rotación en curso.
+        anterior = os.getenv("SOCIOS_CLAVE_FIRMA_ANTERIOR", "").strip()
+        socios_clave_firma_anterior = anterior if anterior not in ("", VALOR_MARCADOR) else None
         # Cloud Run define `K_SERVICE` en todo contenedor: así se sabe que no es local
         # sin agregar otra variable. En la nube nunca se firma con un secreto conocido.
         if os.getenv("K_SERVICE"):
@@ -91,6 +96,7 @@ class Configuracion:
             consentimiento_vigencia_dias=consentimiento_vigencia_dias,
             cliente_id_clave=cliente_id_clave,
             socios_clave_firma=socios_clave_firma,
+            socios_clave_firma_anterior=socios_clave_firma_anterior,
             refresh_vigencia_dias=int(
                 os.getenv("REFRESH_VIGENCIA_DIAS") or _duraciones_sesion()["refresh_dias"]
             ),

@@ -190,7 +190,7 @@ static_resources:
                           route:
                             cluster: bff_cluster
                             timeout: 0.7s
-                        # v0.59 (HA-MOD-003): /v2 convive con /v1 (ADR-13).
+                        # v0.63 (HA-MOD-003): /v2 convive con /v1 (ADR-13).
                         - match:
                             path: "/v2/openapi.json"
                             headers:

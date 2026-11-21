@@ -71,7 +71,7 @@ DEVOLUCION_FALLIDA = Counter(
 )
 
 CONTRATO = Path(__file__).resolve().parent.parent / "socios-v1.json"
-# v0.59 (HA-MOD-003, EC033): /v2 convive con /v1 (política en ADR-13).
+# v0.63 (HA-MOD-003, EC033): /v2 convive con /v1 (política en ADR-13).
 CONTRATO_V2 = Path(__file__).resolve().parent.parent / "socios-v2.json"
 VERSIONES = ("/v1/", "/v2/")
 CANAL_SOCIOS = "API"
@@ -195,7 +195,7 @@ def oferta_rest(datos: dict) -> dict:
 
 
 def precio_v2(oferta: dict) -> dict:
-    """v0.59 (/v2): un solo `precio` en lugar de `prima` y `rangoPrima` de /v1."""
+    """v0.63 (/v2): un solo `precio` en lugar de `prima` y `rangoPrima` de /v1."""
     if oferta.get("prima"):
         prima = oferta["prima"]
         return {"tipo": "EXACTO", "valor": prima["valor"], "moneda": prima["moneda"]}
@@ -345,6 +345,10 @@ async def socio_de(request: Request, scope: str) -> SocioActual:
     exigirlo para que el 403 también quede en el consumo (`main.py`) como ERROR_CLIENTE."""
     socio = await request.app.state.verificador_socios.verificar(request.headers)
     request.state.socio = socio
+    limite = getattr(request.app.state, "limite_tasa_socios", None)
+    if limite is not None:
+        # KAN-217 (v0.61): antes del scope, el presupuesto o cualquier otro servicio.
+        await limite.revisar(socio.id, socio.entorno)
     socio.exigir(scope)
     return socio
 
@@ -565,7 +569,7 @@ def construir_router() -> APIRouter:
     async def cotizar_v2(
         body: SolicitudCotizacion, request: Request, socio: SocioCotizaciones
     ) -> Any:
-        """v0.59 (HA-MOD-003): como `/v1/cotizaciones` con el precio unificado. Su
+        """v0.63 (HA-MOD-003): como `/v1/cotizaciones` con el precio unificado. Su
         `Idempotency-Key` va aparte de la de /v1 (guarda la respuesta ya en la forma de /v2)."""
 
         async def operacion() -> dict:

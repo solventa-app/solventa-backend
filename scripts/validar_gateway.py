@@ -22,7 +22,7 @@ OPENAPI = RAIZ / "infra" / "gateway" / "openapi.yaml"
 ENVOY = RAIZ / "infra" / "gateway" / "envoy.yaml"
 OPENAPI_SOCIOS = RAIZ / "infra" / "gateway" / "openapi-socios.yaml"
 CONTRATO_SOCIOS = RAIZ / "contracts" / "openapi" / "socios-v1.json"
-# v0.59 (HA-MOD-003): /v2 convive con /v1; sus rutas también pasan por el gateway.
+# v0.63 (HA-MOD-003): /v2 convive con /v1; sus rutas también pasan por el gateway.
 CONTRATOS_SOCIOS = (CONTRATO_SOCIOS, RAIZ / "contracts" / "openapi" / "socios-v2.json")
 
 PLAZO_SEGUNDOS = 0.7

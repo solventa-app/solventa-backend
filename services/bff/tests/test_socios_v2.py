@@ -1,4 +1,4 @@
-"""API de socios `/v2` (v0.59, HA-MOD-003, EC033): convive con `/v1` y solo cambia la forma de la
+"""API de socios `/v2` (v0.63, HA-MOD-003, EC033): convive con `/v1` y solo cambia la forma de la
 oferta de `POST /v2/cotizaciones` (un `precio` en lugar de `prima` y `rangoPrima`)."""
 
 import json

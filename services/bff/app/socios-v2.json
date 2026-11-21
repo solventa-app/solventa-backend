@@ -3,7 +3,7 @@
   "info": {
     "title": "Solventa · API de socios de distribución (v2)",
     "version": "2.0.0",
-    "description": "Segunda versión de la API de socios (HA-MOD-003, EC033, KAN-69). Contrato v0.59 (`contracts/CHANGELOG.md`). Política de versiones: `docs/adr/ADR-13-versionado-api-socios.md`.\n\n## Qué cambia frente a /v1\n\nSolo `POST /v2/cotizaciones`. La oferta trae **un solo campo `precio`** en lugar de `prima` y `rangoPrima`: `{\"tipo\":\"EXACTO\",\"valor\",\"moneda\"}` en una oferta COMPLETA y `{\"tipo\":\"RANGO\",\"minima\",\"maxima\",\"moneda\"}` en una PRELIMINAR. El cuerpo de la solicitud, los errores, el token, el scope (`cotizaciones`), la `Idempotency-Key` y el presupuesto son los mismos de /v1; una cotización por /v2 descuenta presupuesto igual y cuenta en el consumo como `cotizaciones`.\n\n## Convivencia\n\n/v1 sigue igual y sin fecha de retiro. Todo lo demás (token, consentimientos, propuestas, pólizas y cuenta) se sigue llamando por /v1. La `Idempotency-Key` de /v2 es independiente de la de /v1: la misma clave en las dos versiones son dos solicitudes distintas."
+    "description": "Segunda versión de la API de socios (HA-MOD-003, EC033, KAN-69). Contrato v0.63 (`contracts/CHANGELOG.md`). Política de versiones: `docs/adr/ADR-13-versionado-api-socios.md`.\n\n## Qué cambia frente a /v1\n\nSolo `POST /v2/cotizaciones`. La oferta trae **un solo campo `precio`** en lugar de `prima` y `rangoPrima`: `{\"tipo\":\"EXACTO\",\"valor\",\"moneda\"}` en una oferta COMPLETA y `{\"tipo\":\"RANGO\",\"minima\",\"maxima\",\"moneda\"}` en una PRELIMINAR. El cuerpo de la solicitud, los errores, el token, el scope (`cotizaciones`), la `Idempotency-Key` y el presupuesto son los mismos de /v1; una cotización por /v2 descuenta presupuesto igual y cuenta en el consumo como `cotizaciones`.\n\n## Convivencia\n\n/v1 sigue igual y sin fecha de retiro. Todo lo demás (token, consentimientos, propuestas, pólizas y cuenta) se sigue llamando por /v1. La `Idempotency-Key` de /v2 es independiente de la de /v1: la misma clave en las dos versiones son dos solicitudes distintas."
   },
   "servers": [
     {
@@ -113,7 +113,7 @@
             }
           },
           "429": {
-            "description": "Presupuesto agotado (`PRESUPUESTO_AGOTADO`).",
+            "description": "Presupuesto agotado (`PRESUPUESTO_AGOTADO`), o pasó el límite de llamadas por segundo (`LIMITE_DE_TASA`, `Retry-After: 1`).",
             "headers": {
               "Retry-After": {
                 "schema": {
@@ -258,7 +258,8 @@
               "PRESUPUESTO_AGOTADO",
               "SERVICIO_NO_DISPONIBLE",
               "SOLICITUD_EN_CURSO",
-              "IDEMPOTENCIA_EN_CONFLICTO"
+              "IDEMPOTENCIA_EN_CONFLICTO",
+              "LIMITE_DE_TASA"
             ]
           },
           "mensaje": {

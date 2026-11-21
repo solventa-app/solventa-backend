@@ -112,7 +112,7 @@ paths:
       responses:
         "200":
           description: OK
-  # v0.59 (HA-MOD-003): /v2 convive con /v1 (ADR-13).
+  # v0.63 (HA-MOD-003): /v2 convive con /v1 (ADR-13).
   /v2/openapi.json:
     get:
       summary: "Contrato de /v2"
