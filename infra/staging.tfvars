@@ -16,7 +16,7 @@ presupuesto_monto  = 958332
 
 # Cifrado en reposo (bloque 3, D-04 cerrada): key ring y llave `campos-personales` de Cloud KMS (~USD 0,06/mes).
 # OJO: un key ring de Cloud KMS no se puede borrar nunca.
-crear_kms       = true
+crear_kms = true
 # CMEK de disco (HA-SEG-002, KAN-64), activado el 2026-11-21. OJO: en Cloud SQL fuerza REEMPLAZAR la instancia y el
 # guardia del pipeline lo bloquea. La liberación que lleve este cambio a `main` se hace en la ventana de
 # docs/guia-activar-cmek.md (exportar, aplicar con permitir_destruir, importar). Sin costo extra: misma llave.
