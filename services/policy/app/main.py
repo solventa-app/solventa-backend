@@ -27,6 +27,7 @@ from app.application.cliente_auth import ClienteAuth
 from app.application.cliente_payments import ClientePayments
 from app.application.cliente_rating import ClienteRating, RatingNoDisponible
 from app.application.cliente_under import ClienteUnder
+from app.application.clima_auto import consultar_celdas
 from app.application.configuracion import Configuracion
 from app.application.huellas import clave_de_huellas
 from app.application.planificador import (
@@ -424,6 +425,7 @@ def create_app(
     servicio_firma_y_pago: ServicioFirmaYPago | None = None,
     servicio_purga: ServicioPurga | None = None,
     repositorio_coberturas: Any = None,
+    consulta_clima: Any = None,
 ) -> FastAPI:
     """Los `servicio_*` permiten inyectar dobles de prueba sin PostgreSQL ni
     RATING reales (ver `tests/fakes.py`). En producción se omiten y `create_app` los construye
@@ -447,6 +449,7 @@ def create_app(
             app.state.servicio_firma_y_pago = servicio_firma_y_pago
             app.state.servicio_purga = servicio_purga
             app.state.repositorio_coberturas = repositorio_coberturas
+            app.state.consulta_clima = consulta_clima
         else:
             pool = construir_pool(config.database_url)
             cliente_rating = ClienteRating(
@@ -461,6 +464,7 @@ def create_app(
                 config.acl_timeout_segundos,
                 autenticacion_para(config.autenticacion_servicios, "acl-worker"),
             )
+            app.state.consulta_clima = cliente_acl
             cliente_under = ClienteUnder(
                 config.under_url,
                 config.under_timeout_segundos,
@@ -507,6 +511,7 @@ def create_app(
                 contactos=cliente_auth,
                 generador_documento=servicio_de_polizas.documento,
                 avisos=avisos,
+                coberturas_parametricas=app.state.repositorio_coberturas,
             )
             if isinstance(planificador, PlanificadorLocal):
                 planificador.conectar(emision.emitir)
@@ -1006,6 +1011,12 @@ def create_app(
     def purgar_contactos() -> ResumenPurgaResponse:
         """W03-26: pasada diaria (Cloud Scheduler) por los consentimientos vencidos."""
         return ResumenPurgaResponse(**app.state.servicio_purga.purgar_vencidos())
+
+    @app.post("/coberturas-parametricas/_consultar-clima", tags=["parametricos"])
+    def consultar_clima() -> dict[str, int]:
+        """HU-M04 + HU-W08: Cloud Scheduler lo llama para consultar el clima de cada celda con
+        coberturas vigentes (las de toda póliza de auto). Siempre 200 (regla #4)."""
+        return consultar_celdas(app.state.repositorio_coberturas, app.state.consulta_clima)
 
     @app.get(
         "/interno/coberturas-parametricas",

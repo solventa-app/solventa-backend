@@ -833,3 +833,12 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   suma el filtro `poliza_id` a `GET /interno/coberturas-parametricas`. Solo cambios aditivos.
 - Afecta al frontend: en teoría sí (son las queries que la Fase 6, fuera de este contrato, va a consumir), pero la
   app móvil no las llama todavía.
+
+## Configuración — 2026-11-20 (sin cambio de esquema ni versión nueva)
+
+- KAN-290 (HU-W08) + KAN-259 (HU-M04): toda póliza de auto lleva una cobertura paramétrica de clima en su ciudad de
+  circulación. `contracts/ciudades.json` suma `latitud` y `longitud` (centro de la ciudad, 2 decimales: la celda de
+  clima) a cada ciudad, y `contracts/tarifas-auto.json` suma `parametrica_clima` (variable, umbral, ventana y monto
+  fijo; no cambia la prima). Copias nuevas en `services/policy/app/` con `scripts/sincronizar_fuentes.py`.
+- Afecta al frontend: no. El móvil ya muestra la cobertura en «Mi cobertura» (`miCoberturaParametrica`, v0.48); la
+  copia de ciudades del móvil puede ignorar los campos nuevos.

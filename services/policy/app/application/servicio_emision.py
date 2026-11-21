@@ -51,6 +51,7 @@ from app.application.cliente_payments import (
 )
 from app.application.cliente_payments import ResultadoCobro as ResultadoCobroPayments
 from app.application.cliente_under import PuertoUnder, UnderNoDisponible
+from app.application.clima_auto import PuertoCoberturas, incluir_clima
 from app.application.identificadores import id_opaco
 from app.application.planificador import EmisionPendiente, PuertoPlanificador
 
@@ -159,6 +160,7 @@ class ServicioEmision:
         contactos: PuertoContactos | None = None,
         generador_documento: Callable[[str, str | None], bytes | None] | None = None,
         avisos: PuertoAvisos | None = None,
+        coberturas_parametricas: PuertoCoberturas | None = None,
     ) -> None:
         if contactos is not None and generador_documento is None:
             raise ValueError("Avisar con el PDF exige un generador de documentos")
@@ -168,6 +170,8 @@ class ServicioEmision:
         self._bus = bus
         self._planificador = planificador
         self._notificador = notificador
+        # HU-M04 + HU-W08: la cobertura de clima incluida en toda póliza de auto.
+        self._coberturas_parametricas = coberturas_parametricas
         self._token = token_medio_pago
         self._demora_s = demora_cobro_pendiente_s
         self._max_intentos = max_intentos
@@ -401,6 +405,7 @@ class ServicioEmision:
                 )
             )
             logger.info("póliza emitida propuesta=%s", id_opaco(propuesta["id"]))
+            self._incluir_clima(propuesta, poliza)
         numero = numero_de_poliza(poliza["numero"], poliza["vigencia_desde"])
         self._avisar(poliza, propuesta["id"], numero)
         return "EMITIDA"
@@ -433,9 +438,11 @@ class ServicioEmision:
                     propuesta["cliente_id"],
                     poliza["vigencia_desde"],
                     poliza["vigencia_hasta"],
+                    producto=propuesta.get("producto") or "VIDA_DEUDOR",
                 )
             )
             logger.info("póliza emitida al confirmar el pago propuesta=%s", id_opaco(propuesta_id))
+            self._incluir_clima(propuesta, poliza)
             self._avisos.publicar(propuesta, "EMITIDA", resumen)
             try:
                 self._planificador.encolar(propuesta_id)  # el correo con el PDF, en segundo plano
@@ -443,6 +450,21 @@ class ServicioEmision:
                 # La póliza ya está emitida; el barrido o la próxima consulta reintentan el aviso.
                 logger.warning("no se pudo encolar el aviso error=%s", type(error).__name__)
         return resumen
+
+    def _incluir_clima(self, propuesta: dict[str, Any], poliza: dict[str, Any]) -> None:
+        """La póliza ya quedó emitida: si la cobertura de clima falla, se registra y la emisión
+        sigue (la semilla o una nueva emisión idempotente la pueden completar)."""
+        if self._coberturas_parametricas is None:
+            return
+        try:
+            if incluir_clima(self._coberturas_parametricas, propuesta, poliza):
+                logger.info("cobertura de clima incluida poliza=%s", id_opaco(poliza["id"]))
+        except Exception as error:
+            logger.warning(
+                "no se pudo incluir la cobertura de clima poliza=%s error=%s",
+                id_opaco(poliza["id"]),
+                type(error).__name__,
+            )
 
     def _completar_aviso(self, propuesta: dict[str, Any]) -> None:
         """Una póliza ya emitida a la que no se le pudo avisar: se reintenta el aviso."""
