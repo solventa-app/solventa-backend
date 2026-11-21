@@ -429,7 +429,8 @@ class ServicioSocios:
         if credencial["estado_socio"] != "ACTIVO":
             raise CredencialesSocioInvalidas(MENSAJE_CREDENCIALES)
         self._repo.registrar_exito(credencial["id"])
-        logger.info(  # nosemgrep: registra un id opaco, no el token
+        # Semgrep ve "token" en el mensaje, pero solo se registra un id opaco del socio.
+        logger.info(  # nosemgrep
             "token de socio emitido socio=%s entorno=%s",
             id_opaco(credencial["socio_id"]),
             credencial["entorno"],

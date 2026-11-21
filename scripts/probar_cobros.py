@@ -239,7 +239,8 @@ def preparar(argumentos) -> tuple[str, str]:
     if clave is None and Config.staging:
         gcloud = shutil.which("gcloud")
         secreto = "usuario-" + usuario.replace(".", "-").replace("_", "-")
-        salida = subprocess.run(  # nosemgrep: lista sin shell
+        # Lista de argumentos sin shell: los valores son de quien corre el script (Semgrep).
+        salida = subprocess.run(  # nosemgrep
             [
                 gcloud or "gcloud",
                 "secrets",
@@ -630,7 +631,8 @@ def main() -> int:
     if argumentos.staging:
         Config.staging = argumentos.staging
         gcloud = shutil.which("gcloud") or "gcloud"
-        salida = subprocess.run(  # nosemgrep: lista sin shell
+        # Lista de argumentos sin shell: los valores son de quien corre el script (Semgrep).
+        salida = subprocess.run(  # nosemgrep
             [
                 gcloud,
                 "run",

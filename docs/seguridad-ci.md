@@ -67,7 +67,8 @@ Para generarlo en local con resultados ya descargados: `python3 scripts/reporte_
   - `B110` (`except: pass`): cierres de clientes y la caché derivada de Redis, que por diseño nunca tumba la respuesta.
   - `B105`/`B106`: códigos y mensajes de error que contienen la palabra "token" y la URL pública de OAuth de Google.
   - `B101`: `assert` de tipo tras un `INSERT ... RETURNING`, que siempre devuelve la fila.
-- **Falso positivo de Semgrep:** `# nosemgrep: motivo` en la línea (o la anterior).
+- **Falso positivo de Semgrep:** `# nosemgrep` en la línea (o la anterior), con el motivo en un comentario aparte:
+  Semgrep toma lo que va después de `nosemgrep:` como ids de reglas.
 - **Dependencia vulnerable:** se sube la versión en el `requirements.in` del servicio y se recompila
   (`scripts/compilar-requirements.sh`); Dependabot ya abre muchos de estos PR.
 
