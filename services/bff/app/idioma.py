@@ -46,6 +46,10 @@ EN: dict[str, str] = {
     "El servicio no está disponible en este momento. Intenta de nuevo.": (
         "The service is not available right now. Please try again."
     ),
+    # Límite de tasa por credencial de socio (KAN-217, v0.61)
+    "Demasiadas solicitudes por segundo para esta credencial. Intenta de nuevo.": (
+        "Too many requests per second for this credential. Please try again."
+    ),
     # Acceso biométrico del teléfono (KAN-26, contrato v0.44)
     "No pudimos verificar este teléfono. Ingresa con tu correo y contraseña.": (
         "We could not verify this phone. Sign in with your email and password."
