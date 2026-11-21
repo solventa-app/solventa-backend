@@ -650,6 +650,19 @@ def revisar_headers(url: str, destino: Path) -> None:
                 "content-security-policy", ""
             ):
                 continue
+            solo_reporte = cabeceras.get("content-security-policy-report-only")
+            if header == "Content-Security-Policy" and solo_reporte:
+                # Paso intermedio válido: la CSP se prueba en modo reporte antes de aplicarla.
+                resultado["presentes"]["Content-Security-Policy-Report-Only"] = solo_reporte
+                resultado["hallazgos"].append(
+                    {
+                        "header": header,
+                        "severidad": "baja",
+                        "problema": "solo en modo reporte (Content-Security-Policy-Report-Only)",
+                        "recomendacion": "Sin violaciones en la consola, pásala a Content-Security-Policy.",
+                    }
+                )
+                continue
             resultado["hallazgos"].append(
                 {
                     "header": header,
