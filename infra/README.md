@@ -18,7 +18,7 @@ agrega nada hasta que alguien las enciende.
 | APIs (Cloud Run, Artifact Registry, Secret Manager, Pub/Sub, IAM, IAM Credentials, STS, Resource Manager) | siempre | $0 | `disable_on_destroy = false` |
 | Repositorio de Artifact Registry | siempre | centavos por GB | imágenes de los servicios/stubs |
 | Cloud KMS (key ring `solventa-backend` + llave `campos-personales` + IAM para AUTH, RISK y RATING) | `crear_kms` | ~USD 0,06/mes por versión de llave + ~USD 0,03 / 10.000 ops | `kms.tf`; un key ring **no se puede borrar** nunca; activado en `staging.tfvars` |
-| CMEK en Cloud SQL y Memorystore Redis | `usar_cmek_sql` / `usar_cmek_redis` | $0 adicional (usa la misma llave de KMS) | Cloud SQL exige recrear/migrar la instancia (`export/import` en ventana acordada); Redis se aplica en el próximo encendido |
+| CMEK en Cloud SQL y Memorystore Redis | `usar_cmek_sql` / `usar_cmek_redis` | $0 adicional (usa la misma llave de KMS) | Cloud SQL exige recrear/migrar la instancia (`export/import` en ventana acordada, procedimiento en [ADR-12](../docs/adr/ADR-12-cmek-cloud-sql.md)); Redis se aplica en el próximo encendido |
 | Workload Identity Federation (GitHub) + service account de despliegue + sus permisos | `crear_pipeline` | $0 | `cicd.tf`; sin llaves; limitada a este repo y al entorno `staging` |
 | Un servicio de Cloud Run por entrada de `.github/servicios.json`, sus jobs de migración, una service account por servicio y los secretos | `crear_servicios` | ~$0 en reposo | `servicios.tf`; máx. `max_instancias` por servicio (`calentar_camino_critico = true` sube `min_instance_count = 1` solo durante sesiones de medición) |
 | Cola de Cloud Tasks `reintento-cobros` + trabajos de Cloud Scheduler `sonda-acl` y `reconciliacion-cobros-policy` y `DISPARADOR=externo` en PAYMENTS y el ACL Worker | `crear_tareas` | $0 (capa gratuita: 1 M de operaciones de Cloud Tasks; 3 trabajos de Scheduler por cuenta) | `tareas.tf`. En Cloud Run los bucles de fondo no corren de forma confiable (`cpu_idle = true`, mínimo 0). Ver «Disparadores externos» |
@@ -412,6 +412,8 @@ Pasos, en orden (nada se aplica a mano; va por el pipeline al llegar a `main`):
 1. **Cargar `clave-firma-socios`** en Secret Manager antes de la liberación: AUTH no arranca en Cloud Run con el
    marcador ni con la clave local. Una clave EC P-256 en PKCS#8, como DER en base64 de una sola línea:
    `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -outform DER | base64 -w0 | gcloud secrets versions add clave-firma-socios --data-file=-`.
+   Para **rotarla** sin cortar tokens vivos se publica también la anterior (`SOCIOS_CLAVE_FIRMA_ANTERIOR`): pasos y lo
+   que falta para hacerlo automático en [ADR-14](../docs/adr/ADR-14-rotacion-credenciales-socios.md).
 2. Liberar con `crear_gateway_socios = true` y `jwks_socios_url = ""`. API Gateway no acepta un `x-google-jwks_uri`
    vacío, así que Terraform usa `https://<gateway de los usuarios>/v1/.well-known/jwks.json` (ruta pública de
    `openapi.yaml` que sirve el BFF sin token). `jwks_socios_url` solo hace falta para apuntar a otro origen. Antes

@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Solventa · API de socios de distribución",
-    "version": "1.2.0",
-    "description": "API exclusiva para socios que revenden la póliza de Vida Hipotecario (HU-W07, KAN-30). Contrato v0.60 (`contracts/CHANGELOG.md`). Reglas: montos como texto decimal; errores con `ErrorPublico` en es o en; nunca un 5xx crudo; un socio solo ve lo que vendió (404 si no es suyo).\n\n## Scopes (HA-SEG-004, EC025)\n\nEl token de `POST /v1/token` trae el claim `scopes`. Cada operación con token exige uno y responde **403 `PROHIBIDO`** si falta (antes de descontar presupuesto o de cualquier otra cosa). Un token sin el claim, o con un valor que no es una lista de textos, es **401 `TOKEN_INVALIDO`**. Hoy todos los socios reciben los cuatro.\n\n| Scope | Operaciones |\n|---|---|\n| `cotizaciones` | `POST /v1/consentimientos`, `POST /v1/consentimientos/{consentimientoId}/revocar`, `POST /v1/cotizaciones`, `POST /v1/cotizaciones-auto`, `POST /v1/conversiones` |\n| `propuestas` | `POST /v1/propuestas`, `GET /v1/propuestas/{propuestaId}`, `POST /v1/propuestas/{propuestaId}/codigo`, `POST /v1/propuestas/{propuestaId}/codigo/verificar`, `POST /v1/propuestas/{propuestaId}/emitir`, `POST /v1/propuestas/{propuestaId}/reenviar-enlace` |\n| `polizas` | `GET /v1/polizas/{polizaId}`, `GET /v1/polizas/{polizaId}/documento` |\n| `cuenta` | `GET /v1/estado`, `GET /v1/consumo`, `GET /v1/ventas`, `GET /v1/credenciales`, `POST /v1/credenciales/{entorno}/rotar` |\n| — (públicas) | `POST /v1/token`, `GET /v1/.well-known/jwks.json`, `GET /v1/openapi.json`, `GET /v1/docs` |\n\n## Antifraude (HA-SEG-004, v0.60)\n\nSi un token recibe **30 respuestas 403 o 404 en 60 s** (sondear propuestas o pólizas que no son suyas, u operaciones sin permiso), la credencial de ese socio en ese entorno queda **suspendida 15 minutos**: toda llamada con token responde **403 `CREDENCIAL_SUSPENDIDA`** con `Retry-After` (segundos que faltan), antes de revisar el scope o descontar presupuesto. El otro entorno sigue funcionando y la suspensión vence sola. Los fallos de `POST /v1/token` siguen respondiendo siempre `CREDENCIALES_INVALIDAS`, también cuando AUTH bloquea la credencial."
+    "version": "1.3.0",
+    "description": "API exclusiva para socios que revenden la póliza de Vida Hipotecario (HU-W07, KAN-30). Contrato v0.62 (`contracts/CHANGELOG.md`). Reglas: montos como texto decimal; errores con `ErrorPublico` en es o en; nunca un 5xx crudo; un socio solo ve lo que vendió (404 si no es suyo).\n\n## Scopes (HA-SEG-004, EC025)\n\nEl token de `POST /v1/token` trae el claim `scopes`. Cada operación con token exige uno y responde **403 `PROHIBIDO`** si falta (antes de descontar presupuesto o de cualquier otra cosa). Un token sin el claim, o con un valor que no es una lista de textos, es **401 `TOKEN_INVALIDO`**. Hoy todos los socios reciben los cuatro.\n\n| Scope | Operaciones |\n|---|---|\n| `cotizaciones` | `POST /v1/consentimientos`, `POST /v1/consentimientos/{consentimientoId}/revocar`, `POST /v1/cotizaciones`, `POST /v1/cotizaciones-auto`, `POST /v1/conversiones` |\n| `propuestas` | `POST /v1/propuestas`, `GET /v1/propuestas/{propuestaId}`, `POST /v1/propuestas/{propuestaId}/codigo`, `POST /v1/propuestas/{propuestaId}/codigo/verificar`, `POST /v1/propuestas/{propuestaId}/emitir`, `POST /v1/propuestas/{propuestaId}/reenviar-enlace` |\n| `polizas` | `GET /v1/polizas/{polizaId}`, `GET /v1/polizas/{polizaId}/documento` |\n| `cuenta` | `GET /v1/estado`, `GET /v1/consumo`, `GET /v1/ventas`, `GET /v1/credenciales`, `POST /v1/credenciales/{entorno}/rotar` |\n| — (públicas) | `POST /v1/token`, `GET /v1/.well-known/jwks.json`, `GET /v1/openapi.json`, `GET /v1/docs` |\n\n## Límite de tasa (KAN-217, v0.61)\n\nCada credencial (socio y entorno) admite **20 llamadas por segundo en PRODUCCION y 5 en PRUEBAS** a las operaciones con token. La que pasa el tope recibe **429 `LIMITE_DE_TASA`** con `Retry-After: 1` y `puedeReintentar = true`, antes de revisar el scope, descontar presupuesto o llamar a otro servicio. Es independiente del presupuesto de cotizaciones (`PRESUPUESTO_AGOTADO`). Las operaciones públicas no tienen este límite.\n\n## Antifraude (HA-SEG-004, v0.62)\n\nSi un token recibe **30 respuestas 403 o 404 en 60 s** (sondear propuestas o pólizas que no son suyas, u operaciones sin permiso), la credencial de ese socio en ese entorno queda **suspendida 15 minutos**: toda llamada con token responde **403 `CREDENCIAL_SUSPENDIDA`** con `Retry-After` (segundos que faltan), antes de revisar el scope o descontar presupuesto. El otro entorno sigue funcionando y la suspensión vence sola. Los fallos de `POST /v1/token` siguen respondiendo siempre `CREDENCIALES_INVALIDAS`, también cuando AUTH bloquea la credencial."
   },
   "servers": [
     {
@@ -230,6 +230,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "description": "Regla 7: sin consentimiento vigente no se consulta ninguna fuente. Queda registrado que lo otorgó el socio. Con un token de PRUEBAS responde el modo prueba: datos simulados, sin consultar fuentes ni cobrar.",
@@ -293,6 +296,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "description": "Rechaza nuevas consultas y borra el contacto de las propuestas no emitidas. Con un token de PRUEBAS responde el modo prueba: datos simulados, sin consultar fuentes ni cobrar.",
@@ -384,7 +390,7 @@
             }
           },
           "429": {
-            "description": "Presupuesto agotado (`PRESUPUESTO_AGOTADO`).",
+            "description": "Presupuesto agotado (`PRESUPUESTO_AGOTADO`), o pasó el límite de llamadas por segundo (`LIMITE_DE_TASA`, `Retry-After: 1`).",
             "headers": {
               "Retry-After": {
                 "schema": {
@@ -495,7 +501,7 @@
             }
           },
           "429": {
-            "description": "Presupuesto agotado (`PRESUPUESTO_AGOTADO`).",
+            "description": "Presupuesto agotado (`PRESUPUESTO_AGOTADO`), o pasó el límite de llamadas por segundo (`LIMITE_DE_TASA`, `Retry-After: 1`).",
             "headers": {
               "Retry-After": {
                 "schema": {
@@ -596,6 +602,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "description": "Con un token de PRUEBAS responde el modo prueba: datos simulados, sin consultar fuentes ni cobrar.",
@@ -659,6 +668,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "description": "W07-8: el socio consulta hasta un estado final (EMITIDA, NO_EMITIDA o CANCELADA).",
@@ -740,6 +752,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "description": "W07-15: el titular le dicta el código al socio. En modo prueba el código es `000000`.",
@@ -831,6 +846,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "parameters": [
@@ -911,6 +929,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "description": "Exige la identidad verificada. El titular firma y paga con el enlace (30 min); la URL nunca vuelve al socio. Repetir la llamada no vuelve a decidir.",
@@ -982,6 +1003,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "parameters": [
@@ -1042,6 +1066,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "parameters": [
@@ -1103,6 +1130,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "parameters": [
@@ -1153,6 +1183,9 @@
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "parameters": [
@@ -1204,6 +1237,9 @@
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "description": "Del entorno del token. Sin fechas: los últimos 30 días. Desde v0.55: los días son los de Colombia (`America/Bogota`), el rango va hasta 366 días (si no, 422) y no cuentan las consultas de la cuenta (`/v1/consumo`, `/v1/estado`, `/v1/ventas` y `/v1/credenciales`), que el portal lee al abrirse. Un 422 por un cuerpo inválido sí cuenta (con un token válido).",
@@ -1265,6 +1301,9 @@
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "description": "Sin fechas: los últimos 12 meses. Con un token de PRUEBAS responde el modo prueba: datos simulados, sin consultar fuentes ni cobrar.",
@@ -1347,6 +1386,9 @@
           },
           "503": {
             "$ref": "#/components/responses/NoDisponible"
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "security": [
@@ -1391,6 +1433,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "parameters": [
@@ -1440,6 +1485,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
         "description": "Los tokens ya emitidos con la clave anterior siguen valiendo hasta vencer (15 min).",
@@ -1546,6 +1594,24 @@
             }
           }
         }
+      },
+      "LimiteDeTasa": {
+        "description": "Pasó el límite de llamadas por segundo de la credencial (`LIMITE_DE_TASA`, v0.61). Reintentar después de `Retry-After`.",
+        "headers": {
+          "Retry-After": {
+            "description": "Segundos (siempre 1).",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorPublico"
+            }
+          }
+        }
       }
     },
     "schemas": {
@@ -1574,6 +1640,7 @@
               "SERVICIO_NO_DISPONIBLE",
               "SOLICITUD_EN_CURSO",
               "IDEMPOTENCIA_EN_CONFLICTO",
+              "LIMITE_DE_TASA",
               "CREDENCIAL_SUSPENDIDA"
             ]
           },

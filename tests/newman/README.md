@@ -99,9 +99,13 @@ agotado de una corrida anterior.
 corta a los 700 ms con `upstream request timeout`, a veces sí y a veces no. Levántalo con
 `docker compose --profile servicios --profile observabilidad up -d` (o solo `... --profile observabilidad up -d prometheus`).
 
+**Límite de tasa (KAN-217, v0.61).** El BFF admite 5 llamadas por segundo por credencial de PRUEBAS y 20 de PRODUCCION.
+Newman sin pausa las pasa y recibe 429 `LIMITE_DE_TASA`, así que la colección se corre con `--delay-request 250`
+(4 por segundo).
+
 ```bash
 npx --yes newman@6.2.2 run tests/newman/socios-w07.postman_collection.json \
-  -e tests/newman/solventa-local.postman_environment.json
+  -e tests/newman/solventa-local.postman_environment.json --delay-request 250
 ```
 
 ## Colección de HU-M02 (`hu-m02.postman_collection.json`)

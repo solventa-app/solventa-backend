@@ -55,6 +55,7 @@ from app.socios.api import api_de, construir_router, cuenta_en_el_consumo, es_ru
 from app.socios.autenticacion import VerificadorTokensSocio
 from app.socios.errores import ErrorApiSocio, datos_invalidos, no_disponible, respuesta_de_error
 from app.socios.idempotencia import AlmacenIdempotenciaMemoria, AlmacenIdempotenciaRedis
+from app.socios.limite_tasa import AlmacenVentanasMemoria, AlmacenVentanasRedis, LimiteTasa
 from app.socios.modo_prueba import AlmacenMemoria, AlmacenRedis, ModoPrueba
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -155,7 +156,7 @@ def create_app(
             if clientes is None:
                 abiertos.append(idempotencia)
             app.state.idempotencia_socios = idempotencia
-            # Antifraude (v0.60, HA-SEG-004): contadores en Redis; en pruebas, en memoria.
+            # Antifraude (v0.62, HA-SEG-004): contadores en Redis; en pruebas, en memoria.
             contadores = (
                 AlmacenContadoresRedis(config.redis_url)
                 if clientes is None
@@ -164,6 +165,21 @@ def create_app(
             if clientes is None:
                 abiertos.append(contadores)
             app.state.antifraude_socios = Antifraude(contadores)
+            # Límite de tasa por credencial (KAN-217, v0.61): en Redis; en pruebas, en memoria.
+            ventanas = (
+                AlmacenVentanasRedis(config.redis_url)
+                if clientes is None
+                else AlmacenVentanasMemoria()
+            )
+            if clientes is None:
+                abiertos.append(ventanas)
+            app.state.limite_tasa_socios = LimiteTasa(
+                ventanas,
+                {
+                    "PRODUCCION": config.limite_socio_rps_produccion,
+                    "PRUEBAS": config.limite_socio_rps_pruebas,
+                },
+            )
         # Salud del sistema (HU-W07). Con dobles y sin `salud`, todos los micros responden.
         if salud is not None:
             app.state.salud = salud

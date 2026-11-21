@@ -1,4 +1,4 @@
-"""Antifraude mínimo de la API de socios (HA-SEG-004, KAN-66, contrato v0.60).
+"""Antifraude mínimo de la API de socios (HA-SEG-004, KAN-66, contrato v0.62).
 
 **Regla `SONDEO`** (enumerar lo que no es suyo o probar operaciones sin permiso): `UMBRAL_SONDEO`
 respuestas 403 o 404 a la misma credencial (socio y entorno) en `VENTANA_SEGUNDOS`, contadas en una

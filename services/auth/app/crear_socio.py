@@ -59,7 +59,9 @@ def main(argumentos: list[str] | None = None, servicio: ServicioSocios | None = 
         servicio = ServicioSocios(
             RepositorioSociosPostgres(pool),
             construir_cifrador(config),
-            FirmadorTokensSocio(config.socios_clave_firma),
+            FirmadorTokensSocio(
+                config.socios_clave_firma, clave_anterior=config.socios_clave_firma_anterior
+            ),
         )
     fijas = credenciales_del_entorno()
     try:

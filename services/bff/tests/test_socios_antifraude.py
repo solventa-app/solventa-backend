@@ -1,4 +1,4 @@
-"""Antifraude mínimo de la API de socios (v0.60, HA-SEG-004, KAN-66): el sondeo con 403/404
+"""Antifraude mínimo de la API de socios (v0.62, HA-SEG-004, KAN-66): el sondeo con 403/404
 suspende la credencial 15 minutos."""
 
 import asyncio

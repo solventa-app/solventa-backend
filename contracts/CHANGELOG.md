@@ -572,7 +572,7 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
-## v0.60 — 2026-11-20
+## v0.62 — 2026-11-21
 
 - HU-W07 (KAN-66), HA-SEG-004: **antifraude mínimo de la API de socios en el BFF**. Si un token recibe 30 respuestas
   403 o 404 en 60 s (sondear lo que no es suyo u operaciones sin permiso), la credencial de ese socio en ese entorno
@@ -581,9 +581,23 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   - La fuerza bruta sobre `POST /v1/token` no cambia: AUTH ya bloquea la credencial tras 5 fallos y responde
     siempre `CREDENCIALES_INVALIDAS` (para no revelar qué `clientId` existen).
   - Contadores en Redis; si Redis no responde, no se aplica (regla 4). Métrica `bff_socios_anomalia_total{regla}`.
-- `socios-v1.json` pasa a **1.2.0**: `CREDENCIAL_SUSPENDIDA` en `ErrorPublico`, `Retry-After` en `SinPermiso` y la
+- `socios-v1.json` pasa a **1.3.0**: `CREDENCIAL_SUSPENDIDA` en `ErrorPublico`, `Retry-After` en `SinPermiso` y la
   sección «Antifraude» en `info.description`. Solo cambios aditivos. Afecta al frontend: la web puede sincronizar su
   copia del contrato cuando quiera (el portal no usa el código nuevo).
+
+## v0.61 — 2026-11-21
+
+- HU-W07 (KAN-217, KAN-218): **límite de tasa por credencial de socio en el BFF**. Cada credencial (socio y entorno)
+  admite 20 llamadas por segundo en PRODUCCION y 5 en PRUEBAS a las operaciones con token
+  (`LIMITE_SOCIO_RPS_PRODUCCION` y `LIMITE_SOCIO_RPS_PRUEBAS`; 0 lo apaga). La que pasa el tope recibe
+  **429 `LIMITE_DE_TASA`** con `Retry-After: 1` y `puedeReintentar = true`, antes de revisar el scope, descontar
+  presupuesto o llamar a otro servicio; cuenta en `/v1/consumo` como error del cliente.
+  - Ventana fija de 1 s en Redis, compartida por las instancias del BFF. Sin Redis se deja pasar (regla 4) y se
+    cuenta en `bff_socios_limite_sin_almacen_total`; los rechazos, en `bff_socios_limite_tasa_total{entorno}`.
+  - Es independiente del presupuesto de cotizaciones (`PRESUPUESTO_AGOTADO`, por hora y solo para cotizar).
+- `socios-v1.json` pasa a **1.2.0**: `LIMITE_DE_TASA` en `ErrorPublico`, respuesta `LimiteDeTasa` (429) en las 18
+  operaciones con token y la sección «Límite de tasa» en `info.description`. Solo cambios aditivos. Afecta al
+  frontend: la web puede sincronizar su copia del contrato (el portal no llama tan rápido como para verlo).
 
 ## v0.58 — 2026-11-20
 
