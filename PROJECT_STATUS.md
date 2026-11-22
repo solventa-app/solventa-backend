@@ -1,6 +1,7 @@
 # Estado del proyecto: Solventa Backend
 
-Corte: **2026-10-31**, `develop` en `8054b6b`. Es un resumen para arrancar sesiones: el detalle vive en los documentos
+Corte: **2026-11-22**, `main` en `9ef4f23` (release `sprint-12`) y `develop` en `18814f7`; el cierre del proyecto es
+`release/sprint-3`. Es un resumen para arrancar sesiones: el detalle vive en los documentos
 enlazados. Reglas de arquitectura y de trabajo: [`CLAUDE.md`](CLAUDE.md) (no se repiten aquí). Si este archivo y el
 código difieren, gana el código.
 
@@ -54,20 +55,23 @@ Todo esto está en código y verificado **en local**; nada tiene medición de st
 | HU-M06 / KAN-263, KAN-264, KAN-265, KAN-266 | Dirección a mano sin ubicación (`solicitarAsistenciaConDireccion`, v0.41). Catálogo maestro de prestadores en `claims` (`catalogoPrestadores`, v0.36); solicitar y cancelar asistencia (`solicitarAsistencia`, `cancelarAsistencia`, v0.40). v0.49: detalle del prestador, tipo `GRUA` y desenlace por la red de prestadores detrás del ACL (`stubs/prestadores`, puerto 8109). Resto del plan: [`docs/plan-hu-m06-pendientes.md`](docs/plan-hu-m06-pendientes.md) | [`services/claims/README.md`](services/claims/README.md) |
 | KAN-250 | Almacenamiento de archivos | [ADR-10](docs/adr/ADR-10-almacenamiento-de-archivos.md) |
 
-Contrato en **v0.68** (la v0.42 es la póliza de auto, KAN-290, [`plan-poliza-auto`](docs/plan-poliza-auto.md); la v0.45, el historial de fuentes del asesor, [`plan-revision-qa-2026-11-10`](docs/plan-revision-qa-2026-11-10.md) T5; la v0.49, el catálogo de prestadores con detalle y grúa, HU-M06 fase 1); la v0.50, la dirección escrita y ubicada de M06; la v0.51, las rutas de los prestadores con su auditoría; la v0.52, «Mis asistencias»; la v0.53, la especialidad y el horario del prestador como datos; la v0.54, el detalle del siniestro para el cliente (rama de KAN-35); la v0.54 a v0.63, la API de socios (idempotencia, consumo, scopes y `/v2`) y los reintentos de identidad de M01 (ver la bitácora; la v0.59 y la v0.60 no se usaron); la v0.64, el detalle del siniestro para el cliente (`miSiniestro`, M05-07); la v0.65, la póliza de auto al pedir asistencia; la v0.66, el origen de la ubicación de las fotos de M05 (dirección escrita sin GPS); la v0.67, el push con el nombre y el evento (KAN-259); la v0.68, las cotizaciones aparte de las ventas y el panel del socio en vivo (SSE); la siguiente libre es **v0.70** (la v0.69 es quién resolvió el siniestro, KAN-27) (la v0.46 a v0.48 las reserva el PR #589, KAN-259). Últimas migraciones: AUTH `0014`, POLICY `0010`, PAYMENTS `0010`, RISK `0006`, CLAIMS `0010`.
+Contrato en **v0.68** (la v0.42 es la póliza de auto, KAN-290, [`plan-poliza-auto`](docs/plan-poliza-auto.md); la v0.45, el historial de fuentes del asesor, [`plan-revision-qa-2026-11-10`](docs/plan-revision-qa-2026-11-10.md) T5; la v0.49, el catálogo de prestadores con detalle y grúa, HU-M06 fase 1); la v0.50, la dirección escrita y ubicada de M06; la v0.51, las rutas de los prestadores con su auditoría; la v0.52, «Mis asistencias»; la v0.53, la especialidad y el horario del prestador como datos; la v0.54, el detalle del siniestro para el cliente (rama de KAN-35); la v0.54 a v0.63, la API de socios (idempotencia, consumo, scopes y `/v2`) y los reintentos de identidad de M01 (ver la bitácora; la v0.59 y la v0.60 no se usaron); la v0.64, el detalle del siniestro para el cliente (`miSiniestro`, M05-07); la v0.65, la póliza de auto al pedir asistencia; la v0.66, el origen de la ubicación de las fotos de M05 (dirección escrita sin GPS); la v0.67, el push con el nombre y el evento (KAN-259); la v0.68, las cotizaciones aparte de las ventas y el panel del socio en vivo (SSE); la siguiente libre es **v0.70** (la v0.69 es quién resolvió el siniestro, KAN-27) (la v0.46 a v0.48 las reserva el PR #589, KAN-259). Últimas migraciones: AUTH `0014`, POLICY `0012`, PAYMENTS `0010`, RISK `0006`, CLAIMS `0010`.
 
 ## Estado actual
 
-- **Ramas:** `main` y `develop` están casi iguales. `develop` solo lleva 2 bumps de Dependabot encima de
-  `release/sprint-4` (#397, 2026-10-29).
-- **Staging, bloqueado:** el último `Deploy staging` (2026-10-30, run `41135427073`) falló en `migrar (almacenamiento)`;
-  las otras migraciones se cancelaron y `desplegar` se omitió. **Lo nuevo no se desplegó.** El último exitoso es del
-  2026-10-29 12:58 (`40877773342`).
-- **Causa (diagnosticada 2026-10-31):** Cloud SQL estaba detenida. `Costos staging` > `encender` había fallado
-  (run `41130261877`) porque su guardia bloqueó la destrucción pendiente de `stub-siniestros`. Ese despliegue sí aplicó
-  Terraform (24 creados, 5 cambiados, 6 destruidos), así que `encender` ya no debería chocar con eso (sin probar).
-  Los logs se leen con `gh api .../actions/jobs/<id>/logs`.
-- **PR abiertos:** solo los de Dependabot, que suben las imágenes a Python 3.15 (#402 en adelante). No tocarlos.
+- **Ramas y releases:** `sprint-12` se mezcló a `main` el 2026-11-22 (PR #726) y `main` y `develop` tienen el mismo
+  contenido: `main` solo lleva de más los merge commits de los releases (su reintegración a `develop` sigue pendiente; el
+  PR #715 quedó obsoleto). El cierre del proyecto (Sprint 3 y final) va por `release/sprint-3` → `main`, con el tag
+  `sprint-3`; el tag `sprint-12` quedó en el merge del PR #714 (2026-11-21), antes de los releases #717 a #726, y no se puede
+  mover (ruleset de tags).
+- **Staging:** el `Deploy staging` del 2026-11-22 (run `45054451363`) terminó en verde: Terraform, migraciones y
+  despliegue de los servicios cambiados. Cloud SQL y Redis están activos y **ya tienen CMEK** (llave `campos-personales`,
+  comprobado con `gcloud` el 2026-11-22). Los logs se leen con `gh api .../actions/jobs/<id>/logs`.
+- **Bug de la mesa en staging (2026-11-22):** la bandeja `siniestros` fallaba mientras existiera un siniestro
+  paramétrico (`KeyError: 'descripcion'` en el BFF, porque guardan `ubicacion = {tipo, clave}`). Corregido en el PR #727
+  (`CLAIMS` ya no los lista en la bandeja); llega a staging con el release de cierre. **Sin verificar contra MongoDB
+  real** (solo pruebas con repositorio en memoria).
+- **PR abiertos:** #727 (corrección anterior), #715 (obsoleto) y este cierre. Sin PR de Dependabot abiertos.
 
 ## Pendiente
 
@@ -86,7 +90,7 @@ en [`EC016-2026-11-11`](docs/evidencias/EC016-2026-11-11.md)). **Falta staging:*
   activa de caché al revocar (CA-W01-08).
 - Revisar los resultados de Bandit, `pip-audit`, Trivy y ZAP (informativos en CI).
 - W07: `crear_gateway_socios`, `jwks_socios_url`, Job `crear_socio`.
-- `usar_cmek_sql` y `usar_cmek_redis` siguen en `false`.
+- CMEK de Cloud SQL y Redis: aplicada en staging (`usar_cmek_sql` y `usar_cmek_redis` en `true`, comprobada el 2026-11-22).
 
 **Producto**
 - Integrar W07 con el portal de Daniel y pasar al plan del front el contrato v0.22, el rol SOCIO y el modo prueba.
@@ -139,8 +143,9 @@ Punto de retoma (2026-10-31): los ajustes de W01 y W05 están integrados en `dev
 (evidencias del 2026-10-31). `develop` backend y web llevan más cambios del equipo (M01, Sentry). **Nada de esto se ha
 probado en staging.**
 
-1. **Liberar y desplegar**, cuando se decida. Confirmar antes `clave-firma-socios` (sin ella AUTH no arranca) y encender
-   con `Costos staging` > `encender`: Cloud SQL detenida frenó el último despliegue. PAYMENTS usa `redis-url-w03`.
+1. **Cerrar el release `sprint-3`:** `sprint-12` ya está desplegado en staging (2026-11-22). Queda mezclar
+   `release/sprint-3` a `main` (merge commit, 1 aprobación), poner el tag `sprint-3` y reintegrar `main` en `develop`.
+   Si Cloud SQL se detuvo, encender con `Costos staging` > `encender`. PAYMENTS usa `redis-url-w03`.
 2. **Revisar en staging** que RISK ahora escribe caché en `redis-url-rating`, y medir con k6 (EC003, EC004, EC005, EC007, EC010).
 3. **Atacar EC004 y EC008**, y encender el gateway de socios con el portal de Daniel.
 
