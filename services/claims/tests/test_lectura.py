@@ -79,6 +79,24 @@ def test_parametricos_de_polizas_solo_trae_origen_parametrico():
     assert movimientos[0]["evento_valor"] == 145.0
 
 
+def test_la_bandeja_no_lista_los_siniestros_parametricos():
+    """Los paramétricos guardan `ubicacion = {tipo, clave}`, sin la `Ubicacion` que la bandeja del
+    BFF exige: listarlos hacía fallar la bandeja entera (staging, 2026-11-22)."""
+    repo = repositorio_con_datos()
+    repo.siniestros["sin-par-1"] = {
+        "id": "sin-par-1",
+        "radicado": "SIN-2026-1001",
+        "poliza_id": "pol-01",
+        "estado": "APROBADO",
+        "notificado_en": AHORA,
+        "ubicacion": {"tipo": "CLIMA", "clave": "4.71,-74.07"},
+        "origen": "PARAMETRICO",
+    }
+    servicio = ServicioSiniestros(repo, reloj=lambda: AHORA)
+    assert "sin-par-1" not in [s["id"] for s in servicio.listar()]
+    assert "sin-par-1" not in [s["id"] for s in servicio.listar("APROBADO")]
+
+
 def test_parametricos_de_polizas_vacio_sin_ids():
     assert _servicio().parametricos_de_polizas([]) == []
 
