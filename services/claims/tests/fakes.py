@@ -23,11 +23,17 @@ class RepositorioFalso:
 
     # ---------- Lectura (misma firma que el repositorio real) ----------
 
+    def _todos(self):
+        """Todos los siniestros, del más reciente al más antiguo (sin filtrar el origen)."""
+        copias = [copy.deepcopy(s) for s in self.siniestros.values()]
+        return sorted(copias, key=lambda s: s["notificado_en"], reverse=True)
+
     def listar(self, estado=None):
-        todos = [copy.deepcopy(s) for s in self.siniestros.values()]
+        """La bandeja de la mesa: sin los paramétricos (igual que el repositorio real)."""
+        todos = [s for s in self._todos() if s.get("origen") != "PARAMETRICO"]
         if estado:
             todos = [s for s in todos if s["estado"] == estado]
-        return sorted(todos, key=lambda s: s["notificado_en"], reverse=True)
+        return todos
 
     def fijar_vencimiento(self, siniestro_id, vence_en):
         caso = self.siniestros.get(siniestro_id)
@@ -103,12 +109,12 @@ class RepositorioFalso:
         return True
 
     def listar_de_cliente(self, cliente_id):
-        return [s for s in self.listar() if s.get("reportado_por") == cliente_id]
+        return [s for s in self._todos() if s.get("reportado_por") == cliente_id]
 
     def listar_parametricos_de_polizas(self, poliza_ids):
         return [
             s
-            for s in self.listar()
+            for s in self._todos()
             if s.get("origen") == "PARAMETRICO" and s["poliza_id"] in poliza_ids
         ]
 

@@ -172,8 +172,14 @@ class RepositorioSiniestrosMongo:
     # ---------- Lectura ----------
 
     def listar(self, estado: str | None = None) -> list[dict]:
-        """Del más reciente al más antiguo, como la bandeja del dummy."""
-        filtro = {"estado": estado} if estado else {}
+        """Del más reciente al más antiguo, como la bandeja del dummy.
+
+        Sin los siniestros paramétricos: los crea y liquida el sistema (sin mesa) y su `ubicacion`
+        es `{tipo, clave}`, no la `Ubicacion` del contrato que la bandeja exige; uno solo rompía la
+        lista entera en el BFF. Salen por `listar_parametricos_de_polizas`."""
+        filtro: dict = {"origen": {"$ne": "PARAMETRICO"}}
+        if estado:
+            filtro["estado"] = estado
         docs = self._buscar(SINIESTROS, filtro, primaria=False, orden=[("notificado_en", -1)])
         return [self._a_siniestro(d) for d in docs]
 
