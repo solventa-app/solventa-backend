@@ -319,7 +319,7 @@ variable "crear_push" {
 
 
 variable "vuelo_demo_parametrico" {
-  description = "Vuelo (IATA) que consulta cada 8 h el Cloud Scheduler de demostración de KAN-259, con `fecha = \"hoy\"`. Debe coincidir con `SEMILLA_VUELO` de la semilla paramétrica de POLICY."
+  description = "Vuelo (IATA) que consulta cada 8 h el Cloud Scheduler de demostración de KAN-259, con `fecha = \"hoy\"`. `RETRASADO` es el comodín: el ACL toma el primer vuelo retrasado que trae AviationStack y paga a las pólizas demo con ese comodín (`SEMILLA_VUELO` de la semilla paramétrica de POLICY)."
   type        = string
-  default     = "AV9340"
+  default     = "RETRASADO"
 }

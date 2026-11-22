@@ -16,6 +16,9 @@ from typing import Any
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
+# Comodín de la demo de HU-M04 (ver `vigentes_de_vuelo`). No es un código IATA válido.
+VUELO_COMODIN = "RETRASADO"
+
 _COLUMNAS = (
     "id, poliza_id, tipo, monto_fijo, moneda, vigencia_desde, vigencia_hasta, estado, "
     "numero_vuelo, fecha_salida, aeropuerto_origen, umbral_retraso_min, "
@@ -149,15 +152,18 @@ class RepositorioCoberturasParametricas:
         return _fila(fila)
 
     def vigentes_de_vuelo(self, numero_vuelo: str, fecha: date) -> list[dict[str, Any]]:
-        """Las coberturas VUELO vigentes que calzan exacto con el vuelo y su fecha de salida."""
+        """Las coberturas VUELO vigentes que calzan exacto con el vuelo y su fecha de salida, más
+        las de la demo con el comodín `RETRASADO` (calzan con cualquier vuelo de cualquier fecha:
+        el ACL elige el primer vuelo retrasado que trae el proveedor)."""
         with self._pool.connection() as conexion, conexion.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 f"""
                 SELECT {_COLUMNAS} FROM coberturas_parametricas
                 WHERE tipo = 'VUELO' AND estado = 'VIGENTE'
-                  AND numero_vuelo = %(numero_vuelo)s AND fecha_salida = %(fecha)s
+                  AND ((numero_vuelo = %(numero_vuelo)s AND fecha_salida = %(fecha)s)
+                       OR numero_vuelo = %(comodin)s)
                 """,  # nosec B608
-                {"numero_vuelo": numero_vuelo, "fecha": fecha},
+                {"numero_vuelo": numero_vuelo, "fecha": fecha, "comodin": VUELO_COMODIN},
             )
             return [_fila(f) for f in cursor.fetchall()]
 
