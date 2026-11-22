@@ -988,6 +988,17 @@ type Resolucion {
   vencimientoInforme: DateTime
   # v0.23: true si la aprobó el sistema porque el plazo del dictamen venció sin gestión.
   automatica: Boolean!
+  # v0.69: quién tomó la decisión de `tipo` (el operador o el sistema). Null en casos anteriores a guardar el actor.
+  resueltaPor: ActorSiniestro
+  # v0.69: si el caso pasó por un perito, quién lo derivó y cuándo. Null si no pasó por uno.
+  derivadaPor: ActorSiniestro
+  derivadaEn: DateTime
+}
+
+# v0.69: quién aprobó, rechazó o derivó un siniestro en la mesa (solo BACKOFFICE la ve).
+type ActorSiniestro {
+  sistema: Boolean! # true si fue automático: plazo del dictamen vencido o evento paramétrico
+  nombre: String # el del operador; null si es el sistema o no se pudo consultar
 }
 
 type Siniestro {

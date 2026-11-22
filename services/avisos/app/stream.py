@@ -30,7 +30,9 @@ def _tipo_de(canal: str, datos: str) -> str:
         tipo = None
     if isinstance(tipo, str) and tipo.isidentifier():
         return tipo
-    return "cobro" if canal == CANAL_COBROS else "propuesta"
+    if canal == CANAL_COBROS:
+        return "cobro"
+    return "socio" if canal.startswith("avisos:socio:") else "propuesta"
 
 
 async def reenviar(pubsub: Any, latido_segundos: float) -> AsyncIterator[str]:

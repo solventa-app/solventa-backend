@@ -19,10 +19,20 @@ PREFIJO_TICKET = "avisos:ticket:"
 
 class PuertoTickets(Protocol):
     async def emitir(
-        self, rol: str, usuario_id: str, titular_id: str | None
+        self, rol: str, usuario_id: str, titular_id: str | None, entorno: str | None = None
     ) -> tuple[str, datetime]:
-        """El ticket y cuándo vence. Lanza cualquier excepción si Redis no responde."""
+        """El ticket y cuándo vence. Lanza cualquier excepción si Redis no responde. `entorno` solo
+        lo lleva el de un SOCIO: escucha el canal de ese entorno (contrato v0.68)."""
         ...
+
+    async def publicar(self, canal: str, mensaje: str) -> None:
+        """Publica un aviso en un canal de Redis. Lanza cualquier excepción si Redis no responde."""
+        ...
+
+
+def canal_socio(socio_id: str, entorno: str) -> str:
+    """El canal del panel del socio en un entorno (el mismo que arma `avisos/app/canales.py`)."""
+    return f"avisos:socio:{socio_id}:{entorno}"
 
 
 class TicketsRedis:
@@ -34,12 +44,18 @@ class TicketsRedis:
         )
 
     async def emitir(
-        self, rol: str, usuario_id: str, titular_id: str | None
+        self, rol: str, usuario_id: str, titular_id: str | None, entorno: str | None = None
     ) -> tuple[str, datetime]:
         ticket = secrets.token_urlsafe(32)
-        cuerpo = json.dumps({"rol": rol, "usuarioId": usuario_id, "titularId": titular_id})
+        datos = {"rol": rol, "usuarioId": usuario_id, "titularId": titular_id}
+        if entorno:
+            datos["entorno"] = entorno
+        cuerpo = json.dumps(datos)
         await self._redis.set(PREFIJO_TICKET + ticket, cuerpo, ex=VIGENCIA_TICKET_SEGUNDOS)
         return ticket, datetime.now(UTC) + timedelta(seconds=VIGENCIA_TICKET_SEGUNDOS)
+
+    async def publicar(self, canal: str, mensaje: str) -> None:
+        await self._redis.publish(canal, mensaje)
 
     async def aclose(self) -> None:
         await self._redis.aclose()

@@ -415,6 +415,14 @@ class RepositorioSociosMemoria:
             por_dia[c["fecha"]] = por_dia.get(c["fecha"], 0) + 1
         return [{"fecha": d, "llamadas": n} for d, n in sorted(por_dia.items())]
 
+    def cotizaciones_por_mes(self, socio_id, entorno, desde, hasta):
+        por_mes: dict[str, int] = {}
+        for c in self._en_rango(socio_id, entorno, desde, hasta):
+            if c["api"] in ("cotizaciones", "cotizaciones-auto") and c["resultado"] == "OK":
+                clave = f"{c['fecha'].year:04d}-{c['fecha'].month:02d}"
+                por_mes[clave] = por_mes.get(clave, 0) + 1
+        return [{"mes": m, "n": n} for m, n in sorted(por_mes.items())]
+
 
 class RepositorioRefrescosMemoria:
     """Cumple el `Protocol` `RepositorioRefrescos` de `app/refrescos.py`."""

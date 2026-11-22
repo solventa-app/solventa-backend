@@ -1310,13 +1310,22 @@ class TicketsFalso:
 
     def __init__(self, falla: bool = False) -> None:
         self.falla = falla
-        self.emitidos: list[tuple[str, str, str | None]] = []
+        self.emitidos: list[tuple] = []
+        self.publicados: list[tuple[str, str]] = []
 
-    async def emitir(self, rol: str, usuario_id: str, titular_id: str | None):
+    async def emitir(
+        self, rol: str, usuario_id: str, titular_id: str | None, entorno: str | None = None
+    ):
         if self.falla:
             raise ConnectionError("redis caído")
-        self.emitidos.append((rol, usuario_id, titular_id))
+        emitido = (rol, usuario_id, titular_id)
+        self.emitidos.append(emitido if entorno is None else (*emitido, entorno))
         return f"ticket-{len(self.emitidos)}", datetime(2026, 10, 28, 12, 1, tzinfo=UTC)
+
+    async def publicar(self, canal: str, mensaje: str) -> None:
+        if self.falla:
+            raise ConnectionError("redis caído")
+        self.publicados.append((canal, mensaje))
 
 
 class OnboardingFalso:
@@ -1812,6 +1821,16 @@ class SociosFalso:
             ],
             "diario": [{"fecha": "2026-10-29", "llamadas": 2}],
         }
+
+    async def cotizaciones_por_mes(self, socio_id, entorno, desde, hasta) -> dict[str, int]:
+        """Las cotizaciones `OK` registradas, todas en el mes de `hasta`."""
+        self._caer()
+        n = sum(
+            1
+            for (s, e, api, resultado) in self.consumos
+            if (s, e, resultado) == (socio_id, entorno, "OK") and api.startswith("cotizaciones")
+        )
+        return {str(hasta)[:7]: n} if n else {}
 
 
 def clientes_falsos(

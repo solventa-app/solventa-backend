@@ -385,6 +385,10 @@ class ConsumoSocioResponse(BaseModel):
     diario: list[ConsumoDiaResponse]
 
 
+class CotizacionesPorMesResponse(BaseModel):
+    por_mes: dict[str, int]
+
+
 def create_app(
     almacen: AlmacenConsentimientos | None = None,
     servicio_usuarios: ServicioUsuarios | None = None,
@@ -982,6 +986,21 @@ def create_app(
             return ConsumoSocioResponse(**app.state.socios.consumo(socio_id, entorno, desde, hasta))
         except DatoSocioInvalido as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get(
+        "/socios/{socio_id}/cotizaciones-por-mes",
+        tags=["socios"],
+        response_model=CotizacionesPorMesResponse,
+    )
+    def cotizaciones_por_mes(
+        socio_id: str, entorno: Entorno, desde: date, hasta: date
+    ) -> CotizacionesPorMesResponse:
+        """Las cotizaciones hechas cada mes en el entorno (las ventas del panel, contrato v0.68)."""
+        try:
+            por_mes = app.state.socios.cotizaciones_por_mes(socio_id, entorno, desde, hasta)
+        except DatoSocioInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return CotizacionesPorMesResponse(por_mes=por_mes)
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app

@@ -590,6 +590,11 @@ class ServicioSiniestros:
                 "vencimiento_informe": None,
                 # v0.64: cuándo pasó a un perito, para la línea de tiempo del cliente.
                 "derivada_en": asignacion["asignada_en"] if asignacion else None,
+                # v0.69: quién resolvió (el operador o SISTEMA) y quién lo derivó al perito.
+                "actor_usuario_id": resolucion.get("actor_usuario_id"),
+                "derivada_por_usuario_id": (
+                    asignacion.get("actor_usuario_id") if asignacion else None
+                ),
             }
         if asignacion is not None:
             return {
@@ -608,6 +613,8 @@ class ServicioSiniestros:
                 "instrucciones": asignacion.get("instrucciones"),
                 "vencimiento_informe": asignacion["vence_informe_en"],
                 "derivada_en": asignacion["asignada_en"],
+                "actor_usuario_id": asignacion.get("actor_usuario_id"),
+                "derivada_por_usuario_id": asignacion.get("actor_usuario_id"),
             }
         return None
 
