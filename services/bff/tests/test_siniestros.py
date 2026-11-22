@@ -211,7 +211,7 @@ def test_mensajes_en_ingles():
     )
 
 
-# ---------- v0.67: quién aprobó, rechazó o derivó ----------
+# ---------- v0.69: quién aprobó, rechazó o derivó ----------
 
 QUIEN = """query { siniestro(id: "sin-01") { resolucion { tipo resueltaEn derivadaEn
   resueltaPor { sistema nombre } derivadaPor { sistema nombre } } } }"""

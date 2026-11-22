@@ -1667,7 +1667,7 @@ class Perito:
 
 @strawberry.type
 class ActorSiniestro:
-    """v0.67: quién aprobó, rechazó o derivó un siniestro en la mesa."""
+    """v0.69: quién aprobó, rechazó o derivó un siniestro en la mesa."""
 
     sistema: bool  # true si fue automático (plazo del dictamen vencido o evento paramétrico)
     nombre: str | None  # el del operador; null si es el sistema o AUTH no lo devolvió
@@ -1688,15 +1688,15 @@ class Resolucion:
     instrucciones: str | None
     vencimiento_informe: datetime | None
     automatica: bool  # v0.23: la aprobó el sistema porque el plazo venció sin gestión
-    derivada_en: datetime | None = None  # v0.67: cuándo pasó a un perito
+    derivada_en: datetime | None = None  # v0.69: cuándo pasó a un perito
     actor_usuario_id: strawberry.Private[str | None] = None
     derivada_por_usuario_id: strawberry.Private[str | None] = None
 
-    @strawberry.field(description="v0.67: quién tomó la decisión (el operador o el sistema).")
+    @strawberry.field(description="v0.69: quién tomó la decisión (el operador o el sistema).")
     async def resuelta_por(self, info: Info) -> ActorSiniestro | None:
         return await _actor_siniestro(info, self.actor_usuario_id)
 
-    @strawberry.field(description="v0.67: quién lo derivó al perito; null si no pasó por uno.")
+    @strawberry.field(description="v0.69: quién lo derivó al perito; null si no pasó por uno.")
     async def derivada_por(self, info: Info) -> ActorSiniestro | None:
         return await _actor_siniestro(info, self.derivada_por_usuario_id)
 
@@ -2102,7 +2102,7 @@ def _id_reporte_valido(id_reporte: str) -> bool:
         return False
 
 
-# v0.67: el actor con que CLAIMS guarda lo que aprueba solo (plazo vencido o evento paramétrico).
+# v0.69: el actor con que CLAIMS guarda lo que aprueba solo (plazo vencido o evento paramétrico).
 ACTOR_SISTEMA_SINIESTROS = "SISTEMA"
 MENSAJE_SINIESTROS = "No pudimos consultar los siniestros. Intenta de nuevo."
 MENSAJE_INDEMNIZACION_NO_DISPONIBLE = "No pudimos consultar la indemnización. Intenta de nuevo."
@@ -2548,7 +2548,7 @@ def _resolucion(datos: dict | None) -> Resolucion | None:
 
 
 async def _actor_siniestro(info: Info, usuario_id: str | None) -> ActorSiniestro | None:
-    """v0.67: el nombre del operador sale de AUTH, de mejor esfuerzo (sin él, el detalle sale igual)
+    """v0.69: el nombre del operador sale de AUTH, de mejor esfuerzo (sin él, el detalle sale igual)
     y una sola vez por usuario en cada petición. Los casos de antes de guardar el actor dan null."""
     if not usuario_id:
         return None

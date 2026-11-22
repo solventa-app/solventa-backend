@@ -225,7 +225,7 @@ def test_sin_perito_la_resolucion_no_trae_derivada_en():
     assert servicio.aprobar("sin-01", "op")["resolucion"]["derivada_en"] is None
 
 
-# ---------- v0.67: quién tomó cada decisión ----------
+# ---------- v0.69: quién tomó cada decisión ----------
 
 
 def test_el_expediente_dice_quien_derivo_y_quien_resolvio():

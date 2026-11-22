@@ -572,7 +572,7 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
-## v0.67 — 2026-11-22
+## v0.69 — 2026-11-22
 
 - HU-W04 (KAN-27): la mesa de siniestros muestra quién aprobó, rechazó o derivó cada caso. CLAIMS ya guardaba el
   `actor_usuario_id` de la resolución y de la asignación (o `SISTEMA` si fue automática), pero no lo devolvía.
