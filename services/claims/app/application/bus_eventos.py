@@ -104,21 +104,53 @@ def evento_derivado(siniestro: dict, asignacion: dict, actor: str | None) -> dic
     )
 
 
+_PLANTILLA_CLIMA = {
+    "PRECIPITACION_MM": "indemnizacion-clima-lluvia",
+    "VIENTO_KMH": "indemnizacion-clima-viento",
+    "TEMP_MAX_C": "indemnizacion-clima-temperatura",
+}
+
+
+def plantilla_push_indemnizacion(siniestro: dict[str, Any]) -> tuple[str, dict[str, str]]:
+    """La plantilla de `contracts/plantillas-push.json` y sus variables según el evento que pagó
+    (retraso o cancelación del vuelo; lluvia, viento o temperatura), para que el push lo diga. Un
+    siniestro sin esos datos cae a la plantilla genérica. Los números viajan crudos: `enviar-push`
+    los escribe en el idioma del cliente y convierte el monto a su moneda."""
+    ubicacion = siniestro.get("ubicacion") or {}
+    valor = siniestro.get("evento_valor")
+    if ubicacion.get("tipo") == "VUELO" and ubicacion.get("clave"):
+        vuelo = str(ubicacion["clave"]).split(":", 1)[0]
+        if siniestro.get("evento_cancelado"):
+            return "indemnizacion-vuelo-cancelado", {"vuelo": vuelo}
+        if valor is not None:
+            return "indemnizacion-vuelo-retraso", {"vuelo": vuelo, "minutos": str(valor)}
+    plantilla = _PLANTILLA_CLIMA.get(str(siniestro.get("evento_variable")))
+    if ubicacion.get("tipo") == "CLIMA" and plantilla and valor is not None:
+        return plantilla, {"valor": str(valor)}
+    return "indemnizacion-liquidada", {}
+
+
 def evento_push_indemnizacion(
-    usuario_id: str, siniestro_id: str, monto: dict[str, str]
+    usuario_id: str, siniestro: dict[str, Any], monto: dict[str, str]
 ) -> dict[str, Any]:
     """KAN-259 (HU-M04, Fase 4): al liquidar un siniestro paramétrico, pide el push que
-    `enviar-push` manda por SNS/FCM (plantilla `indemnizacion-liquidada`, ruta `/m04-02/{id}`,
-    ver `contracts/plantillas-push.json`). `idempotencia` es el id del siniestro: una reentrega del
-    evento reemplaza la notificación en el teléfono, no la duplica."""
+    `enviar-push` manda por SNS/FCM (ruta `/m04-02/{id}`; la plantilla depende del evento, ver
+    `plantilla_push_indemnizacion`). `idempotencia` es el id del siniestro: una reentrega del
+    evento reemplaza la notificación en el teléfono, no la duplica. El nombre del destinatario no
+    viaja aquí: lo agrega `enviar-push` desde AUTH."""
+    plantilla, variables = plantilla_push_indemnizacion(siniestro)
     return _evento(
         "notificacion.push-solicitada",
         {
-            "idempotencia": siniestro_id,
+            "idempotencia": siniestro["id"],
             "usuarioId": usuario_id,
-            "plantilla": "indemnizacion-liquidada",
-            "variables": {"monto": monto["valor"], "moneda": monto["moneda"]},
-            "ruta": f"/m04-02/{siniestro_id}",
+            "plantilla": plantilla,
+            "variables": {
+                "monto": str(monto["valor"]),
+                "moneda": monto["moneda"],
+                **variables,
+            },
+            "ruta": f"/m04-02/{siniestro['id']}",
         },
     )
 

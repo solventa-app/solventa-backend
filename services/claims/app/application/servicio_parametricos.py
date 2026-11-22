@@ -260,7 +260,7 @@ class ServicioParametricos:
             )
             return
         self._bus.publicar(
-            evento_push_indemnizacion(usuario_id, siniestro["id"], resolucion["indemnizacion"])
+            evento_push_indemnizacion(usuario_id, siniestro, resolucion["indemnizacion"])
         )
 
     def _usuario_del_titular(self, poliza_id: str) -> str | None:

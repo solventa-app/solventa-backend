@@ -15,6 +15,9 @@ class Configuracion:
     # AUTH resuelve el destino del push y marca un token inválido; llamada privada (OIDC).
     auth_url: str
     autenticacion_servicios: str
+    # ACL Worker: solo para las tasas de cambio del monto del push. Vacío: el push sale en la
+    # moneda original.
+    acl_url: str
 
     # "stub" (local, CI, demo sin AWS real) o "real" (boto3 + SNS). Ver app/sns.py.
     sns_modo: str
@@ -37,6 +40,7 @@ class Configuracion:
         return cls(
             auth_url=os.getenv("AUTH_URL", "http://localhost:8001"),
             autenticacion_servicios=os.getenv("AUTENTICACION_SERVICIOS", "ninguna"),
+            acl_url=os.getenv("ACL_URL", "").strip(),
             sns_modo=modo,
             sns_region=os.getenv("SNS_REGION", "us-east-1"),
             sns_platform_application_arn=os.getenv("SNS_PLATFORM_APPLICATION_ARN", ""),

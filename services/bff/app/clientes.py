@@ -487,6 +487,10 @@ class PuertoSocios(Protocol):
         self, socio_id: str, entorno: str, desde: str | None, hasta: str | None
     ) -> dict: ...
 
+    async def cotizaciones_por_mes(
+        self, socio_id: str, entorno: str, desde: str, hasta: str
+    ) -> dict[str, int]: ...
+
 
 @dataclass(frozen=True)
 class Acceso:
@@ -646,6 +650,20 @@ class ClienteSociosHttp:
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
+
+    async def cotizaciones_por_mes(
+        self, socio_id: str, entorno: str, desde: str, hasta: str
+    ) -> dict[str, int]:
+        """`{"2026-11": 3}`: las cotizaciones hechas cada mes (contrato v0.68)."""
+        respuesta = await _pedir(
+            self._cliente,
+            "GET",
+            f"/socios/{socio_id}/cotizaciones-por-mes",
+            params={"entorno": entorno, "desde": desde, "hasta": hasta},
+        )
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        return respuesta.json()["por_mes"]
 
 
 class ClienteAuthHttp:

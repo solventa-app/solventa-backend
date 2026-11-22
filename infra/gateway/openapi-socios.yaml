@@ -330,8 +330,21 @@ paths:
           description: OK
   /v1/ventas:
     get:
-      summary: "Propuestas, pólizas emitidas, primas y comisión por mes"
+      summary: "Cotizaciones, propuestas, pólizas emitidas, primas y comisión por mes"
       operationId: ventas
+      security:
+        - socios_jwt: []
+      x-google-backend:
+        address: ${bff_url}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 0.7
+      responses:
+        "200":
+          description: OK
+  /v1/avisos/ticket:
+    post:
+      summary: "Ticket para seguir en vivo el consumo y las ventas (SSE en el servicio avisos)"
+      operationId: ticketAvisos
       security:
         - socios_jwt: []
       x-google-backend:

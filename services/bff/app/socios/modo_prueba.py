@@ -10,6 +10,9 @@ consumo van a AUTH, para que el panel del socio muestre su uso real del sandbox.
 - **Avance solo:** tras «emitir», la propuesta queda `EN_FIRMA` y avanza sola: `FIRMADA` a los
   `SEGUNDOS_FIRMA` y `EMITIDA` (con póliza) a los `SEGUNDOS_EMISION`. No hay página de firma: el
   titular simulado firma y paga solo.
+- **Ventas reales del sandbox** (contrato v0.68): aceptar una oferta suma una propuesta y la póliza
+  que se emite suma una venta con su prima, en el mes en que pasa. Antes eran cifras fijas, así que
+  el panel nunca reflejaba lo que el socio probaba.
 - **Estado en Redis con TTL** (`prueba:<socio>:...`, 24 h). Si se pierde (Redis apagado de noche),
   el sandbox empieza de cero; sin Redis (pruebas, local sin Redis) se guarda en memoria.
 
@@ -18,7 +21,8 @@ Los ids llevan el prefijo `prueba-` para que nadie los confunda con datos reales
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Any, Protocol
 
 from app.clientes import ErrorServicio, PresupuestoAgotado
@@ -27,6 +31,7 @@ from app.socios.errores import (
     MENSAJE_PRESUPUESTO_AGOTADO,
     MENSAJE_SIN_CONSENTIMIENTO,
     ErrorApiSocio,
+    datos_invalidos,
     no_disponible,
     no_encontrado,
 )
@@ -37,6 +42,7 @@ SEGUNDOS_EMISION = 6
 CODIGO_DE_PRUEBA = "000000"
 INTENTOS_CODIGO = 5
 MONEDA = "COP"
+TASA_COMISION = Decimal("0.1000")
 
 MENSAJE_OFERTA_PRELIMINAR = "Esta oferta es preliminar y no se puede aceptar. Vuelve a calcularla."
 MENSAJE_CODIGO_INVALIDO = "El código no es correcto. Revísalo e intenta de nuevo."
@@ -131,6 +137,10 @@ def _iso(momento: datetime) -> str:
 
 
 MENSAJE_PLACA_NO_EXISTE = "No encontramos esa placa en el RUNT. Revísala e intenta de nuevo."
+
+
+def _dos_decimales(valor: Decimal) -> str:
+    return format(valor.quantize(Decimal("0.01")), "f")
 
 
 def _monto(valor: str) -> dict:
@@ -312,6 +322,7 @@ class ModoPrueba:
         await self._almacen.guardar(
             self._clave(socio.id, "aceptada", oferta_id), {"id": propuesta["id"]}
         )
+        await self._sumar_venta(socio.id, propuestas=1)
         return self._salida(propuesta, idioma)
 
     async def _avanzar(self, socio, propuesta: dict) -> dict:
@@ -334,6 +345,7 @@ class ModoPrueba:
             }
             await self._guardar(socio.id, "poliza", poliza)
             propuesta.update(estado="EMITIDA", polizaId=poliza["id"], actualizadoEn=_iso(ahora))
+            await self._sumar_venta(socio.id, emitidas=1, prima=propuesta["prima"]["valor"])
         elif transcurrido >= SEGUNDOS_FIRMA and propuesta["estado"] == "EN_FIRMA":
             propuesta.update(estado="FIRMADA", actualizadoEn=_iso(self._reloj()))
         await self._guardar(socio.id, "propuesta", propuesta)
@@ -408,35 +420,59 @@ class ModoPrueba:
         poliza = await self._leer(socio.id, "poliza", poliza_id)
         return poliza["numero"], _PDF
 
-    async def ventas(self, socio) -> dict:
-        """Cifras fijas, para que el panel del sandbox tenga datos (W07-10)."""
-        hoy = self._reloj().date()
+    async def _sumar_venta(
+        self, socio_id: str, propuestas: int = 0, emitidas: int = 0, prima: str = "0"
+    ) -> None:
+        """Lleva por mes las propuestas aceptadas y las pólizas emitidas del sandbox."""
+        clave = self._clave(socio_id, "ventas", "resumen")
+        resumen = await self._almacen.leer(clave) or {"meses": {}}
+        ahora = self._reloj()
+        fila = resumen["meses"].setdefault(
+            f"{ahora:%Y-%m}", {"propuestas": 0, "emitidas": 0, "primas": "0"}
+        )
+        fila["propuestas"] += propuestas
+        fila["emitidas"] += emitidas
+        fila["primas"] = format(Decimal(fila["primas"]) + Decimal(prima), "f")
+        await self._almacen.guardar(clave, resumen)
+
+    async def ventas(self, socio, desde: str | None = None, hasta: str | None = None) -> dict:
+        """Las propuestas y pólizas que el socio hizo de verdad en el sandbox, por mes, con la misma
+        ventana por defecto que POLICY (los últimos 12 meses). Las cotizaciones las suma el BFF
+        desde AUTH, igual que en producción."""
+        fin = date.fromisoformat(hasta) if hasta else self._reloj().date()
+        inicio = (
+            date.fromisoformat(desde)
+            if desde
+            else (fin.replace(day=1) - timedelta(days=335)).replace(day=1)
+        )
+        if inicio > fin:
+            raise datos_invalidos()
+        resumen = await self._almacen.leer(self._clave(socio.id, "ventas", "resumen"))
         meses = []
-        for atras, (propuestas, emitidas) in enumerate([(4, 2), (7, 5), (12, 9)]):
-            anio, mes = hoy.year, hoy.month - (2 - atras)
-            while mes <= 0:
-                anio, mes = anio - 1, mes + 12
-            primas = 61200 * emitidas
+        for clave, fila in sorted((resumen or {"meses": {}})["meses"].items()):
+            if not f"{inicio:%Y-%m}" <= clave <= f"{fin:%Y-%m}":
+                continue
+            primas = Decimal(fila["primas"])
             meses.append(
                 {
-                    "mes": f"{anio:04d}-{mes:02d}",
-                    "propuestas": propuestas,
-                    "emitidas": emitidas,
-                    "primas": _monto(f"{primas}.00"),
-                    "comision": _monto(f"{primas // 10}.00"),
+                    "mes": clave,
+                    "propuestas": fila["propuestas"],
+                    "emitidas": fila["emitidas"],
+                    "primas": _monto(_dos_decimales(primas)),
+                    "comision": _monto(_dos_decimales(primas * TASA_COMISION)),
                 }
             )
-        totales_primas = sum(int(m["primas"]["valor"].split(".")[0]) for m in meses)
+        total_primas = sum((Decimal(m["primas"]["valor"]) for m in meses), Decimal(0))
         return {
-            "desde": f"{meses[0]['mes']}-01",
-            "hasta": hoy.isoformat(),
-            "tasaComision": "0.1000",
+            "desde": inicio.isoformat(),
+            "hasta": fin.isoformat(),
+            "tasaComision": format(TASA_COMISION, "f"),
             "meses": meses,
             "totales": {
                 "propuestas": sum(m["propuestas"] for m in meses),
                 "emitidas": sum(m["emitidas"] for m in meses),
-                "primas": _monto(f"{totales_primas}.00"),
-                "comision": _monto(f"{totales_primas // 10}.00"),
+                "primas": _monto(_dos_decimales(total_primas)),
+                "comision": _monto(_dos_decimales(total_primas * TASA_COMISION)),
             },
         }
 
