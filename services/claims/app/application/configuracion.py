@@ -28,6 +28,8 @@ class Configuracion:
     semilla_dir: str = "/semilla"
     # HU-M06 (v0.49, B7): la red de prestadores está detrás del ACL Worker.
     acl_url: str = "http://localhost:8005"
+    # KAN-259 (Fase 4): tema de Pub/Sub de las pushes. Sin él, el evento solo se escribe en el log.
+    pubsub_tema_notificaciones_push: str = ""
 
     @classmethod
     def desde_entorno(cls) -> "Configuracion":
@@ -49,4 +51,5 @@ class Configuracion:
             demo_reiniciar=os.getenv("DEMO_REINICIAR", "false").strip().lower() == "true",
             semilla_dir=os.getenv("SEMILLA_DIR", "/semilla"),
             acl_url=os.getenv("ACL_URL", "http://localhost:8005"),
+            pubsub_tema_notificaciones_push=os.getenv("PUBSUB_TEMA_NOTIFICACIONES_PUSH", ""),
         )
