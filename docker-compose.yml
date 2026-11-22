@@ -619,6 +619,8 @@ services:
     ports: ["8013:8013"]
     environment:
       AUTH_URL: http://auth:8001
+      # Tasas de cambio para el monto del push en la moneda del cliente (KAN-209).
+      ACL_URL: http://acl-worker:8005
       SNS_MODO: stub
     depends_on:
       auth: { condition: service_healthy }
