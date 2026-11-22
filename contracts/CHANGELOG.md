@@ -572,6 +572,26 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.67 — 2026-11-22
+
+- HU-M04 (KAN-259): el push de la indemnización paramétrica se personaliza. `contracts/plantillas-push.json` suma
+  `tituloConNombre` a `indemnizacion-liquidada` y cinco plantillas que dicen el evento con sus datos:
+  `indemnizacion-vuelo-retraso` (`monto`, `moneda`, `vuelo`, `minutos`), `indemnizacion-vuelo-cancelado` (`vuelo`),
+  `indemnizacion-clima-lluvia`, `indemnizacion-clima-viento` e `indemnizacion-clima-temperatura` (`valor`). CLAIMS
+  elige la plantilla según el evento y `enviar-push` pone el primer nombre en el título al enviar.
+- AUTH: `GET /interno/destino-push/{usuario_id}` suma `primer_nombre` e `idioma` (opcionales; el idioma es la
+  preferencia del cliente, `es` o `en`, y `enviar-push` elige con él el texto de la plantilla). El productor nunca manda el nombre:
+  `enviar-push` lo pide a AUTH y descarta cualquier `nombre` que llegue en las variables. Sin nombre, el título es el
+  de siempre. Nada de esto se escribe en logs.
+- Moneda del cliente (KAN-209): el productor manda `monto` crudo (texto decimal) y `moneda`; `enviar-push` lo
+  convierte a la moneda preferida del cliente (`moneda` de `GET /interno/destino-push`, nuevo) con
+  `GET /tasas-cambio` del ACL Worker y arma `{importe}` como lo muestra la app («$ 500.000», «USD 121,95»;
+  en inglés «COP 500,000», «USD 121.95»). Las plantillas de indemnización usan `{importe}` en vez de
+  `{monto} {moneda}`. Sin tasas, el push sale en la moneda original. `enviar-push` pasa a llamar al ACL Worker
+  (`.github/servicios.json`).
+- Solo cambios aditivos; la ruta del push (`/m04-02/{id}`) no cambia. Afecta al frontend: no (la app solo muestra lo
+  que llega).
+
 ## v0.66 — 2026-11-21
 
 - HU-M05 (KAN-35): sin GPS, el cliente escribe la dirección y la app la ubica (`ubicarDireccion`); las fotos llevan
