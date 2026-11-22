@@ -239,6 +239,8 @@ class SolicitudNotificacion:
     correo: str | None = None
     telefono: str | None = None
     adjuntos: list[Adjunto] = field(default_factory=list)
+    # KAN-26: idioma del correo (es o en), el que tenía activo quien hizo la acción.
+    idioma: str = "es"
 
 
 @dataclass

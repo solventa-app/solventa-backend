@@ -109,7 +109,7 @@ def test_la_push_se_publica_en_el_tema_con_su_tipo():
     from app.application.bus_eventos import BusEventosPubSub, evento_push_indemnizacion
 
     cliente = ClientePubSubFalso()
-    evento = evento_push_indemnizacion("u-1", "sin-1", {"valor": "500000", "moneda": "COP"})
+    evento = evento_push_indemnizacion("u-1", {"id": "sin-1"}, {"valor": "500000", "moneda": "COP"})
     assert BusEventosPubSub(TEMA, cliente).publicar(evento) is True
     tema, cuerpo, atributos = cliente.publicados[0]
     assert tema == TEMA and cuerpo == evento
@@ -119,7 +119,9 @@ def test_la_push_se_publica_en_el_tema_con_su_tipo():
 def test_si_pubsub_falla_no_rompe_y_lo_avisa_sin_datos(caplog):
     from app.application.bus_eventos import BusEventosPubSub, evento_push_indemnizacion
 
-    evento = evento_push_indemnizacion("u-secreto", "sin-1", {"valor": "500000", "moneda": "COP"})
+    evento = evento_push_indemnizacion(
+        "u-secreto", {"id": "sin-1"}, {"valor": "500000", "moneda": "COP"}
+    )
     with caplog.at_level(logging.WARNING, logger="claims.eventos"):
         assert BusEventosPubSub(TEMA, ClientePubSubFalso(falla=True)).publicar(evento) is False
     assert "fallo publicando en Pub/Sub" in caplog.text
@@ -130,7 +132,7 @@ def test_la_push_invalida_no_se_publica():
     from app.application.bus_eventos import BusEventosPubSub, evento_push_indemnizacion
 
     cliente = ClientePubSubFalso()
-    evento = evento_push_indemnizacion("u-1", "sin-1", {"valor": "500000", "moneda": "COP"})
+    evento = evento_push_indemnizacion("u-1", {"id": "sin-1"}, {"valor": "500000", "moneda": "COP"})
     del evento["datos"]["plantilla"]
     assert BusEventosPubSub(TEMA, cliente).publicar(evento) is False
     assert cliente.publicados == []

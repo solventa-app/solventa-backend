@@ -1666,6 +1666,14 @@ class Perito:
 
 
 @strawberry.type
+class ActorSiniestro:
+    """v0.69: quién aprobó, rechazó o derivó un siniestro en la mesa."""
+
+    sistema: bool  # true si fue automático (plazo del dictamen vencido o evento paramétrico)
+    nombre: str | None  # el del operador; null si es el sistema o AUTH no lo devolvió
+
+
+@strawberry.type
 class Resolucion:
     tipo: TipoResolucion
     resuelta_en: datetime
@@ -1680,6 +1688,17 @@ class Resolucion:
     instrucciones: str | None
     vencimiento_informe: datetime | None
     automatica: bool  # v0.23: la aprobó el sistema porque el plazo venció sin gestión
+    derivada_en: datetime | None = None  # v0.69: cuándo pasó a un perito
+    actor_usuario_id: strawberry.Private[str | None] = None
+    derivada_por_usuario_id: strawberry.Private[str | None] = None
+
+    @strawberry.field(description="v0.69: quién tomó la decisión (el operador o el sistema).")
+    async def resuelta_por(self, info: Info) -> ActorSiniestro | None:
+        return await _actor_siniestro(info, self.actor_usuario_id)
+
+    @strawberry.field(description="v0.69: quién lo derivó al perito; null si no pasó por uno.")
+    async def derivada_por(self, info: Info) -> ActorSiniestro | None:
+        return await _actor_siniestro(info, self.derivada_por_usuario_id)
 
 
 @strawberry.type
@@ -2083,6 +2102,8 @@ def _id_reporte_valido(id_reporte: str) -> bool:
         return False
 
 
+# v0.69: el actor con que CLAIMS guarda lo que aprueba solo (plazo vencido o evento paramétrico).
+ACTOR_SISTEMA_SINIESTROS = "SISTEMA"
 MENSAJE_SINIESTROS = "No pudimos consultar los siniestros. Intenta de nuevo."
 MENSAJE_INDEMNIZACION_NO_DISPONIBLE = "No pudimos consultar la indemnización. Intenta de nuevo."
 MENSAJE_COBERTURA_PARAMETRICA_NO_DISPONIBLE = "No pudimos consultar tu cobertura. Intenta de nuevo."
@@ -2520,7 +2541,31 @@ def _resolucion(datos: dict | None) -> Resolucion | None:
         instrucciones=datos.get("instrucciones"),
         vencimiento_informe=_fecha(datos.get("vencimiento_informe")),
         automatica=datos.get("automatica", False),
+        derivada_en=_fecha(datos.get("derivada_en")),
+        actor_usuario_id=datos.get("actor_usuario_id"),
+        derivada_por_usuario_id=datos.get("derivada_por_usuario_id"),
     )
+
+
+async def _actor_siniestro(info: Info, usuario_id: str | None) -> ActorSiniestro | None:
+    """v0.69: el nombre del operador sale de AUTH, de mejor esfuerzo (sin él, el detalle sale igual)
+    y una sola vez por usuario en cada petición. Los casos de antes de guardar el actor dan null."""
+    if not usuario_id:
+        return None
+    if usuario_id == ACTOR_SISTEMA_SINIESTROS:
+        return ActorSiniestro(sistema=True, nombre=None)
+    cache = info.context.setdefault("nombres_operadores", {})
+    if usuario_id not in cache:
+        cache[usuario_id] = asyncio.ensure_future(_nombre_operador(info, usuario_id))
+    return ActorSiniestro(sistema=False, nombre=await cache[usuario_id])
+
+
+async def _nombre_operador(info: Info, usuario_id: str) -> str | None:
+    try:
+        datos = await info.context["clientes"].auth.obtener_usuario(usuario_id)
+    except ErrorServicio:
+        return None
+    return datos.get("nombre") if datos else None
 
 
 def _siniestro(datos: dict) -> Siniestro:
@@ -3897,7 +3942,9 @@ class Mutation:
         self, info: Info, propuesta_id: strawberry.ID, correo: str | None = None
     ) -> ResultadoEnvioCodigo:
         usuario = exigir_rol(info, "ASESOR", siempre=True)
-        resultado = await _firma_pago(info).enviar_codigo(usuario, str(propuesta_id), correo)
+        resultado = await _firma_pago(info).enviar_codigo(
+            usuario, str(propuesta_id), correo, idioma=info.context.get("idioma", "es")
+        )
         if isinstance(resultado, ErrorFlujoDatos):
             return _error_codigo(resultado)
         return CodigoEnviado(
@@ -3921,7 +3968,9 @@ class Mutation:
         """ASESOR: «Emitir» (UNDER decide y, si aprueba, sale el enlace de 30 min). CLIENTE:
         «Firmar» (UNDER decide y la propuesta pasa a EN_FIRMA en su sesión)."""
         usuario = exigir_rol(info, *CLIENTE_O_ASESOR, siempre=True)
-        resultado = await _firma_pago(info).emitir(usuario, str(propuesta_id))
+        resultado = await _firma_pago(info).emitir(
+            usuario, str(propuesta_id), idioma=info.context.get("idioma", "es")
+        )
         return _resultado_emision(resultado)
 
     @strawberry.mutation
@@ -3929,7 +3978,9 @@ class Mutation:
         self, info: Info, propuesta_id: strawberry.ID
     ) -> ResultadoEmision:
         usuario = exigir_rol(info, "ASESOR", siempre=True)
-        resultado = await _firma_pago(info).reenviar_enlace(usuario, str(propuesta_id))
+        resultado = await _firma_pago(info).reenviar_enlace(
+            usuario, str(propuesta_id), idioma=info.context.get("idioma", "es")
+        )
         return _resultado_emision(resultado)
 
     @strawberry.mutation
@@ -3975,6 +4026,10 @@ class Mutation:
         )
         if isinstance(autorizado, ErrorFlujoDatos):
             return _error_firma(autorizado)
+        # KAN-26: el contrato firmado y la póliza quedan en el idioma y la moneda de este momento.
+        presentacion = await servicio.presentacion(
+            info.context.get("idioma", "es"), info.context.get("moneda")
+        )
         resultado = await servicio.firmar(
             autorizado,
             {
@@ -3986,6 +4041,7 @@ class Mutation:
                 if entrada.imagen_archivo_id
                 else None,
                 "nombre_firma": entrada.nombre_firma,
+                "presentacion": presentacion,
             },
         )
         if isinstance(resultado, ErrorFlujoDatos):
@@ -4150,7 +4206,7 @@ class Mutation:
         """v0.43 (KAN-26): «olvidé mi contraseña». Responde `true` siempre (exista o no la cuenta,
         o se haya topado el límite): nunca revela quién está registrado."""
         await info.context["servicio_restablecimiento"].solicitar(
-            correo, info.context.get("ip_cliente")
+            correo, info.context.get("ip_cliente"), idioma=info.context.get("idioma", "es")
         )
         return True
 
@@ -4163,7 +4219,7 @@ class Mutation:
             return ErrorAutenticacion(mensaje=motivo, codigo="CLAVE_DEBIL")
         try:
             await info.context["servicio_restablecimiento"].restablecer(
-                info.context.get("enlace_clave"), clave
+                info.context.get("enlace_clave"), clave, idioma=info.context.get("idioma", "es")
             )
         except EnlaceInvalido:
             return ErrorAutenticacion(mensaje=MENSAJE_ENLACE_CLAVE, codigo="ENLACE_INVALIDO")
@@ -4179,7 +4235,9 @@ class Mutation:
     async def enviar_codigo_onboarding(self, info: Info, correo: str) -> ResultadoCodigoOnboarding:
         """Envía un código de 6 dígitos al correo para verificarlo en el onboarding (HU-M01)."""
         try:
-            datos = await info.context["servicio_codigo_onboarding"].enviar(correo)
+            datos = await info.context["servicio_codigo_onboarding"].enviar(
+                correo, idioma=info.context.get("idioma", "es")
+            )
         except ErrorOnboardingServicio as error:
             return _error_onboarding(error.codigo, error.segundos_restantes)
         except ErrorServicio:

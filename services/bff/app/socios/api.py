@@ -64,7 +64,7 @@ from app.socios.idempotencia import CABECERA_REPETIDA, Repetida, ejecutar_idempo
 
 logger = logging.getLogger("bff.socios")
 # Las consultas de la cuenta no se cuentan en el consumo (`credenciales` incluye la rotación).
-APIS_SIN_CONSUMO = frozenset({"consumo", "estado", "ventas", "credenciales"})
+APIS_SIN_CONSUMO = frozenset({"consumo", "estado", "ventas", "credenciales", "avisos"})
 DEVOLUCION_FALLIDA = Counter(
     "bff_socios_devolucion_fallida_total",
     "Cotizaciones que no se hicieron y cuya unidad de presupuesto no se pudo devolver.",
@@ -326,6 +326,39 @@ def error_de_flujo(error: ErrorFlujoDatos) -> ErrorApiSocio:
 def _solo_produccion(socio: SocioActual) -> None:
     if socio.es_prueba:
         raise ErrorApiSocio(403, "PROHIBIDO", MENSAJE_SOLO_PRODUCCION)
+
+
+def _con_cotizaciones(
+    meses: list[dict], totales: dict, cotizaciones: dict[str, int]
+) -> tuple[list[dict], dict]:
+    """Suma a las ventas por mes las cotizaciones de ese mes (un mes con cotizaciones y sin ventas
+    también sale, en ceros). Cotizar, aceptar la propuesta y emitir la póliza se cuentan aparte."""
+    moneda = totales["primas"]["moneda"]
+    por_mes = {m["mes"]: {**m, "cotizaciones": 0} for m in meses}
+    for mes, n in cotizaciones.items():
+        fila = por_mes.setdefault(
+            mes,
+            {
+                "mes": mes,
+                "propuestas": 0,
+                "emitidas": 0,
+                "primas": {"valor": "0", "moneda": moneda},
+                "comision": {"valor": "0", "moneda": moneda},
+            },
+        )
+        fila["cotizaciones"] = n
+    ordenados = [
+        {
+            "mes": f["mes"],
+            "cotizaciones": f["cotizaciones"],
+            "propuestas": f["propuestas"],
+            "emitidas": f["emitidas"],
+            "primas": f["primas"],
+            "comision": f["comision"],
+        }
+        for _, f in sorted(por_mes.items())
+    ]
+    return ordenados, {"cotizaciones": sum(cotizaciones.values()), **totales}
 
 
 def _fecha_opcional(valor: str | None) -> str | None:
@@ -693,7 +726,7 @@ def construir_router() -> APIRouter:
         if socio.es_prueba:
             return await modo_prueba(request).codigo(socio, propuesta_id)
         datos = await estado(request).servicio_firma_pago.enviar_codigo(
-            socio.como_usuario(), propuesta_id, body.correo
+            socio.como_usuario(), propuesta_id, body.correo, idioma=idioma(request)
         )
         if isinstance(datos, ErrorFlujoDatos):
             raise error_de_flujo(datos)
@@ -721,7 +754,9 @@ def construir_router() -> APIRouter:
     async def emitir(propuesta_id: str, request: Request, socio: SocioPropuestas) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).emitir(socio, propuesta_id, idioma(request))
-        datos = await estado(request).servicio_firma_pago.emitir(socio.como_usuario(), propuesta_id)
+        datos = await estado(request).servicio_firma_pago.emitir(
+            socio.como_usuario(), propuesta_id, idioma=idioma(request)
+        )
         if isinstance(datos, ErrorFlujoDatos):
             raise error_de_flujo(datos)
         enlace = datos.get("enlace")
@@ -745,7 +780,7 @@ def construir_router() -> APIRouter:
         if socio.es_prueba:
             return await modo_prueba(request).reenviar(socio, propuesta_id)
         datos = await estado(request).servicio_firma_pago.reenviar_enlace(
-            socio.como_usuario(), propuesta_id
+            socio.como_usuario(), propuesta_id, idioma=idioma(request)
         )
         if isinstance(datos, ErrorFlujoDatos):
             raise error_de_flujo(datos)
@@ -839,24 +874,51 @@ def construir_router() -> APIRouter:
     async def ventas(
         request: Request, socio: SocioCuenta, desde: str | None = None, hasta: str | None = None
     ) -> dict:
-        if socio.es_prueba:
-            return await modo_prueba(request).ventas(socio)
+        desde, hasta = _fecha_opcional(desde), _fecha_opcional(hasta)
         clientes = estado(request).clientes
         try:
-            datos_socio, datos = await asyncio.gather(
-                clientes.socios.obtener(socio.id),
-                clientes.policy.ventas_socio(
-                    socio.id, _fecha_opcional(desde), _fecha_opcional(hasta)
-                ),
+            if socio.es_prueba:
+                datos = await modo_prueba(request).ventas(socio, desde, hasta)
+                tasa = datos["tasaComision"]
+            else:
+                datos_socio, datos = await asyncio.gather(
+                    clientes.socios.obtener(socio.id),
+                    clientes.policy.ventas_socio(socio.id, desde, hasta),
+                )
+                tasa = (datos_socio or {}).get("tasa_comision", "0")
+            # Las cotizaciones salen del consumo en AUTH (las que gastaron presupuesto), en el
+            # mismo rango que las ventas: en el sandbox también son las reales (contrato v0.68).
+            cotizaciones = await clientes.socios.cotizaciones_por_mes(
+                socio.id, socio.entorno, str(datos["desde"]), str(datos["hasta"])
             )
         except ErrorServicio as error:
             raise no_disponible() from error
+        meses, totales = _con_cotizaciones(datos["meses"], datos["totales"], cotizaciones)
         return {
             "desde": datos["desde"],
             "hasta": datos["hasta"],
-            "tasaComision": (datos_socio or {}).get("tasa_comision", "0"),
-            "meses": datos["meses"],
-            "totales": datos["totales"],
+            "tasaComision": tasa,
+            "meses": meses,
+            "totales": totales,
+        }
+
+    @router.post("/v1/avisos/ticket")
+    async def ticket_avisos(request: Request, socio: SocioCuenta) -> dict:
+        """Ticket de un solo uso (60 s) para que el panel abra el stream SSE del servicio `avisos`
+        y se ponga al día solo con cada cotización, propuesta o póliza del entorno del token
+        (contrato v0.68). `EventSource` no manda cabeceras: por eso el token no va en la URL.
+        No cuenta en el consumo (es una lectura del portal)."""
+        tickets = getattr(estado(request).clientes, "tickets", None)
+        if tickets is None:
+            raise no_disponible()
+        try:
+            ticket, vence_en = await tickets.emitir("SOCIO", socio.id, None, socio.entorno)
+        except Exception as error:  # noqa: BLE001 - Redis caído: el panel sigue sin vivo
+            raise no_disponible() from error
+        return {
+            "ticket": ticket,
+            "url": getattr(estado(request), "avisos_url", ""),
+            "venceEn": vence_en.isoformat(),
         }
 
     @router.post("/v1/conversiones")

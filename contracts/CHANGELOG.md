@@ -572,6 +572,56 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.69 — 2026-11-22
+
+- HU-W04 (KAN-27): la mesa de siniestros muestra quién aprobó, rechazó o derivó cada caso. CLAIMS ya guardaba el
+  `actor_usuario_id` de la resolución y de la asignación (o `SISTEMA` si fue automática), pero no lo devolvía.
+  - Tipo nuevo `ActorSiniestro { sistema: Boolean!, nombre: String }`. El nombre del operador lo resuelve el BFF en
+    AUTH, de mejor esfuerzo: si AUTH no responde, `nombre` sale null y el detalle sale igual.
+  - `Resolucion` gana `resueltaPor: ActorSiniestro` (quién tomó la decisión de `tipo`), `derivadaPor: ActorSiniestro`
+    y `derivadaEn: DateTime` (si el caso pasó por un perito). Los tres son null en casos sin ese dato.
+  - CLAIMS suma `actor_usuario_id` y `derivada_por_usuario_id` a la resolución del expediente, sin migración (los
+    documentos ya los tenían).
+- Solo cambios aditivos. Afecta al frontend: la web (detalle del siniestro, W04-02).
+
+## v0.68 — 2026-11-22
+
+- HU-W07 (KAN-30): **el panel del socio cuenta cotizaciones y ventas por separado y se pone al día solo.** En las
+  pruebas, una cotización que terminaba en póliza se veía como dos ventas y ninguna cotización: las cotizaciones solo
+  salían como presupuesto consumido, y «Propuestas» y «Pólizas emitidas» sumaban 1 cada una.
+  - `GET /v1/ventas`: `VentasMes` y `totales` ganan **`cotizaciones`** (las que descontaron presupuesto, del consumo en
+    AUTH, en el mismo rango que las ventas). Un mes con cotizaciones y sin ventas también sale, en ceros. AUTH suma
+    `GET /socios/{id}/cotizaciones-por-mes` (llamadas `OK` de `cotizaciones` y `cotizaciones-auto`, por mes de Colombia).
+  - **Modo prueba:** las ventas dejan de ser cifras fijas. Aceptar una oferta suma una propuesta y la póliza que se
+    emite suma una venta con su prima y la comisión (10 %). Se guardan con el resto del sandbox (24 h en Redis).
+  - **En vivo (SSE):** `POST /v1/avisos/ticket` (scope `cuenta`, no cuenta en el consumo) da un ticket de un solo uso
+    para el stream del servicio `avisos`. El canal `avisos:socio:<socio>:<entorno>` recibe un evento `socio` por cada
+    llamada que cuenta en el consumo (la publica el BFF, también las del Swagger embebido del portal) y `propuesta`
+    cuando POLICY cambia el estado de una propuesta del socio en PRODUCCION (la póliza emitida tras el pago).
+    Gateway: la ruta nueva en Envoy y en `openapi-socios.yaml`.
+- `socios-v1.json` pasa a **1.4.0**. Solo cambios aditivos. Afecta al frontend: sí (el panel muestra las cotizaciones,
+  las ventas y la conversión aparte, y abre el stream). Requiere el PR gemelo en `solventa-frontend-web`.
+
+## v0.67 — 2026-11-22
+
+- HU-M04 (KAN-259): el push de la indemnización paramétrica se personaliza. `contracts/plantillas-push.json` suma
+  `tituloConNombre` a `indemnizacion-liquidada` y cinco plantillas que dicen el evento con sus datos:
+  `indemnizacion-vuelo-retraso` (`monto`, `moneda`, `vuelo`, `minutos`), `indemnizacion-vuelo-cancelado` (`vuelo`),
+  `indemnizacion-clima-lluvia`, `indemnizacion-clima-viento` e `indemnizacion-clima-temperatura` (`valor`). CLAIMS
+  elige la plantilla según el evento y `enviar-push` pone el primer nombre en el título al enviar.
+- AUTH: `GET /interno/destino-push/{usuario_id}` suma `primer_nombre` e `idioma` (opcionales; el idioma es la
+  preferencia del cliente, `es` o `en`, y `enviar-push` elige con él el texto de la plantilla). El productor nunca manda el nombre:
+  `enviar-push` lo pide a AUTH y descarta cualquier `nombre` que llegue en las variables. Sin nombre, el título es el
+  de siempre. Nada de esto se escribe en logs.
+- Moneda del cliente (KAN-209): el productor manda `monto` crudo (texto decimal) y `moneda`; `enviar-push` lo
+  convierte a la moneda preferida del cliente (`moneda` de `GET /interno/destino-push`, nuevo) con
+  `GET /tasas-cambio` del ACL Worker y arma `{importe}` como lo muestra la app («$ 500.000», «USD 121,95»;
+  en inglés «COP 500,000», «USD 121.95»). Las plantillas de indemnización usan `{importe}` en vez de
+  `{monto} {moneda}`. Sin tasas, el push sale en la moneda original. `enviar-push` pasa a llamar al ACL Worker
+  (`.github/servicios.json`).
+- Solo cambios aditivos; la ruta del push (`/m04-02/{id}`) no cambia. Afecta al frontend: no (la app solo muestra lo
+  que llega).
+
 ## v0.66 — 2026-11-21
 
 - HU-M05 (KAN-35): sin GPS, el cliente escribe la dirección y la app la ubica (`ubicarDireccion`); las fotos llevan
@@ -881,3 +931,19 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   fijo; no cambia la prima). Copias nuevas en `services/policy/app/` con `scripts/sincronizar_fuentes.py`.
 - Afecta al frontend: no. El móvil ya muestra la cobertura en «Mi cobertura» (`miCoberturaParametrica`, v0.48); la
   copia de ciudades del móvil puede ignorar los campos nuevos.
+
+## Cabeceras — 2026-11-22 (sin cambio de esquema ni versión nueva)
+
+- KAN-26 (títulos, idioma y moneda de los documentos): los PDF de la póliza y los correos salen en el idioma que tiene
+  activo quien hace la acción. El BFF ya leía `Accept-Language` (es o en); ahora también lee **`X-Moneda`** (la moneda
+  del selector de la web, p. ej. `USD`) en `/graphql/*` y en `GET /propuestas/{id}/contrato.pdf`.
+  - El contrato antes de firmar sale en el idioma y la moneda de quien lo abre. Al firmar (`firmarPorEnlace`), el BFF
+    pasa a POLICY el idioma, la moneda y la tasa de referencia del día (`/tasas-cambio` del ACL); POLICY los guarda con
+    la evidencia (migración `0012`) y con ellos genera el contrato firmado, la póliza y el correo de póliza emitida, que
+    no cambian después. En otra moneda cada monto lleva su equivalente en COP y el documento dice la tasa y su fecha;
+    la prima se sigue calculando y cobrando en COP. Sin `X-Moneda`, o si el ACL no da la tasa, todo sale en COP.
+  - Los correos (`codigo-verificacion`, `enlace-firma`, `codigo-registro`, `restablecer-clave`, `clave-cambiada` y
+    `poliza-emitida`) tienen versión en inglés en el ACL Worker (`idioma` opcional en `POST /notificaciones/enviar`;
+    sin él, español). La API de socios usa el `Accept-Language` del socio.
+- Afecta al frontend: sí, opcional. La web debe mandar `X-Moneda` (y el `Accept-Language` que ya manda) en GraphQL y al
+  pedir el PDF; sin la cabecera nada se rompe y los documentos salen en COP.

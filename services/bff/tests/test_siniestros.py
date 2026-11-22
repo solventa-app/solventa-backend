@@ -209,3 +209,59 @@ def test_mensajes_en_ingles():
     assert r["data"]["aprobarSiniestro"]["mensaje"] == (
         "The claim has already been resolved and can't be changed."
     )
+
+
+# ---------- v0.69: quién aprobó, rechazó o derivó ----------
+
+QUIEN = """query { siniestro(id: "sin-01") { resolucion { tipo resueltaEn derivadaEn
+  resueltaPor { sistema nombre } derivadaPor { sistema nombre } } } }"""
+
+
+def _resuelto(claims: ClaimsFalso, **resolucion) -> ClaimsFalso:
+    claims.siniestros["sin-01"]["resolucion"] = {
+        "tipo": "APROBACION",
+        "resuelta_en": "2026-10-28T15:00:00+00:00",
+        "notificacion": "Enviada",
+        **resolucion,
+    }
+    return claims
+
+
+def test_la_resolucion_dice_que_operador_la_tomo_y_quien_derivo_al_perito():
+    from fakes import AuthFalso
+
+    auth = AuthFalso()
+    auth.nombres = {"u-bo": "Laura Gómez"}
+    claims = _resuelto(
+        ClaimsFalso(),
+        tipo="RECHAZO",
+        actor_usuario_id="u-bo",
+        derivada_por_usuario_id="u-bo",
+        derivada_en="2026-10-27T15:00:00+00:00",
+    )
+    clientes = _clientes(claims)
+    clientes.auth = auth
+    with _cliente(clientes) as client:
+        r = _post(client, QUIEN)["data"]["siniestro"]["resolucion"]
+    assert r["resueltaPor"] == {"sistema": False, "nombre": "Laura Gómez"}
+    assert r["derivadaPor"] == {"sistema": False, "nombre": "Laura Gómez"}
+    assert r["derivadaEn"].startswith("2026-10-27")
+
+
+def test_la_aprobacion_automatica_la_firma_el_sistema_sin_ir_a_auth():
+    claims = _resuelto(ClaimsFalso(), actor_usuario_id="SISTEMA", automatica=True)
+    with _cliente(_clientes(claims)) as client:
+        r = _post(client, QUIEN)["data"]["siniestro"]["resolucion"]
+    assert r["resueltaPor"] == {"sistema": True, "nombre": None}
+    assert r["derivadaPor"] is None and r["derivadaEn"] is None
+
+
+def test_sin_actor_guardado_o_sin_nombre_en_auth_el_detalle_sale_igual():
+    claims = _resuelto(ClaimsFalso(), actor_usuario_id="op-desconocido")
+    with _cliente(_clientes(claims)) as client:
+        r = _post(client, QUIEN)["data"]["siniestro"]["resolucion"]
+    assert r["resueltaPor"] == {"sistema": False, "nombre": None}
+    claims = _resuelto(ClaimsFalso())
+    with _cliente(_clientes(claims)) as client:
+        r = _post(client, QUIEN)["data"]["siniestro"]["resolucion"]
+    assert r["resueltaPor"] is None

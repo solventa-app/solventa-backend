@@ -52,6 +52,7 @@ from app.application.cliente_payments import (
 from app.application.cliente_payments import ResultadoCobro as ResultadoCobroPayments
 from app.application.cliente_under import PuertoUnder, UnderNoDisponible
 from app.application.clima_auto import PuertoCoberturas, incluir_clima
+from app.application.documento_poliza import Presentacion
 from app.application.identificadores import id_opaco
 from app.application.planificador import EmisionPendiente, PuertoPlanificador
 
@@ -498,6 +499,8 @@ class ServicioEmision:
             destino = self._destino_del_aviso(poliza, evidencia["firmante_id"], numero)
         if destino is None:
             return  # sin contacto: ya quedó marcado como omitido
+        # KAN-26: en el idioma con que se firmó, el mismo del PDF adjunto.
+        idioma = Presentacion.desde((evidencia or {}).get("presentacion")).idioma
         resultado = self._notificador.notificar(
             SolicitudNotificacion(
                 id_notificacion=f"poliza-emitida-{poliza['id']}",
@@ -510,6 +513,7 @@ class ServicioEmision:
                 correo=destino.correo,
                 telefono=destino.telefono,
                 adjuntos=destino.adjuntos,
+                idioma=idioma,
             )
         )
         if resultado.estado == "rechazada":

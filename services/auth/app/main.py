@@ -291,6 +291,13 @@ class SolicitudPreferenciaPush(BaseModel):
     habilitado: bool
 
 
+def primer_nombre(nombre: str | None) -> str | None:
+    """«JHOAN FELIPE SARMIENTO» -> «Jhoan»: la primera palabra del nombre (los nombres van antes
+    que los apellidos, ver el onboarding), con mayúscula inicial."""
+    partes = (nombre or "").split()
+    return partes[0].capitalize() if partes else None
+
+
 class DestinoPushResponse(BaseModel):
     """Dato personal en claro (el token): solo lo pide la función `enviar-push`, con su propia
     cuenta de servicio, y nunca se loguea."""
@@ -298,6 +305,13 @@ class DestinoPushResponse(BaseModel):
     dispositivo_id: str
     token: str
     plataforma: str
+    # El primer nombre del destinatario, para que el push lo salude (`tituloConNombre` de
+    # `contracts/plantillas-push.json`). `None` si no tiene nombre. Nunca se loguea.
+    primer_nombre: str | None = None
+    # Idioma preferido del destinatario (`es` o `en`, KAN-209), para elegir el texto del push.
+    idioma: str | None = None
+    # Moneda preferida (KAN-209): `enviar-push` muestra en ella el monto del push.
+    moneda: str | None = None
 
 
 # ---------- Socios (HU-W07) ----------
@@ -369,6 +383,10 @@ class ConsumoSocioResponse(BaseModel):
     presupuesto: PresupuestoConsumoResponse
     por_api: list[ConsumoApiResponse]
     diario: list[ConsumoDiaResponse]
+
+
+class CotizacionesPorMesResponse(BaseModel):
+    por_mes: dict[str, int]
 
 
 def create_app(
@@ -651,7 +669,13 @@ def create_app(
             raise HTTPException(status_code=409, detail="PUSH_DESHABILITADO") from error
         except SinDispositivoActivo as error:
             raise HTTPException(status_code=404, detail="sin dispositivo activo") from error
-        return DestinoPushResponse(**destino)
+        usuario = app.state.usuarios.obtener(usuario_id) or {}
+        return DestinoPushResponse(
+            **destino,
+            primer_nombre=primer_nombre(app.state.usuarios.nombre_de(usuario_id)),
+            idioma=str(usuario.get("idioma") or "ES").lower(),
+            moneda=usuario.get("moneda") or None,
+        )
 
     @app.post(
         "/interno/dispositivos-push/{dispositivo_id}/token-invalido",
@@ -962,6 +986,21 @@ def create_app(
             return ConsumoSocioResponse(**app.state.socios.consumo(socio_id, entorno, desde, hasta))
         except DatoSocioInvalido as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get(
+        "/socios/{socio_id}/cotizaciones-por-mes",
+        tags=["socios"],
+        response_model=CotizacionesPorMesResponse,
+    )
+    def cotizaciones_por_mes(
+        socio_id: str, entorno: Entorno, desde: date, hasta: date
+    ) -> CotizacionesPorMesResponse:
+        """Las cotizaciones hechas cada mes en el entorno (las ventas del panel, contrato v0.68)."""
+        try:
+            por_mes = app.state.socios.cotizaciones_por_mes(socio_id, entorno, desde, hasta)
+        except DatoSocioInvalido as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return CotizacionesPorMesResponse(por_mes=por_mes)
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
     return app

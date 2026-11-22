@@ -358,6 +358,8 @@ def test_el_titular_firma_con_el_token_y_la_imagen_ya_subida() -> None:
         "modo": "IMAGEN",
         "imagen_archivo_id": "arch-1",
         "nombre_firma": None,
+        # KAN-26: sin cabeceras, el contrato firmado sale en español y en COP.
+        "presentacion": {"idioma": "es", "moneda": "COP"},
     }
 
 

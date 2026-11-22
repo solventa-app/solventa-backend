@@ -21,6 +21,7 @@ from app.domain.puertos import ResultadoNotificacion, SolicitudNotificacion
 URL_RESEND = "https://api.resend.com"
 
 # Asunto y cuerpo por plantilla. `{campo}` sale de `solicitud.datos` (escapado en el HTML).
+# KAN-26: cada correo sale en el idioma que tenía activo quien hizo la acción (`solicitud.idioma`).
 PLANTILLAS: dict[str, tuple[str, str]] = {
     "codigo-verificacion": (
         "Tu código de verificación de Solventa",
@@ -53,6 +54,39 @@ PLANTILLAS: dict[str, tuple[str, str]] = {
         "Tu póliza <b>{numero_poliza}</b> quedó emitida. Adjuntamos el documento en PDF.",
     ),
 }
+PLANTILLAS_EN: dict[str, tuple[str, str]] = {
+    "codigo-verificacion": (
+        "Your Solventa verification code",
+        "Your code to confirm your identity with your advisor is <b>{codigo}</b>. "
+        "It expires in {minutos} minutes. If you did not request it, ignore this email.",
+    ),
+    "codigo-registro": (
+        "Your code to create your Solventa account",
+        "Your code to create your Solventa account is <b>{codigo}</b>. "
+        "It expires in {minutos} minutes. If you did not request it, ignore this email.",
+    ),
+    "enlace-firma": (
+        "Sign your Solventa policy",
+        'Your advisor prepared your policy. <a href="{enlace}">Review and sign it here</a>. '
+        "The link expires in {minutos} minutes.",
+    ),
+    "restablecer-clave": (
+        "Reset your Solventa password",
+        'You asked to change your password. <a href="{enlace}">Choose a new one here</a>. '
+        "The link expires in {minutos} minutes and works only once. "
+        "If you did not request it, ignore this email: your password stays the same.",
+    ),
+    "clave-cambiada": (
+        "You changed your Solventa password",
+        "Your Solventa password was changed and we closed your open sessions. "
+        "If it was not you, contact us right away.",
+    ),
+    "poliza-emitida": (
+        "Your Solventa policy {numero_poliza} has been issued",
+        "Your policy <b>{numero_poliza}</b> has been issued. The PDF document is attached.",
+    ),
+}
+PLANTILLAS_POR_IDIOMA = {"es": PLANTILLAS, "en": PLANTILLAS_EN}
 MOTIVO_SIN_CORREO = "sin_correo"
 MOTIVO_PLANTILLA_DESCONOCIDA = "plantilla_desconocida"
 
@@ -62,11 +96,15 @@ class _Campos(dict):
         return ""
 
 
-def componer(plantilla: str, datos: dict[str, str]) -> tuple[str, str, str] | None:
-    """(asunto, html, texto) de la plantilla, o `None` si no existe."""
-    if plantilla not in PLANTILLAS:
+def componer(
+    plantilla: str, datos: dict[str, str], idioma: str = "es"
+) -> tuple[str, str, str] | None:
+    """(asunto, html, texto) de la plantilla en el idioma pedido (español si no se conoce), o
+    `None` si la plantilla no existe."""
+    plantillas = PLANTILLAS_POR_IDIOMA.get(idioma, PLANTILLAS)
+    if plantilla not in plantillas:
         return None
-    asunto, cuerpo = PLANTILLAS[plantilla]
+    asunto, cuerpo = plantillas[plantilla]
     escapados = _Campos({k: html.escape(str(v), quote=True) for k, v in datos.items()})
     planos = _Campos({k: str(v) for k, v in datos.items()})
     texto = cuerpo.replace("<b>", "").replace("</b>", "")
@@ -98,7 +136,7 @@ class AdaptadorCorreoResend:
     ) -> ResultadoNotificacion:
         if not solicitud.correo:
             return ResultadoNotificacion(estado="rechazada", motivo=MOTIVO_SIN_CORREO)
-        compuesto = componer(solicitud.plantilla, solicitud.datos)
+        compuesto = componer(solicitud.plantilla, solicitud.datos, solicitud.idioma)
         if compuesto is None:
             return ResultadoNotificacion(estado="rechazada", motivo=MOTIVO_PLANTILLA_DESCONOCIDA)
         asunto, cuerpo_html, texto = compuesto

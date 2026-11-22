@@ -199,6 +199,7 @@ SCOPE_DE_RUTA = {
     ("GET", "/v1/ventas"): scopes.CUENTA,
     ("GET", "/v1/credenciales"): scopes.CUENTA,
     ("POST", "/v1/credenciales/{entorno}/rotar"): scopes.CUENTA,
+    ("POST", "/v1/avisos/ticket"): scopes.CUENTA,
 }
 MENSAJE_SIN_PERMISO = "El token no tiene permiso para esta operación."
 
@@ -483,6 +484,90 @@ def test_consumo_y_ventas(e) -> None:
     _es_error_publico(fecha_mala, 422, "DATOS_INVALIDOS")
 
 
+def test_las_ventas_cuentan_cotizaciones_propuestas_y_polizas_por_separado(e) -> None:
+    """v0.68: una cotización que termina en póliza es 1 cotización, 1 propuesta y 1 venta. Antes
+    las cotizaciones no salían en las ventas y el panel parecía sumar dos ventas."""
+    e.policy.respuestas["ventas_socio"] = {
+        "desde": "2025-12-01",
+        "hasta": "2026-11-22",
+        "meses": [
+            {
+                "mes": "2026-11",
+                "propuestas": 1,
+                "emitidas": 1,
+                "primas": {"valor": "61200", "moneda": "COP"},
+                "comision": {"valor": "6120", "moneda": "COP"},
+            }
+        ],
+        "totales": {
+            "propuestas": 1,
+            "emitidas": 1,
+            "primas": {"valor": "61200", "moneda": "COP"},
+            "comision": {"valor": "6120", "moneda": "COP"},
+        },
+    }
+    with e.cliente() as client:
+        client.post("/v1/cotizaciones", json=COTIZACION, headers=e.cabeceras())
+        ventas = client.get("/v1/ventas", headers=e.cabeceras()).json()
+
+    assert ventas["totales"]["cotizaciones"] == 1
+    assert ventas["totales"]["propuestas"] == 1 and ventas["totales"]["emitidas"] == 1
+    assert ventas["meses"][0]["mes"] == "2026-11" and ventas["meses"][0]["cotizaciones"] == 1
+
+
+def test_un_mes_solo_con_cotizaciones_tambien_sale(e) -> None:
+    with e.cliente() as client:
+        client.post("/v1/cotizaciones", json=COTIZACION, headers=e.cabeceras())
+        ventas = client.get("/v1/ventas", headers=e.cabeceras()).json()
+
+    assert ventas["meses"] == [
+        {
+            "mes": "2026-10",
+            "cotizaciones": 1,
+            "propuestas": 0,
+            "emitidas": 0,
+            "primas": {"valor": "0", "moneda": "COP"},
+            "comision": {"valor": "0", "moneda": "COP"},
+        }
+    ]
+
+
+def test_el_ticket_de_avisos_es_del_socio_y_de_su_entorno(e) -> None:
+    with e.cliente() as client:
+        ticket = client.post("/v1/avisos/ticket", headers=e.cabeceras(entorno="PRUEBAS"))
+
+    assert ticket.status_code == 200
+    assert ticket.json()["ticket"] == "ticket-1" and ticket.json()["url"]
+    assert e.clientes.tickets.emitidos == [("SOCIO", "socio-1", None, "PRUEBAS")]
+
+
+def test_sin_redis_el_ticket_de_avisos_es_503(e) -> None:
+    e.clientes.tickets.falla = True
+    with e.cliente() as client:
+        ticket = client.post("/v1/avisos/ticket", headers=e.cabeceras())
+
+    _es_error_publico(ticket, 503, "SERVICIO_NO_DISPONIBLE")
+
+
+def test_cada_llamada_que_cuenta_avisa_al_panel_del_socio(e) -> None:
+    """v0.68: el panel se pone al día por SSE. Las lecturas del portal no avisan (no cuentan)."""
+    with e.cliente() as client:
+        client.post("/v1/cotizaciones", json=COTIZACION, headers=e.cabeceras())
+        client.get("/v1/ventas", headers=e.cabeceras())
+
+    assert e.clientes.tickets.publicados == [
+        ("avisos:socio:socio-1:PRODUCCION", '{"tipo": "socio", "api": "cotizaciones"}')
+    ]
+
+
+def test_sin_redis_la_cotizacion_responde_aunque_no_avise(e) -> None:
+    e.clientes.tickets.falla = True
+    with e.cliente() as client:
+        respuesta = client.post("/v1/cotizaciones", json=COTIZACION, headers=e.cabeceras())
+
+    assert respuesta.status_code == 200
+
+
 def test_cada_llamada_del_socio_queda_en_el_consumo_antes_de_responder(e) -> None:
     """KAN-30: el registro se espera dentro de la petición. Antes era una tarea suelta tras la
     respuesta, que en Cloud Run (`cpu_idle = true`) podía no correr nunca."""
@@ -539,6 +624,7 @@ def test_las_consultas_de_la_cuenta_no_cuentan_en_el_consumo(e) -> None:
         for ruta in ("/v1/consumo", "/v1/estado", "/v1/ventas", "/v1/credenciales"):
             assert client.get(ruta, headers=e.cabeceras()).status_code == 200, ruta
         client.post("/v1/credenciales/PRUEBAS/rotar", headers=e.cabeceras())
+        assert client.post("/v1/avisos/ticket", headers=e.cabeceras()).status_code == 200
         client.post(
             "/v1/conversiones",
             json={"moneda": "USD", "montos": [{"valor": "1000", "moneda": "COP"}]},

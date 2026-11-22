@@ -223,3 +223,25 @@ def test_la_resolucion_guarda_cuando_paso_a_un_perito_para_la_linea_de_tiempo():
 def test_sin_perito_la_resolucion_no_trae_derivada_en():
     servicio, _ = _servicio()
     assert servicio.aprobar("sin-01", "op")["resolucion"]["derivada_en"] is None
+
+
+# ---------- v0.69: quién tomó cada decisión ----------
+
+
+def test_el_expediente_dice_quien_derivo_y_quien_resolvio():
+    servicio, _ = _servicio()
+    derivado = servicio.derivar("sin-01", "per-01", None, "op-deriva")["resolucion"]
+    assert derivado["actor_usuario_id"] == "op-deriva"
+    assert derivado["derivada_por_usuario_id"] == "op-deriva"
+    rechazado = servicio.rechazar("sin-01", "OTRO", None, "op-rechaza")["resolucion"]
+    assert rechazado["actor_usuario_id"] == "op-rechaza"
+    assert rechazado["derivada_por_usuario_id"] == "op-deriva"
+
+
+def test_la_aprobacion_automatica_queda_a_nombre_del_sistema_en_el_expediente():
+    servicio, repo = _servicio()
+    _vencer(repo)
+    servicio.aprobar_vencidos()
+    resolucion = servicio.obtener("sin-01")["resolucion"]
+    assert resolucion["actor_usuario_id"] == "SISTEMA"
+    assert resolucion["derivada_por_usuario_id"] is None

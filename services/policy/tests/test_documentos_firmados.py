@@ -108,7 +108,7 @@ def test_al_firmar_se_guarda_el_contrato_firmado_cifrado(e) -> None:
     # Lo que se guardó es el contrato firmado, con la evidencia y la imagen estampada.
     contrato = e.documentos.leer(propuesta["id"], TIPO_CONTRATO)
     assert contrato is not None and contrato.startswith(b"%PDF")
-    assert b"Contrato firmado" in contrato and b"/Subtype /Image" in contrato
+    assert b"Firmado el" in contrato and b"/Subtype /Image" in contrato
     assert b"Camila Rojas" in contrato  # el contacto del asesor: queda dentro, ya cifrado
 
 
@@ -117,7 +117,7 @@ def test_firmar_con_nombre_estampa_el_nombre_en_el_contrato_guardado(e) -> None:
     e.firmar_nombre(propuesta["id"], Autorizacion(enlace_token=token))
 
     contrato = e.documentos.leer(propuesta["id"], TIPO_CONTRATO)
-    assert contrato is not None and b"Contrato firmado" in contrato
+    assert contrato is not None and b"Firmado el" in contrato
 
 
 def test_si_guardar_falla_la_firma_sigue_y_el_contrato_se_guarda_en_la_siguiente_consulta(
@@ -134,7 +134,7 @@ def test_si_guardar_falla_la_firma_sigue_y_el_contrato_se_guarda_en_la_siguiente
     datos = e.repo.obtener(propuesta["id"])
     contrato = e.polizas.contrato(datos)  # `contrato.pdf`: lo genera, lo guarda y lo entrega
 
-    assert contrato.startswith(b"%PDF") and b"Contrato firmado" in contrato
+    assert contrato.startswith(b"%PDF") and b"Firmado el" in contrato
     assert e.documentos.existe(propuesta["id"], TIPO_CONTRATO)
 
 
@@ -143,7 +143,7 @@ def test_contrato_pdf_es_el_borrador_antes_de_firmar_y_el_firmado_despues(e) -> 
     datos = e.repo.obtener(propuesta["id"])
 
     antes = e.polizas.contrato(datos)
-    assert b"en tr" in antes and b"Contrato firmado" not in antes  # «en trámite»
+    assert b"(borrador\\)" in antes and b"Firmado el" not in antes
 
     auth = Autorizacion(enlace_token=token)
     archivo = e.servicio.solicitar_subida(propuesta["id"], auth, "image/png", 100).archivo["id"]
@@ -151,7 +151,7 @@ def test_contrato_pdf_es_el_borrador_antes_de_firmar_y_el_firmado_despues(e) -> 
     e.servicio.firmar(propuesta["id"], auth, "v1", True, True, "IMAGEN", archivo)
     despues = e.polizas.contrato(e.repo.obtener(propuesta["id"]))
 
-    assert b"Contrato firmado" in despues
+    assert b"Firmado el" in despues
     assert e.polizas.contrato(e.repo.obtener(propuesta["id"])) == despues  # el mismo, guardado
 
 
@@ -322,3 +322,49 @@ def test_ni_el_contenido_ni_la_llave_salen_en_los_logs(e, caplog) -> None:
     for dato in ("Camila", fila["clave_envuelta"], fila["sha256"], "%PDF"):
         assert dato not in caplog.text
     assert re.search(r"documento guardado propuesta=\w+ tipo=poliza-pdf", caplog.text)
+
+
+# ---------- KAN-26: el idioma y la moneda de la firma
+
+
+PRESENTACION_EN_USD = {
+    "idioma": "en",
+    "moneda": "USD",
+    "cop_por_unidad": "4000",
+    "fecha_tasa": "2026-11-20",
+}
+
+
+def test_el_contrato_firmado_y_la_poliza_quedan_en_el_idioma_y_la_moneda_de_la_firma(e) -> None:
+    propuesta, token = e.hasta_en_firma()
+    auth = Autorizacion(enlace_token=token)
+    e.servicio.firmar(
+        propuesta["id"], auth, "v1", True, True, "NOMBRE", None, "Camila Rojas",
+        presentacion=PRESENTACION_EN_USD,
+    )  # fmt: skip
+
+    evidencia = e.repo.obtener_evidencia(propuesta["id"])
+    assert evidencia["presentacion"] == PRESENTACION_EN_USD
+    contrato = e.polizas.contrato(e.repo.obtener(propuesta["id"]))
+    assert b"Signed on" in contrato and b"USD" in contrato and b"Equivalent to" in contrato
+
+    # Abrirlo después en español no lo cambia: es el que se guardó al firmar.
+    otra_vez = e.polizas.contrato(e.repo.obtener(propuesta["id"]), None)
+    assert otra_vez == contrato
+
+    poliza = e.emitir(propuesta, auth)
+    documento = e.polizas.documento(poliza["id"], "Camila Rojas")
+    assert b"Policy No." in documento and b"Equivalent to" in documento
+
+
+def test_el_borrador_sale_en_el_idioma_de_quien_lo_abre(e) -> None:
+    from app.application.documento_poliza import Presentacion
+
+    propuesta, _ = e.hasta_en_firma()
+    datos = e.repo.obtener(propuesta["id"])
+
+    en_ingles = e.polizas.contrato(datos, Presentacion.desde({"idioma": "en"}))
+    en_espanol = e.polizas.contrato(datos)
+
+    assert b"General terms and conditions" in en_ingles
+    assert b"Condiciones generales" in en_espanol

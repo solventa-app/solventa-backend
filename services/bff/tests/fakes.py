@@ -656,6 +656,7 @@ class AclFalso:
         destinatario_id: str,
         datos: dict[str, str],
         correo: str,
+        idioma: str = "es",
     ) -> dict:
         if "notificaciones" in self.fallan:
             raise ErrorServicio("timeout")
@@ -665,6 +666,7 @@ class AclFalso:
             "destinatario_id": destinatario_id,
             "datos": dict(datos),
             "correo": correo,
+            "idioma": idioma,
         }
         self.notificaciones.append(envio)
         return {"estado": "enviada", "referencia": "ref-1", "motivo": None}
@@ -934,6 +936,10 @@ class PolicyFalso:
         self.tasas_recibidas: list[str | None] = []
         self.nombres: dict[str, str] = {}
         self.falla_nombres = False
+        # KAN-26: el idioma con que se pidió cada operación que manda un correo y la presentación
+        # (idioma, moneda y tasa) con que se pidió el contrato en PDF.
+        self.idiomas: dict[str, str] = {}
+        self.presentacion_pdf: dict | None = None
         self.error_reconciliar: Exception | None = None
         self.propuestas_conocidas: set[str] | None = None  # None = conoce cualquier id
         # v0.18: lo que el BFF le pidió (operación, argumentos) y lo que responderá.
@@ -974,7 +980,10 @@ class PolicyFalso:
             },
         }
 
-    async def enviar_codigo(self, propuesta_id: str, correo: str | None) -> dict:
+    async def enviar_codigo(
+        self, propuesta_id: str, correo: str | None, idioma: str = "es"
+    ) -> dict:
+        self.idiomas["enviar_codigo"] = idioma
         canned = self._flujo("enviar_codigo", propuesta_id, correo)
         return canned or {
             "propuesta_id": propuesta_id,
@@ -986,7 +995,10 @@ class PolicyFalso:
         canned = self._flujo("verificar_codigo", propuesta_id, codigo)
         return canned or self._propuesta_en(propuesta_id, "IDENTIDAD_VERIFICADA")
 
-    async def emitir(self, propuesta_id: str, rol: str, titular_id: str | None) -> dict:
+    async def emitir(
+        self, propuesta_id: str, rol: str, titular_id: str | None, idioma: str = "es"
+    ) -> dict:
+        self.idiomas["emitir"] = idioma
         canned = self._flujo("emitir", propuesta_id, rol, titular_id)
         if canned:
             return canned
@@ -1000,7 +1012,8 @@ class PolicyFalso:
             }
         return {"propuesta": self._propuesta_en(propuesta_id, "EN_FIRMA"), "enlace": None}
 
-    async def reenviar_enlace(self, propuesta_id: str) -> dict:
+    async def reenviar_enlace(self, propuesta_id: str, idioma: str = "es") -> dict:
+        self.idiomas["reenviar_enlace"] = idioma
         canned = self._flujo("reenviar_enlace", propuesta_id)
         return canned or {
             "propuesta": self._propuesta_en(propuesta_id, "EN_FIRMA"),
@@ -1041,7 +1054,10 @@ class PolicyFalso:
             "forma_cobro": "con la cuota de tu crédito",
         }
 
-    async def contrato_pdf(self, propuesta_id: str, acceso: Acceso) -> bytes | None:
+    async def contrato_pdf(
+        self, propuesta_id: str, acceso: Acceso, presentacion: dict | None = None
+    ) -> bytes | None:
+        self.presentacion_pdf = presentacion
         self._flujo("contrato_pdf", propuesta_id, acceso)
         return b"%PDF-1.3 contrato falso"
 
@@ -1294,13 +1310,22 @@ class TicketsFalso:
 
     def __init__(self, falla: bool = False) -> None:
         self.falla = falla
-        self.emitidos: list[tuple[str, str, str | None]] = []
+        self.emitidos: list[tuple] = []
+        self.publicados: list[tuple[str, str]] = []
 
-    async def emitir(self, rol: str, usuario_id: str, titular_id: str | None):
+    async def emitir(
+        self, rol: str, usuario_id: str, titular_id: str | None, entorno: str | None = None
+    ):
         if self.falla:
             raise ConnectionError("redis caído")
-        self.emitidos.append((rol, usuario_id, titular_id))
+        emitido = (rol, usuario_id, titular_id)
+        self.emitidos.append(emitido if entorno is None else (*emitido, entorno))
         return f"ticket-{len(self.emitidos)}", datetime(2026, 10, 28, 12, 1, tzinfo=UTC)
+
+    async def publicar(self, canal: str, mensaje: str) -> None:
+        if self.falla:
+            raise ConnectionError("redis caído")
+        self.publicados.append((canal, mensaje))
 
 
 class OnboardingFalso:
@@ -1796,6 +1821,16 @@ class SociosFalso:
             ],
             "diario": [{"fecha": "2026-10-29", "llamadas": 2}],
         }
+
+    async def cotizaciones_por_mes(self, socio_id, entorno, desde, hasta) -> dict[str, int]:
+        """Las cotizaciones `OK` registradas, todas en el mes de `hasta`."""
+        self._caer()
+        n = sum(
+            1
+            for (s, e, api, resultado) in self.consumos
+            if (s, e, resultado) == (socio_id, entorno, "OK") and api.startswith("cotizaciones")
+        )
+        return {str(hasta)[:7]: n} if n else {}
 
 
 def clientes_falsos(

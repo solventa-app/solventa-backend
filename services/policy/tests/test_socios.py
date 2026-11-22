@@ -62,6 +62,8 @@ def test_al_socio_no_le_llegan_los_avisos_del_asesor(e) -> None:
     canales, _ = e.avisos.publicados[-1]
     assert "avisos:asesor:socio-demo-1" not in canales
     assert f"avisos:titular:{TITULAR}" in canales
+    # v0.68: su panel sí se entera, para contar la venta sin recargar.
+    assert "avisos:socio:socio-demo-1:PRODUCCION" in canales
     plantillas = [s.plantilla for s in e.notificador.solicitudes]
     assert "poliza-emitida" in plantillas  # el titular sí recibe su póliza
 

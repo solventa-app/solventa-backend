@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.autenticacion_servicios import autenticacion_para, modo_desde_entorno
 from app.bus_eventos import construir_bus_eventos
-from app.clientes import ClienteAuthHttp, ErrorServicio
+from app.clientes import ClienteAuthHttp, ClienteTasasHttp, ErrorServicio
 from app.configuracion import Configuracion
 from app.esquema_evento import EventoInvalido, construir_evento, validar
 from app.observabilidad import configurar_trazas
@@ -78,6 +78,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         cliente_http = None
+        cliente_acl = None
         if servicio is None:
             auth_modo = config.autenticacion_servicios or modo_desde_entorno()
             cliente_http = httpx.AsyncClient(
@@ -85,8 +86,17 @@ def create_app(
                 auth=autenticacion_para(auth_modo, "auth"),
                 timeout=10.0,
             )
+            if config.acl_url:
+                cliente_acl = httpx.AsyncClient(
+                    base_url=config.acl_url,
+                    auth=autenticacion_para(auth_modo, "acl-worker"),
+                    timeout=2.0,
+                )
             app.state.servicio = ServicioEnviarPush(
-                ClienteAuthHttp(cliente_http), construir_enviador(config), Plantillas()
+                ClienteAuthHttp(cliente_http),
+                construir_enviador(config),
+                Plantillas(),
+                ClienteTasasHttp(cliente_acl) if cliente_acl is not None else None,
             )
         else:
             app.state.servicio = servicio
@@ -100,6 +110,8 @@ def create_app(
         finally:
             if cliente_http is not None:
                 await cliente_http.aclose()
+            if cliente_acl is not None:
+                await cliente_acl.aclose()
 
     app = FastAPI(title="solventa-enviar-push", version="0.1.0", lifespan=lifespan)
 
