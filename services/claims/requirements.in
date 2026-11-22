@@ -12,3 +12,4 @@ opentelemetry-instrumentation-httpx==0.66b2
 opentelemetry-instrumentation-pymongo==0.66b2
 google-cloud-kms==3.19.0
 jsonschema==4.26.0
+google-cloud-pubsub==2.44.0

@@ -14,3 +14,4 @@ opentelemetry-instrumentation-httpx==0.66b2
 opentelemetry-instrumentation-redis==0.66b2
 cryptography==50.0.2
 jsonschema==4.26.0
+google-cloud-pubsub==2.44.0
