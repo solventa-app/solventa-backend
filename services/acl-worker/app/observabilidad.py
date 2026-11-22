@@ -26,10 +26,54 @@ retrasarse hasta la siguiente petición o hasta que la instancia se apague (se v
 import json
 import logging
 import os
+import re
 
 logger = logging.getLogger("observabilidad")
 
 ENDPOINT_TRAZAS = "https://telemetry.googleapis.com/v1/traces"
+
+# Claves que viajan en la URL (AviationStack exige `access_key` como parámetro de consulta). El log INFO de
+# `httpx` y el atributo de URL de los tramos de OpenTelemetry (que va a Cloud Trace) escriben la URL completa:
+# sin esto la clave queda en claro en Cloud Logging y Cloud Trace.
+_PARAMETRO_SECRETO = re.compile(
+    r"([?&](?:access_key|api_key|apikey|key|token|secret|password|client_secret)=)[^&\s\"']+",
+    re.IGNORECASE,
+)
+
+
+def ocultar_secretos(texto: str) -> str:
+    """Reemplaza el valor de los parámetros de URL que son claves por `***`."""
+    return _PARAMETRO_SECRETO.sub(r"\1***", texto)
+
+
+class FiltroSinSecretos(logging.Filter):
+    """Oculta las claves de las URLs en cualquier mensaje de log antes de que se escriba."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            mensaje = record.getMessage()
+        except Exception:  # un mensaje mal formado no debe tumbar el log
+            return True
+        limpio = ocultar_secretos(mensaje)
+        if limpio != mensaje:
+            record.msg, record.args = limpio, None
+        return True
+
+
+def proteger_logs() -> None:
+    """Pone el filtro en los manejadores del logger raíz (llamar después de `logging.basicConfig`)."""
+    for manejador in logging.getLogger().handlers:
+        if not any(isinstance(f, FiltroSinSecretos) for f in manejador.filters):
+            manejador.addFilter(FiltroSinSecretos())
+
+
+def _sin_secretos_en_el_tramo(span, request) -> None:
+    """Hook de la instrumentación de httpx: reescribe los atributos de URL del tramo sin las claves."""
+    atributos = getattr(span, "attributes", None) or {}
+    for clave in ("http.url", "url.full"):
+        valor = atributos.get(clave)
+        if isinstance(valor, str) and ocultar_secretos(valor) != valor:
+            span.set_attribute(clave, ocultar_secretos(valor))
 
 
 class FormatoJsonConTraza(logging.Formatter):
@@ -59,7 +103,7 @@ def _instrumentar(nombre: str) -> None:
     if nombre == "httpx":
         from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
-        HTTPXClientInstrumentor().instrument()
+        HTTPXClientInstrumentor().instrument(request_hook=_sin_secretos_en_el_tramo)
     elif nombre == "psycopg":
         from opentelemetry.instrumentation.psycopg import PsycopgInstrumentor
 
