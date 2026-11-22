@@ -28,7 +28,7 @@ from app.application.asistencias import (
     ServicioAsistencias,
 )
 from app.application.autenticacion_servicios import autenticacion_para
-from app.application.bus_eventos import BusEventosLog, validar_entrante
+from app.application.bus_eventos import construir_bus_eventos, validar_entrante
 from app.application.catalogo_prestadores import (
     CatalogoNoDisponible,
     LectorCatalogoPrestadores,
@@ -261,7 +261,7 @@ def create_app(
                 autenticacion_para(modo, "almacenamiento"),
                 reglas_de_reescritura(config.almacen_reescritura_origenes),
             )
-            bus = BusEventosLog()
+            bus = construir_bus_eventos(config.pubsub_tema_notificaciones_push)
             app.state.servicio = ServicioSiniestros(
                 repositorio,
                 policy=policy,

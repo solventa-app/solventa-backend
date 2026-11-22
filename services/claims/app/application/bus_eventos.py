@@ -166,7 +166,8 @@ class BusEventosLog:
     def __init__(self) -> None:
         self._validadores = _validadores()
 
-    def publicar(self, evento: dict[str, Any]) -> bool:
+    def _validar(self, evento: dict[str, Any]) -> bool:
+        """Que el evento tenga esquema y lo cumpla; si no, lo avisa en el log (sin valores)."""
         validador = self._validadores.get(evento.get("tipo", ""))
         if validador is None:
             logger.error("evento sin esquema: %s; no se publica", evento.get("tipo"))
@@ -178,6 +179,11 @@ class BusEventosLog:
                 f"{'/'.join(map(str, e.path)) or '(raíz)'}: {e.validator}" for e in errores
             )
             logger.error("evento=%s inválido (%s); no se publica", evento["tipo"], detalle)
+            return False
+        return True
+
+    def publicar(self, evento: dict[str, Any]) -> bool:
+        if not self._validar(evento):
             return False
         datos = evento["datos"]
         # `siniestro.*` lleva siniestroId/polizaId; `notificacion.push-solicitada` (KAN-259, Fase
@@ -195,3 +201,61 @@ class BusEventosLog:
             referencia,
         )
         return True
+
+
+TIPO_PUSH_SOLICITADA = "notificacion.push-solicitada"
+
+
+class BusEventosPubSub(BusEventosLog):
+    """Publica `notificacion.push-solicitada` en Pub/Sub (lo consume `enviar-push`, que manda la
+    push por SNS/FCM). Los demás eventos (`siniestro.*`) siguen en el log hasta que tengan tema.
+
+    Antes de publicar valida el evento contra su esquema, igual que el bus de log. Si Pub/Sub
+    falla no se rompe la liquidación (la indemnización ya está ordenada): se avisa en el log,
+    sin datos."""
+
+    def __init__(self, tema_push: str, cliente_pubsub: Any = None) -> None:
+        super().__init__()
+        self._tema_push = tema_push
+        self._cliente = cliente_pubsub
+
+    def _obtener_cliente(self) -> Any:
+        if self._cliente is None:
+            from google.cloud import pubsub_v1  # type: ignore[import-untyped]
+
+            self._cliente = pubsub_v1.PublisherClient()
+        return self._cliente
+
+    def publicar(self, evento: dict[str, Any]) -> bool:
+        if evento.get("tipo") != TIPO_PUSH_SOLICITADA:
+            return super().publicar(evento)
+        if not self._validar(evento):
+            return False
+        try:
+            futuro = self._obtener_cliente().publish(
+                self._tema_push, json.dumps(evento).encode("utf-8"), tipo=str(evento["tipo"])
+            )
+            if hasattr(futuro, "result"):
+                futuro.result(timeout=5.0)
+        except Exception as error:
+            logger.warning(
+                "fallo publicando en Pub/Sub tema=%s error=%s; la push no se pidió",
+                self._tema_push,
+                type(error).__name__,
+            )
+            return False
+        logger.info(
+            "evento=%s eventId=%s usuario=%s tema=%s [PUBSUB]",
+            evento["tipo"],
+            evento["eventId"],
+            id_opaco(evento["datos"].get("usuarioId", "")),
+            self._tema_push,
+        )
+        return True
+
+
+def construir_bus_eventos(tema_push: str | None, cliente_pubsub: Any = None) -> BusEventosLog:
+    """`BusEventosPubSub` si `PUBSUB_TEMA_NOTIFICACIONES_PUSH` está configurado; si no, el log."""
+    if tema_push:
+        return BusEventosPubSub(tema_push, cliente_pubsub=cliente_pubsub)
+    return BusEventosLog()

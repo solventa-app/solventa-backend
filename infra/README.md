@@ -462,6 +462,10 @@ Pub/Sub y Cloud Scheduler:
 - **Tema `notificaciones-push`** (D2) + suscripción push `enviar-push-notificaciones` hacia `POST /eventos` de
   `enviar-push`. Publican CLAIMS (al liquidar la indemnización paramétrica) y el propio `enviar-push`
   (`POST /v1/push`); consume únicamente `enviar-push`.
+- **Variables de los servicios** (`servicios.tf`): `PUBSUB_TEMA_EVENTOS_PARAMETRICOS` en `acl-worker` y
+  `PUBSUB_TEMA_NOTIFICACIONES_PUSH` en `claims`. Sin ellas cada servicio usa el bus «solo log» (el evento queda en el log y
+  nunca llega al tema), así que la cadena evento paramétrico → indemnización → push no arranca. Ambos servicios llevan
+  `google-cloud-pubsub` en sus dependencias.
 - **Tema `eventos-parametricos`** (Fase 3) **con Dead Letter Queue** (`eventos-parametricos-dlq`, a diferencia de
   `perfil-actualizado` en `pubsub.tf`, que no la tiene): suscripción push `claims-eventos-parametricos` hacia
   `POST /eventos/parametricos` de CLAIMS, `max_delivery_attempts = 5` y `retry_policy` (10 s a 600 s). Publica
