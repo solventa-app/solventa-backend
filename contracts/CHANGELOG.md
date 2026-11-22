@@ -572,6 +572,18 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.67 — 2026-11-22
+
+- HU-W04 (KAN-27): la mesa de siniestros muestra quién aprobó, rechazó o derivó cada caso. CLAIMS ya guardaba el
+  `actor_usuario_id` de la resolución y de la asignación (o `SISTEMA` si fue automática), pero no lo devolvía.
+  - Tipo nuevo `ActorSiniestro { sistema: Boolean!, nombre: String }`. El nombre del operador lo resuelve el BFF en
+    AUTH, de mejor esfuerzo: si AUTH no responde, `nombre` sale null y el detalle sale igual.
+  - `Resolucion` gana `resueltaPor: ActorSiniestro` (quién tomó la decisión de `tipo`), `derivadaPor: ActorSiniestro`
+    y `derivadaEn: DateTime` (si el caso pasó por un perito). Los tres son null en casos sin ese dato.
+  - CLAIMS suma `actor_usuario_id` y `derivada_por_usuario_id` a la resolución del expediente, sin migración (los
+    documentos ya los tenían).
+- Solo cambios aditivos. Afecta al frontend: la web (detalle del siniestro, W04-02).
+
 ## v0.66 — 2026-11-21
 
 - HU-M05 (KAN-35): sin GPS, el cliente escribe la dirección y la app la ubica (`ubicarDireccion`); las fotos llevan
