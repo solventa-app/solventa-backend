@@ -16,7 +16,8 @@
 #      y el evento no se puede perder). Suscripción push `claims-eventos-parametricos` hacia
 #      `POST /eventos/parametricos` de CLAIMS, con `dead_letter_policy` (5 intentos) hacia el tema
 #      `eventos-parametricos-dlq`. Publica únicamente el ACL Worker (escritor único del evento, regla 2
-#      de CLAUDE.md); consume únicamente CLAIMS.
+#      de CLAUDE.md); consume únicamente CLAIMS. La DLQ tiene la suscripción pull
+#      `eventos-parametricos-dlq-retencion` (7 días) para que lo que llega ahí no se descarte.
 #
 #      Referencia oficial de `dead_letter_policy`: https://cloud.google.com/pubsub/docs/handling-failures#dead_letter_topic
 #      y https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/pubsub_subscription#dead_letter_policy
@@ -152,6 +153,24 @@ resource "google_pubsub_topic" "eventos_parametricos_dlq" {
   project    = var.project_id
   name       = "eventos-parametricos-dlq"
   depends_on = [google_project_service.apis, google_project_service.push_apis]
+}
+
+# Sin una suscripción, Pub/Sub descarta lo que llega a un tema: los eventos que agotan sus 5 intentos
+# se perderían al llegar a la DLQ (hallazgo de la revisión de HA-ESC-002, 2026-11-21). Esta suscripción
+# pull no la consume ningún servicio: solo retiene esos mensajes 7 días (el máximo de Pub/Sub) para
+# revisarlos o reenviarlos a mano (`infra/README.md`). `expiration_policy` con `ttl = ""` evita que GCP
+# la borre tras 31 días sin lecturas, que es lo normal en una DLQ sana.
+resource "google_pubsub_subscription" "eventos_parametricos_dlq_retencion" {
+  count                      = var.crear_push ? 1 : 0
+  project                    = var.project_id
+  name                       = "eventos-parametricos-dlq-retencion"
+  topic                      = google_pubsub_topic.eventos_parametricos_dlq[0].id
+  ack_deadline_seconds       = 60
+  message_retention_duration = "604800s"
+
+  expiration_policy {
+    ttl = ""
+  }
 }
 
 resource "google_pubsub_subscription" "claims_eventos_parametricos" {

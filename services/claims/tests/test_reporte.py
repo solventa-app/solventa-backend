@@ -139,6 +139,28 @@ def test_crea_el_caso_pendiente_con_radicado_plazo_y_fotos_geoetiquetadas():
     assert bus.eventos[0]["datos"]["fotos"] == 2
 
 
+def test_sin_gps_las_fotos_llevan_el_punto_de_la_direccion_escrita():
+    """v0.66: la app manda el punto que ubicó `ubicarDireccion` y la nota lo dice."""
+    servicio, _, _ = _servicio()
+    foto = {
+        "archivo_id": "arch-a",
+        "tomada_en": AHORA - timedelta(hours=1),
+        "latitud": 4.6767,
+        "longitud": -74.0483,
+        "origen_ubicacion": "DIRECCION",
+    }
+    s = servicio.reportar(reporte(evidencias=[foto]))
+    evidencia = s["evidencias"][0]
+    assert evidencia["geoetiquetada"] is True and evidencia["latitud"] == 4.6767
+    assert evidencia["nota"] == "4.6767, -74.0483 · dirección escrita por el cliente (sin GPS)"
+
+
+def test_sin_origen_la_foto_sigue_siendo_del_gps():
+    servicio, _, _ = _servicio()
+    s = servicio.reportar(reporte())
+    assert s["evidencias"][0]["nota"] == "4.6767, -74.0483 · tomada en la app"
+
+
 def test_el_evento_cumple_su_esquema_y_no_lleva_datos_personales():
     from app.application.bus_eventos import BusEventosLog
 

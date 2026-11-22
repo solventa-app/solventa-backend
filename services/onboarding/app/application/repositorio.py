@@ -54,14 +54,15 @@ class RepositorioPostgres:
                 VALUES (%(id)s, %(token_hash)s, %(token_vence_en)s, %(jurisdiccion)s,
                         %(tipo_documento)s)
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 sesion,
             ).fetchone()
 
     def obtener(self, sesion_id: str) -> dict[str, Any] | None:
         with self._pool.connection() as conexion:
             return conexion.execute(
-                f"SELECT {_COLUMNAS} FROM sesiones_onboarding WHERE id = %(id)s", {"id": sesion_id}
+                f"SELECT {_COLUMNAS} FROM sesiones_onboarding WHERE id = %(id)s",  # nosec B608
+                {"id": sesion_id},
             ).fetchone()
 
     def obtener_por_usuario(self, usuario_id: str) -> dict[str, Any] | None:
@@ -71,7 +72,7 @@ class RepositorioPostgres:
                 f"""
                 SELECT {_COLUMNAS} FROM sesiones_onboarding WHERE usuario_id = %(u)s
                 ORDER BY creado_en DESC LIMIT 1
-                """,
+                """,  # nosec B608
                 {"u": usuario_id},
             ).fetchone()
 
@@ -82,7 +83,7 @@ class RepositorioPostgres:
                 f"""
                 SELECT {_COLUMNAS} FROM sesiones_onboarding
                 WHERE usuario_id = %(u)s AND estado = 'INICIADO' AND id <> %(x)s
-                """,
+                """,  # nosec B608
                 {"u": usuario_id, "x": excepto},
             ).fetchall()
 
@@ -115,7 +116,7 @@ class RepositorioPostgres:
                     UPDATE sesiones_onboarding SET {asignaciones}, actualizado_en = now()
                     WHERE id = %(_id)s AND estado = ANY(%(_estados)s)
                     RETURNING {_COLUMNAS}
-                    """,
+                    """,  # nosec B608
                     {**cambios, "_id": sesion_id, "_estados": list(estados)},
                 ).fetchone()
         except psycopg.errors.UniqueViolation as error:

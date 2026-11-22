@@ -65,14 +65,14 @@ class RepositorioCobrosPostgres:
                      %(moneda)s, %(token_medio_pago)s, 'cobrando')
                 ON CONFLICT (id_intento_cobro) DO NOTHING
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 {"id": cobro_id, "cliente_id": None, **orden, "token_medio_pago": token},
             ).fetchone()
             if fila is not None:
                 return self._a_cobro(fila), True
 
             fila_existente = conexion.execute(
-                f"SELECT {_COLUMNAS} FROM cobros WHERE id_intento_cobro = %(id_intento_cobro)s",
+                f"SELECT {_COLUMNAS} FROM cobros WHERE id_intento_cobro = %(id_intento_cobro)s",  # nosec B608
                 {"id_intento_cobro": orden["id_intento_cobro"]},
             ).fetchone()
             return self._a_cobro(fila_existente), False
@@ -88,7 +88,7 @@ class RepositorioCobrosPostgres:
                     actualizado_en = now()
                 WHERE id = %(id)s
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 {"id": cobro_id, "estado": estado, "referencia": referencia, "motivo": motivo},
             ).fetchone()
             return self._a_cobro(fila)
@@ -107,7 +107,7 @@ class RepositorioCobrosPostgres:
                     intentos = intentos + 1, actualizado_en = now()
                 WHERE id = %(id)s
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 {"id": cobro_id, "estado": estado, "referencia": referencia, "motivo": motivo},
             ).fetchone()
             return self._a_cobro(fila)
@@ -127,7 +127,7 @@ class RepositorioCobrosPostgres:
                     referencia = NULL, motivo = NULL, actualizado_en = now()
                 WHERE id = %(id)s AND estado = 'rechazado' AND reintentos_rechazo < %(maximo)s
                 RETURNING {_COLUMNAS}
-                """,
+                """,  # nosec B608
                 {"id": cobro_id, "maximo": maximo},
             ).fetchone()
             return self._a_cobro(fila) if fila is not None else None
@@ -143,7 +143,7 @@ class RepositorioCobrosPostgres:
                 WHERE estado = 'pendiente' AND intentos < %(max_intentos)s
                   AND origen <> 'INTERACTIVO'
                 ORDER BY creado_en ASC
-                """,
+                """,  # nosec B608
                 {"max_intentos": max_intentos},
             ).fetchall()
             return [self._a_cobro(fila) for fila in filas]
@@ -158,7 +158,7 @@ class RepositorioCobrosPostgres:
                 WHERE estado = 'cobrando' AND origen <> 'INTERACTIVO'
                   AND actualizado_en < now() - make_interval(secs => %(segundos)s)
                 ORDER BY creado_en ASC
-                """,
+                """,  # nosec B608
                 {"segundos": minutos * 60},
             ).fetchall()
             return [self._a_cobro(fila) for fila in filas]
@@ -166,7 +166,8 @@ class RepositorioCobrosPostgres:
     def obtener(self, cobro_id: str) -> dict | None:
         with self._pool.connection() as conexion:
             fila = conexion.execute(
-                f"SELECT {_COLUMNAS} FROM cobros WHERE id = %(id)s", {"id": cobro_id}
+                f"SELECT {_COLUMNAS} FROM cobros WHERE id = %(id)s",  # nosec B608
+                {"id": cobro_id},
             ).fetchone()
             return self._a_cobro(fila) if fila is not None else None
 
@@ -183,7 +184,7 @@ class RepositorioCobrosPostgres:
             WHERE (%(poliza_id)s::text IS NULL OR poliza_id = %(poliza_id)s)
               AND (%(estado)s::text IS NULL OR estado = %(estado)s)
             ORDER BY actualizado_en DESC
-        """
+        """  # nosec B608
         parametros: dict[str, object] = {"poliza_id": poliza_id, "estado": estado}
         if pagina is not None and tamano is not None and pagina > 0 and tamano > 0:
             query += " LIMIT %(limit)s OFFSET %(offset)s"

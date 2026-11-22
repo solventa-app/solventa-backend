@@ -13,10 +13,10 @@ financieros. Hoy hay tres capas, y solo falta una:
 
 | Capa | Estado | Dónde |
 |---|---|---|
-| Campos personales cifrados con AES-256-GCM y llave envuelta por Cloud KMS (llave `campos-personales`) | ✅ en AUTH, RISK, RATING, PAYMENTS, POLICY, ONBOARDING y CLAIMS | `cifrado.py` de cada servicio, `infra/kms.tf` |
+| Campos personales cifrados con AES-256-GCM y llave envuelta por Cloud KMS (llave `campos-personales`) | ✅ en AUTH, RISK, RATING, PAYMENTS, POLICY, ONBOARDING y CLAIMS (desde la v0.66 también la ubicación de cada foto de un siniestro; las guardadas antes se cifran con `POST /evidencias/_cifrar-legadas` de CLAIMS, una vez por ambiente) | `cifrado.py` de cada servicio, `infra/kms.tf` |
 | Bucket de archivos con CMEK (llave `archivos`) | ✅ | `infra/almacenamiento.tf` |
-| Disco de Cloud SQL con CMEK | ❌ `usar_cmek_sql = false` | `infra/staging.tfvars:20`, `infra/cloud-sql.tf` (`encryption_key_name`) |
-| Memorystore Redis con CMEK | ❌ `usar_cmek_redis = false` (Redis solo guarda cachés derivadas y desechables) | `infra/staging.tfvars:21` |
+| Disco de Cloud SQL con CMEK | ⏳ `usar_cmek_sql = true` desde el 2026-11-21; se aplica en la ventana de `docs/guia-activar-cmek.md` | `infra/staging.tfvars:20`, `infra/cloud-sql.tf` (`encryption_key_name`) |
+| Memorystore Redis con CMEK | ⏳ `usar_cmek_redis = true` desde el 2026-11-21; toma la llave en el siguiente encendido (Redis solo guarda cachés derivadas y desechables) | `infra/staging.tfvars:21` |
 | MongoDB Atlas M0 (RISK, RATING, CLAIMS) | No admite CMEK (exige M10, ~USD 57/mes). Lo cubre el cifrado por campo | `infra/README.md` |
 
 **Por qué Cloud SQL no se activó con una bandera.** Cloud SQL solo acepta `encryption_key_name` al **crear** la

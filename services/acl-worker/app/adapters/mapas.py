@@ -193,7 +193,7 @@ class AdaptadorMapasSinToken:
 def mapas_desde_entorno() -> PuertoMapas:
     token = os.environ.get("MAPBOX_TOKEN", "").strip()
     if token == MARCADOR_SECRETO:
-        token = ""
+        token = ""  # nosec B105
     if os.environ.get("MAPAS_PROVEEDOR", "").strip().lower() == "mapbox":
         if not token:
             LOG.warning("MAPAS_PROVEEDOR=mapbox sin token: rutas no disponibles")

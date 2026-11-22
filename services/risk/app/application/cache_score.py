@@ -75,7 +75,7 @@ class CacheScore:
         payload = valor.como_dict() if isinstance(valor, ScoreCacheado) else valor
         try:
             self._almacen.set(clave, json.dumps(payload), ex=self._ttl_segundos)
-        except Exception:
+        except Exception:  # nosec B110
             pass
 
     def borrar_perfil(self, cliente_id: str, perfil_version: int, version_reglas: str) -> None:
@@ -87,7 +87,7 @@ class CacheScore:
                 clave_score(cliente_id, version_reglas),
                 clave_oferta(cliente_id, perfil_version, version_reglas),
             )
-        except Exception:
+        except Exception:  # nosec B110
             pass
 
     def guardar_score_cliente(

@@ -572,6 +572,17 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.66 — 2026-11-21
+
+- HU-M05 (KAN-35): sin GPS, el cliente escribe la dirección y la app la ubica (`ubicarDireccion`); las fotos llevan
+  ese punto. `FotoReporteInput` gana `origenUbicacion: OrigenUbicacion! = GPS` (el enum de la v0.50) para que la mesa
+  sepa si la geoetiqueta es del GPS o de la dirección escrita. Opcional: las versiones de la app ya instaladas no lo
+  mandan y siguen como GPS.
+- HA-SEG-002: CLAIMS guarda la latitud, la longitud y la nota de cada evidencia cifradas por campo
+  (`ubicacion_cifrada`), sin migración de esquema; `POST /evidencias/_cifrar-legadas` cifra las que ya existían.
+  No cambia lo que devuelve el BFF.
+- Solo cambios aditivos. Afecta al frontend: el móvil (manda `origenUbicacion: DIRECCION` en las fotos sin GPS).
+
 ## v0.65 — 2026-11-21
 
 - HU-M06 (KAN-36): al pedir asistencia en el móvil, el cliente elige su póliza de **auto**. Las hipotecarias

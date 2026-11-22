@@ -47,7 +47,7 @@ class CacheFuentes:
         valor = json.dumps({"datos": datos.datos, "capturado_en": datos.capturado_en.isoformat()})
         try:
             self._almacen.set(self._clave(fuente, cliente_id), valor, ex=self._ttl_segundos)
-        except Exception:
+        except Exception:  # nosec B110
             # Cache-aside: un fallo de Redis nunca debe tumbar la respuesta ya
             # resuelta al llamador (regla de arquitectura #4).
             pass

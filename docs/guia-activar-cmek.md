@@ -86,9 +86,18 @@ FECHA=$(date +%F)
      --format='value(customerManagedKey)'   # solo si Redis está encendido
    ```
 
-8. **Guardar la evidencia** en `docs/evidencias/HA-SEG-002-cmek-<fecha>.md`: la salida del paso 7, el Newman de
+8. **Cifrar las evidencias antiguas de CLAIMS** (v0.66, una sola vez por ambiente; es idempotente):
+
+   ```bash
+   URL_CLAIMS=$(gcloud run services describe claims --region=us-central1 --project="$PROYECTO" --format='value(status.url)')
+   curl -fsS -X POST "$URL_CLAIMS/evidencias/_cifrar-legadas" \
+     -H "Authorization: Bearer $(gcloud auth print-identity-token --audiences="$URL_CLAIMS")"
+   ```
+
+   Responde `{"cifradas": N}`; una segunda llamada responde `0`.
+9. **Guardar la evidencia** en `docs/evidencias/HA-SEG-002-cmek-<fecha>.md`: la salida del paso 7, el Newman de
    regresión contra staging (`hu-w01`, `hu-w03`, `socios-w07`) y la hora de inicio y fin de la ventana.
-9. **Apagar** con *Costos staging → apagar* si no se va a usar staging.
+10. **Apagar** con *Costos staging → apagar* si no se va a usar staging.
 
 ## Si algo sale mal
 

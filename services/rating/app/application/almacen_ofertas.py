@@ -50,7 +50,7 @@ class AlmacenOfertas:
         }
         try:
             self._almacen.set(_clave(oferta["id"]), json.dumps(valor), ex=self._vigencia_segundos)
-        except Exception:
+        except Exception:  # nosec B110
             pass  # cache-aside: no se rompe la oferta ya calculada por un fallo de Redis
 
     def obtener(self, oferta_id: str) -> dict[str, Any] | None:

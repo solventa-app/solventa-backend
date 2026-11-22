@@ -183,7 +183,7 @@ class RepositorioSociosPostgres:
             """,
             {"id": socio_id, "nombre": nombre, "tasa": tasa},
         )
-        assert fila is not None
+        assert fila is not None  # nosec B101
         return fila
 
     def credencial_por_client_id(self, client_id: str) -> dict | None:
@@ -224,7 +224,7 @@ class RepositorioSociosPostgres:
                 "clave": clave_cifrada,
             },
         )
-        assert fila is not None
+        assert fila is not None  # nosec B101
         return fila
 
     def rotar_credencial(
@@ -253,7 +253,7 @@ class RepositorioSociosPostgres:
                     "clave": clave_cifrada,
                 },
             ).fetchone()
-        assert fila is not None
+        assert fila is not None  # nosec B101
         return dict(fila)
 
     def registrar_fallo(self, credencial_id: str, bloquear_hasta: datetime | None) -> None:
@@ -429,7 +429,8 @@ class ServicioSocios:
         if credencial["estado_socio"] != "ACTIVO":
             raise CredencialesSocioInvalidas(MENSAJE_CREDENCIALES)
         self._repo.registrar_exito(credencial["id"])
-        logger.info(
+        # Semgrep ve "token" en el mensaje, pero solo se registra un id opaco del socio.
+        logger.info(  # nosemgrep
             "token de socio emitido socio=%s entorno=%s",
             id_opaco(credencial["socio_id"]),
             credencial["entorno"],

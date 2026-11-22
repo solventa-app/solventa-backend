@@ -1471,7 +1471,7 @@ class CuentaOnboardingInput:
 FINALIDAD_ONBOARDING = "onboarding-biometrico"
 CANAL_APP = "app"
 MENSAJES_ONBOARDING = {
-    "TOKEN_INVALIDO": "Tu verificación venció o no es válida. Empieza de nuevo.",
+    "TOKEN_INVALIDO": "Tu verificación venció o no es válida. Empieza de nuevo.",  # nosec B105
     "SESION_NO_ENCONTRADA": "Tu verificación venció o no es válida. Empieza de nuevo.",
     "SIN_CONSENTIMIENTO": "Primero acepta el tratamiento de tus datos biométricos.",
     "ESTADO_INVALIDO": "Este paso ya no aplica a tu verificación.",
@@ -1869,6 +1869,14 @@ class UbicacionReporteInput:
     longitud: float
 
 
+@strawberry.enum
+class OrigenUbicacion(Enum):
+    """v0.50 (HU-M06, B4): GPS del teléfono o dirección escrita y ubicada (`ubicarDireccion`)."""
+
+    GPS = "GPS"
+    DIRECCION = "DIRECCION"
+
+
 @strawberry.input
 class FotoReporteInput:
     archivo_id: strawberry.ID
@@ -1876,6 +1884,8 @@ class FotoReporteInput:
     # Donde se tomó la foto (GPS del teléfono); null si el cliente no dio permiso.
     latitud: float | None = None
     longitud: float | None = None
+    # v0.66 (HU-M05): DIRECCION = sin GPS, el punto de la dirección escrita y ubicada.
+    origen_ubicacion: OrigenUbicacion = OrigenUbicacion.GPS
 
 
 @strawberry.input
@@ -2259,14 +2269,6 @@ class CodigoErrorAsistencia(Enum):
     DATOS_INVALIDOS = "DATOS_INVALIDOS"
     NO_ENCONTRADA = "NO_ENCONTRADA"
     POLIZA_NO_VALIDA = "POLIZA_NO_VALIDA"  # v0.65
-
-
-@strawberry.enum
-class OrigenUbicacion(Enum):
-    """v0.50 (HU-M06, B4): GPS del teléfono o dirección escrita y ubicada (`ubicarDireccion`)."""
-
-    GPS = "GPS"
-    DIRECCION = "DIRECCION"
 
 
 @strawberry.enum
@@ -4280,7 +4282,7 @@ class Mutation:
                                 sesion=_sesion(sesion),
                                 onboarding=_onboarding_de(actual),
                             )
-                except Exception:
+                except Exception:  # nosec B110
                     pass
                 # Si es otra cuenta diferente o las credenciales no corresponden:
                 return _error_onboarding("SESION_CON_CUENTA")
@@ -4460,6 +4462,7 @@ class Mutation:
                     "tomada_en": f.tomada_en.isoformat(),
                     "latitud": f.latitud,
                     "longitud": f.longitud,
+                    "origen_ubicacion": f.origen_ubicacion.value,
                 }
                 for f in entrada.fotos
             ],

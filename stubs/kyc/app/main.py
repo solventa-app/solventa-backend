@@ -147,9 +147,9 @@ def create_app() -> FastAPI:
 
     async def _esperar_respuesta(modo: str) -> None:
         if modo == "lento":
-            await asyncio.sleep(random.uniform(LATENCIA_LENTA_MIN_MS, LATENCIA_LENTA_MAX_MS) / 1000)
+            await asyncio.sleep(random.uniform(LATENCIA_LENTA_MIN_MS, LATENCIA_LENTA_MAX_MS) / 1000)  # nosec B311
         else:
-            await asyncio.sleep(random.uniform(LATENCIA_SANA_MIN_MS, LATENCIA_SANA_MAX_MS) / 1000)
+            await asyncio.sleep(random.uniform(LATENCIA_SANA_MIN_MS, LATENCIA_SANA_MAX_MS) / 1000)  # nosec B311
 
     @app.get("/health", tags=["operacion"])
     def health() -> dict[str, str]:

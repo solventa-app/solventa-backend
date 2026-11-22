@@ -54,7 +54,7 @@ def _credenciales_locales() -> Any:
     return service_account.Credentials(
         signer=crypt.RSASigner.from_string(pem),
         service_account_email=CUENTA_LOCAL,
-        token_uri="https://oauth2.googleapis.com/token",
+        token_uri="https://oauth2.googleapis.com/token",  # nosec B106
     )
 
 

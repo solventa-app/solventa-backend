@@ -92,9 +92,7 @@ def test_sobre_de_pubsub_se_decodifica_antes_de_validar():
         coberturas_vuelo={("AV9340", "2026-11-11"): [_cobertura_vuelo()]}
     )
     with _cliente(policy=policy) as cliente:
-        respuesta = cliente.post(
-            "/eventos/parametricos", json={"message": {"data": data_b64}}
-        )
+        respuesta = cliente.post("/eventos/parametricos", json={"message": {"data": data_b64}})
     assert respuesta.status_code == 200
     assert respuesta.json()["creados"] == 1
 

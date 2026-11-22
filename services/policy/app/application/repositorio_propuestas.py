@@ -87,7 +87,7 @@ class RepositorioPropuestasPostgres:
     def obtener(self, propuesta_id: str) -> dict[str, Any] | None:
         with self._pool.connection() as conexion:
             fila = conexion.execute(
-                f"SELECT {_COLUMNAS}, {_POLIZA_ID} FROM propuestas WHERE id = %(id)s",
+                f"SELECT {_COLUMNAS}, {_POLIZA_ID} FROM propuestas WHERE id = %(id)s",  # nosec B608
                 {"id": propuesta_id},
             ).fetchone()
         return self._a_propuesta(fila) if fila else None
@@ -95,7 +95,7 @@ class RepositorioPropuestasPostgres:
     def obtener_por_oferta(self, oferta_id: str) -> dict[str, Any] | None:
         with self._pool.connection() as conexion:
             fila = conexion.execute(
-                f"SELECT {_COLUMNAS}, {_POLIZA_ID} FROM propuestas WHERE oferta_id = %(oferta_id)s",
+                f"SELECT {_COLUMNAS}, {_POLIZA_ID} FROM propuestas WHERE oferta_id = %(oferta_id)s",  # nosec B608
                 {"oferta_id": oferta_id},
             ).fetchone()
         return self._a_propuesta(fila) if fila else None
@@ -126,7 +126,7 @@ class RepositorioPropuestasPostgres:
                      %(tasa_comision)s, %(producto)s)
                 ON CONFLICT (oferta_id) DO NOTHING
                 RETURNING {_COLUMNAS}, NULL::text AS poliza_id
-                """,
+                """,  # nosec B608
                 {
                     "id": propuesta_id,
                     "oferta_id": datos["oferta_id"],
@@ -150,7 +150,7 @@ class RepositorioPropuestasPostgres:
             if fila is not None:
                 return self._a_propuesta(fila), True
             existente = conexion.execute(
-                f"SELECT {_COLUMNAS}, {_POLIZA_ID} FROM propuestas WHERE oferta_id = %(oferta_id)s",
+                f"SELECT {_COLUMNAS}, {_POLIZA_ID} FROM propuestas WHERE oferta_id = %(oferta_id)s",  # nosec B608
                 {"oferta_id": datos["oferta_id"]},
             ).fetchone()
         return self._a_propuesta(existente), False
@@ -224,7 +224,7 @@ class RepositorioPropuestasPostgres:
             ).fetchone()
             if fila is None:
                 existente = conexion.execute(
-                    f"SELECT {_COLUMNAS_POLIZA} FROM polizas WHERE propuesta_id = %(id)s",
+                    f"SELECT {_COLUMNAS_POLIZA} FROM polizas WHERE propuesta_id = %(id)s",  # nosec B608
                     {"id": propuesta_id},
                 ).fetchone()
                 return existente, False
@@ -236,7 +236,7 @@ class RepositorioPropuestasPostgres:
                     (%(id)s, %(propuesta_id)s, nextval('polizas_numero_seq'), %(cliente_id)s,
                      %(vigencia_desde)s, %(vigencia_hasta)s)
                 RETURNING {_COLUMNAS_POLIZA}
-                """,
+                """,  # nosec B608
                 {
                     "id": str(uuid.uuid4()),
                     "propuesta_id": propuesta_id,
@@ -329,7 +329,8 @@ class RepositorioPropuestasPostgres:
         """La póliza con la prima, la cobertura y el dueño de su propuesta."""
         with self._pool.connection() as conexion:
             poliza = conexion.execute(
-                f"SELECT {_COLUMNAS_POLIZA} FROM polizas WHERE id = %(id)s", {"id": poliza_id}
+                f"SELECT {_COLUMNAS_POLIZA} FROM polizas WHERE id = %(id)s",  # nosec B608
+                {"id": poliza_id},
             ).fetchone()
         if poliza is None:
             return None
@@ -373,7 +374,7 @@ class RepositorioPropuestasPostgres:
         with self._pool.connection() as conexion:
             fila = conexion.execute(
                 f"SELECT {_COLUMNAS_EVIDENCIA} FROM evidencias_firma "
-                "WHERE propuesta_id = %(propuesta_id)s",
+                "WHERE propuesta_id = %(propuesta_id)s",  # nosec B608
                 {"propuesta_id": propuesta_id},
             ).fetchone()
         return fila
@@ -395,7 +396,7 @@ class RepositorioPropuestasPostgres:
                      %(referencia_proveedor)s, %(firmada_en)s)
                 ON CONFLICT (propuesta_id) DO NOTHING
                 RETURNING {_COLUMNAS_EVIDENCIA}
-                """,
+                """,  # nosec B608
                 {
                     **{k: v for k, v in evidencia.items() if k != "documento"},
                     "propuesta_id": propuesta_id,
@@ -412,7 +413,7 @@ class RepositorioPropuestasPostgres:
             else:
                 fila = conexion.execute(
                     f"SELECT {_COLUMNAS_EVIDENCIA} FROM evidencias_firma "
-                    "WHERE propuesta_id = %(propuesta_id)s",
+                    "WHERE propuesta_id = %(propuesta_id)s",  # nosec B608
                     {"propuesta_id": propuesta_id},
                 ).fetchone()
         return fila, creada
@@ -423,7 +424,7 @@ class RepositorioPropuestasPostgres:
         with self._pool.connection() as conexion:
             return conexion.execute(
                 f"SELECT {_COLUMNAS_DOCUMENTO} FROM documentos_firmados "
-                "WHERE propuesta_id = %(propuesta_id)s AND tipo = %(tipo)s",
+                "WHERE propuesta_id = %(propuesta_id)s AND tipo = %(tipo)s",  # nosec B608
                 {"propuesta_id": propuesta_id, "tipo": tipo},
             ).fetchone()
 
@@ -465,7 +466,7 @@ class RepositorioPropuestasPostgres:
         with self._pool.connection() as conexion:
             return conexion.execute(
                 f"SELECT {_COLUMNAS_DOCUMENTO} FROM documentos_firmados "
-                "WHERE propuesta_id = %(propuesta_id)s ORDER BY creado_en",
+                "WHERE propuesta_id = %(propuesta_id)s ORDER BY creado_en",  # nosec B608
                 {"propuesta_id": propuesta_id},
             ).fetchall()
 
@@ -618,7 +619,7 @@ class RepositorioPropuestasPostgres:
                      %(imagen_firma_archivo_id)s)
                 ON CONFLICT (propuesta_id) DO NOTHING
                 RETURNING {_COLUMNAS_EVIDENCIA}
-                """,
+                """,  # nosec B608
                 {
                     **{k: v for k, v in evidencia.items() if k != "documento"},
                     "propuesta_id": propuesta_id,
@@ -639,7 +640,7 @@ class RepositorioPropuestasPostgres:
             else:
                 fila = conexion.execute(
                     f"SELECT {_COLUMNAS_EVIDENCIA} FROM evidencias_firma "
-                    "WHERE propuesta_id = %(propuesta_id)s",
+                    "WHERE propuesta_id = %(propuesta_id)s",  # nosec B608
                     {"propuesta_id": propuesta_id},
                 ).fetchone()
         return fila, creada
@@ -750,7 +751,8 @@ class RepositorioPropuestasPostgres:
             return {}
         with self._pool.connection() as conexion:
             filas = conexion.execute(
-                f"SELECT {_COLUMNAS_POLIZA} FROM polizas WHERE id = ANY(%(ids)s)", {"ids": ids}
+                f"SELECT {_COLUMNAS_POLIZA} FROM polizas WHERE id = ANY(%(ids)s)",  # nosec B608
+                {"ids": ids},
             ).fetchall()
         return {f["id"]: f for f in filas}
 

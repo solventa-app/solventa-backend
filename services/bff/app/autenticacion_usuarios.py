@@ -26,7 +26,7 @@ ALGORITMO_JWT = "HS256"
 MODOS = ("opcional", "obligatoria")
 
 MENSAJE_SIN_SESION = "Debes iniciar sesión."
-MENSAJE_TOKEN_INVALIDO = "Tu sesión no es válida o venció. Inicia sesión de nuevo."
+MENSAJE_TOKEN_INVALIDO = "Tu sesión no es válida o venció. Inicia sesión de nuevo."  # nosec B105
 MENSAJE_SIN_PERMISO = "No tienes permiso para esta operación."
 MENSAJE_VERIFICACION_PENDIENTE = "Estamos verificando tu identidad. Podrás usar esto al terminar."
 SCOPE_VERIFICACION_PENDIENTE = "verificacion-pendiente"
