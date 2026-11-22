@@ -229,3 +229,32 @@ def test_clave_cambiada_avisa_y_no_trae_datos_personales() -> None:
 
     asunto, cuerpo, texto = componer("clave-cambiada", {})
     assert "contraseña" in cuerpo and "{" not in cuerpo + texto
+
+
+# ---------- KAN-26: el correo en el idioma de quien hizo la acción
+
+
+def test_en_ingles_el_asunto_y_el_cuerpo_salen_en_ingles() -> None:
+    adaptador, pedidos = _adaptador(lambda r: httpx.Response(200, json={"id": "re-1"}))
+
+    adaptador.enviar(_solicitud(idioma="en"))
+
+    cuerpo = json.loads(pedidos[0].content)
+    assert cuerpo["subject"] == "Your Solventa policy SOL-2026-000001 has been issued"
+    assert "The PDF document is attached" in cuerpo["text"]
+
+
+def test_todas_las_plantillas_tienen_su_version_en_ingles() -> None:
+    from app.adapters.correo_resend import PLANTILLAS, PLANTILLAS_EN
+
+    assert set(PLANTILLAS_EN) == set(PLANTILLAS)
+    for plantilla in PLANTILLAS:
+        asunto, html, texto = componer(
+            plantilla, {"codigo": "123456", "minutos": "10", "enlace": "https://x"}, "en"
+        )
+        assert "Solventa" in asunto and "{" not in html + texto
+
+
+def test_un_idioma_desconocido_sale_en_espanol() -> None:
+    asunto, *_ = componer("clave-cambiada", {}, "fr")
+    assert asunto == "Cambiaste tu contraseña de Solventa"

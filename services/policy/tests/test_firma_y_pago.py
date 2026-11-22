@@ -788,3 +788,22 @@ def test_http_titular_firma_paga_y_revoca(e) -> None:
     assert confirmado.status_code == 200
     assert confirmado.json()["poliza"]["numero"].startswith("SOL-")
     assert revocado.status_code == 204
+
+
+# ---------- KAN-26: los correos en el idioma de quien hace la acción
+
+
+def test_el_codigo_y_el_enlace_salen_en_el_idioma_del_asesor(e) -> None:
+    propuesta = e.aceptar_como_asesor()
+
+    e.servicio.enviar_codigo(propuesta["id"], idioma="en")
+    e.servicio.verificar_codigo(propuesta["id"], e.codigo_enviado())
+    e.servicio.emitir(propuesta["id"], "ASESOR", idioma="en")
+    e.servicio.reenviar_enlace(propuesta["id"])
+
+    idiomas = [(s.plantilla, s.idioma) for s in e.notificador.solicitudes]
+    assert idiomas == [
+        ("codigo-verificacion", "en"),
+        ("enlace-firma", "en"),
+        ("enlace-firma", "es"),
+    ]

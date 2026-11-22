@@ -66,6 +66,7 @@ class SolicitudNotificacion(BaseModel):
     correo: str | None = None
     telefono: str | None = None
     adjuntos: list[Adjunto] = []
+    idioma: str = "es"  # KAN-26: el idioma del correo
 
 
 def _huella(destino: str | None) -> str | None:
@@ -154,6 +155,7 @@ def create_app() -> FastAPI:
                     "plantilla": body.plantilla,
                     "destinatario_id": body.destinatario_id,
                     "datos": body.datos,
+                    "idioma": body.idioma,
                     "canal": "correo" if body.correo else "sms" if body.telefono else None,
                     "destino_huella": _huella(body.correo or body.telefono),
                     "adjuntos": resumen_adjuntos,

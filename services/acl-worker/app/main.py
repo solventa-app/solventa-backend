@@ -312,6 +312,8 @@ class SolicitudNotificacionRequest(BaseModel):
     correo: str | None = None
     telefono: str | None = None
     adjuntos: list[AdjuntoRequest] = []
+    # KAN-26: el idioma del correo. Sin él, o con uno que no se conoce, sale en español.
+    idioma: str = "es"
 
 
 class ResultadoNotificacionResponse(BaseModel):
@@ -1059,6 +1061,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 correo=body.correo or None,
                 telefono=body.telefono or None,
                 adjuntos=adjuntos,
+                idioma="en" if body.idioma.strip().lower().startswith("en") else "es",
             )
         )
         return ResultadoNotificacionResponse(

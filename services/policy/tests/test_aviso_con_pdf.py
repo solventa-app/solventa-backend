@@ -268,3 +268,23 @@ def test_los_logs_no_llevan_el_contacto_el_nombre_ni_el_pdf(caplog) -> None:
     for dato in (CORREO, "maria.gomez", TELEFONO, "3001234567", NOMBRE, "Gómez", pdf_b64):
         assert dato not in caplog.text
     assert "aviso omitido motivo=SIN_CONTACTO" in caplog.text  # sí se deja el rastro, sin datos
+
+
+# ---------- KAN-26: el correo en el idioma de la firma
+
+
+def test_el_correo_de_poliza_emitida_sale_en_el_idioma_con_que_se_firmo() -> None:
+    servicio, repositorio, *_, notificador, pid = _armar()
+    repositorio._evidencias[pid]["presentacion"] = {"idioma": "en", "moneda": "COP"}
+
+    servicio.emitir(pid)
+
+    assert notificador.solicitudes[0].idioma == "en"
+
+
+def test_sin_presentacion_el_correo_sale_en_espanol() -> None:
+    servicio, *_, notificador, pid = _armar()
+
+    servicio.emitir(pid)
+
+    assert notificador.solicitudes[0].idioma == "es"

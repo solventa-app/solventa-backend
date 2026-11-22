@@ -52,6 +52,8 @@ class SolicitudNotificacion:
     correo: str | None = None
     telefono: str | None = None
     adjuntos: list[AdjuntoAviso] = field(default_factory=list)
+    # KAN-26: el idioma del correo (es o en), el que tenía activo quien hizo la acción.
+    idioma: str = "es"
 
 
 @dataclass
@@ -110,6 +112,9 @@ class ClienteAcl:
                 "destinatario_id": solicitud.destinatario_id,
                 "datos": solicitud.datos,
             }
+            # En español el cuerpo es el de siempre: el ACL asume español sin `idioma`.
+            if solicitud.idioma != "es":
+                cuerpo_envio["idioma"] = solicitud.idioma
             if solicitud.correo:
                 cuerpo_envio["correo"] = solicitud.correo
             if solicitud.telefono:

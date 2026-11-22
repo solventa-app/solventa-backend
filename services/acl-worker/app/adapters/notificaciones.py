@@ -33,6 +33,8 @@ class AdaptadorNotificaciones:
             "destinatario_id": solicitud.destinatario_id,
             "datos": solicitud.datos,
         }
+        if solicitud.idioma != "es":
+            cuerpo["idioma"] = solicitud.idioma
         if solicitud.correo:
             cuerpo["correo"] = solicitud.correo
         if solicitud.telefono:

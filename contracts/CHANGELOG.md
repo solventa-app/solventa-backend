@@ -881,3 +881,19 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   fijo; no cambia la prima). Copias nuevas en `services/policy/app/` con `scripts/sincronizar_fuentes.py`.
 - Afecta al frontend: no. El móvil ya muestra la cobertura en «Mi cobertura» (`miCoberturaParametrica`, v0.48); la
   copia de ciudades del móvil puede ignorar los campos nuevos.
+
+## Cabeceras — 2026-11-22 (sin cambio de esquema ni versión nueva)
+
+- KAN-26 (títulos, idioma y moneda de los documentos): los PDF de la póliza y los correos salen en el idioma que tiene
+  activo quien hace la acción. El BFF ya leía `Accept-Language` (es o en); ahora también lee **`X-Moneda`** (la moneda
+  del selector de la web, p. ej. `USD`) en `/graphql/*` y en `GET /propuestas/{id}/contrato.pdf`.
+  - El contrato antes de firmar sale en el idioma y la moneda de quien lo abre. Al firmar (`firmarPorEnlace`), el BFF
+    pasa a POLICY el idioma, la moneda y la tasa de referencia del día (`/tasas-cambio` del ACL); POLICY los guarda con
+    la evidencia (migración `0012`) y con ellos genera el contrato firmado, la póliza y el correo de póliza emitida, que
+    no cambian después. En otra moneda cada monto lleva su equivalente en COP y el documento dice la tasa y su fecha;
+    la prima se sigue calculando y cobrando en COP. Sin `X-Moneda`, o si el ACL no da la tasa, todo sale en COP.
+  - Los correos (`codigo-verificacion`, `enlace-firma`, `codigo-registro`, `restablecer-clave`, `clave-cambiada` y
+    `poliza-emitida`) tienen versión en inglés en el ACL Worker (`idioma` opcional en `POST /notificaciones/enviar`;
+    sin él, español). La API de socios usa el `Accept-Language` del socio.
+- Afecta al frontend: sí, opcional. La web debe mandar `X-Moneda` (y el `Accept-Language` que ya manda) en GraphQL y al
+  pedir el PDF; sin la cabecera nada se rompe y los documentos salen en COP.

@@ -693,7 +693,7 @@ def construir_router() -> APIRouter:
         if socio.es_prueba:
             return await modo_prueba(request).codigo(socio, propuesta_id)
         datos = await estado(request).servicio_firma_pago.enviar_codigo(
-            socio.como_usuario(), propuesta_id, body.correo
+            socio.como_usuario(), propuesta_id, body.correo, idioma=idioma(request)
         )
         if isinstance(datos, ErrorFlujoDatos):
             raise error_de_flujo(datos)
@@ -721,7 +721,9 @@ def construir_router() -> APIRouter:
     async def emitir(propuesta_id: str, request: Request, socio: SocioPropuestas) -> dict:
         if socio.es_prueba:
             return await modo_prueba(request).emitir(socio, propuesta_id, idioma(request))
-        datos = await estado(request).servicio_firma_pago.emitir(socio.como_usuario(), propuesta_id)
+        datos = await estado(request).servicio_firma_pago.emitir(
+            socio.como_usuario(), propuesta_id, idioma=idioma(request)
+        )
         if isinstance(datos, ErrorFlujoDatos):
             raise error_de_flujo(datos)
         enlace = datos.get("enlace")
@@ -745,7 +747,7 @@ def construir_router() -> APIRouter:
         if socio.es_prueba:
             return await modo_prueba(request).reenviar(socio, propuesta_id)
         datos = await estado(request).servicio_firma_pago.reenviar_enlace(
-            socio.como_usuario(), propuesta_id
+            socio.como_usuario(), propuesta_id, idioma=idioma(request)
         )
         if isinstance(datos, ErrorFlujoDatos):
             raise error_de_flujo(datos)

@@ -96,7 +96,7 @@ def test_en_ambiente_de_pruebas_avisa_que_no_tiene_validez() -> None:
 def test_el_texto_fijo_lleva_sus_tildes() -> None:
     texto = _pdf().decode("latin-1")
 
-    assert "con la cuota de tu crédito" in texto
+    assert "Con la cuota de tu crédito" in texto
     assert "firmó" in texto
     assert "electrónica" in texto
 
@@ -159,7 +159,7 @@ PROPUESTA_AUTO = {
 def test_la_poliza_de_auto_lleva_el_vehiculo_y_las_coberturas() -> None:
     texto = _pdf(propuesta=PROPUESTA_AUTO).decode("latin-1")
     for esperado in (
-        "Seguro de autom",
+        "Seguro Vehicular",
         "MAZDA 3 GRAND TOURING",
         "ABC***",
         "Responsabilidad civil extracontractual",
@@ -175,7 +175,7 @@ def test_el_contrato_borrador_de_auto_habla_del_seguro_de_autos() -> None:
     from app.application.documento_poliza import generar_borrador
 
     texto = generar_borrador(PROPUESTA_AUTO).decode("latin-1")
-    assert "seguro de autom" in texto and "Coberturas" in texto
+    assert "seguro vehicular" in texto and "Coberturas" in texto
     assert "cr\xe9dito hipotecario" not in texto
 
 
@@ -189,3 +189,95 @@ def test_el_contrato_lleva_las_condiciones_generales_numeradas_y_el_pie_de_pagin
     assert "Cobertura paramétrica de clima" in texto  # solo en auto
     assert "Página 1 de" in texto
     assert "ambiente de pruebas" not in texto
+
+
+# ---------- KAN-26: títulos con el producto, idioma y moneda ----------
+
+USD = {"idioma": "es", "moneda": "USD", "cop_por_unidad": "4000", "fecha_tasa": "2026-11-20"}
+
+
+def _titulo_interno(pdf: bytes) -> str:
+    """El `/Title` de los metadatos: texto Latin-1 entre paréntesis o UTF-16 en hexadecimal."""
+    import re  # noqa: PLC0415
+
+    hexa = re.search(rb"/Title <feff([0-9a-f]+)>", pdf)
+    if hexa:
+        return bytes.fromhex(hexa.group(1).decode()).decode("utf-16-be")
+    plano = re.search(rb"/Title \((.*?)\)\n", pdf)
+    assert plano is not None
+    return plano.group(1).replace(b"\\", b"").decode("latin-1")
+
+
+def test_los_titulos_llevan_el_producto_en_espanol() -> None:
+    from app.application.documento_poliza import generar_borrador, generar_contrato_firmado
+
+    poliza = _pdf(ambiente_pruebas=False)
+    texto = poliza.decode("latin-1")
+    assert "Póliza de Seguro de Vida Hipotecario No. SOL-2026-000001" in texto
+    assert "en trámite" not in texto
+    borrador = generar_borrador(PROPUESTA_AUTO, ambiente_pruebas=False).decode("latin-1")
+    assert "Contrato de Seguro Vehicular" in borrador
+    firmado = generar_contrato_firmado(
+        {**PROPUESTA, "cliente_id": "c" * 20}, {**EVIDENCIA, "version_documento": "v1"}
+    ).decode("latin-1")
+    assert "Firmado el 22/10/2026" in firmado
+
+
+def test_el_titulo_interno_lleva_el_producto_y_sus_tildes() -> None:
+    from app.application.documento_poliza import Presentacion, generar_borrador
+
+    assert _titulo_interno(_pdf()) == "Póliza SOL-2026-000001 · Seguro de Vida Hipotecario"
+    assert _titulo_interno(generar_borrador(PROPUESTA_AUTO)) == (
+        "Contrato de Seguro Vehicular (borrador)"
+    )
+    en_ingles = generar_borrador(PROPUESTA, presentacion=Presentacion.desde({"idioma": "en"}))
+    assert _titulo_interno(en_ingles) == "Mortgage Life Insurance Contract (draft)"
+
+
+def test_en_ingles_todo_el_documento_sale_en_ingles() -> None:
+    from app.application.documento_poliza import Presentacion, generar_borrador
+
+    texto = generar_borrador(
+        PROPUESTA_AUTO, ambiente_pruebas=False, presentacion=Presentacion.desde({"idioma": "en"})
+    ).decode("latin-1")
+    for esperado in (
+        "Vehicle Insurance Contract",
+        "Insured vehicle",
+        "Third-party liability",
+        "General terms and conditions",
+        "article 1068 of the Colombian Commercial Code",
+        "Page 1 of",
+        "$1,000,000,000 COP",
+    ):
+        assert esperado in texto
+    for no_esperado in ("Condiciones generales", "Vehículo asegurado", "Página"):
+        assert no_esperado not in texto
+
+
+def test_en_otra_moneda_cada_monto_lleva_su_equivalente_en_cop_y_la_tasa() -> None:
+    from app.application.documento_poliza import Presentacion
+
+    texto = _pdf(presentacion=Presentacion.desde(USD)).decode("latin-1")
+    assert "$ 46,25 USD" in texto  # 185.000 COP / 4.000
+    assert "Equivale a $ 185.000 COP" in texto
+    assert "tasa de referencia del 20/11/2026: 1 USD = $ 4.000 COP" in texto
+    assert "se cobra en COP" in texto
+
+    en_ingles = _pdf(presentacion=Presentacion.desde({**USD, "idioma": "en"})).decode("latin-1")
+    assert "$46.25 USD" in en_ingles and "Equivalent to $185,000 COP" in en_ingles
+
+
+def test_en_cop_no_hay_equivalencia_ni_tasa() -> None:
+    texto = _pdf().decode("latin-1")
+    assert "Equivale a" not in texto and "tasa de referencia" not in texto
+
+
+def test_la_presentacion_tolera_datos_raros_y_cae_en_espanol_y_cop() -> None:
+    from app.application.documento_poliza import Presentacion
+
+    assert Presentacion.desde(None) == Presentacion()
+    assert Presentacion.desde({"idioma": "fr", "moneda": "USD"}) == Presentacion()  # sin tasa
+    assert Presentacion.desde({"moneda": "XYZ", "cop_por_unidad": "1"}).moneda == "COP"
+    assert Presentacion.desde({"moneda": "USD", "cop_por_unidad": "no"}).moneda == "COP"
+    assert Presentacion.desde({"idioma": "EN-us"}).idioma == "en"
+    assert Presentacion.desde({"moneda": "CLP", "cop_por_unidad": "4"}).convierte
