@@ -3897,7 +3897,9 @@ class Mutation:
         self, info: Info, propuesta_id: strawberry.ID, correo: str | None = None
     ) -> ResultadoEnvioCodigo:
         usuario = exigir_rol(info, "ASESOR", siempre=True)
-        resultado = await _firma_pago(info).enviar_codigo(usuario, str(propuesta_id), correo)
+        resultado = await _firma_pago(info).enviar_codigo(
+            usuario, str(propuesta_id), correo, idioma=info.context.get("idioma", "es")
+        )
         if isinstance(resultado, ErrorFlujoDatos):
             return _error_codigo(resultado)
         return CodigoEnviado(
@@ -3921,7 +3923,9 @@ class Mutation:
         """ASESOR: «Emitir» (UNDER decide y, si aprueba, sale el enlace de 30 min). CLIENTE:
         «Firmar» (UNDER decide y la propuesta pasa a EN_FIRMA en su sesión)."""
         usuario = exigir_rol(info, *CLIENTE_O_ASESOR, siempre=True)
-        resultado = await _firma_pago(info).emitir(usuario, str(propuesta_id))
+        resultado = await _firma_pago(info).emitir(
+            usuario, str(propuesta_id), idioma=info.context.get("idioma", "es")
+        )
         return _resultado_emision(resultado)
 
     @strawberry.mutation
@@ -3929,7 +3933,9 @@ class Mutation:
         self, info: Info, propuesta_id: strawberry.ID
     ) -> ResultadoEmision:
         usuario = exigir_rol(info, "ASESOR", siempre=True)
-        resultado = await _firma_pago(info).reenviar_enlace(usuario, str(propuesta_id))
+        resultado = await _firma_pago(info).reenviar_enlace(
+            usuario, str(propuesta_id), idioma=info.context.get("idioma", "es")
+        )
         return _resultado_emision(resultado)
 
     @strawberry.mutation
@@ -3975,6 +3981,10 @@ class Mutation:
         )
         if isinstance(autorizado, ErrorFlujoDatos):
             return _error_firma(autorizado)
+        # KAN-26: el contrato firmado y la póliza quedan en el idioma y la moneda de este momento.
+        presentacion = await servicio.presentacion(
+            info.context.get("idioma", "es"), info.context.get("moneda")
+        )
         resultado = await servicio.firmar(
             autorizado,
             {
@@ -3986,6 +3996,7 @@ class Mutation:
                 if entrada.imagen_archivo_id
                 else None,
                 "nombre_firma": entrada.nombre_firma,
+                "presentacion": presentacion,
             },
         )
         if isinstance(resultado, ErrorFlujoDatos):
@@ -4150,7 +4161,7 @@ class Mutation:
         """v0.43 (KAN-26): «olvidé mi contraseña». Responde `true` siempre (exista o no la cuenta,
         o se haya topado el límite): nunca revela quién está registrado."""
         await info.context["servicio_restablecimiento"].solicitar(
-            correo, info.context.get("ip_cliente")
+            correo, info.context.get("ip_cliente"), idioma=info.context.get("idioma", "es")
         )
         return True
 
@@ -4163,7 +4174,7 @@ class Mutation:
             return ErrorAutenticacion(mensaje=motivo, codigo="CLAVE_DEBIL")
         try:
             await info.context["servicio_restablecimiento"].restablecer(
-                info.context.get("enlace_clave"), clave
+                info.context.get("enlace_clave"), clave, idioma=info.context.get("idioma", "es")
             )
         except EnlaceInvalido:
             return ErrorAutenticacion(mensaje=MENSAJE_ENLACE_CLAVE, codigo="ENLACE_INVALIDO")
@@ -4179,7 +4190,9 @@ class Mutation:
     async def enviar_codigo_onboarding(self, info: Info, correo: str) -> ResultadoCodigoOnboarding:
         """Envía un código de 6 dígitos al correo para verificarlo en el onboarding (HU-M01)."""
         try:
-            datos = await info.context["servicio_codigo_onboarding"].enviar(correo)
+            datos = await info.context["servicio_codigo_onboarding"].enviar(
+                correo, idioma=info.context.get("idioma", "es")
+            )
         except ErrorOnboardingServicio as error:
             return _error_onboarding(error.codigo, error.segundos_restantes)
         except ErrorServicio:

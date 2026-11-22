@@ -8,14 +8,18 @@ reintento (regla #4). Ni el token, ni el código, ni el contacto, ni el document
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from app.autenticacion_usuarios import UsuarioActual
 from app.clientes import Acceso, Clientes, ErrorServicio, FlujoRechazado
 from app.identificadores import cliente_id_desde_documento, id_opaco
 from app.jurisdicciones import documento_tipado
+from app.monedas import DECIMALES
 
 logger = logging.getLogger("bff.firma_pago")
+# KAN-26: la moneda en que se calcula y se cobra la prima.
+MONEDA_BASE = "COP"
 
 MENSAJE_FLUJO_NO_DISPONIBLE = "No pudimos procesar la solicitud. Intenta de nuevo."
 MENSAJE_PROPUESTA_NO_ENCONTRADA = "Propuesta no encontrada."
@@ -194,12 +198,12 @@ class ServicioFirmaPago:
     # ---------- ASESOR ----------
 
     async def enviar_codigo(
-        self, usuario: UsuarioActual, propuesta_id: str, correo: str | None
+        self, usuario: UsuarioActual, propuesta_id: str, correo: str | None, idioma: str = "es"
     ) -> dict | ErrorFlujoDatos:
         previo = await self._propuesta_del_asesor(usuario, propuesta_id)
         if isinstance(previo, ErrorFlujoDatos):
             return previo
-        return await self._llamar(self._c.policy.enviar_codigo(propuesta_id, correo))
+        return await self._llamar(self._c.policy.enviar_codigo(propuesta_id, correo, idioma=idioma))
 
     async def verificar_codigo(
         self, usuario: UsuarioActual, propuesta_id: str, codigo: str
@@ -209,14 +213,18 @@ class ServicioFirmaPago:
             return previo
         return await self._llamar(self._c.policy.verificar_codigo(propuesta_id, codigo))
 
-    async def emitir(self, usuario: UsuarioActual, propuesta_id: str) -> dict | ErrorFlujoDatos:
+    async def emitir(
+        self, usuario: UsuarioActual, propuesta_id: str, idioma: str = "es"
+    ) -> dict | ErrorFlujoDatos:
         """ASESOR o SOCIO: «Emitir». CLIENTE: «Firmar» (el titular sale de AUTH, nunca del
-        cliente)."""
+        cliente). KAN-26: el correo del enlace sale en el `idioma` activo de quien emite."""
         if usuario.rol in ("ASESOR", "SOCIO"):
             previo = await self._propuesta_del_asesor(usuario, propuesta_id)
             if isinstance(previo, ErrorFlujoDatos):
                 return previo
-            return await self._llamar(self._c.policy.emitir(propuesta_id, usuario.rol, None))
+            return await self._llamar(
+                self._c.policy.emitir(propuesta_id, usuario.rol, None, idioma=idioma)
+            )
         try:
             titular = await self._titular_de(usuario)
         except ErrorServicio as error:
@@ -224,15 +232,17 @@ class ServicioFirmaPago:
             return _error_servicio()
         if titular is None:
             return _no_encontrada()
-        return await self._llamar(self._c.policy.emitir(propuesta_id, "CLIENTE", titular))
+        return await self._llamar(
+            self._c.policy.emitir(propuesta_id, "CLIENTE", titular, idioma=idioma)
+        )
 
     async def reenviar_enlace(
-        self, usuario: UsuarioActual, propuesta_id: str
+        self, usuario: UsuarioActual, propuesta_id: str, idioma: str = "es"
     ) -> dict | ErrorFlujoDatos:
         previo = await self._propuesta_del_asesor(usuario, propuesta_id)
         if isinstance(previo, ErrorFlujoDatos):
             return previo
-        return await self._llamar(self._c.policy.reenviar_enlace(propuesta_id))
+        return await self._llamar(self._c.policy.reenviar_enlace(propuesta_id, idioma=idioma))
 
     # ---------- Página del enlace (token o sesión de CLIENTE) ----------
 
@@ -273,9 +283,36 @@ class ServicioFirmaPago:
             self._c.policy.firmar_enlace(autorizado.propuesta_id, autorizado.acceso, entrada)
         )
 
-    async def contrato_pdf(self, autorizado: Autorizado) -> bytes | None | ErrorFlujoDatos:
+    async def presentacion(self, idioma: str, moneda: str | None) -> dict[str, str | None]:
+        """KAN-26: el idioma y la moneda con que sale un documento: los que tiene activos la web de
+        quien lo pide, con la tasa de referencia del día (`GET /tasas-cambio` del ACL). Si la moneda
+        no se conoce o el ACL no da la tasa, el documento sale en COP (nunca un error, regla 4)."""
+        base: dict[str, str | None] = {"idioma": idioma, "moneda": MONEDA_BASE}
+        destino = (moneda or MONEDA_BASE).strip().upper()
+        if destino == MONEDA_BASE or destino not in DECIMALES:
+            return base
         try:
-            return await self._c.policy.contrato_pdf(autorizado.propuesta_id, autorizado.acceso)
+            tasas = await self._c.acl.tasas_cambio()
+        except ErrorServicio as error:
+            logger.warning("sin tasas para el documento; sale en COP error=%s", error)
+            return base
+        tasa = tasas.get(destino)
+        if not tasa:
+            return base
+        return {
+            "idioma": idioma,
+            "moneda": destino,
+            "cop_por_unidad": str(tasa),
+            "fecha_tasa": datetime.now(UTC).date().isoformat(),
+        }
+
+    async def contrato_pdf(
+        self, autorizado: Autorizado, presentacion: dict | None = None
+    ) -> bytes | None | ErrorFlujoDatos:
+        try:
+            return await self._c.policy.contrato_pdf(
+                autorizado.propuesta_id, autorizado.acceso, presentacion
+            )
         except FlujoRechazado as rechazo:
             return _error_de(rechazo)
         except ErrorServicio as error:

@@ -52,6 +52,7 @@ from app.application.documento_firma import (
     hash_documento,
     serializar,
 )
+from app.application.documento_poliza import Presentacion
 from app.application.huellas import (
     coincide,
     enmascarar_correo,
@@ -249,9 +250,12 @@ class ServicioFirmaYPago:
             raise ErrorFlujo(NO_VALIDA)
         return correo
 
-    def enviar_codigo(self, propuesta_id: str, correo: str | None = None) -> dict[str, Any]:
+    def enviar_codigo(
+        self, propuesta_id: str, correo: str | None = None, idioma: str = "es"
+    ) -> dict[str, Any]:
         """Solo ASESOR (lo exige el BFF). Envía un código de 6 dígitos al correo del titular; pedir
-        otro anula el anterior. `correo` corrige el que se capturó (W03-25)."""
+        otro anula el anterior. `correo` corrige el que se capturó (W03-25). KAN-26: el correo sale
+        en el `idioma` que tiene activo quien lo pide."""
         propuesta = self._propuesta(propuesta_id)
         if propuesta["estado"] != "ACEPTADA":
             raise ErrorFlujo(NO_VALIDA)
@@ -276,6 +280,7 @@ class ServicioFirmaYPago:
                 "codigo": codigo,
                 "minutos": str(int(self._reglas.codigo_vigencia.total_seconds() // 60)),
             },
+            idioma,
         )
         logger.info("código enviado propuesta=%s", id_opaco(propuesta_id))
         return {
@@ -316,7 +321,9 @@ class ServicioFirmaYPago:
     # ------------------------------------------------------------------ «Emitir» / «Firmar»
     # (W03-21)
 
-    def emitir(self, propuesta_id: str, rol: str, titular_id: str | None = None) -> dict[str, Any]:
+    def emitir(
+        self, propuesta_id: str, rol: str, titular_id: str | None = None, idioma: str = "es"
+    ) -> dict[str, Any]:
         """ASESOR («Emitir», con la identidad verificada) o CLIENTE titular («Firmar»). UNDER y KYC
         deciden aquí. Devuelve la propuesta y, para el ASESOR, el enlace enviado (sin la URL)."""
         propuesta = self._propuesta(propuesta_id)
@@ -355,7 +362,7 @@ class ServicioFirmaYPago:
         self._avisos.publicar(actualizada, actualizada["estado"])
         enlace = None
         if actualizada["estado"] == "EN_FIRMA" and rol in ROLES_INTERMEDIARIO:
-            enlace = self._enviar_enlace(actualizada)
+            enlace = self._enviar_enlace(actualizada, idioma)
         return {"propuesta": actualizada, "enlace": enlace}
 
     def vencimiento_enlace(self, propuesta_id: str) -> datetime | None:
@@ -363,14 +370,14 @@ class ServicioFirmaYPago:
         enlace = self._repo.enlace_activo(propuesta_id)
         return enlace["vence_en"] if enlace else None
 
-    def reenviar_enlace(self, propuesta_id: str) -> dict[str, Any]:
+    def reenviar_enlace(self, propuesta_id: str, idioma: str = "es") -> dict[str, Any]:
         """Solo ASESOR: un enlace nuevo que anula el anterior; el titular retoma donde iba."""
         propuesta = self._propuesta(propuesta_id)
         if propuesta["estado"] not in ("EN_FIRMA", "FIRMADA"):
             raise ErrorFlujo(NO_VALIDA)
-        return {"propuesta": propuesta, "enlace": self._enviar_enlace(propuesta)}
+        return {"propuesta": propuesta, "enlace": self._enviar_enlace(propuesta, idioma)}
 
-    def _enviar_enlace(self, propuesta: dict[str, Any]) -> dict[str, Any]:
+    def _enviar_enlace(self, propuesta: dict[str, Any], idioma: str = "es") -> dict[str, Any]:
         destino = self._correo_del_titular(propuesta)
         token = generar_token()
         vence_en = self._reloj() + self._reglas.enlace_vigencia
@@ -386,12 +393,19 @@ class ServicioFirmaYPago:
                 "enlace": f"{self._reglas.url_front}/firma#t={token}",
                 "minutos": str(int(self._reglas.enlace_vigencia.total_seconds() // 60)),
             },
+            idioma,
         )
         logger.info("enlace de firma enviado propuesta=%s", id_opaco(propuesta["id"]))
         return {"correo_enmascarado": enmascarar_correo(destino), "vence_en": vence_en}
 
     def _notificar(
-        self, id_notificacion: str, plantilla: str, propuesta: dict, correo: str, datos: dict
+        self,
+        id_notificacion: str,
+        plantilla: str,
+        propuesta: dict,
+        correo: str,
+        datos: dict,
+        idioma: str = "es",
     ) -> None:
         resultado = self._notificador.notificar(
             SolicitudNotificacion(
@@ -400,6 +414,7 @@ class ServicioFirmaYPago:
                 destinatario_id=propuesta["cliente_id"],
                 datos=datos,
                 correo=correo,
+                idioma=idioma,
             )
         )
         if resultado.estado != "enviada":
@@ -459,6 +474,7 @@ class ServicioFirmaYPago:
         modo: str,
         imagen_archivo_id: str | None = None,
         nombre_firma: str | None = None,
+        presentacion: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], str]:
         """Firma siempre el titular (W03-8). Firmar dos veces devuelve la misma evidencia, también
         si el enlace venció entre un intento y el otro: con el gateway cortando a los 700 ms, la
@@ -518,6 +534,9 @@ class ServicioFirmaYPago:
                 "firmada_en": datetime.fromisoformat(resultado.firmada_en),
                 "modo_firma": modo,
                 "imagen_firma_archivo_id": imagen_archivo_id if modo != "NOMBRE" else None,
+                # KAN-26: idioma y moneda de la web al firmar; con ellos salen el contrato firmado,
+                # la póliza y el correo de póliza emitida.
+                "presentacion": Presentacion.desde(presentacion).a_dict() if presentacion else None,
             },
             texto,
         )

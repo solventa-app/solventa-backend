@@ -95,7 +95,7 @@ from app.domain.puertos import (
     SolicitudNotificacion,
     SolicitudSesionPago,
 )
-from app.observabilidad import configurar_trazas
+from app.observabilidad import configurar_trazas, proteger_logs
 
 # Backoff acotado de la reconciliación diferida (contrato punto 5): 5 intentos,
 # intervalos crecientes ~10s/30s/60s/120s/300s. Agotados, `rq` mueve el job al
@@ -108,6 +108,7 @@ REINTENTOS_RECONCILIACION = rq.Retry(max=5, interval=[10, 30, 60, 120, 300])
 # silencio: uvicorn solo configura sus propios loggers ("uvicorn", "uvicorn.access"),
 # no el root, y sin un handler el "lastResort" de logging filtra por debajo de WARNING.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+proteger_logs()  # las claves que viajan en la URL (AviationStack) no se escriben en el log
 
 configurar_trazas("acl-worker", instrumentos=("httpx", "redis"))
 logger = logging.getLogger("acl_worker")
@@ -312,6 +313,8 @@ class SolicitudNotificacionRequest(BaseModel):
     correo: str | None = None
     telefono: str | None = None
     adjuntos: list[AdjuntoRequest] = []
+    # KAN-26: el idioma del correo. Sin él, o con uno que no se conoce, sale en español.
+    idioma: str = "es"
 
 
 class ResultadoNotificacionResponse(BaseModel):
@@ -1059,6 +1062,7 @@ def create_app(config: Configuracion | None = None) -> FastAPI:
                 correo=body.correo or None,
                 telefono=body.telefono or None,
                 adjuntos=adjuntos,
+                idioma="en" if body.idioma.strip().lower().startswith("en") else "es",
             )
         )
         return ResultadoNotificacionResponse(

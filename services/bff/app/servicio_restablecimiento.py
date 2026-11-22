@@ -64,7 +64,7 @@ class ServicioRestablecimiento:
         await self._almacen.guardar(PREFIJO + clave, {"envios": recientes})
         return permitido
 
-    async def solicitar(self, correo: str, ip: str | None) -> None:
+    async def solicitar(self, correo: str, ip: str | None, idioma: str = "es") -> None:
         """Nunca revela si el correo tiene cuenta: no lanza nada por «no existe» ni por el tope."""
         limpio = correo.strip().lower()
         if not CORREO_VALIDO.match(limpio) or len(limpio) > 254:
@@ -107,6 +107,7 @@ class ServicioRestablecimiento:
                     "minutos": str(VIGENCIA_MINUTOS),
                 },
                 correo=limpio,
+                idioma=idioma,
             )
             logger.info("enlace de restablecimiento enviado usuario=%s", id_opaco(usuario_id))
         except ErrorServicio:
@@ -133,7 +134,7 @@ class ServicioRestablecimiento:
             return False
         return True
 
-    async def restablecer(self, token: str | None, clave: str) -> None:
+    async def restablecer(self, token: str | None, clave: str, idioma: str = "es") -> None:
         """`EnlaceInvalido` si no sirve; `SolicitudInvalida` (con el mensaje) si la clave no
         cumple las reglas, y en ese caso el enlace **no** se gasta."""
         llave, registro = await self._registro_vigente(token)
@@ -152,6 +153,7 @@ class ServicioRestablecimiento:
                 destinatario_id=self._huella(f"correo:{correo.lower()}")[:24],
                 datos={},
                 correo=correo,
+                idioma=idioma,
             )
         except ErrorServicio:
             logger.warning("restablecimiento: no se pudo enviar el aviso de cambio")

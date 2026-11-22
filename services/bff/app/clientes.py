@@ -220,6 +220,7 @@ class PuertoAcl(Protocol):
         destinatario_id: str,
         datos: dict[str, str],
         correo: str,
+        idioma: str = "es",
     ) -> dict: ...
 
 
@@ -310,13 +311,17 @@ class PuertoPolicy(Protocol):
         actor_rol: str | None = None,
     ) -> dict: ...
 
-    async def enviar_codigo(self, propuesta_id: str, correo: str | None) -> dict: ...
+    async def enviar_codigo(
+        self, propuesta_id: str, correo: str | None, idioma: str = "es"
+    ) -> dict: ...
 
     async def verificar_codigo(self, propuesta_id: str, codigo: str) -> dict: ...
 
-    async def emitir(self, propuesta_id: str, rol: str, titular_id: str | None) -> dict: ...
+    async def emitir(
+        self, propuesta_id: str, rol: str, titular_id: str | None, idioma: str = "es"
+    ) -> dict: ...
 
-    async def reenviar_enlace(self, propuesta_id: str) -> dict: ...
+    async def reenviar_enlace(self, propuesta_id: str, idioma: str = "es") -> dict: ...
 
     # HU-W07: lo que vendió un socio, por mes.
     async def ventas_socio(self, socio_id: str, desde: str | None, hasta: str | None) -> dict: ...
@@ -325,7 +330,9 @@ class PuertoPolicy(Protocol):
 
     async def contrato(self, propuesta_id: str, acceso: "Acceso") -> dict: ...
 
-    async def contrato_pdf(self, propuesta_id: str, acceso: "Acceso") -> bytes | None: ...
+    async def contrato_pdf(
+        self, propuesta_id: str, acceso: "Acceso", presentacion: dict | None = None
+    ) -> bytes | None: ...
 
     async def subida_firma(
         self, propuesta_id: str, acceso: "Acceso", tipo_contenido: str, tamano_bytes: int
@@ -1078,19 +1085,18 @@ class ClienteAclHttp:
         destinatario_id: str,
         datos: dict[str, str],
         correo: str,
+        idioma: str = "es",
     ) -> dict:
-        respuesta = await _pedir(
-            self._cliente,
-            "POST",
-            "/notificaciones/enviar",
-            {
-                "id_notificacion": id_notificacion,
-                "plantilla": plantilla,
-                "destinatario_id": destinatario_id,
-                "datos": datos,
-                "correo": correo,
-            },
-        )
+        cuerpo = {
+            "id_notificacion": id_notificacion,
+            "plantilla": plantilla,
+            "destinatario_id": destinatario_id,
+            "datos": datos,
+            "correo": correo,
+        }
+        if idioma != "es":
+            cuerpo["idioma"] = idioma  # KAN-26: el idioma activo de quien pidió el correo
+        respuesta = await _pedir(self._cliente, "POST", "/notificaciones/enviar", cuerpo)
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
         return respuesta.json()
@@ -1359,16 +1365,21 @@ class ClientePolicyHttp:
         cuerpo: dict | None = None,
         acceso: Acceso | None = None,
         params: dict[str, Any] | None = None,
+        idioma: str | None = None,
     ) -> dict:
         """Una operación del flujo de firma y pago. Un 4xx es un rechazo de negocio
         (`FlujoRechazado` con el motivo de `detail` y sus datos); un 5xx o la red caída llegan como
         `ErrorServicio`, que el llamador convierte en un error con reintento."""
+        cabeceras = acceso.cabeceras() if acceso else {}
+        if idioma:
+            # KAN-26: los correos que dispara la operación salen en el idioma de quien la hace.
+            cabeceras = {**cabeceras, "Accept-Language": idioma}
         respuesta = await _pedir(
             self._cliente,
             metodo,
             ruta,
             cuerpo,
-            acceso.cabeceras() if acceso else None,
+            cabeceras or None,
             params,
         )
         if respuesta.is_error:
@@ -1399,8 +1410,12 @@ class ClientePolicyHttp:
             "GET", "/propuestas", params={k: v for k, v in params.items() if v is not None}
         )
 
-    async def enviar_codigo(self, propuesta_id: str, correo: str | None) -> dict:
-        return await self._flujo("POST", f"/propuestas/{propuesta_id}/codigo", {"correo": correo})
+    async def enviar_codigo(
+        self, propuesta_id: str, correo: str | None, idioma: str = "es"
+    ) -> dict:
+        return await self._flujo(
+            "POST", f"/propuestas/{propuesta_id}/codigo", {"correo": correo}, idioma=idioma
+        )
 
     async def ventas_socio(self, socio_id: str, desde: str | None, hasta: str | None) -> dict:
         params = {k: v for k, v in {"desde": desde, "hasta": hasta}.items() if v is not None}
@@ -1413,12 +1428,16 @@ class ClientePolicyHttp:
         ruta = f"/propuestas/{propuesta_id}/codigo/verificar"
         return await self._flujo("POST", ruta, {"codigo": codigo})
 
-    async def emitir(self, propuesta_id: str, rol: str, titular_id: str | None) -> dict:
+    async def emitir(
+        self, propuesta_id: str, rol: str, titular_id: str | None, idioma: str = "es"
+    ) -> dict:
         cuerpo = {"rol": rol, "titular_id": titular_id}
-        return await self._flujo("POST", f"/propuestas/{propuesta_id}/emitir", cuerpo)
+        return await self._flujo(
+            "POST", f"/propuestas/{propuesta_id}/emitir", cuerpo, idioma=idioma
+        )
 
-    async def reenviar_enlace(self, propuesta_id: str) -> dict:
-        return await self._flujo("POST", f"/propuestas/{propuesta_id}/enlace")
+    async def reenviar_enlace(self, propuesta_id: str, idioma: str = "es") -> dict:
+        return await self._flujo("POST", f"/propuestas/{propuesta_id}/enlace", idioma=idioma)
 
     async def resolver_enlace(self, token: str) -> dict | None:
         """El token va en el cuerpo, nunca en la URL (regla 6). `None` si no existe o si ni siquiera
@@ -1437,13 +1456,17 @@ class ClientePolicyHttp:
     async def contrato(self, propuesta_id: str, acceso: Acceso) -> dict:
         return await self._flujo("GET", f"/propuestas/{propuesta_id}/contrato", None, acceso)
 
-    async def contrato_pdf(self, propuesta_id: str, acceso: Acceso) -> bytes | None:
-        """El contrato a firmar en PDF; `None` si la propuesta no es de quien lo pide (404)."""
+    async def contrato_pdf(
+        self, propuesta_id: str, acceso: Acceso, presentacion: dict | None = None
+    ) -> bytes | None:
+        """El contrato a firmar en PDF; `None` si la propuesta no es de quien lo pide (404). KAN-26:
+        `presentacion` (idioma, moneda y tasa) viaja como parámetros para el borrador."""
         respuesta = await _pedir(
             self._cliente,
             "GET",
             f"/propuestas/{propuesta_id}/contrato.pdf",
             cabeceras=acceso.cabeceras(),
+            params={k: v for k, v in (presentacion or {}).items() if v is not None} or None,
         )
         if respuesta.status_code == 404:
             return None
