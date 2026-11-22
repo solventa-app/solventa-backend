@@ -16,7 +16,12 @@ from app.application.cliente_almacenamiento import (
     ArchivoRechazado,
     PuertoAlmacenamiento,
 )
-from app.application.documento_poliza import generar_borrador, generar_contrato_firmado, generar_pdf
+from app.application.documento_poliza import (
+    Presentacion,
+    generar_borrador,
+    generar_contrato_firmado,
+    generar_pdf,
+)
 from app.application.servicio_documentos import TIPO_CONTRATO, TIPO_POLIZA, ServicioDocumentos
 from app.application.servicio_emision import numero_de_poliza
 
@@ -84,21 +89,30 @@ class ServicioPolizas:
             ambiente_pruebas=self._ambiente_pruebas,
             firma_imagen=imagen,
             firma_texto=texto,
+            # KAN-26: en el idioma y la moneda con que se firmó (también la del correo).
+            presentacion=Presentacion.desde((evidencia or {}).get("presentacion")),
         )
         if self._documentos is not None:
             self._documentos.guardar(propuesta_id, TIPO_POLIZA, pdf)
         return pdf
 
-    def borrador(self, propuesta: dict[str, Any]) -> bytes:
-        """El contrato a firmar, en PDF (W03-31)."""
-        return generar_borrador(propuesta, ambiente_pruebas=self._ambiente_pruebas)
+    def borrador(
+        self, propuesta: dict[str, Any], presentacion: Presentacion | None = None
+    ) -> bytes:
+        """El contrato a firmar, en PDF (W03-31), en el idioma y la moneda de quien lo abre."""
+        return generar_borrador(
+            propuesta, ambiente_pruebas=self._ambiente_pruebas, presentacion=presentacion
+        )
 
-    def contrato(self, propuesta: dict[str, Any]) -> bytes:
+    def contrato(
+        self, propuesta: dict[str, Any], presentacion: Presentacion | None = None
+    ) -> bytes:
         """`contrato.pdf`: el borrador mientras no esté firmado y, firmado, el contrato firmado
-        guardado (o, si aún no se pudo guardar, generado y guardado ahora)."""
+        guardado (o, si aún no se pudo guardar, generado y guardado ahora). `presentacion` solo
+        aplica al borrador: el firmado queda en el idioma y la moneda de la firma."""
         evidencia = self._repositorio.obtener_evidencia(propuesta["id"])
         if evidencia is None:
-            return self.borrador(propuesta)
+            return self.borrador(propuesta, presentacion)
         if self._documentos is not None:
             guardado = self._documentos.leer(propuesta["id"], TIPO_CONTRATO)
             if guardado is not None:
@@ -135,6 +149,7 @@ class ServicioPolizas:
             ambiente_pruebas=self._ambiente_pruebas,
             firma_imagen=imagen,
             firma_texto=texto,
+            presentacion=Presentacion.desde(evidencia.get("presentacion")),
         )
         if self._documentos is not None:
             self._documentos.guardar(propuesta["id"], TIPO_CONTRATO, pdf)

@@ -30,6 +30,7 @@ from decimal import Decimal
 from typing import Any
 
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from app.application.cifrado import CifradorCampos
@@ -51,7 +52,8 @@ _COLUMNAS_POLIZA = (
 
 _COLUMNAS_EVIDENCIA = (
     "id, propuesta_id, documento_hash, version_documento, firmante_id, "
-    "referencia_proveedor, firmada_en, creado_en, modo_firma, imagen_firma_archivo_id"
+    "referencia_proveedor, firmada_en, creado_en, modo_firma, imagen_firma_archivo_id, "
+    "presentacion"
 )
 _COLUMNAS_DOCUMENTO = (
     "id, propuesta_id, tipo, archivo_id, clave_envuelta, sha256, tamano_bytes, creado_en"
@@ -611,12 +613,12 @@ class RepositorioPropuestasPostgres:
                 INSERT INTO evidencias_firma
                     (id, propuesta_id, documento_hash, version_documento, documento_cifrado,
                      firmante_id, consentimiento_id, referencia_proveedor, firmada_en,
-                     modo_firma, imagen_firma_archivo_id)
+                     modo_firma, imagen_firma_archivo_id, presentacion)
                 VALUES
                     (%(id)s, %(propuesta_id)s, %(documento_hash)s, %(version_documento)s,
                      %(documento_cifrado)s, %(firmante_id)s, %(consentimiento_id)s,
                      %(referencia_proveedor)s, %(firmada_en)s, %(modo_firma)s,
-                     %(imagen_firma_archivo_id)s)
+                     %(imagen_firma_archivo_id)s, %(presentacion)s)
                 ON CONFLICT (propuesta_id) DO NOTHING
                 RETURNING {_COLUMNAS_EVIDENCIA}
                 """,  # nosec B608
@@ -624,6 +626,10 @@ class RepositorioPropuestasPostgres:
                     **{k: v for k, v in evidencia.items() if k != "documento"},
                     "propuesta_id": propuesta_id,
                     "documento_cifrado": documento,
+                    # KAN-26: idioma y moneda con que se firmó (sin ella, español y COP).
+                    "presentacion": Jsonb(evidencia["presentacion"])
+                    if evidencia.get("presentacion")
+                    else None,
                 },
             ).fetchone()
             creada = fila is not None

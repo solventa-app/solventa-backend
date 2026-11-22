@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from psycopg_pool import ConnectionPool
@@ -29,6 +29,7 @@ from app.application.cliente_rating import ClienteRating, RatingNoDisponible
 from app.application.cliente_under import ClienteUnder
 from app.application.clima_auto import consultar_celdas
 from app.application.configuracion import Configuracion
+from app.application.documento_poliza import Presentacion
 from app.application.huellas import clave_de_huellas
 from app.application.planificador import (
     EmisionPendiente,
@@ -235,6 +236,15 @@ class SubidaFirmaResponse(BaseModel):
     vence_en: datetime
 
 
+class PresentacionRequest(BaseModel):
+    """KAN-26: el idioma y la moneda que tiene activos la web de quien firma (los pone el BFF)."""
+
+    idioma: str = Field(default="es", pattern="^(es|en)$")
+    moneda: str = Field(default="COP", pattern="^[A-Z]{3}$")
+    cop_por_unidad: str | None = Field(default=None, max_length=40)
+    fecha_tasa: str | None = Field(default=None, max_length=10)
+
+
 class FirmarEnlaceRequest(BaseModel):
     version_documento: str = Field(min_length=1)
     acepta_terminos: bool
@@ -242,6 +252,7 @@ class FirmarEnlaceRequest(BaseModel):
     modo: str = Field(pattern="^(TRAZO|IMAGEN|NOMBRE)$")
     imagen_archivo_id: str | None = Field(default=None, min_length=1)
     nombre_firma: str | None = Field(default=None, max_length=200)
+    presentacion: PresentacionRequest | None = None
 
 
 class PagoRequest(BaseModel):
@@ -750,6 +761,10 @@ def create_app(
     # Las rutas de la página del enlace reciben `X-Enlace-Firma` (el token) o `X-Titular-Id` (el
     # titular de la sesión del CLIENTE, que pone el BFF). Sin ninguno que coincida: 404.
 
+    def _idioma(cabecera: str | None) -> str:
+        """KAN-26: el idioma activo de quien hace la acción (`Accept-Language` que pasa el BFF)."""
+        return "en" if (cabecera or "").strip().lower().startswith("en") else "es"
+
     def _auth(enlace: str | None, titular: str | None) -> Autorizacion:
         return Autorizacion(enlace_token=enlace, titular_id=titular)
 
@@ -804,9 +819,15 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.post("/propuestas/{propuesta_id}/codigo", tags=["firma"], response_model=CodigoResponse)
-    def enviar_codigo(propuesta_id: str, body: CodigoRequest) -> CodigoResponse:
+    def enviar_codigo(
+        propuesta_id: str,
+        body: CodigoRequest,
+        accept_language: str | None = Header(default=None),
+    ) -> CodigoResponse:
         """W03-20 (solo ASESOR, lo exige el BFF): código de 6 dígitos al correo del titular."""
-        return CodigoResponse(**_flujo().enviar_codigo(propuesta_id, body.correo))
+        return CodigoResponse(
+            **_flujo().enviar_codigo(propuesta_id, body.correo, _idioma(accept_language))
+        )
 
     @app.post(
         "/propuestas/{propuesta_id}/codigo/verificar",
@@ -821,9 +842,15 @@ def create_app(
         tags=["firma"],
         response_model=EmisionPropuestaResponse,
     )
-    def emitir(propuesta_id: str, body: EmitirRequest) -> EmisionPropuestaResponse:
+    def emitir(
+        propuesta_id: str,
+        body: EmitirRequest,
+        accept_language: str | None = Header(default=None),
+    ) -> EmisionPropuestaResponse:
         """«Emitir» del ASESOR o «Firmar» del CLIENTE titular: UNDER y KYC deciden (W03-21)."""
-        resultado = _flujo().emitir(propuesta_id, body.rol, body.titular_id)
+        resultado = _flujo().emitir(
+            propuesta_id, body.rol, body.titular_id, _idioma(accept_language)
+        )
         enlace = resultado["enlace"]
         return EmisionPropuestaResponse(
             propuesta=_respuesta(resultado["propuesta"]),
@@ -835,8 +862,10 @@ def create_app(
         tags=["firma"],
         response_model=EmisionPropuestaResponse,
     )
-    def reenviar_enlace(propuesta_id: str) -> EmisionPropuestaResponse:
-        resultado = _flujo().reenviar_enlace(propuesta_id)
+    def reenviar_enlace(
+        propuesta_id: str, accept_language: str | None = Header(default=None)
+    ) -> EmisionPropuestaResponse:
+        resultado = _flujo().reenviar_enlace(propuesta_id, _idioma(accept_language))
         return EmisionPropuestaResponse(
             propuesta=_respuesta(resultado["propuesta"]),
             enlace=EnlaceResponse(**resultado["enlace"]),
@@ -898,12 +927,26 @@ def create_app(
         propuesta_id: str,
         x_enlace_firma: str | None = Header(default=None),
         x_titular_id: str | None = Header(default=None),
+        idioma: str = Query(default="es", pattern="^(es|en)$"),
+        moneda: str = Query(default="COP", pattern="^[A-Z]{3}$"),
+        cop_por_unidad: str | None = Query(default=None, max_length=40),
+        fecha_tasa: str | None = Query(default=None, max_length=10),
     ) -> Response:
         """El contrato en PDF (W03-31): el borrador a firmar (sin datos personales) y, ya firmado
-        (T6), el contrato firmado guardado, cifrado en reposo."""
+        (T6), el contrato firmado guardado, cifrado en reposo. KAN-26: el borrador sale en el idioma
+        y la moneda de quien lo abre (los parámetros los pone el BFF); el firmado, en los de la
+        firma."""
         propuesta = _flujo().autorizar(propuesta_id, _auth(x_enlace_firma, x_titular_id))
+        presentacion = Presentacion.desde(
+            {
+                "idioma": idioma,
+                "moneda": moneda,
+                "cop_por_unidad": cop_por_unidad,
+                "fecha_tasa": fecha_tasa,
+            }
+        )
         try:
-            contenido = app.state.servicio_polizas.contrato(propuesta)
+            contenido = app.state.servicio_polizas.contrato(propuesta, presentacion)
         except (DocumentoNoDisponible, DocumentoAlterado) as error:
             raise HTTPException(status_code=503, detail="DOCUMENTO_NO_DISPONIBLE") from error
         return Response(
@@ -956,6 +999,7 @@ def create_app(
             body.modo,
             body.imagen_archivo_id,
             body.nombre_firma,
+            presentacion=body.presentacion.model_dump() if body.presentacion else None,
         )
         return FirmaResponse(
             propuesta_id=propuesta_id,

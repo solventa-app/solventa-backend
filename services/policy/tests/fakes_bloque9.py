@@ -143,6 +143,7 @@ class RepositorioBloque9Falso(RepositorioPropuestasFalso):
                 "firmada_en",
                 "modo_firma",
                 "imagen_firma_archivo_id",
+                "presentacion",
             )
         }
         guardada.update(propuesta_id=propuesta_id, creado_en=datetime.now(UTC))

@@ -215,3 +215,9 @@ def test_los_logs_no_llevan_el_correo_el_telefono_ni_el_contenido(caplog) -> Non
         "poliza-emitida-pz-1",
     ):
         assert dato not in caplog.text
+
+
+def test_el_adaptador_manda_el_idioma_solo_si_no_es_espanol() -> None:
+    """KAN-26: en español el cuerpo es el de siempre."""
+    assert _cuerpo_enviado(_solicitud(idioma="en"))["idioma"] == "en"
+    assert "idioma" not in _cuerpo_enviado(_solicitud(idioma="es"))

@@ -242,6 +242,8 @@ def create_app(
                 "error_token": error_token,
                 # Idioma del selector del header (lo manda el frontend); ver app/idioma.py.
                 "idioma": idioma_de(request.headers.get("accept-language")),
+                # KAN-26: la moneda del selector de la web, para los documentos que se firman.
+                "moneda": request.headers.get("x-moneda"),
                 "modo_autenticacion": config.autenticacion_usuarios,
                 "cliente_id_clave": config.cliente_id_clave,
                 # Token del recorrido de onboarding (HU-M01): no es una sesión de usuario.
@@ -414,7 +416,11 @@ def create_app(
         autorizado = await servicio.autorizar_enlace(usuario, enlace, propuesta_id)
         if isinstance(autorizado, ErrorFlujoDatos):
             return _respuesta_de_error(autorizado)
-        pdf = await servicio.contrato_pdf(autorizado)
+        # KAN-26: el borrador sale en el idioma y la moneda que tiene activos quien lo abre.
+        presentacion = await servicio.presentacion(
+            idioma_de(request.headers.get("accept-language")), request.headers.get("x-moneda")
+        )
+        pdf = await servicio.contrato_pdf(autorizado, presentacion)
         if isinstance(pdf, ErrorFlujoDatos):
             return _respuesta_de_error(pdf)
         if pdf is None:

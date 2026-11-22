@@ -74,7 +74,7 @@ class ServicioCodigoOnboarding:
     def _id_correo(self, correo_limpio: str) -> str:
         return _huella(f"correo:{correo_limpio}", self._clave)
 
-    async def enviar(self, correo: str) -> dict[str, str | datetime]:
+    async def enviar(self, correo: str, idioma: str = "es") -> dict[str, str | datetime]:
         limpio = self._normalizar_correo(correo)
         try:
             if await self._clientes.auth.correo_registrado(limpio):
@@ -110,6 +110,7 @@ class ServicioCodigoOnboarding:
                 destinatario_id=correo_id[:24],
                 datos={"codigo": codigo, "minutos": str(VIGENCIA_MINUTOS)},
                 correo=limpio,
+                idioma=idioma,
             )
         except ErrorServicio as error:
             raise ErrorOnboardingServicio("NO_DISPONIBLE") from error
