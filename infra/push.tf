@@ -29,7 +29,8 @@
 #   3. Dos `google_cloud_scheduler_job` (sección G del plan) que llaman cada 8 horas (≈90 consultas/mes:
 #      cabe en el plan gratis de AviationStack; clima 1 min después para que los dos pushes no lleguen
 #      juntos). El de VUELO sigue siendo DE DEMOSTRACIÓN: llama a `POST /eventos-parametricos/_consultar`
-#      del ACL Worker con el vuelo fijo `AV9340` de `sembrar_polizas_parametricas` (no hay producto de
+#      del ACL Worker con `var.vuelo_demo_parametrico` (por defecto el comodín `RETRASADO`: el primer
+#      vuelo retrasado que trae AviationStack; ver `sembrar_polizas_parametricas`; no hay producto de
 #      vuelo que se venda). El de CLIMA ya enumera de verdad (KAN-290): llama a
 #      `POST /coberturas-parametricas/_consultar-clima` de POLICY, que consulta al ACL Worker una vez por
 #      cada celda con coberturas vigentes (la cobertura de clima de toda póliza de auto y la semilla).

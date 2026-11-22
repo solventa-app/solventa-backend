@@ -111,3 +111,10 @@ def test_modo_por_header_tiene_prioridad_sobre_el_global() -> None:
         headers={"x-modo-simulado": "error"},
     )
     assert r.status_code == 503
+
+
+def test_flights_sin_vuelo_devuelve_los_de_tiempo_real_y_no_todos_retrasados() -> None:
+    datos = client.get("/v1/flights").json()["data"]
+    assert len(datos) >= 2
+    assert not datos[0]["departure"]["delay"]
+    assert any((v["departure"]["delay"] or 0) > 0 for v in datos)

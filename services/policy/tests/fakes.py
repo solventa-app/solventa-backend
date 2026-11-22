@@ -525,8 +525,10 @@ class RepositorioCoberturasParametricasFalso:
             for c in self._coberturas.values()
             if c["tipo"] == "VUELO"
             and c["estado"] == "VIGENTE"
-            and c["numero_vuelo"] == numero_vuelo
-            and c["fecha_salida"] == fecha
+            and (
+                (c["numero_vuelo"] == numero_vuelo and c["fecha_salida"] == fecha)
+                or c["numero_vuelo"] == "RETRASADO"
+            )
         ]
 
     def vigentes_de_celda(
