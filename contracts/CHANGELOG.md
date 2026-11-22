@@ -572,6 +572,24 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
+## v0.67 — 2026-11-22
+
+- HU-W07 (KAN-30): **el panel del socio cuenta cotizaciones y ventas por separado y se pone al día solo.** En las
+  pruebas, una cotización que terminaba en póliza se veía como dos ventas y ninguna cotización: las cotizaciones solo
+  salían como presupuesto consumido, y «Propuestas» y «Pólizas emitidas» sumaban 1 cada una.
+  - `GET /v1/ventas`: `VentasMes` y `totales` ganan **`cotizaciones`** (las que descontaron presupuesto, del consumo en
+    AUTH, en el mismo rango que las ventas). Un mes con cotizaciones y sin ventas también sale, en ceros. AUTH suma
+    `GET /socios/{id}/cotizaciones-por-mes` (llamadas `OK` de `cotizaciones` y `cotizaciones-auto`, por mes de Colombia).
+  - **Modo prueba:** las ventas dejan de ser cifras fijas. Aceptar una oferta suma una propuesta y la póliza que se
+    emite suma una venta con su prima y la comisión (10 %). Se guardan con el resto del sandbox (24 h en Redis).
+  - **En vivo (SSE):** `POST /v1/avisos/ticket` (scope `cuenta`, no cuenta en el consumo) da un ticket de un solo uso
+    para el stream del servicio `avisos`. El canal `avisos:socio:<socio>:<entorno>` recibe un evento `socio` por cada
+    llamada que cuenta en el consumo (la publica el BFF, también las del Swagger embebido del portal) y `propuesta`
+    cuando POLICY cambia el estado de una propuesta del socio en PRODUCCION (la póliza emitida tras el pago).
+    Gateway: la ruta nueva en Envoy y en `openapi-socios.yaml`.
+- `socios-v1.json` pasa a **1.4.0**. Solo cambios aditivos. Afecta al frontend: sí (el panel muestra las cotizaciones,
+  las ventas y la conversión aparte, y abre el stream). Requiere el PR gemelo en `solventa-frontend-web`.
+
 ## v0.66 — 2026-11-21
 
 - HU-M05 (KAN-35): sin GPS, el cliente escribe la dirección y la app la ubica (`ubicarDireccion`); las fotos llevan

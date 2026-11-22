@@ -131,11 +131,37 @@ def test_lo_del_sandbox_de_un_socio_no_lo_ve_otro(p) -> None:
     assert otro.status_code == 404
 
 
-def test_las_ventas_del_sandbox_son_ficticias_pero_coherentes(p) -> None:
+def test_las_ventas_del_sandbox_cuentan_lo_que_el_socio_hizo(p) -> None:
+    """v0.67: antes eran cifras fijas. Una cotización que termina en póliza suma 1 cotización,
+    1 propuesta y 1 venta, con su prima y la comisión."""
+    vacio = p.get("/v1/ventas").json()
+    _, cotizacion = p.hasta_oferta()
+    pid = p.post(
+        "/v1/propuestas", {"ofertaId": cotizacion.json()["oferta"]["id"], "contacto": CONTACTO}
+    ).json()["id"]
+    p.post(f"/v1/propuestas/{pid}/codigo/verificar", {"codigo": CODIGO_DE_PRUEBA})
+    p.post(f"/v1/propuestas/{pid}/emitir")
+    antes_de_emitir = p.get("/v1/ventas").json()["totales"]
+    p.ahora += timedelta(seconds=SEGUNDOS_EMISION + 1)
+    p.get(f"/v1/propuestas/{pid}")
     ventas = p.get("/v1/ventas").json()
 
-    assert len(ventas["meses"]) == 3
-    assert ventas["totales"]["emitidas"] == sum(m["emitidas"] for m in ventas["meses"])
+    assert vacio["meses"] == [] and vacio["totales"]["emitidas"] == 0
+    assert antes_de_emitir["propuestas"] == 1 and antes_de_emitir["emitidas"] == 0
+    assert ventas["totales"]["cotizaciones"] == 1
+    assert ventas["totales"]["propuestas"] == 1
+    assert ventas["totales"]["emitidas"] == 1
+    assert ventas["totales"]["primas"] == {"valor": "61200.00", "moneda": "COP"}
+    assert ventas["totales"]["comision"] == {"valor": "6120.00", "moneda": "COP"}
+    assert len(ventas["meses"]) == 1
+
+
+def test_las_ventas_del_sandbox_de_un_socio_no_las_ve_otro(p) -> None:
+    _, cotizacion = p.hasta_oferta()
+    p.post("/v1/propuestas", {"ofertaId": cotizacion.json()["oferta"]["id"], "contacto": CONTACTO})
+    otro = p.cliente.get("/v1/ventas", headers=p.e.cabeceras("socio-2", "PRUEBAS")).json()
+
+    assert otro["totales"]["propuestas"] == 0
 
 
 def test_las_conversiones_del_sandbox_usan_tasas_fijas(p) -> None:

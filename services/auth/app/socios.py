@@ -51,6 +51,8 @@ ZONA_CONSUMO = "America/Bogota"
 MAXIMO_DIAS_CONSUMO = 366
 # Las APIs que cuentan en la fila de otra: las dos cotizaciones gastan la misma bolsa (W07-9).
 FILA_DE_API = {"cotizaciones-auto": "cotizaciones"}
+# Las APIs cuyas llamadas `OK` son cotizaciones hechas (las que descuentan presupuesto).
+APIS_DE_COTIZACION = ("cotizaciones", "cotizaciones-auto")
 
 
 class CredencialesSocioInvalidas(Exception):
@@ -142,6 +144,10 @@ class RepositorioSocios(Protocol):
     ) -> list[dict]: ...
 
     def consumo_diario(
+        self, socio_id: str, entorno: str, desde: date, hasta: date
+    ) -> list[dict]: ...
+
+    def cotizaciones_por_mes(
         self, socio_id: str, entorno: str, desde: date, hasta: date
     ) -> list[dict]: ...
 
@@ -379,6 +385,31 @@ class RepositorioSociosPostgres:
             },
         )
 
+    def cotizaciones_por_mes(
+        self, socio_id: str, entorno: str, desde: date, hasta: date
+    ) -> list[dict]:
+        """Las cotizaciones hechas cada mes (de Colombia): las llamadas `OK` de las APIs que gastan
+        el presupuesto. Una repetición con `Idempotency-Key` no llega aquí, así que no cuenta."""
+        return self._varias(
+            """
+            SELECT to_char(ocurrido_en AT TIME ZONE %(zona)s, 'YYYY-MM') AS mes, count(*) AS n
+            FROM consumos_socio
+            WHERE socio_id = %(socio_id)s AND entorno = %(entorno)s
+              AND api = ANY(%(apis)s) AND resultado = 'OK'
+              AND ocurrido_en >= (%(desde)s::date)::timestamp AT TIME ZONE %(zona)s
+              AND ocurrido_en < (%(hasta)s::date + 1)::timestamp AT TIME ZONE %(zona)s
+            GROUP BY 1 ORDER BY 1
+            """,
+            {
+                "socio_id": socio_id,
+                "entorno": entorno,
+                "apis": list(APIS_DE_COTIZACION),
+                "desde": desde,
+                "hasta": hasta,
+                "zona": ZONA_CONSUMO,
+            },
+        )
+
 
 class ServicioSocios:
     def __init__(
@@ -581,6 +612,17 @@ class ServicioSocios:
                 self._repo.consumo_diario(socio_id, entorno, desde, hasta), desde, hasta
             ),
         }
+
+    def cotizaciones_por_mes(
+        self, socio_id: str, entorno: str, desde: date, hasta: date
+    ) -> dict[str, int]:
+        """`{"2026-11": 3}`: cuántas cotizaciones hizo el socio cada mes en el entorno (HU-W07,
+        contrato v0.67). Las ventas del panel las muestran junto a las propuestas y las pólizas."""
+        validar_entorno(entorno)
+        if desde > hasta:
+            raise DatoSocioInvalido("`desde` no puede ser posterior a `hasta`.")
+        filas = self._repo.cotizaciones_por_mes(socio_id, entorno, desde, hasta)
+        return {fila["mes"]: int(fila["n"]) for fila in filas}
 
 
 def _juntar_filas(filas: list[dict]) -> list[dict]:

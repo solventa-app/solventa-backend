@@ -8,6 +8,7 @@ Además sirve la API REST de los socios de distribución en `/v1/...` (HU-W07, `
 convive con `/v1/graphql/{canal}`."""
 
 import asyncio
+import json
 import logging
 import time
 from collections.abc import AsyncIterator, Callable, Coroutine
@@ -57,6 +58,7 @@ from app.socios.errores import ErrorApiSocio, datos_invalidos, no_disponible, re
 from app.socios.idempotencia import AlmacenIdempotenciaMemoria, AlmacenIdempotenciaRedis
 from app.socios.limite_tasa import AlmacenVentanasMemoria, AlmacenVentanasRedis, LimiteTasa
 from app.socios.modo_prueba import AlmacenMemoria, AlmacenRedis, ModoPrueba
+from app.ticket_avisos import canal_socio
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -118,6 +120,7 @@ def create_app(
         else:
             app.state.clientes, abiertos = construir_clientes(config)
         app.state.servicio_oferta = ServicioOferta(app.state.clientes, config.cliente_id_clave)
+        app.state.avisos_url = config.avisos_url
         app.state.servicio_firma_pago = ServicioFirmaPago(
             app.state.clientes, config.avisos_url, config.url_front
         )
@@ -337,6 +340,7 @@ def create_app(
             resultado = "OK" if codigo < 400 else ("ERROR" if codigo >= 500 else "ERROR_CLIENTE")
             latencia = int((time.perf_counter() - inicio) * 1000)
             await _registrar_consumo(socios, socio, api, resultado, latencia)
+            await _avisar_al_panel(getattr(clientes_app, "tickets", None), socio, api)
         return respuesta
 
     @app.get("/polizas/{poliza_id}/documento", tags=["polizas"], response_class=Response)
@@ -442,6 +446,23 @@ async def _registrar_consumo(socios, socio, api: str, resultado: str, latencia_m
     except Exception:  # noqa: BLE001 - el consumo nunca hace fallar la llamada del socio
         CONSUMO_PERDIDO.inc()
         logger_socios.warning("no se pudo registrar el consumo de un socio api=%s", api)
+
+
+async def _avisar_al_panel(tickets, socio, api: str) -> None:
+    """Avisa al panel del socio (SSE por el servicio `avisos`, contrato v0.67) que su consumo o sus
+    ventas cambiaron, para que se ponga al día sin recargar. Sin datos personales: solo la API. Si
+    Redis no responde, el panel queda como estaba hasta la próxima lectura (regla 4)."""
+    if tickets is None:
+        return
+    try:
+        await asyncio.wait_for(
+            tickets.publicar(
+                canal_socio(socio.id, socio.entorno), json.dumps({"tipo": "socio", "api": api})
+            ),
+            TIMEOUT_CONSUMO_SEGUNDOS,
+        )
+    except Exception:  # noqa: BLE001 - el aviso nunca hace fallar la llamada del socio
+        logger_socios.warning("no se pudo avisar al panel de un socio api=%s", api)
 
 
 def _respuesta_de_error(error: ErrorFlujoDatos) -> JSONResponse:

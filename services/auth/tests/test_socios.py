@@ -222,6 +222,31 @@ def test_sin_fechas_son_los_ultimos_30_dias_de_colombia(servicio, reloj) -> None
     assert len(consumo["diario"]) == 30
 
 
+def test_las_cotizaciones_por_mes_cuentan_solo_las_que_salieron_bien(servicio) -> None:
+    """Contrato v0.67: el panel cuenta cotizaciones aparte de las ventas. Una cotización de auto
+    también cuenta; una con error, otra API u otro entorno, no."""
+    servicio.registrar_consumo("socio-demo-1", "PRODUCCION", "cotizaciones", "OK", 100)
+    servicio.registrar_consumo("socio-demo-1", "PRODUCCION", "cotizaciones-auto", "OK", 100)
+    servicio.registrar_consumo("socio-demo-1", "PRODUCCION", "cotizaciones", "ERROR", 100)
+    servicio.registrar_consumo("socio-demo-1", "PRODUCCION", "propuestas", "OK", 100)
+    servicio.registrar_consumo("socio-demo-1", "PRUEBAS", "cotizaciones", "OK", 100)
+    hoy = datetime.now(BOGOTA).date()
+
+    por_mes = servicio.cotizaciones_por_mes("socio-demo-1", "PRODUCCION", hoy, hoy)
+
+    assert por_mes == {f"{hoy.year:04d}-{hoy.month:02d}": 2}
+    assert servicio.cotizaciones_por_mes("socio-demo-1", "PRUEBAS", hoy, hoy) == {
+        f"{hoy.year:04d}-{hoy.month:02d}": 1
+    }
+
+
+def test_las_cotizaciones_por_mes_con_el_rango_al_reves_son_invalidas(servicio) -> None:
+    with pytest.raises(DatoSocioInvalido):
+        servicio.cotizaciones_por_mes(
+            "socio-demo-1", "PRODUCCION", date(2026, 6, 1), date(2026, 1, 1)
+        )
+
+
 def test_un_rango_de_mas_de_un_anio_es_invalido(servicio) -> None:
     with pytest.raises(DatoSocioInvalido):
         servicio.consumo("socio-demo-1", "PRODUCCION", date(2025, 1, 1), date(2026, 6, 1))
@@ -331,6 +356,13 @@ def test_http_socio_credenciales_rotar_y_consumo(cliente) -> None:
     assert registro.status_code == 204
     consumo = cliente.get("/socios/socio-demo-1/consumo", params={"entorno": "PRODUCCION"}).json()
     assert consumo["por_api"][0]["llamadas"] == 1
+    hoy = datetime.now(BOGOTA).date().isoformat()
+    cotizaciones = cliente.get(
+        "/socios/socio-demo-1/cotizaciones-por-mes",
+        params={"entorno": "PRODUCCION", "desde": hoy, "hasta": hoy},
+    )
+    assert cotizaciones.status_code == 200
+    assert cotizaciones.json() == {"por_mes": {hoy[:7]: 1}}
 
 
 def test_http_un_socio_registra_el_consentimiento_como_actor(cliente) -> None:

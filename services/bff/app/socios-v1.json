@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Solventa · API de socios de distribución",
-    "version": "1.3.0",
-    "description": "API exclusiva para socios que revenden la póliza de Vida Hipotecario (HU-W07, KAN-30). Contrato v0.62 (`contracts/CHANGELOG.md`). Reglas: montos como texto decimal; errores con `ErrorPublico` en es o en; nunca un 5xx crudo; un socio solo ve lo que vendió (404 si no es suyo).\n\n## Scopes (HA-SEG-004, EC025)\n\nEl token de `POST /v1/token` trae el claim `scopes`. Cada operación con token exige uno y responde **403 `PROHIBIDO`** si falta (antes de descontar presupuesto o de cualquier otra cosa). Un token sin el claim, o con un valor que no es una lista de textos, es **401 `TOKEN_INVALIDO`**. Hoy todos los socios reciben los cuatro.\n\n| Scope | Operaciones |\n|---|---|\n| `cotizaciones` | `POST /v1/consentimientos`, `POST /v1/consentimientos/{consentimientoId}/revocar`, `POST /v1/cotizaciones`, `POST /v1/cotizaciones-auto`, `POST /v1/conversiones` |\n| `propuestas` | `POST /v1/propuestas`, `GET /v1/propuestas/{propuestaId}`, `POST /v1/propuestas/{propuestaId}/codigo`, `POST /v1/propuestas/{propuestaId}/codigo/verificar`, `POST /v1/propuestas/{propuestaId}/emitir`, `POST /v1/propuestas/{propuestaId}/reenviar-enlace` |\n| `polizas` | `GET /v1/polizas/{polizaId}`, `GET /v1/polizas/{polizaId}/documento` |\n| `cuenta` | `GET /v1/estado`, `GET /v1/consumo`, `GET /v1/ventas`, `GET /v1/credenciales`, `POST /v1/credenciales/{entorno}/rotar` |\n| — (públicas) | `POST /v1/token`, `GET /v1/.well-known/jwks.json`, `GET /v1/openapi.json`, `GET /v1/docs` |\n\n## Límite de tasa (KAN-217, v0.61)\n\nCada credencial (socio y entorno) admite **20 llamadas por segundo en PRODUCCION y 5 en PRUEBAS** a las operaciones con token. La que pasa el tope recibe **429 `LIMITE_DE_TASA`** con `Retry-After: 1` y `puedeReintentar = true`, antes de revisar el scope, descontar presupuesto o llamar a otro servicio. Es independiente del presupuesto de cotizaciones (`PRESUPUESTO_AGOTADO`). Las operaciones públicas no tienen este límite.\n\n## Antifraude (HA-SEG-004, v0.62)\n\nSi un token recibe **30 respuestas 403 o 404 en 60 s** (sondear propuestas o pólizas que no son suyas, u operaciones sin permiso), la credencial de ese socio en ese entorno queda **suspendida 15 minutos**: toda llamada con token responde **403 `CREDENCIAL_SUSPENDIDA`** con `Retry-After` (segundos que faltan), antes de revisar el scope o descontar presupuesto. El otro entorno sigue funcionando y la suspensión vence sola. Los fallos de `POST /v1/token` siguen respondiendo siempre `CREDENCIALES_INVALIDAS`, también cuando AUTH bloquea la credencial."
+    "version": "1.4.0",
+    "description": "API exclusiva para socios que revenden la póliza de Vida Hipotecario (HU-W07, KAN-30). Contrato v0.67 (`contracts/CHANGELOG.md`). Reglas: montos como texto decimal; errores con `ErrorPublico` en es o en; nunca un 5xx crudo; un socio solo ve lo que vendió (404 si no es suyo).\n\n## Scopes (HA-SEG-004, EC025)\n\nEl token de `POST /v1/token` trae el claim `scopes`. Cada operación con token exige uno y responde **403 `PROHIBIDO`** si falta (antes de descontar presupuesto o de cualquier otra cosa). Un token sin el claim, o con un valor que no es una lista de textos, es **401 `TOKEN_INVALIDO`**. Hoy todos los socios reciben los cuatro.\n\n| Scope | Operaciones |\n|---|---|\n| `cotizaciones` | `POST /v1/consentimientos`, `POST /v1/consentimientos/{consentimientoId}/revocar`, `POST /v1/cotizaciones`, `POST /v1/cotizaciones-auto`, `POST /v1/conversiones` |\n| `propuestas` | `POST /v1/propuestas`, `GET /v1/propuestas/{propuestaId}`, `POST /v1/propuestas/{propuestaId}/codigo`, `POST /v1/propuestas/{propuestaId}/codigo/verificar`, `POST /v1/propuestas/{propuestaId}/emitir`, `POST /v1/propuestas/{propuestaId}/reenviar-enlace` |\n| `polizas` | `GET /v1/polizas/{polizaId}`, `GET /v1/polizas/{polizaId}/documento` |\n| `cuenta` | `GET /v1/estado`, `GET /v1/consumo`, `GET /v1/ventas`, `GET /v1/credenciales`, `POST /v1/credenciales/{entorno}/rotar`, `POST /v1/avisos/ticket` |\n| — (públicas) | `POST /v1/token`, `GET /v1/.well-known/jwks.json`, `GET /v1/openapi.json`, `GET /v1/docs` |\n\n## Límite de tasa (KAN-217, v0.61)\n\nCada credencial (socio y entorno) admite **20 llamadas por segundo en PRODUCCION y 5 en PRUEBAS** a las operaciones con token. La que pasa el tope recibe **429 `LIMITE_DE_TASA`** con `Retry-After: 1` y `puedeReintentar = true`, antes de revisar el scope, descontar presupuesto o llamar a otro servicio. Es independiente del presupuesto de cotizaciones (`PRESUPUESTO_AGOTADO`). Las operaciones públicas no tienen este límite.\n\n## Antifraude (HA-SEG-004, v0.62)\n\nSi un token recibe **30 respuestas 403 o 404 en 60 s** (sondear propuestas o pólizas que no son suyas, u operaciones sin permiso), la credencial de ese socio en ese entorno queda **suspendida 15 minutos**: toda llamada con token responde **403 `CREDENCIAL_SUSPENDIDA`** con `Retry-After` (segundos que faltan), antes de revisar el scope o descontar presupuesto. El otro entorno sigue funcionando y la suspensión vence sola. Los fallos de `POST /v1/token` siguen respondiendo siempre `CREDENCIALES_INVALIDAS`, también cuando AUTH bloquea la credencial."
   },
   "servers": [
     {
@@ -1278,7 +1278,7 @@
     "/v1/ventas": {
       "get": {
         "operationId": "ventas",
-        "summary": "Propuestas, pólizas emitidas, primas y comisión por mes",
+        "summary": "Cotizaciones, propuestas aceptadas, pólizas emitidas, primas y comisión por mes",
         "tags": [
           "Cuenta"
         ],
@@ -1306,7 +1306,7 @@
             "$ref": "#/components/responses/LimiteDeTasa"
           }
         },
-        "description": "Sin fechas: los últimos 12 meses. Con un token de PRUEBAS responde el modo prueba: datos simulados, sin consultar fuentes ni cobrar.",
+        "description": "Sin fechas: los últimos 12 meses. Con un token de PRUEBAS responde lo hecho en el modo prueba (propuestas y pólizas simuladas, contadas de verdad; el sandbox empieza de cero tras 24 h sin uso). Las cotizaciones son las del entorno del token en los dos casos.",
         "parameters": [
           {
             "name": "desde",
@@ -1500,6 +1500,52 @@
               "$ref": "#/components/schemas/Entorno"
             }
           },
+          {
+            "$ref": "#/components/parameters/AcceptLanguage"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "cuenta"
+            ]
+          }
+        ]
+      }
+    },
+    "/v1/avisos/ticket": {
+      "post": {
+        "operationId": "ticketAvisos",
+        "summary": "Ticket para seguir en vivo (SSE) el consumo y las ventas del entorno del token",
+        "tags": [
+          "Cuenta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketAvisos"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NoAutenticado"
+          },
+          "403": {
+            "$ref": "#/components/responses/SinPermiso"
+          },
+          "503": {
+            "$ref": "#/components/responses/NoDisponible"
+          },
+          "429": {
+            "$ref": "#/components/responses/LimiteDeTasa"
+          }
+        },
+        "description": "`EventSource` no manda cabeceras, así que el token nunca va en la URL: se pide este ticket y se abre el stream con él. No cuenta en `/v1/consumo`. Si el stream se cae, se pide otro ticket.",
+        "parameters": [
           {
             "$ref": "#/components/parameters/AcceptLanguage"
           }
@@ -2536,11 +2582,17 @@
             "type": "string",
             "pattern": "^\\d{4}-\\d{2}$"
           },
+          "cotizaciones": {
+            "type": "integer",
+            "description": "Cotizaciones hechas (las que descontaron presupuesto; una repetición con `Idempotency-Key` no cuenta). v0.67."
+          },
           "propuestas": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Ofertas aceptadas (propuestas creadas). No es una venta."
           },
           "emitidas": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Pólizas emitidas: las ventas."
           },
           "primas": {
             "$ref": "#/components/schemas/Monto"
@@ -2551,6 +2603,7 @@
         },
         "required": [
           "mes",
+          "cotizaciones",
           "propuestas",
           "emitidas",
           "primas",
@@ -2586,11 +2639,17 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "cotizaciones": {
+                "type": "integer",
+                "description": "Cotizaciones hechas (las que descontaron presupuesto; una repetición con `Idempotency-Key` no cuenta). v0.67."
+              },
               "propuestas": {
-                "type": "integer"
+                "type": "integer",
+                "description": "Ofertas aceptadas (propuestas creadas). No es una venta."
               },
               "emitidas": {
-                "type": "integer"
+                "type": "integer",
+                "description": "Pólizas emitidas: las ventas."
               },
               "primas": {
                 "$ref": "#/components/schemas/Monto"
@@ -2600,6 +2659,7 @@
               }
             },
             "required": [
+              "cotizaciones",
               "propuestas",
               "emitidas",
               "primas",
@@ -2614,7 +2674,7 @@
           "meses",
           "totales"
         ],
-        "description": "La comisión se causa al emitir: prima × tasa congelada al aceptar (W07-7)."
+        "description": "Cotizaciones, propuestas aceptadas y pólizas emitidas (las ventas) por mes, contadas aparte (v0.67). La comisión se causa al emitir: prima × tasa congelada al aceptar (W07-7)."
       },
       "Credencial": {
         "type": "object",
@@ -2883,6 +2943,30 @@
         "required": [
           "tipo"
         ]
+      },
+      "TicketAvisos": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "description": "De un solo uso; vence a los 60 s."
+          },
+          "url": {
+            "type": "string",
+            "description": "URL del stream SSE del servicio de avisos, sin el ticket: se abre `<url>?ticket=<ticket>`."
+          },
+          "venceEn": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "ticket",
+          "url",
+          "venceEn"
+        ],
+        "description": "Para que el panel se ponga al día solo (v0.67). El stream manda un evento `socio` por cada llamada del socio que cuenta en el consumo (cotizaciones, propuestas, pólizas…) y `propuesta` cuando POLICY emite una póliza que el socio vendió en PRODUCCION. Sin datos personales."
       }
     }
   }
