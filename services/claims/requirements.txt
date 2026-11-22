@@ -387,7 +387,9 @@ fastapi==0.164.0 \
 google-api-core==2.43.0 \
     --hash=sha256:d67355a22d995a009b6c5ca98744ea35fbf4f9c2c006aa0588c0941d1ceb5216 \
     --hash=sha256:dd588ae9de5e372be89b87c68b1e1555fe89add1809d623182b773d14f96859a
-    # via google-cloud-kms
+    # via
+    #   google-cloud-kms
+    #   google-cloud-pubsub
 google-auth==2.62.2 \
     --hash=sha256:046c61a72d3a847d6df6417a7f0d5cf054e3b82bbcb54fb1e69d47880964049c \
     --hash=sha256:e9bcdb0679b6a4369ac327c5c59f06d92f7b4cd2624e7100294c14632f55a36b
@@ -395,9 +397,14 @@ google-auth==2.62.2 \
     #   -r requirements.in
     #   google-api-core
     #   google-cloud-kms
+    #   google-cloud-pubsub
 google-cloud-kms==3.19.0 \
     --hash=sha256:6b48ae9a7551b27f14a5f7f5a22c3f60bfa06e393d8785568f4397a9c7db021c \
     --hash=sha256:967f02479b960aa6b6059c78adf2c6fc1b39bd114615a79d872f63b3d7b105aa
+    # via -r requirements.in
+google-cloud-pubsub==2.44.0 \
+    --hash=sha256:b62986d43680667d59903514128f33a4bac899c02c4b40c34aa199d312903ad9 \
+    --hash=sha256:cc59c9a33188cbd97572c7e3b0a095217dd42756b7739cc18f9fa1f14ad79f2c
     # via -r requirements.in
 googleapis-common-protos==1.76.0 \
     --hash=sha256:59e13344a9f3651aa201a03e2bee815a3bf43a4baf1f9ff8a9b62a840ce25fac \
@@ -410,7 +417,9 @@ googleapis-common-protos==1.76.0 \
 grpc-google-iam-v1==0.14.6 \
     --hash=sha256:042705a3ce306f289b9c6eafc3453b23f953bab955adcac3c36545758ccd681a \
     --hash=sha256:fc0a683ace0a149184fcd08d667dd64d51ae65e5698e86f7136aa6002a8b5373
-    # via google-cloud-kms
+    # via
+    #   google-cloud-kms
+    #   google-cloud-pubsub
 grpcio==1.85.0 \
     --hash=sha256:0633c4ff112d2237d09ded3044b5acee4fb12de7b39ff4dcfb09b0f029c33992 \
     --hash=sha256:087f297442a62e267f37df0cd03681159c225b8e73741b94d55c515e7a4df81e \
@@ -476,13 +485,16 @@ grpcio==1.85.0 \
     # via
     #   google-api-core
     #   google-cloud-kms
+    #   google-cloud-pubsub
     #   googleapis-common-protos
     #   grpc-google-iam-v1
     #   grpcio-status
 grpcio-status==1.85.0 \
     --hash=sha256:b7b99c00a7a908e685094f67c241ea4e9126e22a8cb8505b15702726239df2af \
     --hash=sha256:f77368f05d20a0c2d5ac26aff71e688b5888256953add52b2d334a67ecd931ce
-    # via google-api-core
+    # via
+    #   google-api-core
+    #   google-cloud-pubsub
 h11==0.16.0 \
     --hash=sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1 \
     --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
@@ -638,6 +650,7 @@ opentelemetry-api==1.45.2 \
     # via
     #   fastapi
     #   google-api-core
+    #   google-cloud-pubsub
     #   opentelemetry-exporter-http-transport
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-instrumentation
@@ -686,6 +699,7 @@ opentelemetry-sdk==1.45.2 \
     --hash=sha256:ff974ea70ee4f1d51e2ec152db37c2b626c7bf82bb3f7d86114fd8704e7199c6
     # via
     #   -r requirements.in
+    #   google-cloud-pubsub
     #   opentelemetry-exporter-otlp-common
     #   opentelemetry-exporter-otlp-proto-http
 opentelemetry-semantic-conventions==0.66b2 \
@@ -718,6 +732,7 @@ proto-plus==1.29.0 \
     # via
     #   google-api-core
     #   google-cloud-kms
+    #   google-cloud-pubsub
 protobuf==7.36.2 \
     --hash=sha256:497d0463ff3316681da6c0b9e8d06cb465d61abce00b613ab42226175644d1bb \
     --hash=sha256:89f23aa53c24553a2416fd4fd1ec06f74fa42b14b546d8883128813f775bbfd2 \
@@ -730,6 +745,7 @@ protobuf==7.36.2 \
     # via
     #   google-api-core
     #   google-cloud-kms
+    #   google-cloud-pubsub
     #   googleapis-common-protos
     #   grpc-google-iam-v1
     #   grpcio-status

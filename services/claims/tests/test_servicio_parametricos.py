@@ -235,9 +235,42 @@ def test_publica_siniestro_aprobado_y_el_push_de_indemnizacion():
     assert tipos == ["siniestro.aprobado", "notificacion.push-solicitada"]
     push = bus.eventos[1]["datos"]
     assert push["usuarioId"] == "usuario-42"
-    assert push["plantilla"] == "indemnizacion-liquidada"
+    assert push["plantilla"] == "indemnizacion-vuelo-retraso"
     assert push["ruta"].startswith("/m04-02/")
-    assert push["variables"] == {"monto": "500000", "moneda": "COP"}
+    assert push["variables"] == {
+        "monto": "500000",
+        "moneda": "COP",
+        "vuelo": "AV9340",
+        "minutos": "145.0",
+    }
+    # Números crudos y sin nombre: `enviar-push` los escribe en el idioma y la moneda del
+    # cliente y pone su nombre desde AUTH.
+    assert "nombre" not in push["variables"]
+
+
+def test_la_plantilla_del_push_dice_el_evento_que_pago():
+    from app.application.bus_eventos import plantilla_push_indemnizacion
+
+    vuelo = {"ubicacion": {"tipo": "VUELO", "clave": "LA77:2026-11-22"}, "evento_valor": 42.0}
+    assert plantilla_push_indemnizacion(vuelo) == (
+        "indemnizacion-vuelo-retraso",
+        {"vuelo": "LA77", "minutos": "42.0"},
+    )
+    assert plantilla_push_indemnizacion({**vuelo, "evento_cancelado": True}) == (
+        "indemnizacion-vuelo-cancelado",
+        {"vuelo": "LA77"},
+    )
+    clima = {"ubicacion": {"tipo": "CLIMA", "clave": "4.61,-74.08"}, "evento_valor": 1464.5}
+    for variable, plantilla in (
+        ("PRECIPITACION_MM", "indemnizacion-clima-lluvia"),
+        ("VIENTO_KMH", "indemnizacion-clima-viento"),
+        ("TEMP_MAX_C", "indemnizacion-clima-temperatura"),
+    ):
+        assert plantilla_push_indemnizacion({**clima, "evento_variable": variable}) == (
+            plantilla,
+            {"valor": "1464.5"},
+        )
+    assert plantilla_push_indemnizacion({"evento_valor": 3}) == ("indemnizacion-liquidada", {})
 
 
 def test_sin_poliza_para_el_push_no_revienta_nada():

@@ -80,3 +80,81 @@ def test_el_servicio_publica_un_evento_por_resolucion_sin_datos_personales():
     texto = json.dumps(bus.publicados, ensure_ascii=False)
     for dato in ("Camilo", "79.845.210", "Revisar el bumper", "Comentario privado", "Calle 80"):
         assert dato not in texto
+
+
+# ---- KAN-259: la push de la indemnización paramétrica sale por Pub/Sub ----
+
+
+class ClientePubSubFalso:
+    def __init__(self, falla=False):
+        self.falla = falla
+        self.publicados = []
+
+    def publish(self, tema, cuerpo, **atributos):
+        if self.falla:
+            raise RuntimeError("sin red")
+        self.publicados.append((tema, json.loads(cuerpo), atributos))
+
+        class _Futuro:
+            def result(self, timeout=None):
+                return "id-1"
+
+        return _Futuro()
+
+
+TEMA = "projects/p/topics/notificaciones-push"
+
+
+def test_la_push_se_publica_en_el_tema_con_su_tipo():
+    from app.application.bus_eventos import BusEventosPubSub, evento_push_indemnizacion
+
+    cliente = ClientePubSubFalso()
+    evento = evento_push_indemnizacion("u-1", {"id": "sin-1"}, {"valor": "500000", "moneda": "COP"})
+    assert BusEventosPubSub(TEMA, cliente).publicar(evento) is True
+    tema, cuerpo, atributos = cliente.publicados[0]
+    assert tema == TEMA and cuerpo == evento
+    assert atributos == {"tipo": "notificacion.push-solicitada"}
+
+
+def test_si_pubsub_falla_no_rompe_y_lo_avisa_sin_datos(caplog):
+    from app.application.bus_eventos import BusEventosPubSub, evento_push_indemnizacion
+
+    evento = evento_push_indemnizacion(
+        "u-secreto", {"id": "sin-1"}, {"valor": "500000", "moneda": "COP"}
+    )
+    with caplog.at_level(logging.WARNING, logger="claims.eventos"):
+        assert BusEventosPubSub(TEMA, ClientePubSubFalso(falla=True)).publicar(evento) is False
+    assert "fallo publicando en Pub/Sub" in caplog.text
+    assert "u-secreto" not in caplog.text
+
+
+def test_la_push_invalida_no_se_publica():
+    from app.application.bus_eventos import BusEventosPubSub, evento_push_indemnizacion
+
+    cliente = ClientePubSubFalso()
+    evento = evento_push_indemnizacion("u-1", {"id": "sin-1"}, {"valor": "500000", "moneda": "COP"})
+    del evento["datos"]["plantilla"]
+    assert BusEventosPubSub(TEMA, cliente).publicar(evento) is False
+    assert cliente.publicados == []
+
+
+def test_los_eventos_de_siniestro_siguen_en_el_log_aunque_haya_tema():
+    from app.application.bus_eventos import BusEventosPubSub
+
+    cliente = ClientePubSubFalso()
+    resolucion = {
+        "resuelta_en": AHORA,
+        "indemnizacion": {"valor": "8650000", "moneda": "COP"},
+        "orden_pago_id": "ind-1",
+        "motivo": "OTRO",
+    }
+    assert BusEventosPubSub(TEMA, cliente).publicar(evento_aprobado(SINIESTRO, resolucion, "u-1"))
+    assert cliente.publicados == []
+
+
+def test_sin_tema_se_usa_el_bus_de_log():
+    from app.application.bus_eventos import BusEventosPubSub, construir_bus_eventos
+
+    assert type(construir_bus_eventos("")) is BusEventosLog
+    assert type(construir_bus_eventos(None)) is BusEventosLog
+    assert isinstance(construir_bus_eventos(TEMA), BusEventosPubSub)

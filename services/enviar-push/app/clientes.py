@@ -2,6 +2,7 @@
 marcar un token muerto. `enviar-push` nunca lee la base de AUTH directamente (escritor único)."""
 
 import logging
+import time
 from typing import Protocol
 
 import httpx
@@ -56,3 +57,35 @@ class ClienteAuthHttp:
             raise ErrorServicio(type(error).__name__) from error
         if respuesta.is_error:
             raise ErrorServicio(f"HTTP {respuesta.status_code}")
+
+
+# Las tasas son una tabla de referencia que cambia poco: se piden una vez cada tanto.
+TTL_TASAS_SEGUNDOS = 600.0
+
+
+class PuertoTasas(Protocol):
+    async def tasas_cambio(self) -> dict[str, str]: ...
+
+
+class ClienteTasasHttp:
+    """`GET /tasas-cambio` del ACL Worker (KAN-209): cuántos COP vale una unidad de cada moneda,
+    como texto decimal. Con caché corta: un push no debe esperar al ACL en cada envío."""
+
+    def __init__(self, cliente: httpx.AsyncClient) -> None:
+        self._cliente = cliente
+        self._tasas: dict[str, str] | None = None
+        self._vencen = 0.0
+
+    async def tasas_cambio(self) -> dict[str, str]:
+        ahora = time.monotonic()
+        if self._tasas is not None and ahora < self._vencen:
+            return self._tasas
+        try:
+            respuesta = await self._cliente.get("/tasas-cambio")
+        except httpx.HTTPError as error:
+            raise ErrorServicio(type(error).__name__) from error
+        if respuesta.is_error:
+            raise ErrorServicio(f"HTTP {respuesta.status_code}")
+        self._tasas = dict(respuesta.json()["cop_por_unidad"])
+        self._vencen = ahora + TTL_TASAS_SEGUNDOS
+        return self._tasas

@@ -1,5 +1,5 @@
 {
-  "_descripcion": "KAN-259: catálogo de plantillas de push. El productor del evento `notificacion.push-solicitada` solo elige una clave de aquí y manda sus `variables`; nunca escribe el título ni el cuerpo. `{variable}` se sustituye con `str.format`; una variable que falte deja el `{nombre}` literal (no se cae el envío) y queda un log de advertencia.",
+  "_descripcion": "KAN-259: catálogo de plantillas de push. El productor del evento `notificacion.push-solicitada` solo elige una clave de aquí y manda sus `variables`; nunca escribe el título ni el cuerpo. `{variable}` se sustituye con `str.format`; una variable que falte deja el `{nombre}` literal (no se cae el envío) y queda un log de advertencia. `tituloConNombre` (opcional) reemplaza a `titulo` cuando `enviar-push` conoce el primer nombre del destinatario: lo pide a AUTH al enviar y lo inyecta como `{nombre}`; el productor nunca lo manda. `{importe}` lo arma `enviar-push` con `monto` y `moneda` del productor (monto crudo, texto decimal): lo convierte a la moneda que el cliente eligió y lo escribe como la app («$ 500.000» y «USD 121,95» en español; «COP 500,000» y «USD 121.95» en inglés).",
   "plantillas": {
     "indemnizacion-liquidada": {
       "descripcion": "HU-M04 (CA-M04-05/07): se liquidó la indemnización de un siniestro paramétrico.",
@@ -7,11 +7,88 @@
       "silenciosa": false,
       "es": {
         "titulo": "Tu indemnización ya está lista",
-        "cuerpo": "Se liquidaron {monto} {moneda} por tu póliza. Toca para ver el detalle."
+        "cuerpo": "Se liquidaron {importe} por tu póliza. Toca para ver el detalle.",
+        "tituloConNombre": "{nombre}, tu indemnización ya está lista"
       },
       "en": {
         "titulo": "Your payout is ready",
-        "cuerpo": "{monto} {moneda} was paid out on your policy. Tap to see the details."
+        "cuerpo": "{importe} was paid out on your policy. Tap to see the details.",
+        "tituloConNombre": "{nombre}, your payout is ready"
+      }
+    },
+    "indemnizacion-vuelo-retraso": {
+      "descripcion": "HU-M04: indemnización paramétrica por retraso de vuelo. Variables: monto, moneda (de ellas sale `{importe}`), vuelo, minutos.",
+      "ttlSegundos": 86400,
+      "silenciosa": false,
+      "es": {
+        "titulo": "Tu indemnización ya está lista",
+        "tituloConNombre": "{nombre}, tu indemnización ya está lista",
+        "cuerpo": "Se liquidaron {importe} por el retraso de {minutos} min de tu vuelo {vuelo}. Toca para ver el detalle."
+      },
+      "en": {
+        "titulo": "Your payout is ready",
+        "tituloConNombre": "{nombre}, your payout is ready",
+        "cuerpo": "{importe} was paid out for the {minutos}-minute delay of your flight {vuelo}. Tap to see the details."
+      }
+    },
+    "indemnizacion-vuelo-cancelado": {
+      "descripcion": "HU-M04: indemnización paramétrica por cancelación de vuelo. Variables: monto, moneda (de ellas sale `{importe}`), vuelo.",
+      "ttlSegundos": 86400,
+      "silenciosa": false,
+      "es": {
+        "titulo": "Tu indemnización ya está lista",
+        "tituloConNombre": "{nombre}, tu indemnización ya está lista",
+        "cuerpo": "Se liquidaron {importe} por la cancelación de tu vuelo {vuelo}. Toca para ver el detalle."
+      },
+      "en": {
+        "titulo": "Your payout is ready",
+        "tituloConNombre": "{nombre}, your payout is ready",
+        "cuerpo": "{importe} was paid out for the cancellation of your flight {vuelo}. Tap to see the details."
+      }
+    },
+    "indemnizacion-clima-lluvia": {
+      "descripcion": "HU-M04: indemnización paramétrica por lluvia sobre el umbral. Variables: monto, moneda (de ellas sale `{importe}`), valor (mm).",
+      "ttlSegundos": 86400,
+      "silenciosa": false,
+      "es": {
+        "titulo": "Tu indemnización ya está lista",
+        "tituloConNombre": "{nombre}, tu indemnización ya está lista",
+        "cuerpo": "Se liquidaron {importe} por la lluvia de {valor} mm en tu zona. Toca para ver el detalle."
+      },
+      "en": {
+        "titulo": "Your payout is ready",
+        "tituloConNombre": "{nombre}, your payout is ready",
+        "cuerpo": "{importe} was paid out for {valor} mm of rain in your area. Tap to see the details."
+      }
+    },
+    "indemnizacion-clima-viento": {
+      "descripcion": "HU-M04: indemnización paramétrica por viento sobre el umbral. Variables: monto, moneda (de ellas sale `{importe}`), valor (km/h).",
+      "ttlSegundos": 86400,
+      "silenciosa": false,
+      "es": {
+        "titulo": "Tu indemnización ya está lista",
+        "tituloConNombre": "{nombre}, tu indemnización ya está lista",
+        "cuerpo": "Se liquidaron {importe} por el viento de {valor} km/h en tu zona. Toca para ver el detalle."
+      },
+      "en": {
+        "titulo": "Your payout is ready",
+        "tituloConNombre": "{nombre}, your payout is ready",
+        "cuerpo": "{importe} was paid out for {valor} km/h winds in your area. Tap to see the details."
+      }
+    },
+    "indemnizacion-clima-temperatura": {
+      "descripcion": "HU-M04: indemnización paramétrica por temperatura sobre el umbral. Variables: monto, moneda (de ellas sale `{importe}`), valor (°C).",
+      "ttlSegundos": 86400,
+      "silenciosa": false,
+      "es": {
+        "titulo": "Tu indemnización ya está lista",
+        "tituloConNombre": "{nombre}, tu indemnización ya está lista",
+        "cuerpo": "Se liquidaron {importe} por la temperatura de {valor} °C en tu zona. Toca para ver el detalle."
+      },
+      "en": {
+        "titulo": "Your payout is ready",
+        "tituloConNombre": "{nombre}, your payout is ready",
+        "cuerpo": "{importe} was paid out for a temperature of {valor} °C in your area. Tap to see the details."
       }
     },
     "sesion-cerrada": {

@@ -273,6 +273,24 @@ resource "google_cloud_run_v2_service" "servicio" {
         }
       }
 
+      # Notificaciones push (push.tf, KAN-259): sin estas variables el ACL Worker y CLAIMS solo escriben el evento
+      # en el log (BusEventosLog) y la cadena evento paramétrico -> indemnización -> push nunca arranca. Los
+      # permisos de publicación ya los da push.tf (`acl_publica_parametricos`, `claims_publica_push`).
+      dynamic "env" {
+        for_each = local.push_activo ? merge(
+          each.key == "acl-worker" ? {
+            PUBSUB_TEMA_EVENTOS_PARAMETRICOS = google_pubsub_topic.eventos_parametricos[0].id
+          } : {},
+          each.key == "claims" ? {
+            PUBSUB_TEMA_NOTIFICACIONES_PUSH = google_pubsub_topic.notificaciones_push[0].id
+          } : {},
+        ) : {}
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
       # Disparadores externos (tareas.tf): quién dispara el trabajo de fondo, y lo que Cloud Tasks necesita para
       # firmar y dirigir la tarea. Solo con `crear_tareas` y en los servicios que lo declaran.
       dynamic "env" {

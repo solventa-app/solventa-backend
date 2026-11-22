@@ -33,6 +33,9 @@ class Plantillas:
     def __init__(self, catalogo: dict[str, Any] | None = None) -> None:
         self._catalogo = catalogo if catalogo is not None else cargar_catalogo()
 
+    def existe(self, clave: str) -> bool:
+        return clave in self._catalogo
+
     def resolver(
         self, clave: str, variables: dict[str, str] | None, idioma: str = IDIOMA_POR_DEFECTO
     ) -> dict[str, Any]:
@@ -43,8 +46,12 @@ class Plantillas:
             raise PlantillaDesconocida(clave)
         textos = plantilla.get(idioma) or plantilla[IDIOMA_POR_DEFECTO]
         variables = variables or {}
+        # Con el nombre del destinatario (lo agrega `enviar-push` desde AUTH), el título que saluda.
+        titulo = textos["titulo"]
+        if variables.get("nombre") and textos.get("tituloConNombre"):
+            titulo = textos["tituloConNombre"]
         return {
-            "titulo": _render(textos["titulo"], variables),
+            "titulo": _render(titulo, variables),
             "cuerpo": _render(textos["cuerpo"], variables),
             "ttl_segundos": plantilla.get("ttlSegundos", 86400),
             "silenciosa": bool(plantilla.get("silenciosa", False)),

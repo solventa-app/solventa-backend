@@ -119,7 +119,19 @@ def test_registrar_token_push_y_leerlo_en_destino() -> None:
         "dispositivo_id": destino.json()["dispositivo_id"],
         "token": "token-fcm-real",
         "plataforma": "android",
+        "primer_nombre": destino.json()["primer_nombre"],
+        "idioma": "es",
+        "moneda": "COP",
     }
+
+
+def test_el_primer_nombre_es_la_primera_palabra_con_mayuscula_inicial() -> None:
+    from app.main import primer_nombre
+
+    assert primer_nombre("JHOAN FELIPE SARMIENTO ORTIZ") == "Jhoan"
+    assert primer_nombre("  maría   pérez ") == "María"
+    assert primer_nombre("") is None
+    assert primer_nombre(None) is None
 
 
 def test_destino_push_sin_dispositivo_da_404() -> None:

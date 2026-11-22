@@ -104,21 +104,53 @@ def evento_derivado(siniestro: dict, asignacion: dict, actor: str | None) -> dic
     )
 
 
+_PLANTILLA_CLIMA = {
+    "PRECIPITACION_MM": "indemnizacion-clima-lluvia",
+    "VIENTO_KMH": "indemnizacion-clima-viento",
+    "TEMP_MAX_C": "indemnizacion-clima-temperatura",
+}
+
+
+def plantilla_push_indemnizacion(siniestro: dict[str, Any]) -> tuple[str, dict[str, str]]:
+    """La plantilla de `contracts/plantillas-push.json` y sus variables según el evento que pagó
+    (retraso o cancelación del vuelo; lluvia, viento o temperatura), para que el push lo diga. Un
+    siniestro sin esos datos cae a la plantilla genérica. Los números viajan crudos: `enviar-push`
+    los escribe en el idioma del cliente y convierte el monto a su moneda."""
+    ubicacion = siniestro.get("ubicacion") or {}
+    valor = siniestro.get("evento_valor")
+    if ubicacion.get("tipo") == "VUELO" and ubicacion.get("clave"):
+        vuelo = str(ubicacion["clave"]).split(":", 1)[0]
+        if siniestro.get("evento_cancelado"):
+            return "indemnizacion-vuelo-cancelado", {"vuelo": vuelo}
+        if valor is not None:
+            return "indemnizacion-vuelo-retraso", {"vuelo": vuelo, "minutos": str(valor)}
+    plantilla = _PLANTILLA_CLIMA.get(str(siniestro.get("evento_variable")))
+    if ubicacion.get("tipo") == "CLIMA" and plantilla and valor is not None:
+        return plantilla, {"valor": str(valor)}
+    return "indemnizacion-liquidada", {}
+
+
 def evento_push_indemnizacion(
-    usuario_id: str, siniestro_id: str, monto: dict[str, str]
+    usuario_id: str, siniestro: dict[str, Any], monto: dict[str, str]
 ) -> dict[str, Any]:
     """KAN-259 (HU-M04, Fase 4): al liquidar un siniestro paramétrico, pide el push que
-    `enviar-push` manda por SNS/FCM (plantilla `indemnizacion-liquidada`, ruta `/m04-02/{id}`,
-    ver `contracts/plantillas-push.json`). `idempotencia` es el id del siniestro: una reentrega del
-    evento reemplaza la notificación en el teléfono, no la duplica."""
+    `enviar-push` manda por SNS/FCM (ruta `/m04-02/{id}`; la plantilla depende del evento, ver
+    `plantilla_push_indemnizacion`). `idempotencia` es el id del siniestro: una reentrega del
+    evento reemplaza la notificación en el teléfono, no la duplica. El nombre del destinatario no
+    viaja aquí: lo agrega `enviar-push` desde AUTH."""
+    plantilla, variables = plantilla_push_indemnizacion(siniestro)
     return _evento(
         "notificacion.push-solicitada",
         {
-            "idempotencia": siniestro_id,
+            "idempotencia": siniestro["id"],
             "usuarioId": usuario_id,
-            "plantilla": "indemnizacion-liquidada",
-            "variables": {"monto": monto["valor"], "moneda": monto["moneda"]},
-            "ruta": f"/m04-02/{siniestro_id}",
+            "plantilla": plantilla,
+            "variables": {
+                "monto": str(monto["valor"]),
+                "moneda": monto["moneda"],
+                **variables,
+            },
+            "ruta": f"/m04-02/{siniestro['id']}",
         },
     )
 
@@ -166,7 +198,8 @@ class BusEventosLog:
     def __init__(self) -> None:
         self._validadores = _validadores()
 
-    def publicar(self, evento: dict[str, Any]) -> bool:
+    def _validar(self, evento: dict[str, Any]) -> bool:
+        """Que el evento tenga esquema y lo cumpla; si no, lo avisa en el log (sin valores)."""
         validador = self._validadores.get(evento.get("tipo", ""))
         if validador is None:
             logger.error("evento sin esquema: %s; no se publica", evento.get("tipo"))
@@ -178,6 +211,11 @@ class BusEventosLog:
                 f"{'/'.join(map(str, e.path)) or '(raíz)'}: {e.validator}" for e in errores
             )
             logger.error("evento=%s inválido (%s); no se publica", evento["tipo"], detalle)
+            return False
+        return True
+
+    def publicar(self, evento: dict[str, Any]) -> bool:
+        if not self._validar(evento):
             return False
         datos = evento["datos"]
         # `siniestro.*` lleva siniestroId/polizaId; `notificacion.push-solicitada` (KAN-259, Fase
@@ -195,3 +233,61 @@ class BusEventosLog:
             referencia,
         )
         return True
+
+
+TIPO_PUSH_SOLICITADA = "notificacion.push-solicitada"
+
+
+class BusEventosPubSub(BusEventosLog):
+    """Publica `notificacion.push-solicitada` en Pub/Sub (lo consume `enviar-push`, que manda la
+    push por SNS/FCM). Los demás eventos (`siniestro.*`) siguen en el log hasta que tengan tema.
+
+    Antes de publicar valida el evento contra su esquema, igual que el bus de log. Si Pub/Sub
+    falla no se rompe la liquidación (la indemnización ya está ordenada): se avisa en el log,
+    sin datos."""
+
+    def __init__(self, tema_push: str, cliente_pubsub: Any = None) -> None:
+        super().__init__()
+        self._tema_push = tema_push
+        self._cliente = cliente_pubsub
+
+    def _obtener_cliente(self) -> Any:
+        if self._cliente is None:
+            from google.cloud import pubsub_v1  # type: ignore[import-untyped]
+
+            self._cliente = pubsub_v1.PublisherClient()
+        return self._cliente
+
+    def publicar(self, evento: dict[str, Any]) -> bool:
+        if evento.get("tipo") != TIPO_PUSH_SOLICITADA:
+            return super().publicar(evento)
+        if not self._validar(evento):
+            return False
+        try:
+            futuro = self._obtener_cliente().publish(
+                self._tema_push, json.dumps(evento).encode("utf-8"), tipo=str(evento["tipo"])
+            )
+            if hasattr(futuro, "result"):
+                futuro.result(timeout=5.0)
+        except Exception as error:
+            logger.warning(
+                "fallo publicando en Pub/Sub tema=%s error=%s; la push no se pidió",
+                self._tema_push,
+                type(error).__name__,
+            )
+            return False
+        logger.info(
+            "evento=%s eventId=%s usuario=%s tema=%s [PUBSUB]",
+            evento["tipo"],
+            evento["eventId"],
+            id_opaco(evento["datos"].get("usuarioId", "")),
+            self._tema_push,
+        )
+        return True
+
+
+def construir_bus_eventos(tema_push: str | None, cliente_pubsub: Any = None) -> BusEventosLog:
+    """`BusEventosPubSub` si `PUBSUB_TEMA_NOTIFICACIONES_PUSH` está configurado; si no, el log."""
+    if tema_push:
+        return BusEventosPubSub(tema_push, cliente_pubsub=cliente_pubsub)
+    return BusEventosLog()
