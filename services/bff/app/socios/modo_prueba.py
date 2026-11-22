@@ -10,7 +10,7 @@ consumo van a AUTH, para que el panel del socio muestre su uso real del sandbox.
 - **Avance solo:** tras «emitir», la propuesta queda `EN_FIRMA` y avanza sola: `FIRMADA` a los
   `SEGUNDOS_FIRMA` y `EMITIDA` (con póliza) a los `SEGUNDOS_EMISION`. No hay página de firma: el
   titular simulado firma y paga solo.
-- **Ventas reales del sandbox** (contrato v0.67): aceptar una oferta suma una propuesta y la póliza
+- **Ventas reales del sandbox** (contrato v0.68): aceptar una oferta suma una propuesta y la póliza
   que se emite suma una venta con su prima, en el mes en que pasa. Antes eran cifras fijas, así que
   el panel nunca reflejaba lo que el socio probaba.
 - **Estado en Redis con TTL** (`prueba:<socio>:...`, 24 h). Si se pierde (Redis apagado de noche),

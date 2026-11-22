@@ -8,7 +8,7 @@ las pestañas abiertas:
 - `avisos:titular:<hmac>`: el titular (el CLIENTE con su cuenta verificada lo escucha);
 - `avisos:todos`: el BACKOFFICE.
 - `avisos:socio:<socio>:PRODUCCION`: el SOCIO que la aceptó por la API, para que su panel cuente
-  la venta en cuanto se emite (contrato v0.67; el sandbox no pasa por POLICY).
+  la venta en cuanto se emite (contrato v0.68; el sandbox no pasa por POLICY).
 
 Es de mejor esfuerzo: si Redis no responde (p. ej. apagado de noche por «Costos staging»), se
 registra y se sigue. La pantalla consulta al abrirse, así que no se pierde el estado real."""

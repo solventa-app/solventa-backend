@@ -572,7 +572,7 @@ Formato: fecha · historia · cambio · ¿afecta al frontend?
   Solo cambios aditivos.
 - Afecta al frontend: el móvil (la web no usa dispositivos).
 
-## v0.67 — 2026-11-22
+## v0.68 — 2026-11-22
 
 - HU-W07 (KAN-30): **el panel del socio cuenta cotizaciones y ventas por separado y se pone al día solo.** En las
   pruebas, una cotización que terminaba en póliza se veía como dos ventas y ninguna cotización: las cotizaciones solo

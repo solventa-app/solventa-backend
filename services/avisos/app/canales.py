@@ -6,7 +6,7 @@ personales):
 - CLIENTE: `avisos:titular:<titular>`, las de su titular verificado.
 - BACKOFFICE: `avisos:todos` (propuestas) y `avisos:cobros` (cobros, W05-A6).
 - SOCIO: `avisos:socio:<socio>:<entorno>`, cada cotización, propuesta o póliza del socio en ese
-  entorno (el panel se pone al día solo, contrato v0.67). Lo publican el BFF y POLICY."""
+  entorno (el panel se pone al día solo, contrato v0.68). Lo publican el BFF y POLICY."""
 
 CANAL_COBROS = "avisos:cobros"
 CANAL_TODOS = "avisos:todos"

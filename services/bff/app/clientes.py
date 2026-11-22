@@ -654,7 +654,7 @@ class ClienteSociosHttp:
     async def cotizaciones_por_mes(
         self, socio_id: str, entorno: str, desde: str, hasta: str
     ) -> dict[str, int]:
-        """`{"2026-11": 3}`: las cotizaciones hechas cada mes (contrato v0.67)."""
+        """`{"2026-11": 3}`: las cotizaciones hechas cada mes (contrato v0.68)."""
         respuesta = await _pedir(
             self._cliente,
             "GET",

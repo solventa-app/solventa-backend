@@ -485,7 +485,7 @@ def test_consumo_y_ventas(e) -> None:
 
 
 def test_las_ventas_cuentan_cotizaciones_propuestas_y_polizas_por_separado(e) -> None:
-    """v0.67: una cotización que termina en póliza es 1 cotización, 1 propuesta y 1 venta. Antes
+    """v0.68: una cotización que termina en póliza es 1 cotización, 1 propuesta y 1 venta. Antes
     las cotizaciones no salían en las ventas y el panel parecía sumar dos ventas."""
     e.policy.respuestas["ventas_socio"] = {
         "desde": "2025-12-01",
@@ -550,7 +550,7 @@ def test_sin_redis_el_ticket_de_avisos_es_503(e) -> None:
 
 
 def test_cada_llamada_que_cuenta_avisa_al_panel_del_socio(e) -> None:
-    """v0.67: el panel se pone al día por SSE. Las lecturas del portal no avisan (no cuentan)."""
+    """v0.68: el panel se pone al día por SSE. Las lecturas del portal no avisan (no cuentan)."""
     with e.cliente() as client:
         client.post("/v1/cotizaciones", json=COTIZACION, headers=e.cabeceras())
         client.get("/v1/ventas", headers=e.cabeceras())

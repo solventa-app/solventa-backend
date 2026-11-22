@@ -132,7 +132,7 @@ def test_lo_del_sandbox_de_un_socio_no_lo_ve_otro(p) -> None:
 
 
 def test_las_ventas_del_sandbox_cuentan_lo_que_el_socio_hizo(p) -> None:
-    """v0.67: antes eran cifras fijas. Una cotización que termina en póliza suma 1 cotización,
+    """v0.68: antes eran cifras fijas. Una cotización que termina en póliza suma 1 cotización,
     1 propuesta y 1 venta, con su prima y la comisión."""
     vacio = p.get("/v1/ventas").json()
     _, cotizacion = p.hasta_oferta()

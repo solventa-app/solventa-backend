@@ -975,7 +975,7 @@ def create_app(
     def cotizaciones_por_mes(
         socio_id: str, entorno: Entorno, desde: date, hasta: date
     ) -> CotizacionesPorMesResponse:
-        """Las cotizaciones hechas cada mes en el entorno (las ventas del panel, contrato v0.67)."""
+        """Las cotizaciones hechas cada mes en el entorno (las ventas del panel, contrato v0.68)."""
         try:
             por_mes = app.state.socios.cotizaciones_por_mes(socio_id, entorno, desde, hasta)
         except DatoSocioInvalido as error:

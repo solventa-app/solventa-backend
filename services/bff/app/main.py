@@ -449,7 +449,7 @@ async def _registrar_consumo(socios, socio, api: str, resultado: str, latencia_m
 
 
 async def _avisar_al_panel(tickets, socio, api: str) -> None:
-    """Avisa al panel del socio (SSE por el servicio `avisos`, contrato v0.67) que su consumo o sus
+    """Avisa al panel del socio (SSE por el servicio `avisos`, contrato v0.68) que su consumo o sus
     ventas cambiaron, para que se ponga al día sin recargar. Sin datos personales: solo la API. Si
     Redis no responde, el panel queda como estaba hasta la próxima lectura (regla 4)."""
     if tickets is None:

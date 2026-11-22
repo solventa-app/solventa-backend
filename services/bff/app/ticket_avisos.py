@@ -22,7 +22,7 @@ class PuertoTickets(Protocol):
         self, rol: str, usuario_id: str, titular_id: str | None, entorno: str | None = None
     ) -> tuple[str, datetime]:
         """El ticket y cuándo vence. Lanza cualquier excepción si Redis no responde. `entorno` solo
-        lo lleva el de un SOCIO: escucha el canal de ese entorno (contrato v0.67)."""
+        lo lleva el de un SOCIO: escucha el canal de ese entorno (contrato v0.68)."""
         ...
 
     async def publicar(self, canal: str, mensaje: str) -> None:

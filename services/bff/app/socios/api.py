@@ -885,7 +885,7 @@ def construir_router() -> APIRouter:
                 )
                 tasa = (datos_socio or {}).get("tasa_comision", "0")
             # Las cotizaciones salen del consumo en AUTH (las que gastaron presupuesto), en el
-            # mismo rango que las ventas: en el sandbox también son las reales (contrato v0.67).
+            # mismo rango que las ventas: en el sandbox también son las reales (contrato v0.68).
             cotizaciones = await clientes.socios.cotizaciones_por_mes(
                 socio.id, socio.entorno, str(datos["desde"]), str(datos["hasta"])
             )
@@ -904,7 +904,7 @@ def construir_router() -> APIRouter:
     async def ticket_avisos(request: Request, socio: SocioCuenta) -> dict:
         """Ticket de un solo uso (60 s) para que el panel abra el stream SSE del servicio `avisos`
         y se ponga al día solo con cada cotización, propuesta o póliza del entorno del token
-        (contrato v0.67). `EventSource` no manda cabeceras: por eso el token no va en la URL.
+        (contrato v0.68). `EventSource` no manda cabeceras: por eso el token no va en la URL.
         No cuenta en el consumo (es una lectura del portal)."""
         tickets = getattr(estado(request).clientes, "tickets", None)
         if tickets is None:

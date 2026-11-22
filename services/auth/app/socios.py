@@ -617,7 +617,7 @@ class ServicioSocios:
         self, socio_id: str, entorno: str, desde: date, hasta: date
     ) -> dict[str, int]:
         """`{"2026-11": 3}`: cuántas cotizaciones hizo el socio cada mes en el entorno (HU-W07,
-        contrato v0.67). Las ventas del panel las muestran junto a las propuestas y las pólizas."""
+        contrato v0.68). Las ventas del panel las muestran junto a las propuestas y las pólizas."""
         validar_entorno(entorno)
         if desde > hasta:
             raise DatoSocioInvalido("`desde` no puede ser posterior a `hasta`.")

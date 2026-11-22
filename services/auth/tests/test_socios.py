@@ -223,7 +223,7 @@ def test_sin_fechas_son_los_ultimos_30_dias_de_colombia(servicio, reloj) -> None
 
 
 def test_las_cotizaciones_por_mes_cuentan_solo_las_que_salieron_bien(servicio) -> None:
-    """Contrato v0.67: el panel cuenta cotizaciones aparte de las ventas. Una cotización de auto
+    """Contrato v0.68: el panel cuenta cotizaciones aparte de las ventas. Una cotización de auto
     también cuenta; una con error, otra API u otro entorno, no."""
     servicio.registrar_consumo("socio-demo-1", "PRODUCCION", "cotizaciones", "OK", 100)
     servicio.registrar_consumo("socio-demo-1", "PRODUCCION", "cotizaciones-auto", "OK", 100)
