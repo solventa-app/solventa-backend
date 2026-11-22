@@ -111,8 +111,8 @@ class ServicioEventosParametricos:
         if not medicion.encontrado:
             return None, MOTIVO_VUELO_NO_ENCONTRADO
         evento = construir_evento_vuelo(
-            numero_vuelo=consulta.numero_vuelo,
-            fecha=consulta.fecha,
+            numero_vuelo=medicion.numero_vuelo or consulta.numero_vuelo,
+            fecha=medicion.fecha or consulta.fecha,
             retraso_minutos=medicion.retraso_minutos,
             cancelado=medicion.cancelado,
             medido_en=medicion.medido_en or "",

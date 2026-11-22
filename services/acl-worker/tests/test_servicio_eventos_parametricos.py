@@ -162,3 +162,19 @@ def test_el_bus_por_defecto_es_el_log_sin_romper_nada() -> None:
     evento, motivo = servicio.consultar_clima(CONSULTA_CLIMA)
     assert motivo is None
     assert evento is not None
+
+
+def test_con_el_comodin_el_evento_lleva_el_vuelo_que_eligio_el_proveedor() -> None:
+    medicion = MedicionVuelo(
+        encontrado=True,
+        retraso_minutos=42,
+        medido_en="2026-11-22T00:00:00+00:00",
+        numero_vuelo="LA77",
+        fecha="2026-11-22",
+    )
+    servicio, _ = _servicio(adaptador_vuelo=_AdaptadorVueloFalso(medicion=medicion))
+
+    evento, _ = servicio.consultar_vuelo(ConsultaVuelo("RETRASADO", "2026-11-21"))
+
+    assert evento["datos"]["clave"] == "LA77:2026-11-22"
+    assert evento["datos"]["valor"] == 42.0

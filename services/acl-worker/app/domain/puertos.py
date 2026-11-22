@@ -401,6 +401,9 @@ class MedicionVuelo:
     cancelado: bool = False
     medido_en: str | None = None
     fuente: str = "aviationstack"
+    # Solo con el comodín `VUELO_RETRASADO`: el vuelo que eligió el proveedor y su fecha.
+    numero_vuelo: str | None = None
+    fecha: str | None = None
 
 
 class PuertoVuelo(Protocol):

@@ -71,3 +71,36 @@ def test_la_sonda_usa_un_vuelo_sintetico_y_no_falla_si_no_existe() -> None:
 
     _adaptador(handler).sondear()  # no debe lanzar
     assert len(vistas) == 1
+
+
+def test_el_comodin_toma_el_primer_vuelo_retrasado_en_tiempo_real() -> None:
+    """Demo de HU-M04: sin `flight_iata` ni `flight_date` (plan gratis), el primer retrasado."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(httpx.QueryParams(request.url.query.decode()))
+        assert "flight_iata" not in params and "flight_date" not in params
+        assert params["access_key"] == "clave-prueba"
+        datos = [
+            {"flight_date": "2026-11-22", "departure": {"delay": None}, "flight": {"iata": "AV1"}},
+            {"flight_date": "2026-11-22", "departure": {"delay": 30}, "flight": {"iata": None}},
+            {"flight_date": "2026-11-22", "departure": {"delay": 42}, "flight": {"iata": "la77"}},
+            {"flight_date": "2026-11-22", "departure": {"delay": 90}, "flight": {"iata": "AV9"}},
+        ]
+        return httpx.Response(200, json={"data": datos})
+
+    medicion = _adaptador(handler).consultar(ConsultaVuelo("RETRASADO", "2026-11-21"))
+    assert medicion.encontrado is True
+    assert (medicion.numero_vuelo, medicion.fecha, medicion.retraso_minutos) == (
+        "LA77",
+        "2026-11-22",
+        42,
+    )
+
+
+def test_el_comodin_sin_vuelos_retrasados_no_encuentra_nada() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        datos = [{"departure": {"delay": 0}, "flight": {"iata": "AV1"}}]
+        return httpx.Response(200, json={"data": datos})
+
+    medicion = _adaptador(handler).consultar(ConsultaVuelo("RETRASADO", "2026-11-21"))
+    assert medicion.encontrado is False

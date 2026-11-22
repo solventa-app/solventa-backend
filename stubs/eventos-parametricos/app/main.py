@@ -19,6 +19,7 @@ de prueba: sin hexagonal, sin persistencia, datos inventados.
 import asyncio
 import hashlib
 import random
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -43,6 +44,14 @@ VUELOS_DEMO: dict[str, dict] = {
     "LA5678": {"delay": 0, "status": "cancelled"},  # cancelado: paga aunque el retraso sea 0
     "NOOP00": None,  # vuelo que AviationStack no tiene (data vacío)
 }
+
+
+# Lo que devuelve `GET /v1/flights` sin `flight_iata` (comodín de la demo en el ACL).
+TIEMPO_REAL: list[tuple[str, dict]] = [
+    ("AV0001", {"delay": None}),
+    ("AV9340", {"delay": 145}),
+    ("AV1234", {"delay": 10}),
+]
 
 
 class SolicitudModo(BaseModel):
@@ -160,14 +169,31 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------ vuelos (AviationStack)
     @app.get("/v1/flights", tags=["proveedor"])
     async def flights(
-        flight_iata: str = Query(...),
-        flight_date: str = Query(...),
+        flight_iata: str | None = None,
+        flight_date: str | None = None,
         access_key: str = Query(""),
         modo: str | None = None,
         x_modo_simulado: str | None = Header(default=None),
     ) -> dict:
         modo_efectivo = _modo_efectivo(modo, x_modo_simulado)
         await _aplicar_latencia(modo_efectivo)
+        if flight_iata is None:
+            # Sin `flight_iata`: los vuelos «en tiempo real», como el plan gratis de AviationStack.
+            # El primero no va retrasado, para que el ACL tenga que buscar el primer retrasado.
+            hoy = flight_date or datetime.now(UTC).date().isoformat()
+            return {
+                "data": [
+                    {
+                        "flight_date": hoy,
+                        "flight_status": "active",
+                        "departure": {"delay": d["delay"]},
+                        "flight": {"iata": n},
+                    }
+                    for n, d in TIEMPO_REAL
+                ]
+            }
+        if flight_date is None:
+            raise HTTPException(status_code=422, detail="falta flight_date")
         vuelo = _vuelo_sintetico(flight_iata.upper(), estado["umbral"])
         if vuelo is None:
             return {"data": []}

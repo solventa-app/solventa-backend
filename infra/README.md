@@ -474,8 +474,9 @@ Pub/Sub y Cloud Scheduler:
   (sin `--auto-ack`, así siguen ahí); para reprocesar uno, se publica de nuevo su cuerpo en `eventos-parametricos`
   (`gcloud pubsub topics publish eventos-parametricos --message='<cuerpo>'`) y luego se confirma con `--auto-ack`.
 - **Dos `google_cloud_scheduler_job`** (`consulta-demo-vuelo-parametrico` y `consulta-demo-clima-parametrico`, cada
-  8 h). El de vuelo es de demostración: llama a `POST /eventos-parametricos/_consultar` del ACL Worker con el vuelo fijo
-  `AV9340` de la semilla `sembrar_polizas_parametricas`. El de clima llama a `POST /coberturas-parametricas/_consultar-clima`
+  8 h). El de vuelo es de demostración: llama a `POST /eventos-parametricos/_consultar` del ACL Worker con
+  `vuelo_demo_parametrico`, por defecto el comodín `RETRASADO` (el ACL toma el primer vuelo retrasado que trae AviationStack
+  y pagan las pólizas demo sembradas con ese comodín por `sembrar_polizas_parametricas`). El de clima llama a `POST /coberturas-parametricas/_consultar-clima`
   de POLICY (KAN-290), que consulta al ACL Worker una vez por cada celda con coberturas de clima vigentes: la que trae toda
   póliza de auto en su ciudad de circulación y la de la semilla. La cuenta `sched-parametricos-demo` invoca al ACL Worker
   y a POLICY. Suman un cuarto y quinto trabajo de

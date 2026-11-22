@@ -24,6 +24,13 @@ como quien la aceptó (así CLAIMS le manda el push y el BFF le muestra `indemni
 desde hoy durante `SEMILLA_DIAS` (90), para que el Cloud Scheduler que consulta `fecha: "hoy"`
 siempre encuentre póliza; y CLIMA igual a la de arriba.
 
+Varios clientes a la vez: `SEMILLA_CORREOS=<correo1>,<correo2>,...` (el correo con el que cada uno
+entra a la app; necesita `AUTH_URL`, que resuelve el usuario y su titular) o
+`SEMILLA_CLIENTES=<usuario1>,<usuario2>,...` (ids de AUTH). `SEMILLA_VUELO` vale por defecto
+`RETRASADO`, el comodín de la demo: una sola cobertura que calza con cualquier vuelo y fecha,
+porque el ACL toma el primer vuelo retrasado que trae AviationStack (así el push de vuelo sale
+siempre).
+
 Es idempotente: los ids de propuesta son fijos y, si la póliza ya tiene coberturas, no se
 duplican (`RepositorioCoberturasParametricas.de_poliza`)."""
 
@@ -33,8 +40,14 @@ import sys
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import httpx
+
+from app.application.autenticacion_servicios import autenticacion_para, modo_desde_entorno
 from app.application.cifrado import cifrador_desde_entorno
-from app.application.repositorio_coberturas_parametricas import RepositorioCoberturasParametricas
+from app.application.repositorio_coberturas_parametricas import (
+    VUELO_COMODIN,
+    RepositorioCoberturasParametricas,
+)
 from app.application.repositorio_propuestas import RepositorioPropuestasPostgres, construir_pool
 
 log = logging.getLogger("sembrar_polizas_parametricas")
@@ -173,8 +186,23 @@ def sembrar_demo_staging(
             "cobertura": {"valor": "500000", "moneda": "COP"},
         },
     )
-    if not coberturas.de_poliza(poliza_vuelo):
-        hoy = datetime.now(ZoneInfo("America/Bogota")).date()
+    hoy = datetime.now(ZoneInfo("America/Bogota")).date()
+    if numero_vuelo == VUELO_COMODIN:
+        # El comodín calza con cualquier vuelo y fecha: basta una cobertura. Se agrega aunque la
+        # póliza ya tenga las de un vuelo fijo (de una corrida anterior de la semilla).
+        if not any(c["numero_vuelo"] == VUELO_COMODIN for c in coberturas.de_poliza(poliza_vuelo)):
+            coberturas.crear_vuelo(
+                poliza_vuelo,
+                "500000",
+                "COP",
+                VIGENCIA_DESDE,
+                VIGENCIA_HASTA,
+                numero_vuelo=VUELO_COMODIN,
+                fecha_salida=hoy,
+                aeropuerto_origen="BOG",
+                umbral_retraso_min=0,
+            )
+    elif not coberturas.de_poliza(poliza_vuelo):
         for i in range(dias):
             coberturas.crear_vuelo(
                 poliza_vuelo,
@@ -217,6 +245,59 @@ def sembrar_demo_staging(
     return creadas
 
 
+class _Auth:
+    """AUTH para la semilla: el usuario de un correo (`POST /usuarios/restablecimiento/buscar`) y
+    su `titular_id` (`GET /usuarios/{id}/identidad`), para que la póliza le salga en
+    `miCoberturaParametrica`. Sin `AUTH_URL` no resuelve nada: la póliza queda a nombre del
+    usuario y el push y `indemnizacion` funcionan igual. Nunca loguea el correo (regla #6)."""
+
+    def __init__(self, url: str) -> None:
+        self._cliente = (
+            httpx.Client(
+                base_url=url, timeout=10.0, auth=autenticacion_para(modo_desde_entorno(), "auth")
+            )
+            if url
+            else None
+        )
+
+    def usuario_de(self, correo: str) -> str | None:
+        if self._cliente is None:
+            return None
+        try:
+            respuesta = self._cliente.post(
+                "/usuarios/restablecimiento/buscar", json={"correo": correo}
+            )
+            respuesta.raise_for_status()
+            return respuesta.json().get("usuario_id")
+        except (httpx.HTTPError, ValueError, AttributeError) as error:
+            log.warning("AUTH no encontró la cuenta error=%s", type(error).__name__)
+            return None
+
+    def titular_de(self, usuario_id: str) -> str | None:
+        if self._cliente is None:
+            return None
+        try:
+            respuesta = self._cliente.get(f"/usuarios/{usuario_id}/identidad")
+            if respuesta.status_code == 200:
+                return respuesta.json()["titular_id"]
+        except (httpx.HTTPError, ValueError, KeyError) as error:
+            log.warning("AUTH no dio la identidad error=%s", type(error).__name__)
+        return None
+
+
+def clientes_de_la_semilla(entorno, auth) -> list[str]:
+    """Los usuarios de AUTH a los que se les siembra la demo: `SEMILLA_CLIENTES` (ids) o
+    `SEMILLA_CLIENTE_ID`, más los de `SEMILLA_CORREOS` (AUTH resuelve cada correo a su usuario; un
+    correo sin cuenta se salta y solo se cuenta en el log)."""
+    ids = entorno.get("SEMILLA_CLIENTES") or entorno.get("SEMILLA_CLIENTE_ID", "")
+    clientes = [c.strip() for c in ids.split(",") if c.strip()]
+    correos = [c.strip() for c in entorno.get("SEMILLA_CORREOS", "").split(",") if c.strip()]
+    encontrados = [u for u in (auth.usuario_de(c) for c in correos) if u]
+    if correos:
+        log.info("correos con cuenta: %d de %d", len(encontrados), len(correos))
+    return list(dict.fromkeys(clientes + encontrados))
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)-5s [%(name)s] %(message)s")
     database_url = os.environ.get("DATABASE_URL")
@@ -227,16 +308,24 @@ def main() -> int:
     try:
         repositorio = RepositorioPropuestasPostgres(pool, cifrador_desde_entorno())
         coberturas = RepositorioCoberturasParametricas(pool)
-        usuario_id = os.environ.get("SEMILLA_CLIENTE_ID", "").strip()
-        if usuario_id:
-            creadas = sembrar_demo_staging(
-                repositorio,
-                coberturas,
-                usuario_id,
-                os.environ.get("SEMILLA_TITULAR_ID", "").strip() or usuario_id,
-                os.environ.get("SEMILLA_VUELO", "AV9340").strip(),
-                int(os.environ.get("SEMILLA_DIAS", "90")),
-            )
+        auth = _Auth(os.environ.get("AUTH_URL", "").strip())
+        clientes = clientes_de_la_semilla(os.environ, auth)
+        if clientes or os.environ.get("SEMILLA_CORREOS"):
+            creadas = []
+            for usuario_id in clientes:
+                titular = (
+                    (os.environ.get("SEMILLA_TITULAR_ID", "").strip() if len(clientes) == 1 else "")
+                    or auth.titular_de(usuario_id)
+                    or usuario_id
+                )
+                creadas += sembrar_demo_staging(
+                    repositorio,
+                    coberturas,
+                    usuario_id,
+                    titular,
+                    os.environ.get("SEMILLA_VUELO", VUELO_COMODIN).strip(),
+                    int(os.environ.get("SEMILLA_DIAS", "90")),
+                )
         else:
             creadas = sembrar(repositorio, coberturas)
     finally:
